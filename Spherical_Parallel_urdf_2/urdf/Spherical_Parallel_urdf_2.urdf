@@ -1,0 +1,718 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="Spherical_Parallel_urdf_2">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="-5.68297642564601E-06 9.84320252937487E-06 -0.0872774523069918"
+        rpy="0 0 0" />
+      <mass
+        value="0.383954508133489" />
+      <inertia
+        ixx="0.000279103390586857"
+        ixy="-3.02891552499976E-06"
+        ixz="1.65209476752792E-17"
+        iyy="0.000282600880973714"
+        iyz="1.43034423383472E-16"
+        izz="0.000538960992417047" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="motor-outer_1_Link">
+    <inertial>
+      <origin
+        xyz="-0.0279702978737272 0.0279671136932665 0.0289452106202467"
+        rpy="0 0 0" />
+      <mass
+        value="0.0355687201353505" />
+      <inertia
+        ixx="4.55330974036119E-05"
+        ixy="1.39328327243376E-05"
+        ixz="1.87351841361269E-05"
+        iyy="4.55331004395391E-05"
+        iyz="-1.87351839056134E-05"
+        izz="3.20931896682085E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/motor-outer_1_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/motor-outer_1_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="motor-outer_1_joint"
+    type="revolute">
+    <origin
+      xyz="-0.0569492112135548 0 -0.0604289433359291"
+      rpy="0.955316618124508 0 1.5707963267949" />
+    <parent
+      link="base_link" />
+    <child
+      link="motor-outer_1_Link" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="outer-middle_1_Link">
+    <inertial>
+      <origin
+        xyz="0.00283636498049721 -0.0248626892784849 0.022301696540047"
+        rpy="0 0 0" />
+      <mass
+        value="0.0723708688376402" />
+      <inertia
+        ixx="7.27702590863178E-05"
+        ixy="4.74032426011922E-06"
+        ixz="-7.64728524818734E-06"
+        iyy="7.27911979741834E-05"
+        iyz="2.98123690823537E-05"
+        izz="5.34836998471512E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/outer-middle_1_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/outer-middle_1_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="outer-middle_1_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0436751198339819 0.0436152645408619 0.0697447702137679"
+      rpy="1.5707963267949 0.785398163397447 0.78539816339745" />
+    <parent
+      link="motor-outer_1_Link" />
+    <child
+      link="outer-middle_1_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="middle-inner_1_Link">
+    <inertial>
+      <origin
+        xyz="0.0242677966072107 0.0242591406201896 0.0202122616414055"
+        rpy="0 0 0" />
+      <mass
+        value="0.0537220399932187" />
+      <inertia
+        ixx="4.61565737480677E-05"
+        ixy="-1.25048330161379E-05"
+        ixz="-1.83387735714732E-05"
+        iyy="4.61717245910329E-05"
+        iyz="-1.83239692401646E-05"
+        izz="3.19211378815336E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/middle-inner_1_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/middle-inner_1_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="middle-inner_1_joint"
+    type="revolute">
+    <origin
+      xyz="-0.037784044005556 -0.0377840491370093 0.0616819094932876"
+      rpy="-1.5707963267949 0.785398163397451 -0.78539816339745" />
+    <parent
+      link="outer-middle_1_Link" />
+    <child
+      link="middle-inner_1_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="inner_plain_1_Link">
+    <inertial>
+      <origin
+        xyz="-0.0120772136557564 -0.00746773842422029 0.0292678804633679"
+        rpy="0 0 0" />
+      <mass
+        value="0.050962086383897" />
+      <inertia
+        ixx="2.39433800182525E-05"
+        ixy="-4.5045823118561E-06"
+        ixz="7.24882819167433E-06"
+        iyy="2.72515631273431E-05"
+        iyz="5.01816774594607E-06"
+        izz="1.94036063952986E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/inner_plain_1_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/inner_plain_1_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="inner_plain_1_joint"
+    type="revolute">
+    <origin
+      xyz="0.0385044783159451 0.0385044810720595 0.0534747929012819"
+      rpy="1.5707963267949 -0.785398163397449 -0.785398163397451" />
+    <parent
+      link="middle-inner_1_Link" />
+    <child
+      link="inner_plain_1_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="motor-outer_2_Link">
+    <inertial>
+      <origin
+        xyz="-0.0279729721249746 0.0279669074734735 0.0289452252977078"
+        rpy="0 0 0" />
+      <mass
+        value="0.0355687278615816" />
+      <inertia
+        ixx="4.55331004955151E-05"
+        ixy="1.3932833427438E-05"
+        ixz="1.87351801783838E-05"
+        iyy="4.55331035823945E-05"
+        iyz="-1.87351909884961E-05"
+        izz="3.20931921783928E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/motor-outer_2_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/motor-outer_2_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="motor-outer_2_joint"
+    type="revolute">
+    <origin
+      xyz="0.028473875650204 -0.0493200339357943 -0.0604287610219433"
+      rpy="0.955316618124507 0 -2.6179938779915" />
+    <parent
+      link="base_link" />
+    <child
+      link="motor-outer_2_Link" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="outer-middle_2_Link">
+    <inertial>
+      <origin
+        xyz="0.00283637152699381 -0.0248626991281976 0.0223016909464008"
+        rpy="0 0 0" />
+      <mass
+        value="0.072370813478773" />
+      <inertia
+        ixx="7.2770262104839E-05"
+        ixy="4.74032910672147E-06"
+        ixz="-7.64729389425127E-06"
+        iyy="7.27911814454562E-05"
+        iyz="2.98123634953447E-05"
+        izz="5.34836949402528E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/outer-middle_2_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/outer-middle_2_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="outer-middle_2_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0436777957822839 0.0436150412527428 0.0697447702137679"
+      rpy="1.5707963267949 0.785398163397447 0.78539816339745" />
+    <parent
+      link="motor-outer_2_Link" />
+    <child
+      link="outer-middle_2_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="middle-inner_2_Link">
+    <inertial>
+      <origin
+        xyz="0.0242678162545969 0.0242591610252519 0.0202122277232754"
+        rpy="0 0 0" />
+      <mass
+        value="0.0537219117327938" />
+      <inertia
+        ixx="4.61565596382255E-05"
+        ixy="-1.25048305893608E-05"
+        ixz="-1.83387620030521E-05"
+        iyy="4.61717132145038E-05"
+        iyz="-1.83239606740939E-05"
+        izz="3.19211369887463E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/middle-inner_2_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/middle-inner_2_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="middle-inner_2_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0377840440055561 -0.0377840491370094 0.0616819094932874"
+      rpy="-1.57079632679489 0.785398163397451 -0.785398163397448" />
+    <parent
+      link="outer-middle_2_Link" />
+    <child
+      link="middle-inner_2_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="inner_plain_2_Link">
+    <inertial>
+      <origin
+        xyz="-0.0178911006302322 -0.0180827655622391 0.0220852084967802"
+        rpy="0 0 0" />
+      <mass
+        value="0.0344013731644494" />
+      <inertia
+        ixx="1.91655002497393E-05"
+        ixy="-4.50457936472298E-06"
+        ixz="7.24882615628043E-06"
+        iyy="1.93158088986789E-05"
+        iyz="7.25111806781674E-06"
+        izz="1.30467845124187E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/inner_plain_2_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/inner_plain_2_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="inner_plain_2_joint"
+    type="revolute">
+    <origin
+      xyz="0.0385044783159451 0.0385044810720595 0.0534747929012819"
+      rpy="1.5707963267949 -0.785398163397452 -0.785398163397452" />
+    <parent
+      link="middle-inner_2_Link" />
+    <child
+      link="inner_plain_2_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="motor-outer_3_Link">
+    <inertial>
+      <origin
+        xyz="-0.0279689954412745 0.0279678007969999 0.0289453250456972"
+        rpy="0 0 0" />
+      <mass
+        value="0.0355688883869037" />
+      <inertia
+        ixx="4.55332282820766E-05"
+        ixy="1.39328598781321E-05"
+        ixz="1.8735232058745E-05"
+        iyy="4.55332302096579E-05"
+        iyz="-1.87352366933611E-05"
+        izz="3.2093250462926E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/motor-outer_3_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/motor-outer_3_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="motor-outer_3_joint"
+    type="revolute">
+    <origin
+      xyz="0.0284717627888447 0.0493206513554347 -0.0604294988589999"
+      rpy="0.955316618124509 0 -0.523598775598302" />
+    <parent
+      link="base_link" />
+    <child
+      link="motor-outer_3_Link" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="outer-middle_3_Link">
+    <inertial>
+      <origin
+        xyz="0.00283639513450727 -0.024862679478574 0.0223016973587668"
+        rpy="0 0 0" />
+      <mass
+        value="0.0723709631846191" />
+      <inertia
+        ixx="7.27703613594132E-05"
+        ixy="4.74037498942759E-06"
+        ixz="-7.64734243981667E-06"
+        iyy="7.27912955035742E-05"
+        iyz="2.98124138002551E-05"
+        izz="5.34837990510186E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/outer-middle_3_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/outer-middle_3_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="outer-middle_3_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0436738226596096 0.0436159449148936 0.0697447702137679"
+      rpy="1.5707963267949 0.78539816339745 0.785398163397452" />
+    <parent
+      link="motor-outer_3_Link" />
+    <child
+      link="outer-middle_3_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="middle-inner_3_Link">
+    <inertial>
+      <origin
+        xyz="-0.023487516270212 -0.0234961822372678 0.0273681611099788"
+        rpy="0 0 0" />
+      <mass
+        value="0.0537219139217171" />
+      <inertia
+        ixx="4.52845800836751E-05"
+        ixy="-1.33739172365279E-05"
+        ixz="1.83367159149404E-05"
+        iyy="4.5305518462869E-05"
+        iyz="1.83260058700211E-05"
+        izz="3.36593086628823E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/middle-inner_3_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/middle-inner_3_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="middle-inner_3_Link"
+    type="fixed">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="outer-middle_3_Link" />
+    <child
+      link="middle-inner_3_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="inner_plain_3_Link">
+    <inertial>
+      <origin
+        xyz="-0.017891103998276 -0.018082772134384 0.0220852120971374"
+        rpy="0 0 0" />
+      <mass
+        value="0.0344013861728489" />
+      <inertia
+        ixx="1.9165496801016E-05"
+        ixy="-4.50457978393068E-06"
+        ixz="7.24882329720104E-06"
+        iyy="1.93158055189223E-05"
+        iyz="7.25111909511414E-06"
+        izz="1.30467839837496E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/inner_plain_3_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel_urdf_2/meshes/inner_plain_3_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="inner_plain_3_joint"
+    type="revolute">
+    <origin
+      xyz="2.834329942961E-05 2.83409240907223E-05 0.0072283520979101"
+      rpy="0 0 0" />
+    <parent
+      link="middle-inner_3_Link" />
+    <child
+      link="inner_plain_3_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+</robot>

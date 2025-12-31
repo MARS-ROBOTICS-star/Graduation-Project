@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="单节车体简化版本.SLDASM">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="0.00987767228825231 -0.00449466763845351 -0.0661257429513162"
+        rpy="0 0 0" />
+      <mass
+        value="9.80341252587638" />
+      <inertia
+        ixx="0.0793870216309285"
+        ixy="-9.88245470661029E-07"
+        ixz="-6.04496507901882E-05"
+        iyy="0.0939132111954995"
+        iyz="0.000188823931184269"
+        izz="0.147443016906915" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://单节车体简化版本.SLDASM/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://单节车体简化版本.SLDASM/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="W_left_Link">
+    <inertial>
+      <origin
+        xyz="1.42113011003531E-06 0.000599838512525763 -4.52113454209313E-07"
+        rpy="0 0 0" />
+      <mass
+        value="1.5568235072174" />
+      <inertia
+        ixx="0.0196619814383487"
+        ixy="-6.67657527608359E-09"
+        ixz="-8.95617421313088E-07"
+        iyy="0.0351214883327593"
+        iyz="-3.1395017472452E-05"
+        izz="0.0196631666504874" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://单节车体简化版本.SLDASM/meshes/W_left_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://单节车体简化版本.SLDASM/meshes/W_left_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="W_left_joint"
+    type="continuous">
+    <origin
+      xyz="0 0.22288 -0.10545"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="W_left_Link" />
+    <axis
+      xyz="0 1 -0.0020319" />
+  </joint>
+  <link
+    name="W_right_Link">
+    <inertial>
+      <origin
+        xyz="1.42112972922881E-06 -0.00059983539694794 1.98547309451791E-06"
+        rpy="0 0 0" />
+      <mass
+        value="1.55682391481766" />
+      <inertia
+        ixx="0.0196620727842825"
+        ixy="3.03697244854733E-09"
+        ixz="-8.95637158120651E-07"
+        iyy="0.0351217079105128"
+        iyz="-3.14242391796866E-05"
+        izz="0.0196632581146425" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://单节车体简化版本.SLDASM/meshes/W_right_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://单节车体简化版本.SLDASM/meshes/W_right_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="W_right_joint"
+    type="continuous">
+    <origin
+      xyz="0 -0.2233 -0.10455"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="W_right_Link" />
+    <axis
+      xyz="0 -1 0.0020319" />
+  </joint>
+</robot>

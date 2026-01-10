@@ -1,157 +1,3 @@
-<<<<<<<< HEAD:Single_car/urdf/Singel_car.urdf
-<?xml version="1.0" encoding="utf-8"?>
-<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
-     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
-     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
-<robot
-  name="Singel_car">
-  <link
-    name="base_link">
-    <inertial>
-      <origin
-        xyz="0.0159541546838484 -0.00428440934500679 -0.0605946603629831"
-        rpy="0 0 0" />
-      <mass
-        value="9.99428388472523" />
-      <inertia
-        ixx="0.0804224811219868"
-        ixy="-4.34304213467462E-06"
-        ixz="-0.00699978069835326"
-        iyy="0.0942327434631233"
-        iyz="8.05726017038065E-05"
-        izz="0.147279156375483" />
-    </inertial>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://Singel_car/meshes/base_link.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
-      </material>
-    </visual>
-    <collision>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://Singel_car/meshes/base_link.STL" />
-      </geometry>
-    </collision>
-  </link>
-  <link
-    name="W_left_Link">
-    <inertial>
-      <origin
-        xyz="1.33540139568566E-06 0.000599838192937296 9.07807476080436E-07"
-        rpy="0 0 0" />
-      <mass
-        value="1.55682350721744" />
-      <inertia
-        ixx="0.019662175112725"
-        ixy="-6.31023612789744E-09"
-        ixz="-9.908774290311E-07"
-        iyy="0.035121552094071"
-        iyz="1.39088607221298E-08"
-        izz="0.0196629092148015" />
-    </inertial>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://Singel_car/meshes/W_left_Link.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
-      </material>
-    </visual>
-    <collision>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://Singel_car/meshes/W_left_Link.STL" />
-      </geometry>
-    </collision>
-  </link>
-  <joint
-    name="W_left_joint"
-    type="continuous">
-    <origin
-      xyz="0.010723 0.22309 -0.10445"
-      rpy="0 0 0" />
-    <parent
-      link="base_link" />
-    <child
-      link="W_left_Link" />
-    <axis
-      xyz="0 1 0" />
-  </joint>
-  <link
-    name="W_right_Link">
-    <inertial>
-      <origin
-        xyz="1.33540104974017E-06 0.000599838192959279 -9.07807238707814E-07"
-        rpy="0 0 0" />
-      <mass
-        value="1.55682391481743" />
-      <inertia
-        ixx="0.0196622664586567"
-        ixy="-6.31023622807772E-09"
-        ixz="9.90877429876127E-07"
-        iyy="0.0351217717900392"
-        iyz="-1.39088604555787E-08"
-        izz="0.019663000560733" />
-    </inertial>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://Singel_car/meshes/W_right_Link.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
-      </material>
-    </visual>
-    <collision>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://Singel_car/meshes/W_right_Link.STL" />
-      </geometry>
-    </collision>
-  </link>
-  <joint
-    name="W_right_joint"
-    type="continuous">
-    <origin
-      xyz="0.010723 -0.22309 -0.10445"
-      rpy="3.1416 0 0" />
-    <parent
-      link="base_link" />
-    <child
-      link="W_right_Link" />
-    <axis
-      xyz="0 1 0" />
-  </joint>
-========
 <?xml version="1.0" encoding="utf-8"?>
 <!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
      Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
@@ -162,17 +8,17 @@
     name="base_link">
     <inertial>
       <origin
-        xyz="0.0208901611564476 0.00245900336347761 -0.0591790380872578"
+        xyz="0.01595415454441 -0.00428440934451946 -0.060594660390702"
         rpy="0 0 0" />
       <mass
-        value="9.99428388472522" />
+        value="9.99428388076213" />
       <inertia
-        ixx="0.0839870969254674"
-        ixy="-0.00484641994938238"
-        ixz="-0.0112676998632237"
-        iyy="0.0920173937704892"
-        iyz="-0.00310470790434407"
-        izz="0.145929890264636" />
+        ixx="0.0804224811130862"
+        ixy="-4.34304202046563E-06"
+        ixz="-0.00699978069817061"
+        iyy="0.0942327434628843"
+        iyz="8.05726034778845E-05"
+        izz="0.147279156366423" />
     </inertial>
     <visual>
       <origin
@@ -202,17 +48,17 @@
     name="W_left_Link">
     <inertial>
       <origin
-        xyz="-0.000238227497529109 0.000550235490145712 -1.7234556064288E-05"
+        xyz="1.33540139568566E-06 0.000599838192937296 9.07807475997169E-07"
         rpy="0 0 0" />
       <mass
         value="1.55682350721744" />
       <inertia
-        ixx="0.0221243624763412"
-        ixy="-0.00565371719664105"
-        ixz="0.000186567053417212"
-        iyy="0.0326452241285353"
-        iyz="-0.000431009702377758"
-        izz="0.0196770498167212" />
+        ixx="0.0196621751127251"
+        ixy="-6.31023613223425E-09"
+        ixz="-9.90877429028932E-07"
+        iyy="0.0351215520940711"
+        iyz="1.39088607251656E-08"
+        izz="0.0196629092148016" />
     </inertial>
     <visual>
       <origin
@@ -242,30 +88,30 @@
     name="W_left_joint"
     type="continuous">
     <origin
-      xyz="-0.071298 0.20873 -0.11018"
+      xyz="0.0107232505478547 0.223090000000001 -0.104451002377612"
       rpy="0 0 0" />
     <parent
       link="base_link" />
     <child
       link="W_left_Link" />
     <axis
-      xyz="-0.39907 0.91642 -0.030396" />
+      xyz="0 1 0" />
   </joint>
   <link
     name="W_right_Link">
     <inertial>
       <origin
-        xyz="0.000240530103554404 -0.00054916655972119 1.92308114924031E-05"
+        xyz="1.33540104974017E-06 0.000599838192959279 -9.07807238721692E-07"
         rpy="0 0 0" />
       <mass
         value="1.55682391481743" />
       <inertia
-        ixx="0.0221244633725629"
-        ixy="-0.00565375364769021"
-        ixz="0.000186578914266521"
-        iyy="0.0326454325228155"
-        iyz="-0.000431038045162914"
-        izz="0.0196771429140506" />
+        ixx="0.0196622664586568"
+        ixy="-6.31023623414925E-09"
+        ixz="9.90877429876778E-07"
+        iyy="0.0351217717900393"
+        iyz="-1.39088604539524E-08"
+        izz="0.019663000560733" />
     </inertial>
     <visual>
       <origin
@@ -295,14 +141,13 @@
     name="W_right_joint"
     type="continuous">
     <origin
-      xyz="0.10676 -0.20015 -0.096622"
-      rpy="0 0 0" />
+      xyz="0.0107232505478547 -0.22309 -0.104451002377612"
+      rpy="3.14159265358979 0 0" />
     <parent
       link="base_link" />
     <child
       link="W_right_Link" />
     <axis
-      xyz="0.39907 -0.91642 0.030396" />
+      xyz="0 1 0" />
   </joint>
->>>>>>>> 37fd97bbbe9a74ce69c40f79d2a6611117683e62:Single_car/urdf/Single_car.urdf
 </robot>

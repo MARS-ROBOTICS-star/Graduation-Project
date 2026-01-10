@@ -1,24 +1,3 @@
-<<<<<<< HEAD
-<launch>
-  <arg
-    name="model" />
-  <param
-    name="robot_description"
-    textfile="$(find Singel_car)/urdf/Singel_car.urdf" />
-  <node
-    name="joint_state_publisher_gui"
-    pkg="joint_state_publisher_gui"
-    type="joint_state_publisher_gui" />
-  <node
-    name="robot_state_publisher"
-    pkg="robot_state_publisher"
-    type="robot_state_publisher" />
-  <node
-    name="rviz"
-    pkg="rviz"
-    type="rviz"
-    args="-d $(find Singel_car)/urdf.rviz" />
-=======
 <launch>
   <arg
     name="model" />
@@ -38,5 +17,4 @@
     pkg="rviz"
     type="rviz"
     args="-d $(find Single_car)/urdf.rviz" />
->>>>>>> 37fd97bbbe9a74ce69c40f79d2a6611117683e62
 </launch>

@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="Singel_car">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="0.0159541546838484 -0.00428440934500679 -0.0605946603629831"
+        rpy="0 0 0" />
+      <mass
+        value="9.99428388472523" />
+      <inertia
+        ixx="0.0804224811219868"
+        ixy="-4.34304213467462E-06"
+        ixz="-0.00699978069835326"
+        iyy="0.0942327434631233"
+        iyz="8.05726017038065E-05"
+        izz="0.147279156375483" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Singel_car/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Singel_car/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="W_left_Link">
+    <inertial>
+      <origin
+        xyz="1.33540139568566E-06 0.000599838192937296 9.07807476080436E-07"
+        rpy="0 0 0" />
+      <mass
+        value="1.55682350721744" />
+      <inertia
+        ixx="0.019662175112725"
+        ixy="-6.31023612789744E-09"
+        ixz="-9.908774290311E-07"
+        iyy="0.035121552094071"
+        iyz="1.39088607221298E-08"
+        izz="0.0196629092148015" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Singel_car/meshes/W_left_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Singel_car/meshes/W_left_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="W_left_joint"
+    type="continuous">
+    <origin
+      xyz="0.010723 0.22309 -0.10445"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="W_left_Link" />
+    <axis
+      xyz="0 1 0" />
+  </joint>
+  <link
+    name="W_right_Link">
+    <inertial>
+      <origin
+        xyz="1.33540104974017E-06 0.000599838192959279 -9.07807238707814E-07"
+        rpy="0 0 0" />
+      <mass
+        value="1.55682391481743" />
+      <inertia
+        ixx="0.0196622664586567"
+        ixy="-6.31023622807772E-09"
+        ixz="9.90877429876127E-07"
+        iyy="0.0351217717900392"
+        iyz="-1.39088604555787E-08"
+        izz="0.019663000560733" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Singel_car/meshes/W_right_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Singel_car/meshes/W_right_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="W_right_joint"
+    type="continuous">
+    <origin
+      xyz="0.010723 -0.22309 -0.10445"
+      rpy="3.1416 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="W_right_Link" />
+    <axis
+      xyz="0 1 0" />
+  </joint>
+</robot>

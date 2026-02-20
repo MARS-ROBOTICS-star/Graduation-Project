@@ -1,0 +1,453 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="Spherical_Parallel">
+  <link
+    name="1-base_link">
+    <inertial>
+      <origin
+        xyz="4.83843121955078E-06 -8.3804100787312E-06 0.00921106157110022"
+        rpy="0 0 0" />
+      <mass
+        value="0.383954508133489" />
+      <inertia
+        ixx="0.000279103390586857"
+        ixy="-3.02891552499976E-06"
+        ixz="1.56096370851795E-17"
+        iyy="0.000282600880973714"
+        iyz="1.42980232951224E-16"
+        izz="0.000538960992417047" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="1-base_proximal_Link1">
+    <inertial>
+      <origin
+        xyz="0.0394266555578629 0.0156150450745581 0.0481638125806377"
+        rpy="0 0 0" />
+      <mass
+        value="0.0723708688376401" />
+      <inertia
+        ixx="5.34836998471511E-05"
+        ixy="1.56730810847073E-05"
+        ixz="-2.64879755980296E-05"
+        iyy="7.75210527903698E-05"
+        iyz="-1.04694439328119E-08"
+        izz="6.80404042701312E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-base_proximal_Link1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-base_proximal_Link1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="1-base_proximal_Joint1"
+    type="revolute">
+    <origin
+      xyz="-0.0553071219502084 -1.82236126083718E-05 0.0372072256031851"
+      rpy="-0.785398163397445 -0.615479708670383 -2.09439510239319" />
+    <parent
+      link="1-base_link" />
+    <child
+      link="1-base_proximal_Link1" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="1-intermediate_distal_Link1">
+    <inertial>
+      <origin
+        xyz="0.0276162169494415 -2.21033934905135E-09 0.016604279242538"
+        rpy="0 0 0" />
+      <mass
+        value="0.0249434660620518" />
+      <inertia
+        ixx="1.23287454032943E-05"
+        ixy="-3.16358153666191E-13"
+        ixz="-1.02513914563365E-05"
+        iyy="2.31995059108402E-05"
+        iyz="-1.03787602608503E-12"
+        izz="1.41903412871279E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-intermediate_distal_Link1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-intermediate_distal_Link1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="1-intermediate_distal_Joint1"
+    type="revolute">
+    <origin
+      xyz="0 0.0515000000000001 0.06775"
+      rpy="1.5707963267949 0 0" />
+    <parent
+      link="1-base_proximal_Link1" />
+    <child
+      link="1-intermediate_distal_Link1" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="1-distal_platform_Link1">
+    <inertial>
+      <origin
+        xyz="-0.0130793019915812 0.0130793019915812 -0.0424206980084191"
+        rpy="0 0 0" />
+      <mass
+        value="0.0449345648772937" />
+      <inertia
+        ixx="8.16631916433442E-06"
+        ixy="-1.65084933290386E-06"
+        ixz="-1.65084933290384E-06"
+        iyy="8.16631916433445E-06"
+        iyz="1.65084933290385E-06"
+        izz="8.16631916433439E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-distal_platform_Link1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-distal_platform_Link1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="1-distal_platform_Joint1"
+    type="revolute">
+    <origin
+      xyz="0.0555 0 0.0515000000000002"
+      rpy="3.14159265358979 1.57079631189374 -2.5042761448487" />
+    <parent
+      link="1-intermediate_distal_Link1" />
+    <child
+      link="1-distal_platform_Link1" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="1-base_proximal_Link2">
+    <inertial>
+      <origin
+        xyz="0.0394266611515091 0.0156150474102847 0.0481638009867669"
+        rpy="0 0 0" />
+      <mass
+        value="0.072370813478773" />
+      <inertia
+        ixx="5.34836949402529E-05"
+        ixy="1.56730710204049E-05"
+        ixz="-2.64879777611082E-05"
+        iyy="7.75210508818692E-05"
+        iyz="-1.04596703085459E-08"
+        izz="6.80403926684261E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-base_proximal_Link2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-base_proximal_Link2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="1-base_proximal_Joint2"
+    type="revolute">
+    <origin
+      xyz="0.0276693430865716 -0.0479247080379969 0.0372072256031854"
+      rpy="-0.785398163397448 -0.615479708670388 0" />
+    <parent
+      link="1-base_link" />
+    <child
+      link="1-base_proximal_Link2" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="1-intermediate_distal_Link2">
+    <inertial>
+      <origin
+        xyz="0.0276162724495207 -2.56363466219489E-09 0.0166042770917791"
+        rpy="0 0 0" />
+      <mass
+        value="0.0249434008867252" />
+      <inertia
+        ixx="1.23287424080632E-05"
+        ixy="1.00356953191991E-12"
+        ixz="-1.02513872579272E-05"
+        iyy="2.31995048527672E-05"
+        iyz="-1.19413555099037E-12"
+        izz="1.4190346123321E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-intermediate_distal_Link2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-intermediate_distal_Link2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="1-intermediate_distal_Joint2"
+    type="revolute">
+    <origin
+      xyz="0 0.0515 0.06775"
+      rpy="1.5707963267949 0 0" />
+    <parent
+      link="1-base_proximal_Link2" />
+    <child
+      link="1-intermediate_distal_Link2" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="1-base_proximal_Link3">
+    <inertial>
+      <origin
+        xyz="0.0394266547391432 0.0156150168228698 0.0481637981881163"
+        rpy="0 0 0" />
+      <mass
+        value="0.0723709631846189" />
+      <inertia
+        ixx="5.34837990510187E-05"
+        ixy="1.56730722644498E-05"
+        ixz="-2.64880476589497E-05"
+        iyy="7.75212034209213E-05"
+        iyz="-1.0467072080481E-08"
+        izz="6.80404534420661E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-base_proximal_Link3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-base_proximal_Link3.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="1-base_proximal_Joint3"
+    type="revolute">
+    <origin
+      xyz="0.0276693430865719 0.0478882608127805 0.0372072256031854"
+      rpy="-0.785398163397455 -0.615479708670384 2.0943951023932" />
+    <parent
+      link="1-base_link" />
+    <child
+      link="1-base_proximal_Link3" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="1-intermediate_distal_Link3">
+    <inertial>
+      <origin
+        xyz="0.0276162699864968 -5.75903415754586E-09 0.0166042723305424"
+        rpy="0 0 0" />
+      <mass
+        value="0.0249434138951246" />
+      <inertia
+        ixx="1.2328741879394E-05"
+        ixy="-1.74451381693567E-12"
+        ixz="-1.02513859626617E-05"
+        iyy="2.31995018577349E-05"
+        iyz="-1.15965213635882E-12"
+        izz="1.41903422898734E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-intermediate_distal_Link3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Spherical_Parallel/meshes/1-intermediate_distal_Link3.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="1-intermediate_distal_Joint3"
+    type="revolute">
+    <origin
+      xyz="0 0.0514999999999999 0.0677500000000001"
+      rpy="1.5707963267949 0 0" />
+    <parent
+      link="1-base_proximal_Link3" />
+    <child
+      link="1-intermediate_distal_Link3" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+</robot>

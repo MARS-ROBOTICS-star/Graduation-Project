@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8.3)
 
-project(Spherical_Parallel_urdf_2)
+project(Spherical_Parallel)
 
 find_package(catkin REQUIRED)
 

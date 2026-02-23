@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="Single_car">
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0.30" rpy="0 0 0" />
+  </joint>
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="0.01595415454441 -0.00428440934451946 -0.060594660390702"
+        rpy="0 0 0" />
+      <mass
+        value="9.99428388076213" />
+      <inertia
+        ixx="0.0804224811130862"
+        ixy="-4.34304202046563E-06"
+        ixz="-0.00699978069817061"
+        iyy="0.0942327434628843"
+        iyz="8.05726034778845E-05"
+        izz="0.147279156366423" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Single_car/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Single_car/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="W_left_Link">
+    <inertial>
+      <origin
+        xyz="1.33540139568566E-06 0.000599838192937296 9.07807475997169E-07"
+        rpy="0 0 0" />
+      <mass
+        value="1.55682350721744" />
+      <inertia
+        ixx="0.0196621751127251"
+        ixy="-6.31023613223425E-09"
+        ixz="-9.90877429028932E-07"
+        iyy="0.0351215520940711"
+        iyz="1.39088607251656E-08"
+        izz="0.0196629092148016" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Single_car/meshes/W_left_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Single_car/meshes/W_left_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="W_left_joint"
+    type="continuous">
+    <origin
+      xyz="0.0107232505478547 0.223090000000001 -0.104451002377612"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="W_left_Link" />
+    <axis
+      xyz="0 1 0" />
+  </joint>
+  <link
+    name="W_right_Link">
+    <inertial>
+      <origin
+        xyz="1.33540104974017E-06 0.000599838192959279 -9.07807238721692E-07"
+        rpy="0 0 0" />
+      <mass
+        value="1.55682391481743" />
+      <inertia
+        ixx="0.0196622664586568"
+        ixy="-6.31023623414925E-09"
+        ixz="9.90877429876778E-07"
+        iyy="0.0351217717900393"
+        iyz="-1.39088604539524E-08"
+        izz="0.019663000560733" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Single_car/meshes/W_right_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://Single_car/meshes/W_right_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="W_right_joint"
+    type="continuous">
+    <origin
+      xyz="0.0107232505478547 -0.22309 -0.104451002377612"
+      rpy="3.14159265358979 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="W_right_Link" />
+    <axis
+      xyz="0 1 0" />
+  </joint>
+</robot>

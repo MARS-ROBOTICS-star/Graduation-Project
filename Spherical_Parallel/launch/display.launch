@@ -3,7 +3,7 @@
     name="model" />
   <param
     name="robot_description"
-    textfile="$(find complete_car)/urdf/complete_car.urdf" />
+    textfile="$(find Spherical_Parallel)/urdf/Spherical_Parallel.urdf" />
   <node
     name="joint_state_publisher_gui"
     pkg="joint_state_publisher_gui"
@@ -16,5 +16,5 @@
     name="rviz"
     pkg="rviz"
     type="rviz"
-    args="-d $(find complete_car)/urdf.rviz" />
+    args="-d $(find Spherical_Parallel)/urdf.rviz" />
 </launch>

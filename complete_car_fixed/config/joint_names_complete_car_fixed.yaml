@@ -1,0 +1,1 @@
+controller_joint_names: ['', 'body_car_wheel_left_joint', 'body_car_wheel_right_joint', 'head_car_wheel_left_joint', 'head_car_wheel_right_joint', 'tail_car_wheel_left_joint', 'tail_car_wheel_right_joint', ]

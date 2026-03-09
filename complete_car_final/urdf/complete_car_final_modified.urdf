@@ -1,0 +1,1545 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="complete_car_final">
+  <link
+    name="body_car_chassis">
+    <inertial>
+      <origin
+        xyz="-1.07379532541252E-05 0.00614478162640499 0.0707826442012615"
+        rpy="0 0 0" />
+      <mass
+        value="6.95519132903594" />
+      <inertia
+        ixx="0.0732473205493805"
+        ixy="9.89605428643223E-07"
+        ixz="2.0855081098862E-06"
+        iyy="0.0884815109705229"
+        iyz="-7.96903191046823E-05"
+        izz="0.141541814514047" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/body_car_chassis.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/body_car_chassis.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="body_car_wheel_left">
+    <inertial>
+      <origin
+        xyz="-1.42112973122721E-06 -7.66681307662331E-07 -0.0458401618070401"
+        rpy="0 0 0" />
+      <mass
+        value="1.55682391481766" />
+      <inertia
+        ixx="0.0196620727842836"
+        ixy="-8.95629138787301E-07"
+        ixz="4.85678374975283E-09"
+        iyy="0.0196631942351112"
+        iyz="-1.44805774308663E-08"
+        izz="0.0351217717900437" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/body_car_wheel_left.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/body_car_wheel_left.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="body_car_wheel_left_joint"
+    type="continuous">
+    <origin
+      xyz="0 0.26953 0.0450000000000001"
+      rpy="-1.5707963267949 0 0" />
+    <parent
+      link="body_car_chassis" />
+    <child
+      link="body_car_wheel_left" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="body_car_wheel_right">
+    <inertial>
+      <origin
+        xyz="-1.42113010148659E-06 -7.66681504359157E-07 0.0450001618070568"
+        rpy="0 0 0" />
+      <mass
+        value="1.55682350721719" />
+      <inertia
+        ixx="0.0196619814383464"
+        ixy="-8.95629139076694E-07"
+        ixz="-4.85678350268396E-09"
+        iyy="0.0196631028891759"
+        iyz="1.44805774365346E-08"
+        izz="0.0351215520940664" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/body_car_wheel_right.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/body_car_wheel_right.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="body_car_wheel_right_joint"
+    type="continuous">
+    <origin
+      xyz="0 -0.26869 0.0450000000000001"
+      rpy="-1.5707963267949 0 0" />
+    <parent
+      link="body_car_chassis" />
+    <child
+      link="body_car_wheel_right" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="spm1_base">
+    <inertial>
+      <origin
+        xyz="0.00921106157110019 4.10872474845345E-13 -9.67686411345193E-06"
+        rpy="0 0 0" />
+      <mass
+        value="0.383954508133489" />
+      <inertia
+        ixx="0.000538960992417046"
+        ixy="-1.42954828789225E-16"
+        ixz="1.56336871074726E-17"
+        iyy="0.000277354645392898"
+        iyz="1.83681860748607E-16"
+        izz="0.000284349626167672" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_base.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_base.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm1_base_joint"
+    type="fixed">
+    <origin
+      xyz="0.18 0 0.0820210428191438"
+      rpy="0 0 0" />
+    <parent
+      link="body_car_chassis" />
+    <child
+      link="spm1_base" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="spm1_leg2_proximal">
+    <inertial>
+      <origin
+        xyz="0.0415052979813347 0.01333176218438 0.0471311944316244"
+        rpy="0 0 0" />
+      <mass
+        value="0.0687464361626338" />
+      <inertia
+        ixx="5.33567522465317E-05"
+        ixy="1.56730810847073E-05"
+        ixz="-2.64879755980296E-05"
+        iyy="7.72845954586288E-05"
+        iyz="-1.04694439328386E-08"
+        izz="6.79134566695116E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_leg2_proximal.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_leg2_proximal.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm1_leg2_base_proximal_joint"
+    type="fixed">
+    <origin
+      xyz="0.0372072256031853 0 -0.0553386861731434"
+      rpy="0.463647609000806 0.420534335283964 0.886077123792613" />
+    <parent
+      link="spm1_base" />
+    <child
+      link="spm1_leg2_proximal" />
+    <axis
+      xyz="-0.577350269189627 0.577350269189625 -0.577350269189625" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="spm1_leg2_distal">
+    <inertial>
+      <origin
+        xyz="0.0276162169494416 -2.21033935599024E-09 0.016604279242538"
+        rpy="0 0 0" />
+      <mass
+        value="0.0249434660620519" />
+      <inertia
+        ixx="1.23287454032943E-05"
+        ixy="-3.1635816119298E-13"
+        ixz="-1.02513914563366E-05"
+        iyy="2.31995059108402E-05"
+        iyz="-1.03787604123466E-12"
+        izz="1.41903412871279E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_leg2_distal.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_leg2_distal.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm1_leg2_intermediate_distal"
+    type="fixed">
+    <origin
+      xyz="0 0.0515 0.06775"
+      rpy="1.5707963267949 0 0" />
+    <parent
+      link="spm1_leg2_proximal" />
+    <child
+      link="spm1_leg2_distal" />
+    <axis
+      xyz="0.577350269189627 0.577350269189625 0.577350269189625" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="spm1_leg3_proximal">
+    <inertial>
+      <origin
+        xyz="0.0415053055437404 0.0133317628046085 0.0471311813949753"
+        rpy="0 0 0" />
+      <mass
+        value="0.0687463808037662" />
+      <inertia
+        ixx="5.3356747339633E-05"
+        ixy="1.56730710204048E-05"
+        ixz="-2.64879777611081E-05"
+        iyy="7.72845935501277E-05"
+        iyz="-1.04596703086628E-08"
+        izz="6.79134450678061E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_leg3_proximal.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_leg3_proximal.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm1_leg3_base_proximal"
+    type="fixed">
+    <origin
+      xyz="0.0372072256031854 0.0479064844253887 0.027637778863637"
+      rpy="2.35619449019235 -0.955316618124513 0" />
+    <parent
+      link="spm1_base" />
+    <child
+      link="spm1_leg3_proximal" />
+    <axis
+      xyz="-0.577350269189623 0.57735026918963 -0.577350269189625" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="spm1_leg3_distal">
+    <inertial>
+      <origin
+        xyz="0.0276162724495207 -2.56363466566434E-09 0.0166042770917791"
+        rpy="0 0 0" />
+      <mass
+        value="0.0249434008867255" />
+      <inertia
+        ixx="1.23287424080632E-05"
+        ixy="1.0035695397512E-12"
+        ixz="-1.02513872579272E-05"
+        iyy="2.31995048527673E-05"
+        iyz="-1.19413554897867E-12"
+        izz="1.41903461233211E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_leg3_distal.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_leg3_distal.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm1_leg3_intermediate_distal"
+    type="fixed">
+    <origin
+      xyz="0 0.0515 0.06775"
+      rpy="1.5707963267949 0 0" />
+    <parent
+      link="spm1_leg3_proximal" />
+    <child
+      link="spm1_leg3_distal" />
+    <axis
+      xyz="0.577350269189623 0.577350269189625 0.57735026918963" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="spm1_leg1_proximal">
+    <inertial>
+      <origin
+        xyz="0.0415052942667445 0.0133317355767673 0.0471311806974583"
+        rpy="0 0 0" />
+      <mass
+        value="0.0687465305096129" />
+      <inertia
+        ixx="5.33568514503992E-05"
+        ixy="1.56730722644498E-05"
+        ixz="-2.64880476589501E-05"
+        iyy="7.72847460891809E-05"
+        iyz="-1.04670720805191E-08"
+        izz="6.79135058414468E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_leg1_proximal.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_leg1_proximal.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm1_leg1_base_proximal_joint"
+    type="fixed">
+    <origin
+      xyz="0.0372072256031851 -0.0479064844253887 0.0276377788636364"
+      rpy="-2.03444393579569 0.420534335283973 -0.886077123792616" />
+    <parent
+      link="spm1_base" />
+    <child
+      link="spm1_leg1_proximal" />
+    <axis
+      xyz="-0.577350269189622 0.577350269189625 -0.57735026918963" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="spm1_leg1_distal">
+    <inertial>
+      <origin
+        xyz="0.0348957276694577 5.75903408295275E-09 0.0278837300135032"
+        rpy="0 0 0" />
+      <mass
+        value="0.0249434138951248" />
+      <inertia
+        ixx="1.41903422898733E-05"
+        ixy="-1.15965213169398E-12"
+        ixz="-1.02513859626617E-05"
+        iyy="2.31995018577348E-05"
+        iyz="-1.74451379417166E-12"
+        izz="1.2328741879394E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_leg1_distal.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_leg1_distal.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm1_leg1_intermediate_distal_joint"
+    type="fixed">
+    <origin
+      xyz="0.0555 0 0.06775"
+      rpy="-1.5708 0 1.5708" />
+    <parent
+      link="spm1_leg1_proximal" />
+    <child
+      link="spm1_leg1_distal" />
+    <axis
+      xyz="0 0 0" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  
+  
+  <link
+    name="spm1_platform">
+    <inertial>
+      <origin
+        xyz="-0.0130772772289902 -0.01307727722899 -0.0130772772289898"
+        rpy="0 0 0" />
+      <mass
+        value="0.0449010465380492" />
+      <inertia
+        ixx="8.16628762450829E-06"
+        ixy="1.65084933290385E-06"
+        ixz="1.65084933290387E-06"
+        iyy="8.16628762450828E-06"
+        iyz="1.65084933290386E-06"
+        izz="8.1662876245083E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_platform_x.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm1_platform_x.STL" />
+      </geometry>
+    </collision>
+  </link>
+
+  <link
+    name="spm1_spherical_virtual_z">
+    <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.001" />
+      <inertia
+        ixx="1e-6"
+        ixy="0"
+        ixz="0"
+        iyy="1e-6"
+        iyz="0"
+        izz="1e-6" />
+    </inertial>
+  </link>
+  <link
+    name="spm1_spherical_virtual_y">
+    <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.001" />
+      <inertia
+        ixx="1e-6"
+        ixy="0"
+        ixz="0"
+        iyy="1e-6"
+        iyz="0"
+        izz="1e-6" />
+    </inertial>
+  </link>
+
+  <joint
+    name="spm1_platform_joint_z"
+    type="revolute">
+    <origin
+      xyz="0.076323 0 -2.1043E-05"
+      rpy="0.7854 0.95532 3.1416" />
+    <parent
+      link="spm1_base" />
+    <child
+      link="spm1_spherical_virtual_z" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <joint
+    name="spm1_platform_joint_y"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="spm1_spherical_virtual_z" />
+    <child
+      link="spm1_spherical_virtual_y" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <joint
+    name="spm1_platform_joint_x"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="spm1_spherical_virtual_y" />
+    <child
+      link="spm1_platform" />
+    <axis
+      xyz="1 0 0" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+<link
+    name="head_car_chassis">
+    <inertial>
+      <origin
+        xyz="0.286381582853564 0.00427533399208609 0.00609282975183455"
+        rpy="0 0 0" />
+      <mass
+        value="9.99428168331443" />
+      <inertia
+        ixx="0.0796955642882062"
+        ixy="-1.13828570081637E-06"
+        ixz="-5.46410484209028E-05"
+        iyy="0.0942347109708103"
+        iyz="-7.93347993847446E-05"
+        izz="0.148004102950947" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/head_car_chassis.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/head_car_chassis.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="head_car_chassis_joint"
+    type="fixed">
+    <origin
+      xyz="-0.011642734410092 -0.0116427344100922 -0.0116427344100915"
+      rpy="1.04516567956674 0.615479708670439 -2.35619449019238" />
+    <parent
+      link="spm1_platform" />
+    <child
+      link="head_car_chassis" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="head_car_wheel_left">
+    <inertial>
+      <origin
+        xyz="-1.42112974166296E-06 -7.66681303061845E-07 -0.0458401618070384"
+        rpy="0 0 0" />
+      <mass
+        value="1.55682391481784" />
+      <inertia
+        ixx="0.019662072784285"
+        ixy="-8.95629138616891E-07"
+        ixz="4.85678391137796E-09"
+        iyy="0.0196631942351139"
+        iyz="-1.44805778278137E-08"
+        izz="0.0351217717900471" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/head_car_wheel_left.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/head_car_wheel_left.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="head_car_wheel_left_joint"
+    type="continuous">
+    <origin
+      xyz="0.276488513878161 0.269530000848736 -0.0369999949337831"
+      rpy="-1.5707963267949 0 0" />
+    <parent
+      link="head_car_chassis" />
+    <child
+      link="head_car_wheel_left" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="head_car_wheel_right">
+    <inertial>
+      <origin
+        xyz="-1.42113009685665E-06 -7.66681506187555E-07 0.0458401618070566"
+        rpy="0 0 0" />
+      <mass
+        value="1.55682350721722" />
+      <inertia
+        ixx="0.0196619814383472"
+        ixy="-8.95629138222804E-07"
+        ixz="-4.85678372691621E-09"
+        iyy="0.0196631028891757"
+        iyz="1.44805774217644E-08"
+        izz="0.0351215520940666" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/head_car_wheel_right.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/head_car_wheel_right.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="head_car_wheel_right_joint"
+    type="continuous">
+    <origin
+      xyz="0.276488513878161 -0.269529999151265 -0.0369999949337831"
+      rpy="-1.5707963267949 0 0" />
+    <parent
+      link="head_car_chassis" />
+    <child
+      link="head_car_wheel_right" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  
+  
+  
+  
+  <link
+    name="spm2_base">
+    <inertial>
+      <origin
+        xyz="-0.00921106157110041 -4.10837838113549E-13 -9.67686411344065E-06"
+        rpy="0 0 0" />
+      <mass
+        value="0.383954508133489" />
+      <inertia
+        ixx="0.000538960992417046"
+        ixy="-1.42904943747867E-16"
+        ixz="-1.56144700474818E-17"
+        iyy="0.000277354645392898"
+        iyz="-1.83708821473537E-16"
+        izz="0.000284349626167672" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_base.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_base.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm2_base_joint"
+    type="fixed">
+    <origin
+      xyz="-0.18 0 0.0820210428191438"
+      rpy="0 0 0" />
+    <parent
+      link="body_car_chassis" />
+    <child
+      link="spm2_base" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="spm2_leg2_proximal">
+    <inertial>
+      <origin
+        xyz="0.0415052979813347 0.0133317621843796 0.0471311944316238"
+        rpy="0 0 0" />
+      <mass
+        value="0.0687464361626351" />
+      <inertia
+        ixx="5.3356752246532E-05"
+        ixy="1.56730810847073E-05"
+        ixz="-2.64879755980302E-05"
+        iyy="7.72845954586299E-05"
+        iyz="-1.04694439327946E-08"
+        izz="6.79134566695122E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_leg2_proximal.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_leg2_proximal.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm2_leg2_base_proximal"
+    type="fixed">
+    <origin
+      xyz="-0.0372072256031853 0 -0.0553386861731434"
+      rpy="0.463647609000806 0.420534335283964 -2.25551552979718" />
+    <parent
+      link="spm2_base" />
+    <child
+      link="spm2_leg2_proximal" />
+    <axis
+      xyz="0.577350269189627 -0.577350269189625 0.577350269189626" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="spm2_leg2_distal">
+    <inertial>
+      <origin
+        xyz="0.0276162169494414 -2.21033935599024E-09 0.0166042792425378"
+        rpy="0 0 0" />
+      <mass
+        value="0.0249434660620516" />
+      <inertia
+        ixx="1.23287454032941E-05"
+        ixy="-3.16358147852211E-13"
+        ixz="-1.02513914563364E-05"
+        iyy="2.31995059108399E-05"
+        iyz="-1.03787601275318E-12"
+        izz="1.41903412871277E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_leg2_distal.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_leg2_distal.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm2_leg2_intermediate_distal"
+    type="fixed">
+    <origin
+      xyz="0 0.0515 0.06775"
+      rpy="1.5707963267949 0 0" />
+    <parent
+      link="spm2_leg2_proximal" />
+    <child
+      link="spm2_leg2_distal" />
+    <axis
+      xyz="-0.577350269189627 -0.577350269189625 -0.577350269189625" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="spm2_leg3_proximal">
+    <inertial>
+      <origin
+        xyz="0.0415053055437408 0.0133317628046086 0.0471311813949756"
+        rpy="0 0 0" />
+      <mass
+        value="0.0687463808037651" />
+      <inertia
+        ixx="5.33567473396322E-05"
+        ixy="1.56730710204047E-05"
+        ixz="-2.64879777611073E-05"
+        iyy="7.72845935501262E-05"
+        iyz="-1.04596703086382E-08"
+        izz="6.79134450678051E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_leg3_proximal.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_leg3_proximal.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm2_leg3_base_proximal_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0372072256031855 -0.0479064844253887 0.027637778863637"
+      rpy="2.35619449019235 -0.955316618124513 3.14159265358978" />
+    <parent
+      link="spm2_base" />
+    <child
+      link="spm2_leg3_proximal" />
+    <axis
+      xyz="0.577350269189622 -0.57735026918963 0.577350269189625" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="spm2_leg3_distal">
+    <inertial>
+      <origin
+        xyz="0.0276162724495204 -2.56363452688646E-09 0.0166042770917788"
+        rpy="0 0 0" />
+      <mass
+        value="0.0249434008867258" />
+      <inertia
+        ixx="1.23287424080632E-05"
+        ixy="1.00356955261552E-12"
+        ixz="-1.02513872579272E-05"
+        iyy="2.31995048527672E-05"
+        iyz="-1.19413554410823E-12"
+        izz="1.41903461233211E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_leg3_distal.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_leg3_distal.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm2_leg3_intermediate_distal"
+    type="fixed">
+    <origin
+      xyz="0 0.0514999999999999 0.0677499999999999"
+      rpy="1.5707963267949 0 0" />
+    <parent
+      link="spm2_leg3_proximal" />
+    <child
+      link="spm2_leg3_distal" />
+    <axis
+      xyz="-0.577350269189623 -0.577350269189625 -0.57735026918963" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="spm2_leg1_proximal">
+    <inertial>
+      <origin
+        xyz="0.0415052942667449 0.0133317355767673 0.0471311806974588"
+        rpy="0 0 0" />
+      <mass
+        value="0.0687465305096126" />
+      <inertia
+        ixx="5.33568514503989E-05"
+        ixy="1.56730722644497E-05"
+        ixz="-2.64880476589497E-05"
+        iyy="7.72847460891797E-05"
+        iyz="-1.04670720805208E-08"
+        izz="6.79135058414461E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_leg1_proximal.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_leg1_proximal.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm2_leg1_base_proximal_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0372072256031851 0.0479064844253887 0.0276377788636364"
+      rpy="-2.0344439357957 0.420534335283973 2.25551552979718" />
+    <parent
+      link="spm2_base" />
+    <child
+      link="spm2_leg1_proximal" />
+    <axis
+      xyz="0.577350269189622 -0.577350269189625 0.57735026918963" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="spm2_leg1_distal">
+    <inertial>
+      <origin
+        xyz="0.0276162699864963 -5.75903419397505E-09 0.0166042723305421"
+        rpy="0 0 0" />
+      <mass
+        value="0.0249434138951243" />
+      <inertia
+        ixx="1.23287418793938E-05"
+        ixy="-1.7445137916835E-12"
+        ixz="-1.02513859626616E-05"
+        iyy="2.31995018577348E-05"
+        iyz="-1.15965211824733E-12"
+        izz="1.41903422898734E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_leg1_distal.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_leg1_distal.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="spm2_leg1_intermediate_distal_joint"
+    type="fixed">
+    <origin
+      xyz="0 0.0515 0.06775"
+      rpy="1.5707963267949 0 0" />
+    <parent
+      link="spm2_leg1_proximal" />
+    <child
+      link="spm2_leg1_distal" />
+    <axis
+      xyz="-0.577350269189622 -0.57735026918963 -0.577350269189625" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  
+  
+  <link
+    name="spm2_platform">
+    <inertial>
+      <origin
+        xyz="-0.0130772772289902 -0.0130772772289901 -0.0130772772289898"
+        rpy="0 0 0" />
+      <mass
+        value="0.044901046538049" />
+      <inertia
+        ixx="8.16628762450823E-06"
+        ixy="1.65084933290383E-06"
+        ixz="1.65084933290384E-06"
+        iyy="8.1662876245082E-06"
+        iyz="1.65084933290384E-06"
+        izz="8.16628762450823E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_platform_x.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/spm2_platform_x.STL" />
+      </geometry>
+    </collision>
+  </link>
+
+  <link
+    name="spm2_spherical_virtual_z">
+    <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.001" />
+      <inertia
+        ixx="1e-6"
+        ixy="0"
+        ixz="0"
+        iyy="1e-6"
+        iyz="0"
+        izz="1e-6" />
+    </inertial>
+  </link>
+  <link
+    name="spm2_spherical_virtual_y">
+    <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.001" />
+      <inertia
+        ixx="1e-6"
+        ixy="0"
+        ixz="0"
+        iyy="1e-6"
+        iyz="0"
+        izz="1e-6" />
+    </inertial>
+  </link>
+
+  <joint
+    name="spm2_platform_joint_z"
+    type="revolute">
+    <origin
+      xyz="-0.076323 0 -2.1043E-05"
+      rpy="0.7854 0.95532 0" />
+    <parent
+      link="spm2_base" />
+    <child
+      link="spm2_spherical_virtual_z" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <joint
+    name="spm2_platform_joint_y"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="spm2_spherical_virtual_z" />
+    <child
+      link="spm2_spherical_virtual_y" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <joint
+    name="spm2_platform_joint_x"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="spm2_spherical_virtual_y" />
+    <child
+      link="spm2_platform" />
+    <axis
+      xyz="1 0 0" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+<link
+    name="tail_car_chassis">
+    <inertial>
+      <origin
+        xyz="-0.286172447562097 0.00426448123166467 0.00610150712720944"
+        rpy="0 0 0" />
+      <mass
+        value="9.99428166176595" />
+      <inertia
+        ixx="0.0796955642548578"
+        ixy="-1.26377832224567E-06"
+        ixz="6.17621788426299E-05"
+        iyy="0.0942352583327487"
+        iyz="-0.000189319885678961"
+        izz="0.14800355555619" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/tail_car_chassis.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/tail_car_chassis.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="tail_car_chassis_joint"
+    type="fixed">
+    <origin
+      xyz="-0.011642734410092 -0.0116427344100922 -0.0116427344100913"
+      rpy="-1.0471975511966 -0.615479708670387 0.785398163397449" />
+    <parent
+      link="spm2_platform" />
+    <child
+      link="tail_car_chassis" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="tail_car_wheel_left">
+    <inertial>
+      <origin
+        xyz="-1.42112972922881E-06 -7.66681308942557E-07 -0.0458401618070386"
+        rpy="0 0 0" />
+      <mass
+        value="1.55682391481766" />
+      <inertia
+        ixx="0.0196620727842825"
+        ixy="-8.95629138566535E-07"
+        ixz="4.85678375139623E-09"
+        iyy="0.0196631942351119"
+        iyz="-1.44805780315183E-08"
+        izz="0.0351217717900435" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/tail_car_wheel_left.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/tail_car_wheel_left.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="tail_car_wheel_left_joint"
+    type="continuous">
+    <origin
+      xyz="-0.276488513878146 0.269604621962139 -0.0364522685746904"
+      rpy="-1.56876445516506 0 0" />
+    <parent
+      link="tail_car_chassis" />
+    <child
+      link="tail_car_wheel_left" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="tail_car_wheel_right">
+    <inertial>
+      <origin
+        xyz="-1.42113011025735E-06 -7.66681496521676E-07 0.045840161807055"
+        rpy="0 0 0" />
+      <mass
+        value="1.5568235072174" />
+      <inertia
+        ixx="0.0196619814383487"
+        ixy="-8.95629138468931E-07"
+        ixz="-4.85678402572186E-09"
+        iyy="0.0196631028891769"
+        iyz="1.44805782540861E-08"
+        izz="0.0351215520940696" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/tail_car_wheel_right.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://complete_car_final/meshes/tail_car_wheel_right.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="tail_car_wheel_right_joint"
+    type="continuous">
+    <origin
+      xyz="-0.276488513878177 -0.269454265283014 -0.0375475685418142"
+      rpy="-1.56876445516506 0 0" />
+    <parent
+      link="tail_car_chassis" />
+    <child
+      link="tail_car_wheel_right" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  
+  
+  
+  
+</robot>

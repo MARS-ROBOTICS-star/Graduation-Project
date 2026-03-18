@@ -1,12 +1,11 @@
 # RL Lab Workspace
 
-Place the first minimal Isaac Lab RL baseline here.
+`src/rl_lab/` is the repository area reserved for runnable Isaac Lab training code.
 
-Recommended contents:
+Current retained project:
 
-- environment definition
-- observation/action/reward configuration
-- reset and termination logic
-- training launcher
+- `complete_car_rl_training/`
+  - single-root Isaac Lab training project for the articulated complete-car robot
 
-Start with body attitude stabilization using only the two equivalent 3-DOF spherical joints.
+Use `src/rl_lab/complete_car_rl_training/` as the only active training workspace.
+Do not reintroduce the removed legacy `tasks/` skeleton or the old nested template shell.

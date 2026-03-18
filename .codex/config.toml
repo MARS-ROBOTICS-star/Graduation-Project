@@ -1,5 +1,0 @@
-model = "gpt-5-codex"
-project_root_markers = [".git"]
-
-[tools]
-web_search = true

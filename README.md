@@ -19,12 +19,12 @@ This repository is organized around one immediate objective: get a minimal Isaac
 - `refs/isaac_kb/`
   - Searchable local knowledge base for Isaac Sim 5.1 and Isaac Lab 2.3.x manuals.
 - `src/rl_lab/`
-  - Reserved location for the minimal Isaac Lab RL environment and training code.
+  - Isaac Lab RL workspace. The retained baseline is the cleaned single-project training workspace under `src/rl_lab/complete_car_rl_training/`.
 
 ## Recommended next code placement
 
-- Put the first runnable Isaac Lab task under `src/rl_lab/`.
-- Keep task configs and reward/observation logic close to the environment code.
+- Build the first runnable complete-car task inside `src/rl_lab/complete_car_rl_training/`.
+- Keep task configs and reward/observation logic inside `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/`.
 - Keep generated logs and training outputs under `logs/` and `results/`.
 
 ## Current priority

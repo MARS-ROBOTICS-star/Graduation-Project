@@ -28,15 +28,15 @@ If any of these files conflict:
 RL-based motion control and terrain-adaptive morphology control for a specialized articulated ground robot with spherical parallel joint mechanisms.
 
 ## Student background
-The project is an undergraduate graduation design in robotics / mechatronics. The primary simulation and development stack is Isaac Sim 5.1 + Isaac Lab 2.3.x on Ubuntu 22.04. The project may later involve ROS integration, stereo cameras, LiDAR, and IMU.
+The project is an undergraduate graduation design in robotics / mechatronics. The primary simulation and development stack is Isaac Sim 5.1 + Isaac Lab 2.3.x on Ubuntu 22.04. The project later will involve ROS integration, stereo cameras, LiDAR, and IMU.
 
 ## Core robot structure
 The robot is a three-body articulated ground vehicle.
-- Front body
-- Middle body
-- Rear body
+- head car
+- body car
+- tail car
 
-The front-middle and middle-rear bodies are connected through two spherical parallel mechanisms.
+The head-body and body-tail are connected through two 3RRR-spherical parallel mechanisms.
 For simulation and RL acceleration, each spherical parallel mechanism has been equivalently simplified as a 3-DOF serial spherical joint between the moving platform and the base.
 
 The vehicle has:
@@ -58,7 +58,7 @@ Known practical constraint:
 ## Supervisor guidance / project priority
 Top priority:
 1. Run a complete RL loop successfully
-2. Build a stable minimal simulation environment
+2. Build a stable simulation environment
 3. Define observations, actions, rewards, termination, reset, and training loop
 4. Obtain a demonstrable behavior
 
@@ -77,77 +77,6 @@ Instead, the simulation uses an equivalent serial representation:
 - three serial revolute joints representing x / y / z rotational DOFs
 - moving platform
 This is done to avoid closed-chain articulation limitations and to accelerate RL environment construction.
-
-## RL framing
-The RL problem should be framed as a minimal, trainable control problem first.
-
-Recommended first task:
-Train the robot (or the central articulated structure) to maintain or track desired body attitude under terrain disturbance or commanded posture targets.
-
-Possible staged tasks:
-Stage 1:
-- control only the equivalent spherical joint DOFs
-- flat terrain
-- no vision
-- only proprioceptive state and IMU-like state
-
-Stage 2:
-- add vehicle forward motion and wheel-ground interaction
-- include attitude stabilization while moving
-
-Stage 3:
-- add terrain variation
-- use simplified terrain descriptors
-
-Stage 4:
-- optionally integrate richer sensor-derived terrain features
-
-## Observation design principles
-Prefer compact low-dimensional observations first.
-Candidate observations:
-- body orientation (roll, pitch, yaw or quaternion)
-- angular velocity
-- joint positions of equivalent spherical joints
-- joint velocities
-- wheel velocities if needed
-- target attitude / target body state
-- terrain summary features if later added
-Do not start with raw image or raw point cloud input.
-
-## Action design principles
-Prefer simple continuous actions:
-- target joint position / velocity / torque for the equivalent 3-DOF spherical joints
-Later:
-- wheel velocity commands
-- combined morphology + locomotion commands
-
-## Reward design principles
-Baseline reward should prioritize:
-- body stabilization
-- target attitude tracking
-- smooth control
-- low unnecessary joint motion
-- avoiding rollover / instability
-Keep reward sparse structure minimal at first.
-
-## Sensor strategy
-Do not make rich sensors a dependency for the first successful RL run.
-Minimal first-pass sensing:
-- IMU-like signals from the middle body
-Optional later:
-- front and rear stereo cameras
-- front LiDAR or front+rear LiDAR
-- terrain feature extraction into compact descriptors
-Raw point clouds / depth images should be converted into structured terrain information before entering RL if used.
-
-## Thesis strategy
-The thesis should be organized around:
-1. mechanism simplification for simulation
-2. RL environment design
-3. control policy training and validation
-4. optional enhancement with kinematics / terrain perception / optimization
-
-The project should avoid getting stuck on high-fidelity modeling too early.
 
 ## Toolchain
 Primary:
@@ -171,11 +100,23 @@ When modifying code:
 ## Working style for this repository
 When asked to help:
 1. first inspect existing repository structure
-2. identify minimal path to a runnable RL baseline
-3. avoid overengineering
-4. write concrete commands and file changes
-5. keep comments clear and ASCII-safe if encoding issues are possible
-6. when debugging, prioritize environment boot, articulation correctness, observation-action loop, and training launch success
+2. avoid overengineering
+3. write concrete commands and file changes
+4. keep comments clear and ASCII-safe if encoding issues are possible
+5. when debugging, prioritize environment boot, articulation correctness, observation-action loop, and training launch success
+
+## 第一性原理
+请使用第一性原理思考，你不能总是假设我非常清楚自己想要什么和该怎么得到。
+请保持审慎，从原始需求和问题出发，如果动机和目标不清晰，停下来和我讨论。
+
+## 方案规范
+当需要你给出修改或重构方案时必须符合以下规范：
+- 不允许给出兼容性或补丁性的方案
+- 不允许过渡设计
+- 保持最短路径实现且不能违反第一条要求
+- 不允许自行给出我提供的需求以外的方案，例如一些兜底和降级方案，这可能导致业务逻辑偏移问题
+- 必须确保方案的逻辑正确
+- 必须经过全链路的逻辑验证
 
 ## Knowledge lookup policy
 When the task involves Isaac Sim or Isaac Lab:
@@ -183,27 +124,162 @@ When the task involves Isaac Sim or Isaac Lab:
 - use web search when local references are insufficient, outdated, or the user explicitly asks for online lookup
 - prefer official Isaac Sim, Isaac Lab, and upstream documentation when browsing is needed
 
-## Persistent project memory
-This repository should act as long-term memory for the graduation project.
+# Persistent Project Memory Rules
 
-Required behavior:
-- keep important conclusions from past sessions in `docs/conversation_history.md`
-- keep date-stamped completed work in `logs/daily_work_log.md`
-- after each substantial work session, append a concise summary of what was completed, with the date
-- do not rely only on chat history for continuity; write durable summaries into project files
+This repository is the long-term memory store for the graduation project.
+Do not rely only on chat history for continuity.
+After substantial work, write durable summaries into the project files below.
 
-What to record in `docs/conversation_history.md`:
+---
+
+## Memory Files and Their Roles
+
+### 1. `docs/conversation_history.md`
+Purpose:
+- Store long-lived project memory that must persist across sessions.
+
+Record here:
 - major decisions
 - structure changes
 - environment design choices
-- training/debugging conclusions
-- assumptions that future sessions must inherit
+- training conclusions
+- debugging conclusions
+- validated assumptions
+- rejected approaches that should not be retried blindly
 
-What to record in `logs/daily_work_log.md`:
+Do NOT record here:
+- routine chat back-and-forth
+- temporary experiments with no conclusion
+- verbose step-by-step logs better suited for daily logs
+
+Writing style:
+- concise but information-dense
+- each entry should be reusable in future sessions
+- prefer structure such as:
+  - date
+  - decision / conclusion
+  - reason
+  - impact
+  - status
+
+Rule:
+- if a session produces a conclusion that future sessions must inherit, update this file
+
+---
+
+### 2. `docs/current_status.md`
+Purpose:
+- Provide a compact Chinese snapshot of the project's current state.
+
+Must always reflect:
+- current overall goal
+- current phase
+- completed milestone summary
+- active work in progress
+- blockers
+- immediate next priorities
+- current default design choices
+
+Requirements:
+- maintain in Chinese
+- keep it short, accurate, and easy to scan
+- overwrite outdated status rather than appending large historical notes
+
+Rule:
+- if the project state changes materially, update this file before ending the session
+
+---
+
+### 3. `logs/daily_work_log.md`
+Purpose:
+- Maintain a date-stamped Chinese work log of completed tasks.
+
+Each new entry should include:
 - date
 - completed tasks
 - files changed
+- outputs or conclusions
 - short next-step note if useful
+
+Requirements:
+- all new entries must be in Chinese
+- append new entries; do not rewrite older dates unless correcting factual errors
+- keep entries concise and factual
+
+Rule:
+- after each substantial work session, append a new dated entry
+
+---
+
+## Update Triggers
+
+A session counts as substantial if it includes any of the following:
+- a design decision
+- code or file structure changes
+- environment/task definition changes
+- training/debugging conclusions
+- resolved blockers
+- a completed research summary that affects future work
+
+When substantial work occurs:
+1. update `docs/current_status.md`
+2. append durable conclusions to `docs/conversation_history.md` if needed
+3. append a dated entry to `logs/daily_work_log.md`
+
+---
+
+## Priority and Conflict Resolution
+
+If the files disagree, use this priority:
+1. `docs/conversation_history.md` for long-term conclusions
+2. `docs/current_status.md` for current active state
+3. `logs/daily_work_log.md` for chronological record
+
+Do not let `daily_work_log.md` become the only source of important decisions.
+Important conclusions must be promoted into `conversation_history.md`.
+
+---
+
+## Formatting Standards
+
+### For `docs/conversation_history.md`
+Prefer sections such as:
+- 项目总原则
+- 关键设计决策
+- 环境与建模结论
+- 训练设计结论
+- 调试与排错结论
+- 已否定路线
+- 需持续继承的假设
+
+### For `docs/current_status.md`
+Prefer sections such as:
+- 当前总目标
+- 当前阶段
+- 已完成
+- 正在进行
+- 当前阻塞点
+- 下一步优先事项
+- 当前默认方案
+- 关键文件
+
+### For `logs/daily_work_log.md`
+Prefer date-based entries:
+- 已完成任务
+- 涉及文件
+- 产出/结论
+- 下一步
+
+---
+
+## Quality Bar
+
+When writing memory files:
+- prefer concrete conclusions over vague summaries
+- write what future sessions need, not what was merely discussed
+- avoid redundant duplication across files
+- keep terminology consistent with the graduation project
+- if a conclusion changes, update the old default in `current_status.md` and add the new durable conclusion to `conversation_history.md`
 
 ## Non-goals unless explicitly requested
 - perfect analytical fidelity of spherical parallel mechanism
@@ -212,7 +288,7 @@ What to record in `logs/daily_work_log.md`:
 - broad refactors unrelated to making the environment trainable
 
 ## Current high-priority objective
-Build a minimal but runnable Isaac Lab RL environment for the articulated car and obtain a first successful training result that demonstrates controllable body attitude / morphology behavior.
+Build a runnable Isaac Lab RL environment for the articulated car and obtain a first successful training result that demonstrates controllable body attitude / morphology behavior.
 
 ## Canonical project files
 Use these files as the main project map instead of inferring from scattered artifacts alone:
@@ -237,8 +313,8 @@ Use these files as the main project map instead of inferring from scattered arti
   - local searchable Isaac Sim and Isaac Lab reference material
 
 ## Maintenance rule
-When project status changes, update `docs/current_status.md`.
+When project status changes, update `docs/current_status.md` in Chinese.
 When repository organization changes, update `README.md`.
 When research direction, constraints, or thesis priorities change, update `AGENTS.md`.
 When a session yields durable conclusions, update `docs/conversation_history.md`.
-When a session completes concrete work, append to `logs/daily_work_log.md`.
+When a session completes concrete work, append to `logs/daily_work_log.md` in Chinese.

@@ -156,6 +156,43 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-03-18
 
+### Scene ownership fix for training assets
+- Confirmed the correct Isaac Lab split for this project:
+  - `USD/complete_car.usd` should contain only the articulated robot and robot-mounted sensor prims
+  - ground and light should be spawned from the Isaac Lab scene configuration
+  - world-level `PhysicsScene` and environment props should not be baked into the robot USD used for replicated RL environments
+- Updated `CompleteCarRlTrainingSceneCfg` to own:
+  - a ground asset
+  - a dome light asset
+- Clarified the two current remote asset references:
+  - scene ground via `default_environment.usd`
+  - robot-mounted lidar/sample sensor via `Example_Rotary.usda`
+- The user chose to keep the scene ground on the standard Isaac Sim `default_environment.usd` path instead of the temporary local cuboid-ground workaround.
+- Durable conclusion:
+  - keep ground/light ownership in Isaac Lab scene config
+  - keep `default_environment.usd` only as a scene-level dependency, not inside the robot USD
+  - treat `Example_Rotary.usda` as the remaining robot-asset remote dependency to clean next
+
+## 2026-03-18
+
+### Direct Python launch revalidation in conda environment
+- Revalidated the startup path in the active `env_isaacLab` conda environment instead of relying on the older `isaaclab.sh -p` wrapper documented earlier.
+- Confirmed that Isaac Lab and Isaac Sim are importable directly from:
+  - `/home/ubuntu/miniconda3/envs/env_isaacLab/bin/python`
+- Confirmed that the training project package was not installed in that environment by default, which is why direct `python scripts/...` initially failed with:
+  - `ModuleNotFoundError: No module named 'complete_car_rl_training'`
+- Installed the project into the active conda environment with:
+  - `python -m pip install -e . --no-build-isolation`
+- After installation, revalidated that direct launch works with:
+  - `python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --num_envs 4 --headless --device cpu --max_iterations 1`
+- The run reached environment creation, manager setup, and completed one learning iteration successfully.
+- Current durable conclusion:
+  - in this repository, the default startup path should now be "activate `env_isaacLab` -> install the project package once -> run `python scripts/...` directly"
+  - the older `env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV /home/ubuntu/IsaacLab/isaaclab.sh -p ...` path should be treated as a historical workaround, not the default instruction
+  - for first non-interactive launches, `OMNI_KIT_ACCEPT_EULA=YES` may be required unless the Omniverse EULA has already been accepted interactively
+
+## 2026-03-18
+
 ### First end-to-end training launch result
 - The correct Gym task id is `Complete-Car-Rl-Training-v0`.
 - The previously used underscored / misspelled form `Complete_Car_RL_Trainging-v0` is not registered and should not be reused.
@@ -203,3 +240,79 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - clean the USD for offline replicated use
   - remove embedded physics-scene ownership from the robot asset
   - tune reset / height threshold / reward terms so episodes do not terminate almost immediately by low root height
+
+## 2026-03-19
+
+### RL training roadmap formalization
+- Formalized the repository-level RL training route in `AGENTS.md` instead of keeping it as ad hoc chat guidance.
+- Durable training order is now:
+  - Stage 0: first prove the environment can train end to end
+  - Stage 1: flat-ground basic velocity tracking baseline
+  - Stage 2: add spherical-joint control on flat ground
+  - later stages: add kinematic priors, terrain adaptation, and perception features
+
+### Default baseline decision
+- The preferred Stage 1 baseline is now explicitly:
+  - flat ground
+  - low-dimensional proprioceptive observations
+  - velocity-command tracking
+  - fixed spherical-joint posture
+  - wheel locomotion control first
+- Reason:
+  - this is the shortest path to a stable, controllable, and reproducible RL baseline
+  - it avoids mixing mechanism novelty, perception, terrain diversity, and training-loop debugging in the same first experiment
+
+### Scope control for later phases
+- Kinematics should first enter as a structure prior, not as an early hard dependency.
+- The preferred first use of kinematics is an action-mapping layer:
+  - RL outputs desired platform posture
+  - inverse kinematics maps posture targets to driven-joint commands
+- Sensor fusion and terrain diversity are explicitly delayed until after the flat-ground baseline is working.
+
+### Impact on current code work
+- The current environment code still contains a 12-dimensional wheel-plus-spherical-joint joint-control prototype.
+- This should be treated as an exploratory intermediate artifact, not the default mainline training design.
+- Future environment iteration should converge the first formal baseline toward the Stage 1 route above before expanding action and observation complexity again.
+
+## 2026-03-19
+
+### TensorBoard offline export workflow
+- Added `src/rl_lab/complete_car_rl_training/scripts/tensorboard_export.py`.
+- Updated `src/rl_lab/complete_car_rl_training/scripts/rsl_rl/train.py` to export TensorBoard scalar data automatically after each training run.
+- Each completed run now writes:
+  - `tensorboard_export/summary.json`
+  - `tensorboard_export/latest_values.csv`
+  - `tensorboard_export/scalars/*.csv`
+- Durable conclusion:
+  - future result inspection should not rely only on the TensorBoard web UI
+  - the exported CSV/JSON files are the canonical offline artifacts for later review, explanation, and cross-session analysis
+
+### 2026-03-19 training run interpretation
+- Rechecked run `src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training/2026-03-19_13-13-03/`.
+- Confirmed this run completed through `model_149.pt`, so it was a successful end-to-end training run rather than a startup-only run.
+- The exported latest scalar values show:
+  - `Train/mean_reward` increased from about `0.83` to about `9.20`
+  - `Train/mean_episode_length` increased from `26.5` to `480.0`
+  - `Episode_Termination/time_out` ended at `1.0`
+  - `Episode_Termination/root_too_low` ended at `0.0`
+- Durable conclusion:
+  - compared with the earlier unhealthy `root_too_low` behavior, this run indicates much healthier rollout survival
+  - current analysis should focus on reward composition and tracking quality, not only on whether episodes terminate too early
+
+## 2026-03-19
+
+### Training diagnosis documentation and skill packaging
+- Added repository guide:
+  - `src/rl_lab/complete_car_rl_training/docs/tensorboard_reading_guide.md`
+- The guide standardizes:
+  - how to read TensorBoard in this project
+  - what each core scalar means
+  - what curve changes imply
+  - the fixed diagnosis order and report structure
+- Added repository-local skill:
+  - `src/rl_lab/complete_car_rl_training/skills/isaac-rl-run-diagnosis/`
+- Installed the same skill to:
+  - `/home/ubuntu/.codex/skills/isaac-rl-run-diagnosis/`
+- Durable conclusion:
+  - future run analysis should use the `isaac-rl-run-diagnosis` workflow with the Isaac log path as the minimum input
+  - the diagnosis workflow now treats the log path as the entry point and resolves Hydra config, run outputs, TensorBoard exports, and report generation from there

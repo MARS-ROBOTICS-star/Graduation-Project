@@ -14,6 +14,7 @@ from isaaclab.app import AppLauncher
 
 # local imports
 import cli_args  # isort: skip
+from pathlib import Path  # isort: skip
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
@@ -109,6 +110,17 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
+
+
+def _export_tensorboard_scalars(log_dir: str) -> None:
+    """Persist TensorBoard scalars into plain files for offline review."""
+    scripts_dir = Path(__file__).resolve().parents[1]
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    from tensorboard_export import export_run_scalars
+
+    export_dir = export_run_scalars(log_dir)
+    print(f"[INFO] Exported TensorBoard scalars to: {export_dir}")
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)
@@ -219,6 +231,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # run training
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+
+    _export_tensorboard_scalars(log_dir)
 
     print(f"Training time: {round(time.time() - start_time, 2)} seconds")
 

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Isaac RL Run Diagnosis"
+  short_description: "Read one Isaac RL run and explain the result."
+  default_prompt: "Use $isaac-rl-run-diagnosis to diagnose this Isaac Lab training run from the log path I provide."
+
+policy:
+  allow_implicit_invocation: true

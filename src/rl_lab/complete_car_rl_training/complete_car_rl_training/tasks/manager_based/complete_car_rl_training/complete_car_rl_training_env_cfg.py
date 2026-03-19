@@ -8,7 +8,7 @@ from pathlib import Path
 
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.assets import ArticulationCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
@@ -101,6 +101,19 @@ COMPLETE_CAR_CFG = ArticulationCfg(
 @configclass
 class CompleteCarRlTrainingSceneCfg(InteractiveSceneCfg):
     """Configuration for the articulated complete-car scene."""
+
+    ground = AssetBaseCfg(
+        prim_path="/World/defaultGroundPlane",
+        spawn=sim_utils.GroundPlaneCfg(),
+    )
+
+    dome_light = AssetBaseCfg(
+        prim_path="/World/skyLight",
+        spawn=sim_utils.DomeLightCfg(
+            intensity=2000.0,
+            color=(0.75, 0.75, 0.75),
+        ),
+    )
 
     robot: ArticulationCfg = COMPLETE_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 

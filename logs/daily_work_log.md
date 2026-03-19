@@ -196,3 +196,121 @@
 - 清理 `USD/complete_car.usd` 中的远端引用和内嵌 `PhysicsScene`。
 - 结合当前训练日志调整初始高度、`root_too_low` 阈值、reset 范围和奖励权重。
 - 如果继续在当前终端会话运行训练，默认使用 `--device cpu`。
+
+## 2026-03-18
+
+已完成：
+- 重新在当前 `env_isaacLab` conda 环境中核实了启动方式，确认 `python` 直接可导入 `isaaclab` 与 `isaacsim`。
+- 确认旧文档中的 `env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV /home/ubuntu/IsaacLab/isaaclab.sh -p ...` 属于历史工作绕过方式，不再应作为默认启动命令。
+- 识别出直接 `python scripts/...` 初始失败的真实原因不是 conda，而是：
+  - 首次无交互启动会卡在 Omniverse EULA 确认
+  - 当前 conda 环境内尚未安装项目包 `complete_car_rl_training`
+- 使用 `python -m pip install -e . --no-build-isolation` 将训练项目安装到 `env_isaacLab`。
+- 在安装后重新验证，直接运行 `python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --num_envs 4 --headless --device cpu --max_iterations 1` 已可进入完整训练循环并完成 1 次 learning iteration。
+- 更新了训练项目 README、模板使用指南、当前状态和长期会话结论，使仓库文档与当前真实启动方式一致。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/README.md`
+- `docs/isaaclab模板使用指南.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前默认启动路径应为：激活 `env_isaacLab` -> `python -m pip install -e . --no-build-isolation` -> 必要时设置 `OMNI_KIT_ACCEPT_EULA=YES` -> 直接运行 `python scripts/...`。
+- 直接训练链路已在当前 conda 环境下重新验证通过。
+
+下一步：
+- 继续清理 `USD/complete_car.usd` 的远端引用与内嵌 `PhysicsScene`。
+- 在直接 `python` 启动路径下继续迭代训练配置与奖励设计。
+
+## 2026-03-18
+
+已完成：
+- 根据 Isaac Lab 的资产组织方式，重新明确了 `complete_car.usd` 与 `scene cfg` 的职责分离：
+  - `complete_car.usd` 仅保留小车 articulation 本体与车体挂载传感器
+  - `scene cfg` 负责地面和灯光
+- 修改 `src/rl_lab/complete_car_rl_training/.../complete_car_rl_training_env_cfg.py`，在 `CompleteCarRlTrainingSceneCfg` 中补回 `ground` 与 `dome_light`。
+- 识别出当前两个主要远端依赖分别是：
+  - scene 层的 `default_environment.usd`
+  - 机器人 USD 内的 `Example_Rotary.usda`
+- 按当前需求，保留 scene 层 `default_environment.usd`，不再使用临时本地 `CuboidCfg` 地面方案。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_rl_training_env_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `scene` 层的 ground/light 配置已经重新回到 Isaac Lab 标准职责边界。
+- 当前远端依赖分为两类：
+  - scene 层继续使用 `default_environment.usd`
+  - 机器人 USD 中仍有 `Example_Rotary.usda`
+
+下一步：
+- 清理 `USD/complete_car.usd` 中残留的 `Example_Rotary.usda` 远端引用。
+- 继续评估 camera / lidar / IMU 是否都需要保留在当前 RL 基线资产里。
+
+## 2026-03-19
+
+已完成：
+- 重新整理了仓库级 `AGENTS.md` 结构，将启动上下文、项目背景、优先级、协作规则、记忆规则和规范文件职责重新归类。
+- 将 RL 训练路径正式固化到 `AGENTS.md`：
+  - 阶段 0 先跑通训练闭环
+  - 阶段 1 做平地基础速度跟踪 baseline
+  - 阶段 2 再加入球铰控制
+  - 更后续阶段再加入运动学先验、地形适应和感知融合
+- 明确了第 1 阶段默认 baseline 应优先采用“固定球铰姿态 + 轮式运动控制 + 低维本体观测”的最短路径方案。
+- 同步更新了 `docs/current_status.md` 与 `docs/conversation_history.md`，把新的训练主线和当前代码现状之间的差异记录为长期记忆。
+
+修改文件：
+- `AGENTS.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 后续会话不应再把“轮子 + 球铰联合控制 + 复杂扩展”默认视为第一阶段主线。
+- 当前应先把平地速度跟踪 baseline 做稳定，再逐步恢复机构复杂度。
+- `AGENTS.md` 现在已经包含完整且可继承的 RL 训练路线说明，不再依赖单次对话上下文。
+
+下一步：
+- 按新的第 1 阶段主线收敛环境配置，优先确认是否需要把当前 12 维联合动作基线简化为固定球铰版本。
+- 继续处理 `USD/complete_car.usd` 的远端依赖、复制兼容性和 `root_too_low` 相关训练稳定性问题。
+
+## 2026-03-19
+
+已完成：
+- 读取并解释了 `2026-03-19_13-13-03` 训练 run 的 Isaac Lab 日志、Hydra 配置和 TensorBoard 标量项。
+- 确认该 run 已生成 `model_0.pt`、`model_50.pt`、`model_100.pt`、`model_149.pt`，属于完整训练完成而非中途终止。
+- 新增 `scripts/tensorboard_export.py`，可将单次 run 的 TensorBoard scalar 自动导出为本地 `csv/json`。
+- 修改 `scripts/rsl_rl/train.py`，使训练结束后自动生成 `tensorboard_export/summary.json`、`latest_values.csv` 和各 tag 的 `scalars/*.csv`。
+- 对 `2026-03-19_13-13-03` 的已有 run 执行了一次导出验证，确认离线分析文件已正常生成。
+- 更新训练项目 `README.md`，补充 TensorBoard 离线导出说明。
+- 新增 `docs/tensorboard_reading_guide.md`，总结 TensorBoard 读图方法、指标含义和诊断顺序。
+- 新增 `skills/isaac-rl-run-diagnosis/` skill，并复制安装到 `~/.codex/skills/isaac-rl-run-diagnosis/`。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/scripts/tensorboard_export.py`
+- `src/rl_lab/complete_car_rl_training/scripts/rsl_rl/train.py`
+- `src/rl_lab/complete_car_rl_training/README.md`
+- `src/rl_lab/complete_car_rl_training/docs/tensorboard_reading_guide.md`
+- `src/rl_lab/complete_car_rl_training/skills/isaac-rl-run-diagnosis/SKILL.md`
+- `src/rl_lab/complete_car_rl_training/skills/isaac-rl-run-diagnosis/agents/openai.yaml`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 后续每次训练结束后，都可以直接读取 run 目录下的 `tensorboard_export/`，不必依赖 TensorBoard 网页界面。
+- 当前 `2026-03-19_13-13-03` run 的关键信号是：
+  - `Train/mean_reward` 已明显上升
+  - `Train/mean_episode_length` 已到 `480.0`
+  - `Episode_Termination/time_out = 1.0`
+  - `Episode_Termination/root_too_low = 0.0`
+- 这说明当前 run 的 rollout 存活性明显好于此前 `root_too_low` 主导的异常情况。
+
+下一步：
+- 基于导出的 `latest_values.csv` 与各 tag CSV，继续逐项分析奖励构成和速度跟踪误差。
+- 再按第 1 阶段主线评估是否应将球铰动作从默认 baseline 中收紧或固定。

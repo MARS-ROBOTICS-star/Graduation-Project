@@ -7,8 +7,12 @@ The project has been cleaned up from the original template into one project root
 
 - `complete_car_rl_training/`
   - Python package containing task registration and environment code.
+- `docs/`
+  - Local project notes such as the TensorBoard reading and diagnosis guide.
 - `scripts/`
   - Utility scripts for listing environments, smoke-testing with dummy agents, training, and playback.
+- `skills/`
+  - Repository-local skill definitions before installation into `~/.codex/skills/`.
 - `config/extension.toml`
   - Isaac Lab extension metadata.
 - `setup.py`, `pyproject.toml`
@@ -19,8 +23,14 @@ The project has been cleaned up from the original template into one project root
 Run from this directory:
 
 ```bash
-cd /home/ubuntu/isaacsim/Graduation-Project/src/rl_lab/complete_car_rl_training
-env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV /home/ubuntu/IsaacLab/isaaclab.sh -p -m pip install -e .
+cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
+python -m pip install -e . --no-build-isolation
+```
+
+If you launch Isaac Sim or Isaac Lab from a non-interactive shell for the first time, accept the Omniverse EULA first or set:
+
+```bash
+export OMNI_KIT_ACCEPT_EULA=YES
 ```
 
 ## Task
@@ -36,19 +46,19 @@ Complete-Car-Rl-Training-v0
 List registered environments:
 
 ```bash
-env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV /home/ubuntu/IsaacLab/isaaclab.sh -p scripts/list_envs.py --keyword Complete-Car
+python scripts/list_envs.py --keyword Complete-Car
 ```
 
 Run a zero-action smoke test:
 
 ```bash
-env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV /home/ubuntu/IsaacLab/isaaclab.sh -p scripts/zero_agent.py --task Complete-Car-Rl-Training-v0 --num_envs 32
+python scripts/zero_agent.py --task Complete-Car-Rl-Training-v0 --num_envs 32
 ```
 
 Run a random-action smoke test:
 
 ```bash
-env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV /home/ubuntu/IsaacLab/isaaclab.sh -p scripts/random_agent.py --task Complete-Car-Rl-Training-v0 --num_envs 32
+python scripts/random_agent.py --task Complete-Car-Rl-Training-v0 --num_envs 32
 ```
 
 ## Train
@@ -56,7 +66,7 @@ env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV /home/ubuntu/IsaacLab/isaaclab.sh -p sc
 First headless training smoke test:
 
 ```bash
-env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV /home/ubuntu/IsaacLab/isaaclab.sh -p scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --num_envs 256 --max_iterations 10
+python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --device cpu --num_envs 100 --max_iterations 10
 ```
 
 Training logs are written under:
@@ -65,12 +75,30 @@ Training logs are written under:
 logs/rsl_rl/complete_car_rl_training/
 ```
 
+After each training run, TensorBoard scalar data is also exported automatically into plain files under:
+
+```bash
+logs/rsl_rl/complete_car_rl_training/<run_timestamp>/tensorboard_export/
+```
+
+You can re-export an existing run manually with:
+
+```bash
+python scripts/tensorboard_export.py --run_dir logs/rsl_rl/complete_car_rl_training/<run_timestamp>
+```
+
+The project-level reading guide for TensorBoard and offline diagnosis is:
+
+```bash
+docs/tensorboard_reading_guide.md
+```
+
 ## Play
 
 Replay the latest checkpoint:
 
 ```bash
-env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV /home/ubuntu/IsaacLab/isaaclab.sh -p scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0
+python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0 --device cpu
 ```
 
 ## Key Files

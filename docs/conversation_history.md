@@ -316,3 +316,78 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Durable conclusion:
   - future run analysis should use the `isaac-rl-run-diagnosis` workflow with the Isaac log path as the minimum input
   - the diagnosis workflow now treats the log path as the entry point and resolves Hydra config, run outputs, TensorBoard exports, and report generation from there
+
+## 2026-03-20
+
+### Literature reading workflow with PDF and Markdown
+- Added repository-local literature helpers:
+  - `scripts/literature/mineru_batch_convert.sh`
+  - `scripts/literature/build_literature_manifest.py`
+- Added literature guidance files:
+  - `docs/literature/README.md`
+  - `docs/literature/catalog.md`
+- Durable conclusion:
+  - local literature should use a `PDF + Markdown` coexistence workflow instead of PDF-only storage
+  - when a MinerU-converted Markdown file exists, future Codex sessions should read the Markdown first for extraction and comparison
+  - the source PDF remains the verification authority for figures, equations, page numbers, and any suspicious converted text
+- Status:
+  - repository structure and reading policy are in place
+  - MinerU installation is complete in the active `env_isaacLab` environment
+  - first conversion validation is running with a single-paper smoke test
+
+### MinerU first-run constraint on this machine
+- The shell environment currently exports local proxy variables pointing to `127.0.0.1:7897`.
+- In the current Codex execution environment, those proxy endpoints are not reachable, which blocks MinerU model downloads.
+- Durable conclusion:
+  - when MinerU needs to download its first model in this environment, clear the proxy variables and prefer `MINERU_MODEL_SOURCE=modelscope`
+  - treat this as the default first-run command pattern for literature conversion on this machine
+
+
+### RL environment literature reading priority
+- Added `docs/literature/rl_env_reading_notes.md` as the durable reading-note file for literature related to RL environment configuration and training.
+- Current recommended first-batch reading order for env design is:
+  - `Wiberg 2022`
+  - `Wiberg 2024`
+  - `Bauer 2025`
+  - `Xu 2024`
+  - `Salvi 2022`
+- Durable conclusion:
+  - for the current project phase, literature should be prioritized by direct usefulness to `observation/action/reward/termination` design rather than by mechanism similarity alone
+  - perception/fusion surveys are later-stage references, not first-batch baseline-task references
+  - 3-RRR mechanism papers support thesis mechanism justification, but are not the main references for current RL env configuration
+
+### Wiberg 2022 conversion and env-design takeaways
+- Converted the local paper:
+  - `docs/literature/Wiberg 等 - 2022 - Control of Rough Terrain Vehicles Using Deep Reinforcement Learning.pdf`
+  - into MinerU Markdown under:
+  - `docs/literature/mineru_output/Wiberg 等 - 2022 - Control of Rough Terrain Vehicles Using Deep Reinforcement Learning/auto/`
+- Confirmed the catalog entry is now `ready` and future sessions can read the Markdown first.
+- Durable literature conclusion for the current project:
+  - this paper is still the primary RL env-design reference for the complete-car thesis direction
+  - its strongest transferable value is the task decomposition around `observation / action / reward / termination / curriculum`
+  - for the current Stage 1 baseline, we should borrow its reward and termination design logic, but should not directly copy its high-dimensional terrain observation or its joint suspension-articulation-wheel co-control setup
+- Impact:
+  - use this paper mainly as a Stage 2/3 reference for terrain observation and joint structure control
+  - use it immediately as a Stage 1 reference for physically meaningful reward shaping and failure-condition design
+
+## 2026-03-21
+
+### Literature-reading interaction protocol update
+- Updated `AGENTS.md` to add a durable literature-reading interaction protocol for future Codex sessions.
+- Durable collaboration rule:
+  - when assisting with paper reading, Codex should first confirm the reading goal
+  - if no explicit goal is given and the paper is highly thesis-relevant, default to:
+    - first: overall understanding of the paper's content and logic
+    - second: extraction of the parts relevant to the current project stage
+  - questioning should follow the paper's writing order as much as possible and normally progress as:
+    - what
+    - why
+    - association / reflection
+  - after each student answer, Codex should correct, supplement, and reorganize the answer instead of only asking the next question mechanically
+  - if understanding is incomplete, Codex may ask a second-round question on the same point until the core idea is clear
+- Current literature-reading target confirmed in this session:
+  - for `Wiberg 2022`, the primary goal is overall understanding of article content and logic
+  - the secondary goal is extraction and learning of RL environment design
+- Impact:
+  - future literature assistance in this repository should behave more like guided teaching than direct summarization
+  - for high-relevance papers, Codex should not jump too early to project transfer before the paper itself is understood

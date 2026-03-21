@@ -314,3 +314,122 @@
 下一步：
 - 基于导出的 `latest_values.csv` 与各 tag CSV，继续逐项分析奖励构成和速度跟踪误差。
 - 再按第 1 阶段主线评估是否应将球铰动作从默认 baseline 中收紧或固定。
+
+## 2026-03-20
+
+已完成：
+- 为 `docs/literature/` 建立了“原始 PDF 保留 + MinerU 转 Markdown”并存的文献工作流。
+- 新增 `scripts/literature/mineru_batch_convert.sh`，用于批量或单篇执行 MinerU PDF 转 Markdown。
+- 新增 `scripts/literature/build_literature_manifest.py`，用于自动生成文献 PDF 与 Markdown 对照索引。
+- 新增 `docs/literature/README.md`，明确文献目录规范、转换命令和 Codex 的读取顺序。
+- 生成了首版 `docs/literature/catalog.md`，当前已列出全部本地 PDF，待 MinerU 转换后自动补齐 Markdown 路径。
+- 更新 `AGENTS.md`、`README.md` 和 `docs/current_status.md`，把本地文献优先读 Markdown、PDF 负责核验的规则固化为长期约定。
+- 创建仓库级 `.gitignore`，忽略本地 `.venv-mineru/` 文献工具虚拟环境。
+- 在当前 `env_isaacLab` 环境中安装完成 `MinerU`。
+- 首次单篇转换验证中，确认当前会话继承的本地代理变量会阻塞 MinerU 模型下载；已切换为“清空代理 + `MINERU_MODEL_SOURCE=modelscope`”的首跑方式。
+
+修改文件：
+- `.gitignore`
+- `AGENTS.md`
+- `README.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `docs/literature/README.md`
+- `docs/literature/catalog.md`
+- `scripts/literature/mineru_batch_convert.sh`
+- `scripts/literature/build_literature_manifest.py`
+
+产出/结论：
+- 本仓库后续文献读取默认采用：
+  - 先读 `md`
+  - 再用 `pdf` 核对图、公式、页码和可疑段落
+- 文献目录已经从“仅 PDF 堆放”升级为“可转换、可索引、可被 Codex 稳定读取”的结构。
+- 当前机器上 MinerU 的首次模型下载不应直接沿用现有代理环境，而应优先使用 `modelscope`。
+
+下一步：
+- 完成至少一篇文献的 MinerU 转换 smoke test，并确认真实输出目录结构。
+- 确认 MinerU 的实际输出目录结构后，再按真实产物补齐 catalog 中的 Markdown 链接。
+
+
+补充完成：
+- 阅读并筛选了 `docs/literature/` 下与 RL 环境配置和训练设计相关的文献。
+- 按“与本课题形态相似度 + 对 observation/reward/action/termination 的直接借鉴价值 + 与当前阶段主线的贴合度”完成了推荐排序。
+- 新增 `docs/literature/rl_env_reading_notes.md`，作为后续持续维护的文献阅读笔记。
+- 将当前优先阅读顺序收敛为：
+  - `Wiberg 2022`
+  - `Wiberg 2024`
+  - `Bauer 2025`
+  - `Xu 2024`
+  - `Salvi 2022`
+
+补充修改文件：
+- `docs/literature/rl_env_reading_notes.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+补充产出/结论：
+- 已形成一份面向 RL env 设计的本地文献阅读入口，不再需要每次从全部文献重新筛选。
+- 当前不应优先把感知综述和 3-RRR 机构学论文作为第 1 阶段 baseline 的主参考。
+
+补充下一步：
+- 基于阅读笔记中的前 3 篇文献，进一步提炼可直接映射到 Isaac Lab 的 `observation / action / reward / termination` 草案。
+
+## 2026-03-20
+
+已完成：
+- 对 `Wiberg 等 - 2022 - Control of Rough Terrain Vehicles Using Deep Reinforcement Learning.pdf` 执行了单篇 MinerU 转换。
+- 成功生成对应 Markdown、图片与中间产物目录：
+  - `docs/literature/mineru_output/Wiberg 等 - 2022 - Control of Rough Terrain Vehicles Using Deep Reinforcement Learning/auto/`
+- 自动更新 `docs/literature/catalog.md`，将该文献条目标记为 `ready`。
+- 基于生成的 Markdown 与原始 PDF，补充了 `docs/literature/rl_env_reading_notes.md` 中该文的精读结论。
+- 提炼了该文对本课题的可迁移要点：
+  - reward 的主目标项 + 约束项组织方式
+  - termination 的危险姿态 / 危险接触 / timeout 框架
+  - curriculum 的逐层加难组织方式
+  - 不应在第 1 阶段直接照搬高维地形 observation 与联合结构控制
+
+修改文件：
+- `docs/literature/catalog.md`
+- `docs/literature/mineru_output/Wiberg 等 - 2022 - Control of Rough Terrain Vehicles Using Deep Reinforcement Learning/auto/Wiberg 等 - 2022 - Control of Rough Terrain Vehicles Using Deep Reinforcement Learning.md`
+- `docs/literature/rl_env_reading_notes.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前仓库已经有这篇论文的本地 Markdown，可直接作为后续阅读入口。
+- 这篇论文对本课题最重要的价值不是“平台完全相同”，而是它把 rough-terrain vehicle 的 RL 任务定义拆得很完整。
+- 对当前主线最合适的吸收方式是：先借鉴 reward / termination 逻辑，再在后续阶段逐步吸收地形 observation 和结构联合控制。
+
+下一步：
+- 继续辅助用户精读该文，并把其 `observation / action / reward / termination / curriculum` 映射到本课题的 Isaac Lab 环境设计上。
+
+## 2026-03-21
+
+已完成：
+- 根据用户提出的要求，补充并固化了文献阅读类任务的交互协议。
+- 在 `AGENTS.md` 的研究交互部分新增文献阅读辅助规则，明确：
+  - 先确认单篇阅读目标
+  - 默认按文章写作顺序推进提问
+  - 提问逻辑优先遵循“是什么 -> 为什么 -> 联想与反思”
+  - 每轮回答后需要进行纠正、补充与整理
+  - 若理解不充分，允许围绕同一问题继续二次追问
+- 确认当前 `Wiberg 等 - 2022` 的阅读目标为：
+  - 主目标：整体掌握文章内容与逻辑
+  - 次目标：提炼并学习 RL 环境设计
+- 同步更新项目当前状态与长期会话结论，避免后续会话丢失这条协作规则。
+
+修改文件：
+- `AGENTS.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 本仓库后续的文献辅助阅读默认采用“教师式带读”而不是直接给结论。
+- 对高相关文献，后续应先帮助用户掌握文章整体逻辑，再进入 env 设计细节和与本课题的迁移讨论。
+
+下一步：
+- 按新的交互协议，从 `Wiberg 等 - 2022` 的引言开始，依照文章顺序继续带读。

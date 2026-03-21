@@ -12,8 +12,12 @@ This repository is organized around one immediate objective: get a minimal Isaac
   - Alternative/finalized robot package variant for comparison and later migration.
 - `docs/`
   - Project notes, status tracking, and design decisions.
+- `docs/literature/`
+  - Local literature corpus. Keep source PDFs here and MinerU-derived Markdown under `docs/literature/mineru_output/`.
 - `scripts/isaac_sim/`
   - Isaac Sim utility scripts for teleoperation and sensor validation.
+- `scripts/literature/`
+  - Literature conversion and catalog scripts for MinerU-based PDF to Markdown parsing.
 - `results/sensor_validation/`
   - Saved outputs from camera, LiDAR, and IMU validation runs.
 - `refs/isaac_kb/`

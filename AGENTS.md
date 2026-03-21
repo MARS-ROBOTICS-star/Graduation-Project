@@ -1,457 +1,557 @@
 # Graduation Design Project Context
 
-## Session bootstrap
+## 0. First-principles and architecture rules
+
+### 0.1 First-principles rule
+请使用第一性原理思考。  
+不能假设用户已经完全清楚目标、动机、边界条件和验证标准。  
+如果动机、目标、约束、评价方式不清楚，优先通过提问帮助用户澄清。  
+
+提问不是拖延。  
+提问是为了确保研究判断仍由用户主导。
+
+### 0.2 Architecture and solution rules
+当需要给出修改、重构或推进方案时，必须符合以下规范：
+
+- 不允许给出兼容性或补丁性的方案
+- 不允许过渡设计
+- 保持最短路径实现，且不能违反第一条要求
+- 不允许自行给出用户需求以外的方案，例如兜底和降级方案
+- 必须确保方案的逻辑正确
+- 必须经过全链路的逻辑验证
+
+新增要求：
+
+- 研究层问题优先通过提问帮助用户形成判断
+- 实现层问题在方案明确后直接落地
+- 不允许把研究判断伪装成实现建议直接跳过讨论
+
+### 0.3 Global priority
+If any later section conflicts with this Section 0, Section 0 wins.
+
+---
+
+## 1. Session bootstrap and file priority
+
 When Codex starts in this repository, treat the following files as the canonical startup context:
 
 1. `AGENTS.md`
-2. `README.md`
-3. `docs/current_status.md`
-4. `docs/conversation_history.md`
+2. `docs/current_status.md`
+3. `docs/conversation_history.md`
+4. `logs/daily_work_log.md`
+5. `README.md`
+
+### 1.1 Read order at task start
+At the beginning of each new task:
+
+1. read `AGENTS.md`
+2. read `docs/current_status.md`
+3. read `docs/conversation_history.md`
+4. read `logs/daily_work_log.md`
+5. read `README.md`
+6. inspect repository structure if the request involves code, files, configuration, training, or debugging
+
+### 1.2 Purpose of each startup file
+- `AGENTS.md`
+  - authoritative source for research background, project goals, constraints, role boundaries, reasoning rules, and RL execution route
+- `docs/current_status.md`
+  - compact snapshot of the current phase, blockers, active work, and immediate next priorities
+- `docs/conversation_history.md`
+  - durable cross-session decisions and conclusions that future work must inherit
+- `logs/daily_work_log.md`
+  - date-based record of completed work and recent execution history
+- `README.md`
+  - top-level repository structure, directory responsibilities, and file placement rules
+
+### 1.3 Conflict resolution
+If these files conflict, follow this priority:
+
+1. `AGENTS.md`
+2. `docs/current_status.md`
+3. `docs/conversation_history.md`
+4. `README.md`
 5. `logs/daily_work_log.md`
 
-Expected behavior at the beginning of each new task:
-- first inspect the repository structure if the request involves code or files
-- use `README.md` for the current directory layout and file placement rules
-- use `docs/current_status.md` for current phase, blockers, and immediate next step
-- use `docs/conversation_history.md` for past session conclusions and major decisions
-- use `logs/daily_work_log.md` for date-based completed work records
-- treat this `AGENTS.md` file as the authoritative source for research background, project goals, engineering constraints, and RL training route
+### 1.4 Required behavior after bootstrap
+After reading the startup context, Codex must:
 
-If any of these files conflict:
-- follow `AGENTS.md` first
-- then `docs/current_status.md` for current stage and priority
-- then `docs/conversation_history.md` for decision continuity
-- then `logs/daily_work_log.md` for execution history
-- then `README.md` for structure and file organization
+- align the response with the current phase and next priority from `docs/current_status.md`
+- preserve continuity with durable conclusions in `docs/conversation_history.md`
+- avoid reopening settled conclusions unless the user explicitly asks to reconsider them
+- avoid drifting into unrelated design branches
+- keep implementation recommendations consistent with the repository structure in `README.md`
 
-## Project overview
+---
 
-### Project name
-RL-based motion control and terrain-adaptive morphology control for a specialized articulated ground robot with spherical parallel joint mechanisms.
+## 2. Core operating philosophy
 
-### Student background
-The project is an undergraduate graduation design in robotics / mechatronics.
-The primary simulation and development stack is Isaac Sim 5.1 + Isaac Lab 2.3.x on Ubuntu 22.04.
-The project may later involve ROS integration, stereo cameras, LiDAR, and IMU.
+This repository is not only an execution workspace.  
+It is also the main reasoning workspace for the graduation project.
 
-### Core robot structure
-The robot is a three-body articulated ground vehicle:
-- head car
-- body car
-- tail car
+The project must not devolve into a pure automation loop where Codex defines the research problem, proposes the design, diagnoses failures, and then also implements the solution.  
+That would reduce the student to a workflow operator.
 
-The head-body and body-tail are connected through two 3RRR spherical parallel mechanisms.
-For simulation and RL acceleration, each spherical parallel mechanism is equivalently simplified as a 3-DOF serial spherical joint between the moving platform and the base.
+The required working mode is:
 
-The vehicle has:
-- six wheels total
-- two equivalent 3-DOF spherical joints
-- an overall goal of body attitude adaptation, terrain adaptation, and motion stabilization
+- the student owns the research-level thinking
+- Codex accelerates the engineering-level execution
+- Codex must promote understanding, not replace judgment
 
-### Technical interpretation of the mechanism
+Therefore, the project must always distinguish between:
+
+- research ownership
+- engineering implementation
+- repetitive automation
+
+The purpose of this file is to preserve that distinction.
+
+---
+
+## 3. Human-Codex role boundary
+
+### 3.1 Human-owned responsibilities
+The student must retain decision authority over the following:
+
+1. problem definition
+   - what the thesis is trying to solve
+   - what counts as success or failure
+   - what the core scientific question is
+
+2. motivation and significance
+   - why articulated ground vehicles matter
+   - why spherical-parallel-joint-inspired morphology is introduced
+   - what mechanical or terrain-adaptive advantage is expected
+   - why the problem is worth solving in the context of the thesis
+
+3. modeling and abstraction choices
+   - why the real parallel mechanism is simplified into an equivalent serial spherical joint in simulation
+   - what is preserved by this simplification
+   - what is sacrificed by this simplification
+   - why that trade-off is acceptable for the current stage
+
+4. scheme design
+   - what the current task is
+   - why RL is used
+   - why a non-RL method is not the primary route for the current thesis goal
+   - what the observation, action, reward, termination, and evaluation logic should mean physically
+
+5. experiment planning
+   - what baseline is fair
+   - what comparison should be made
+   - what ablation is necessary
+   - what metrics are meaningful
+   - what conclusions can or cannot be claimed
+
+6. diagnosis and iteration decisions
+   - what likely caused a failure
+   - what should be modified next
+   - whether a change is addressing the right problem
+   - whether the result supports the intended thesis claim
+
+Codex must not silently take over these responsibilities.
+
+### 3.2 Codex-owned responsibilities
+Codex should focus on accelerating the engineering and organizational layer, including:
+
+1. implementation
+   - writing runnable scripts
+   - building Isaac Sim validation scripts
+   - building Isaac Lab environment/task scaffolds
+   - wiring observation/action/reward/termination code from already decided specifications
+
+2. debugging support
+   - checking imports, paths, interfaces, naming, and config consistency
+   - tracing articulation setup, actuator mapping, and launch pipeline issues
+   - identifying likely engineering breakpoints in simulation or training
+
+3. automation
+   - organizing repetitive file edits
+   - generating plotting scripts
+   - summarizing logs
+   - structuring result folders
+   - standardizing commands and documentation
+
+4. documentation support
+   - converting agreed technical decisions into structured markdown
+   - drafting experiment tables
+   - organizing project notes
+   - helping maintain persistent project memory files
+
+### 3.3 Boundary enforcement rule
+If a request would change motivation, claim, abstraction, task meaning, comparison logic, or result interpretation, treat it as research-level by default.
+
+If a request is mainly about implementing an already decided idea, treat it as engineering-level by default.
+
+If uncertain, ask first rather than silently upgrading an engineering task into a research decision.
+
+---
+
+## 4. Research interaction protocol
+
+### 4.1 Question first for research-level tasks
+When the user asks for help on research-level questions, Codex should not immediately output a full final answer if the core judgment variables are still unclear.
+
+Instead, first help clarify:
+
+- objective
+- motivation
+- constraints
+- expected evidence
+- success criteria
+- what is currently known versus assumed
+
+Typical research-level cases include:
+
+- defining the thesis contribution
+- deciding what the current RL task should be
+- deciding whether sensors should be added now or later
+- deciding whether a result supports a scientific claim
+- deciding what comparison or ablation is necessary
+- deciding what should be included in the thesis and what should remain secondary
+
+### 4.2 Direct answers for engineering-level tasks
+When the user asks for implementation-level help and the intent is already clear, Codex should answer directly and concretely.
+
+Typical implementation-level cases include:
+
+- writing a runnable script
+- modifying a config
+- fixing import or path issues
+- creating a file structure
+- generating plotting code
+- adding comments or documentation
+- explaining how to run an existing training pipeline
+
+### 4.3 Escalation rule
+If an implementation request contains hidden research ambiguity, Codex should surface that ambiguity before proceeding.
+
+Example:
+If the user asks to "configure observation terms", but the real issue is that the current task objective is still undefined, Codex should not pretend this is a purely implementation problem.
+
+### 4.4 Reflection note rule
+For meaningful research iterations, Codex should encourage a compact reasoning trace in the workflow, such as:
+
+- this round's hypothesis
+- what changed
+- why this change is expected to help
+- how success will be judged
+- what the result implies
+- what should be tried next
+
+This reflection should support the student's understanding rather than replace it.
+
+### 4.5 Literature reading assistance protocol
+When the user asks Codex to assist with reading a paper or other literature, Codex should treat the interaction as a guided learning process rather than a one-shot summary.
+
+Required working style:
+
+- Codex should act like a teacher who has understood the paper deeply and helps the student build their own understanding.
+- The primary goal is to improve the student's reading comprehension, structure extraction, and reasoning ability, not to replace the student's judgment with a finished conclusion.
+- If the user has not explicitly stated the reading goal, Codex should first help clarify it.
+- If the goal is still not explicit but the paper is highly relevant to the current thesis, default to:
+  - first: overall understanding of the paper's content and logic
+  - second: extraction of the parts most relevant to the current project stage
+
+Default literature-reading workflow:
+
+1. confirm the reading goal for the current paper
+   - examples:
+     - overall understanding of the article
+     - RL environment design extraction
+     - thesis-writing and paper-structure learning
+     - experimental-design learning
+
+2. ask questions in the order of the paper's writing logic
+   - assume the student has already read the paper once unless the student says otherwise
+   - question order should normally follow:
+     - what the paper is about
+     - why the problem matters
+     - how the paper sets up the method / task / experiment
+     - what the results show
+     - what can be learned, questioned, or transferred
+   - the progression of questioning should normally be:
+     - what
+     - why
+     - association / reflection
+   - when possible, align the questioning order with the paper's section order, e.g.:
+     - introduction
+     - background / related method
+     - method / task setup
+     - experiment / evaluation
+     - results / discussion
+     - conclusion
+
+3. deepen the discussion only after the overall article logic is understood
+   - if the paper is highly relevant to the thesis, Codex may then continue to deeper questions such as:
+     - how the RL environment is configured
+     - why the observations, actions, rewards, terminations, curriculum, or metrics are defined that way
+     - what assumptions are hidden in the design
+     - what is transferable to the current project now
+     - what should be postponed to a later stage
+
+Rules for questioning and feedback:
+
+- Codex should ask questions that help the student quickly organize the paper's key logic rather than jump prematurely to implementation or evaluation.
+- Codex should not skip directly to "how to apply this to our project" before the student first understands what the paper itself is doing.
+- After each student answer, Codex should:
+  - correct inaccurate or mixed-up points
+  - supplement missing but important information
+  - reorganize the answer into a clearer structure
+  - then continue with the next question
+- If the student's answer shows incomplete understanding of the current question, Codex may ask a second-round question on the same point before moving on.
+- Codex may continue probing the same issue until the core idea is actually understood, instead of accepting a vague answer and moving forward mechanically.
+- The purpose of follow-up questions is to deepen understanding, not to create difficulty for its own sake.
+
+Priority rule for literature assistance:
+
+- For papers highly related to the thesis, begin with overall comprehension of the article logic before extracting task-design details.
+- For papers mainly used as engineering references, Codex may move faster toward observation / action / reward / termination / curriculum extraction after the article logic is clear.
+- For papers mainly used as writing references, pay more attention to:
+  - how the introduction motivates the problem
+  - how contributions are framed
+  - how experiments support the claimed conclusion
+
+---
+
+## 5. Project overview
+
+### 5.1 Project identity
+This repository supports an undergraduate graduation design project in robotics.
+
+Project focus:
+- articulated ground robot
+- spherical-parallel-joint-inspired morphology
+- Isaac Sim based robot validation and configuration
+- Isaac Lab based reinforcement learning environment construction and training
+- thesis-oriented research workflow rather than benchmark-only implementation
+
+### 5.2 Robot structure
+The robot under study is a three-body articulated ground vehicle.
+
+Current structural understanding:
+- front body
+- middle body
+- rear body
+- six wheels in total
+- two spherical-parallel-joint-inspired connecting mechanisms between body segments
+
+### 5.3 Modeling abstraction
 The equivalent simulation target is not a physically exact closed-loop spherical parallel mechanism.
+
 Instead, the simulation uses an equivalent serial representation:
+
 - base
 - virtual links if needed
 - three serial revolute joints representing x / y / z rotational DOFs
 - moving platform
 
-This is done to avoid closed-chain articulation limitations and to accelerate RL environment construction.
+This is done to:
 
-### Current modeling status
-Already completed:
-- basic joint and drive configuration in Isaac Sim
-- equivalent simplification of spherical parallel mechanism into serial rotational DOFs
-- initial URDF / USD related configuration attempts
-- debugging around articulation, joints, keyboard control, and import pipeline
+- avoid closed-chain articulation limitations
+- simplify import and control setup
+- accelerate RL environment construction
+- focus first on runnable training rather than exact mechanism fidelity
 
+### 5.4 Current project constraint
 Known practical constraint:
+
 - the advisor emphasized that the thesis priority is to run RL successfully as soon as possible
 - kinematics, optimization, sensor enhancement, and richer terrain adaptation are secondary and should be treated as incremental improvements after the RL pipeline works
 
-## Project priorities
-
-### Supervisor guidance
-Top priority:
-1. Run a complete RL loop successfully.
-2. Build a stable simulation environment.
-3. Define observations, actions, rewards, termination, reset, and training loop.
-4. Obtain a demonstrable behavior.
-
-Secondary priorities:
-- incorporate forward / inverse kinematics more rigorously
-- improve morphology control logic
-- add better sensor processing
-- optimize policy and controller performance
-- enrich thesis novelty after the baseline is working
-
-### Current high-priority objective
-Build a runnable Isaac Lab RL environment for the articulated car and obtain a first successful training result that demonstrates controllable body attitude / morphology behavior.
-
-### Non-goals unless explicitly requested
-- perfect analytical fidelity of the spherical parallel mechanism
-- full sensor fusion stack before the RL baseline
-- excessive UI polishing
-- broad refactors unrelated to making the environment trainable
-
-## RL training strategy
-
-### Overall principle
-For this project, RL training targets must be separated into:
-- primary objectives: make the articulated car stable, controllable, and reproducible on basic motion tasks
-- later enhancement objectives: add structure-aware control, terrain adaptation, and perception-driven decision making after the baseline works
-
-The current stage must follow a shortest-path principle:
-- first build the smallest trainable system
-- then add structure complexity in layers
-- do not couple kinematics, perception fusion, terrain diversity, and sim-to-real details into the first runnable baseline
-
-### Layered RL objectives
-
-#### 1. Basic survival objectives
-These are the lowest-level stability constraints:
-- avoid rollover
-- keep spherical-joint platform attitude within bounds
-- avoid hitting joint limits
-- avoid obvious wheel runaway or high-speed free spinning
-- keep actions continuous and avoid violent oscillation
-
-These objectives are treated as stability constraints, not as the final research contribution.
-
-#### 2. Basic motion objectives
-This is the first formal training target and the current priority:
-- track target linear velocity
-- track target angular velocity
-- move forward, backward, and turn on command
-- maintain stable traversal on flat ground
-
-This layer corresponds to the baseline wheeled locomotion control task.
-
-#### 3. Structure-coordination objectives
-These objectives express the thesis-specific mechanism value, but should not enter the very first training phase:
-- determine whether spherical-joint attitude regulation improves whole-body stability
-- determine whether head, body, and tail relative posture better adapts to terrain
-- determine whether morphology changes improve passability, reduce impact, and reduce slip
-
-At this stage RL should learn:
-- when to adjust the mechanism
-- how much to adjust
-- whether the adjustment is worth the control cost
-
-#### 4. Environment-adaptation objectives
-These are higher-level objectives and should be added later:
-- slopes, steps, waves, and rough terrain traversal
-- maintaining stability under low-adhesion conditions
-- robustness to unseen terrain
-- adjusting speed or spherical-joint posture in advance based on terrain cues
-
-### Required execution order
-
-#### Stage 0: make the environment trainable
-The goal of this stage is not control quality.
-The goal is to close the RL loop.
-
-Must be true:
-- the robot can reset stably in Isaac Sim / Isaac Lab
-- actions can be applied correctly
-- observations can be read correctly
-- rewards can be computed correctly
-- episodes can terminate correctly
-- the training program can start and show reward change
-
-Do not add at this stage:
-- complex sensors
-- perception fusion
-- diversified terrain
-- deep kinematic compensation
-- sim-to-real details
-
-Core conclusion:
-- first prove the environment can run end to end
-
-#### Stage 1: flat-ground basic velocity tracking
-This is the highest-priority formal baseline.
-
-Task targets:
-- move forward
-- move backward
-- turn
-- perform combined motion on flat ground
-
-Action-space default for the first baseline:
-- fix the spherical-joint posture
-- train wheel locomotion control only
-
-Reason:
-- verify that chassis locomotion can be learned first
-- keep action dimension low
-- avoid early instability caused by spherical-joint control
-
-Observation-space default:
-- body linear velocity
-- body angular velocity
-- attitude-related information such as projected gravity or roll / pitch
-- wheel speed
-- target command
-- optional current spherical-joint angle
-
-Reward default:
-- velocity tracking reward
-- heading / yaw-rate tracking reward
-- posture stability penalty
-- action smoothness penalty
-- joint-limit penalty
-
-Termination default:
-- rollover
-- attitude beyond threshold
-- abnormal key-body collision
-- episode timeout
-
-Stage target:
-- obtain a baseline that trains stably, can move and turn, and shows rising reward
-
-#### Stage 2: add spherical-joint control on flat ground
-After the flat-ground baseline is stable, RL can start learning:
-- wheel actuation
-- spherical-joint actuation
-
-Environment constraints for this stage:
-- still flat ground
-- still no complex external perception
-
-Reason to delay spherical-joint control until this stage:
-- if training fails, the cause is more likely in action design, reward design, or control scale, not in the basic environment loop
-
-Preferred RL output design:
-- RL outputs desired platform posture
-- inverse kinematics maps posture targets to the three joint commands
-
-This is the recommended structure because it is more physically meaningful, easier to constrain, and more interpretable.
-
-### When kinematics should be added
-Conclusion:
-- kinematics should not be deeply coupled into the first runnable training environment
-
-Recommended timing:
-- Stage 2 or Stage 3
-- only after the flat-ground trainable baseline is working and spherical-joint DOFs are controllable
-
-Recommended roles of kinematics:
-1. Action mapping layer
-   RL outputs desired platform posture, then inverse kinematics maps it to the three driven joints.
-2. Observation enhancement
-   Add platform posture or relative pose computed by forward kinematics into observations.
-3. Reward construction
-   Reward target posture achievement, reasonable mechanism configuration, and staying away from singular configurations.
-
-The action-mapping role is the preferred first use.
-
-### When sensor fusion should be added
-Conclusion:
-- sensor fusion should be added clearly later, not in the early baseline
-
-Recommended order:
-
-#### Stage 1
-Use only proprioceptive / body-state information:
-- base pose / velocity
-- IMU-equivalent state
-- joint states
-- command
-
-This is a pure proprioceptive control baseline without external perception.
-
-#### Stage 2
-Still acceptable to use only body-state information without vision or LiDAR.
-
-#### Stage 3
-When terrain-adaptation tasks begin, introduce simplified terrain features gradually:
-- height map
-- sampled forward terrain heights
-- contact information under the chassis or wheels
-- local slope estimate
-
-Do not directly use raw images or point clouds unless explicitly required.
-For this project, the research focus is morphology control and terrain adaptation, not end-to-end visual navigation.
-
-Preferred perception representation:
-- local height difference ahead
-- left-right wheel contact height difference
-- ground slope
-- ground roughness
-- distance to a step edge
-- traversability score
-
-The preferred pipeline is:
-- sensors gather environment data
-- preprocessing extracts compact terrain descriptors
-- RL consumes low-dimensional terrain features
-
-### When terrain diversification should be added
-Conclusion:
-- add terrain diversity only after flat-ground training is stable
-
-Recommended rhythm:
-
-#### Stage 1
-Single flat terrain:
-- learn stable motion
-- obtain the first baseline
-
-#### Stage 2
-Slightly perturbed flat terrain:
-- friction randomization
-- small mass perturbation
-- initial pose perturbation
-- light external pushes
-
-Goal:
-- improve baseline robustness
-
-#### Stage 3
-Simple structured terrain:
-- gentle slopes
-- small waves
-- low obstacles
-- small steps
-
-#### Stage 4
-Programmatic diverse terrain:
-- random slopes
-- uneven continuous terrain
-- random pits
-- different friction conditions
-- mixed obstacles
-
-### Recommended roadmap
-
-#### Stage A: run the RL framework first
-Content:
-- fixed spherical joints
-- flat terrain
-- low-dimensional state input
-- velocity tracking task
-
-Expected output:
-- first trainable environment
-- first reward curve
-- first baseline demo video
-
-#### Stage B: let spherical-joint DOFs participate in control
-Content:
-- flat terrain
-- wheels plus spherical joints controlled together
-- still no external perception
-- compare whether spherical joints improve stability or maneuverability
-
-Expected output:
-- RL results with structure DOFs participating
-- comparison with the fixed-spherical-joint baseline
-
-#### Stage C: add kinematic priors
-Content:
-- RL outputs higher-level targets
-- inverse kinematics maps them to spherical-joint commands
-- posture-related rewards and constraints are added
-
-Expected output:
-- a control framework with mechanism priors
-- improved interpretability of actions
-
-#### Stage D: add terrain adaptation
-Content:
-- start from simple slopes
-- then expand toward rough terrain
-- early versions may use terrain ground-truth or sampled height values instead of raw visual sensing
-
-Expected output:
-- terrain adaptation ability
-- evidence that morphology regulation improves passability
-
-#### Stage E: add sensors and perception fusion
-Content:
-- start from IMU and contact information
-- then add local height maps or sparse depth
-- only later consider stereo cameras or LiDAR
-
-Expected output:
-- a complete perception-to-morphology-control loop
-- an enhanced thesis contribution after the baseline is proven
-
-### Current default RL path
-Unless the user explicitly changes the research plan, future work should inherit the following default route:
-1. Finish Stage 0 completely and keep the training loop stable.
-2. Use Stage 1 as the current mainline baseline:
-   - flat ground
-   - low-dimensional proprioceptive observations
-   - velocity-tracking task
-   - fixed spherical-joint posture as the preferred first baseline
-3. Only after Stage 1 is stable, move to Stage 2 and let spherical-joint control participate.
-4. Add kinematics, terrain adaptation, and sensor fusion only after the baseline is already trainable and explainable.
-
-## Toolchain
-Primary:
-- Isaac Sim 5.1
-- Isaac Lab 2.3.x
-- Python 3.11
-- Ubuntu 22.04
-
-Potential:
-- ROS / ROS 2 later
-- VS Code
-- URDF / USD conversion tools
-
-## Coding expectations
-When modifying code:
-- prefer executable, complete code over fragmented snippets
-- include exact file paths when possible
-- explain where to place files and how to run them
-- avoid placeholders when the exact structure can be inferred
-- preserve compatibility with Isaac Sim 5.1 and Isaac Lab 2.3.x unless explicitly changing target version
-
-## Working style for this repository
+### 5.5 Current modeling status
+Already completed or partially completed:
+
+- basic joint and drive configuration in Isaac Sim
+- equivalent simplification of the spherical parallel mechanism into serial rotational DOFs
+- initial URDF / USD related configuration attempts
+- debugging around articulation, joints, keyboard control, and import pipeline
+
+---
+
+## 6. Thesis objective and execution route
+
+### 6.1 Primary thesis objective
+The core thesis objective is not merely to run an RL script.
+
+The objective is to build and justify a complete research path for:
+
+stable terrain-adaptive control of an articulated ground vehicle with spherical-parallel-joint-inspired morphology, using RL as the main control-learning framework.
+
+### 6.2 Shortest executable path
+Although the thesis objective is broad, implementation must follow the shortest executable path:
+
+- first make the RL loop run end to end
+- then add thesis-specific structure control
+- then add terrain-adaptive elements
+- then strengthen justification through comparison and ablation
+
+In other words:
+
+- broad vision at the project level
+- shortest path at the engineering level
+
+### 6.3 Long-term claim under validation
+The long-term claim to be examined is:
+
+an articulated ground robot with spherical-parallel-joint-inspired morphology can improve stability, passability, or terrain adaptability, and RL is a suitable framework to learn this control strategy under complex coupled dynamics.
+
+This claim must not be asserted prematurely.  
+It must be built stage by stage through evidence.
+
+---
+
+## 7. Research design framework
+
+Every meaningful design cycle should cover four layers.
+
+### 7.1 Problem layer
+Clarify:
+
+- what capability is being targeted now
+- what is out of scope for this stage
+- what exact claim the current stage can support
+
+### 7.2 Task layer
+Clarify:
+
+- what the policy observes
+- what the policy outputs
+- what is rewarded
+- what causes failure or reset
+- what metrics are used to judge quality
+
+### 7.3 Experiment layer
+Clarify:
+
+- what baseline is being used
+- what variable is being changed
+- what comparison is fair
+- what counts as evidence of improvement
+
+### 7.4 Interpretation layer
+Clarify:
+
+- what the result means physically
+- whether the mechanism is actually contributing
+- whether a gain is due to task simplification, reward shaping, or genuine control improvement
+- what limitation remains
+
+Codex should push these four layers into the conversation whenever they are underspecified.
+
+---
+
+## 8. Execution and delivery style
+
 When asked to help:
+
 1. first inspect existing repository structure
 2. avoid overengineering
-3. write concrete commands and file changes
-4. keep comments clear and ASCII-safe if encoding issues are possible
-5. when debugging, prioritize environment boot, articulation correctness, observation-action loop, and training launch success
+3. preserve the human-Codex role boundary
+4. ask questions first for research-level ambiguity
+5. write concrete commands and file changes for engineering tasks
+6. keep comments clear and ASCII-safe if encoding issues are possible
+7. when debugging, prioritize environment boot, articulation correctness, observation-action loop, and training launch success
+8. after a decision is made, implement it completely and explicitly
 
-## 第一性原理
-请使用第一性原理思考，你不能总是假设我非常清楚自己想要什么和该怎么得到。
-请保持审慎，从原始需求和问题出发，如果动机和目标不清晰，停下来和我讨论。
+When generating outputs, prefer:
 
-## 方案规范
-当需要你给出修改或重构方案时必须符合以下规范：
-- 不允许给出兼容性或补丁性的方案
-- 不允许过渡设计
-- 保持最短路径实现且不能违反第一条要求
-- 不允许自行给出我提供的需求以外的方案，例如一些兜底和降级方案，这可能导致业务逻辑偏移问题
-- 必须确保方案的逻辑正确
-- 必须经过全链路的逻辑验证
+- executable complete code over fragments
+- exact file paths when possible
+- explicit run commands
+- minimal placeholders
+- compatibility with Isaac Sim 5.1 and Isaac Lab 2.3.x unless explicitly changing target version
 
-## Knowledge lookup policy
+---
+
+## 9. Knowledge lookup policy
+
 When the task involves Isaac Sim or Isaac Lab:
+
 - consult `refs/isaac_kb/` before using web search
 - use web search when local references are insufficient, outdated, or the user explicitly asks for online lookup
 - prefer official Isaac Sim, Isaac Lab, and upstream documentation when browsing is needed
 
-# Persistent Project Memory Rules
+When the task is repository-specific:
 
-This repository is the long-term memory store for the graduation project.
-Do not rely only on chat history for continuity.
-After substantial work, write durable summaries into the project files below.
+- inspect the actual repository files before proposing structural changes
+- prefer existing local code and project conventions over generic external examples
+- do not assume a directory or file exists without checking
+
+When the task involves local literature reading:
+
+- prefer `docs/literature/` local files before web search unless the user explicitly asks for online lookup
+- when a MinerU-converted Markdown file exists, read the Markdown first for extraction and comparison
+- use the source PDF to verify figures, equations, page numbers, citation formatting, or suspicious converted text
+- if Markdown and PDF disagree, treat the PDF as the source of truth
 
 ---
 
-## Memory Files and Their Roles
+## 10. Persistent project memory model
 
-### 1. `docs/conversation_history.md`
+This repository is the long-term memory store for the graduation project.  
+Do not rely only on chat history for continuity.  
+After substantial work, write durable summaries into the project files below.
+
+### 10.1 Memory model
+The project memory must be separated into three different layers:
+
+- `docs/current_status.md`
+  - current operating state
+- `docs/conversation_history.md`
+  - durable cross-session decision memory
+- `logs/daily_work_log.md`
+  - date-based execution ledger
+
+These files must not collapse into one another.
+
+### 10.2 `docs/current_status.md`
 Purpose:
-- Store long-lived project memory that must persist across sessions.
+
+- provide a compact Chinese snapshot of the project's current state
+- act as the single-source snapshot of the current operating state
+
+This file answers:
+
+- where the project is now
+- what phase is active
+- what is currently blocked
+- what should be done next
+
+Must always reflect:
+
+- current overall goal
+- current phase
+- completed milestone summary
+- active work in progress
+- blockers
+- immediate next priorities
+- current default design choices
+
+Requirements:
+
+- maintain in Chinese
+- keep it short, accurate, and easy to scan
+- overwrite outdated status rather than appending large historical notes
+- do not turn it into a running history file
+
+Rule:
+
+- if the project state changes materially, update this file before ending the session
+
+### 10.3 `docs/conversation_history.md`
+Purpose:
+
+- store durable cross-session decision memory
+- preserve major conclusions that future sessions must inherit
+
+This file answers:
+
+- what must future sessions remember
+- what decisions have already been made
+- what conclusions should not be rediscovered from scratch
 
 Record here:
+
 - major decisions
 - structure changes
 - environment design choices
@@ -461,11 +561,14 @@ Record here:
 - rejected approaches that should not be retried blindly
 
 Do NOT record here:
+
 - routine chat back-and-forth
 - temporary experiments with no conclusion
 - verbose step-by-step logs better suited for daily logs
+- raw transcript-style dialogue
 
 Writing style:
+
 - concise but information-dense
 - each entry should be reusable in future sessions
 - prefer structure such as:
@@ -476,34 +579,24 @@ Writing style:
   - status
 
 Rule:
+
 - if a session produces a conclusion that future sessions must inherit, update this file
+- if a conclusion is likely to matter again in future sessions, promote it here
 
-### 2. `docs/current_status.md`
+### 10.4 `logs/daily_work_log.md`
 Purpose:
-- Provide a compact Chinese snapshot of the project's current state.
 
-Must always reflect:
-- current overall goal
-- current phase
-- completed milestone summary
-- active work in progress
-- blockers
-- immediate next priorities
-- current default design choices
+- maintain a date-stamped Chinese work log of completed tasks
+- serve as a chronological execution ledger rather than a decision database
 
-Requirements:
-- maintain in Chinese
-- keep it short, accurate, and easy to scan
-- overwrite outdated status rather than appending large historical notes
+This file answers:
 
-Rule:
-- if the project state changes materially, update this file before ending the session
-
-### 3. `logs/daily_work_log.md`
-Purpose:
-- Maintain a date-stamped Chinese work log of completed tasks.
+- what was done today
+- what files changed
+- what concrete outputs were produced
 
 Each new entry should include:
+
 - date
 - completed tasks
 - files changed
@@ -511,80 +604,62 @@ Each new entry should include:
 - short next-step note if useful
 
 Requirements:
+
 - all new entries must be in Chinese
 - append new entries; do not rewrite older dates unless correcting factual errors
 - keep entries concise and factual
+- do not use this file as the only place for important decisions
 
 Rule:
+
 - after each substantial work session, append a new dated entry
+- if a log entry contains a reusable conclusion, promote that conclusion to `docs/conversation_history.md`
 
-## Update Triggers
-
+### 10.5 Update triggers
 A session counts as substantial if it includes any of the following:
+
 - a design decision
 - code or file structure changes
-- environment/task definition changes
-- training/debugging conclusions
+- environment or task definition changes
+- training or debugging conclusions
 - resolved blockers
 - a completed research summary that affects future work
 
 When substantial work occurs:
+
 1. update `docs/current_status.md`
 2. append durable conclusions to `docs/conversation_history.md` if needed
 3. append a dated entry to `logs/daily_work_log.md`
 
-## Priority and Conflict Resolution
+### 10.6 Priority and conflict resolution
+If the memory files disagree, use this priority:
 
-If the files disagree, use this priority:
-1. `docs/conversation_history.md` for long-term conclusions
-2. `docs/current_status.md` for current active state
-3. `logs/daily_work_log.md` for chronological record
+1. `docs/current_status.md` for the active operating state
+2. `docs/conversation_history.md` for durable inherited conclusions
+3. `logs/daily_work_log.md` for chronological execution detail
 
-Do not let `daily_work_log.md` become the only source of important decisions.
-Important conclusions must be promoted into `conversation_history.md`.
+Rules:
 
-## Formatting Standards
+- do not let `logs/daily_work_log.md` become the only source of important decisions
+- important conclusions must be promoted into `docs/conversation_history.md`
+- if a durable conclusion changes, update the default state in `docs/current_status.md`
+- current phase control belongs in `docs/current_status.md`, not in the daily log
 
-### For `docs/conversation_history.md`
-Prefer sections such as:
-- 项目总原则
-- 关键设计决策
-- 环境与建模结论
-- 训练设计结论
-- 调试与排错结论
-- 已否定路线
-- 需持续继承的假设
-
-### For `docs/current_status.md`
-Prefer sections such as:
-- 当前总目标
-- 当前阶段
-- 已完成
-- 正在进行
-- 当前阻塞点
-- 下一步优先事项
-- 当前默认方案
-- 关键文件
-
-### For `logs/daily_work_log.md`
-Prefer date-based entries:
-- 已完成任务
-- 涉及文件
-- 产出/结论
-- 下一步
-
-## Quality Bar
+### 10.7 Quality bar
 When writing memory files:
+
 - prefer concrete conclusions over vague summaries
 - write what future sessions need, not what was merely discussed
 - avoid redundant duplication across files
 - keep terminology consistent with the graduation project
-- if a conclusion changes, update the old default in `current_status.md` and add the new durable conclusion to `conversation_history.md`
+- separate current state, durable memory, and dated execution records clearly
+- if a conclusion changes, update the old default in `docs/current_status.md` and add the new durable conclusion to `docs/conversation_history.md`
 
-## Canonical project files
+### 10.8 Canonical project files
 Use these files as the main project map instead of inferring from scattered artifacts alone:
+
 - `AGENTS.md`
-  - stable research background, constraints, project priorities, and RL training route
+  - stable research background, constraints, project priorities, role boundary, and RL route
 - `README.md`
   - top-level repository structure and intended code placement
 - `docs/current_status.md`
@@ -595,16 +670,20 @@ Use these files as the main project map instead of inferring from scattered arti
   - chronological record of completed daily work
 - `scripts/isaac_sim/`
   - Isaac Sim validation and teleoperation scripts
+- `scripts/literature/`
+  - literature conversion and indexing helpers
 - `src/rl_lab/`
   - target location for the runnable Isaac Lab RL baseline
 - `results/`
   - generated outputs and validation artifacts
 - `refs/isaac_kb/`
   - local searchable Isaac Sim and Isaac Lab reference material
+- `docs/literature/`
+  - local literature PDFs, MinerU-derived Markdown, and catalog files
 
-## Maintenance rule
-When project status changes, update `docs/current_status.md` in Chinese.
-When repository organization changes, update `README.md`.
-When research direction, constraints, or thesis priorities change, update `AGENTS.md`.
-When a session yields durable conclusions, update `docs/conversation_history.md`.
+### 10.9 Maintenance rule
+When project status changes, update `docs/current_status.md` in Chinese.  
+When repository organization changes, update `README.md`.  
+When research direction, constraints, thesis priorities, or role boundaries change, update `AGENTS.md`.  
+When a session yields durable conclusions, update `docs/conversation_history.md`.  
 When a session completes concrete work, append to `logs/daily_work_log.md` in Chinese.

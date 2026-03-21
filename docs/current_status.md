@@ -20,9 +20,14 @@
 - 已新增 `isaac-rl-run-diagnosis` skill 定义，并安装到 `~/.codex/skills/`，用于“给日志路径 -> 自动定位 run -> 导出并解读训练结果”。
 - 已明确 scene cfg 与机器人 USD 的职责边界：地面和灯光归 scene cfg，机器人 USD 只保留 articulation 本体与必要挂载。
 - 已在 `AGENTS.md` 中固化 RL 训练主线：先最小可训练系统，再逐步加入球铰、运动学、地形和感知。
+- 已建立 `docs/literature/` 的 PDF + Markdown 并存工作流，并新增 MinerU 批量转换脚本与文献目录索引。
+- 已新增 `docs/literature/rl_env_reading_notes.md`，整理 RL 环境配置相关文献的推荐阅读顺序与理由，作为后续持续维护的文献阅读笔记。
+- 已完成 `Wiberg 等 - 2022 - Control of Rough Terrain Vehicles Using Deep Reinforcement Learning.pdf` 的单篇 MinerU 转换，并补充面向本课题的精读结论。
+- 已在 `AGENTS.md` 中固化文献阅读交互协议：先确认阅读目标，再按文章写作顺序以“是什么 -> 为什么 -> 联想与反思”提问，并允许围绕同一问题做二次追问直到真正理解。
 
 ## 正在进行
 - 根据新的训练主线，收敛第 1 阶段 baseline 定义：平地、低维本体状态、速度跟踪、优先固定球铰姿态。
+- 按“整体掌握文章内容与逻辑为主，RL 环境设计提炼为辅”的目标继续精读 `Wiberg 等 - 2022`，为后续 env 设计吸收可迁移部分。
 - 清理 `USD/complete_car.usd` 中剩余的外部引用与不适合多环境复制的内容。
 - 调整 `root_too_low`、初始高度、reset 范围和奖励权重，提升 rollout 存活时间和训练有效性。
 
@@ -63,6 +68,10 @@
 - `docs/conversation_history.md`
 - `src/rl_lab/complete_car_rl_training/README.md`
 - `src/rl_lab/complete_car_rl_training/docs/tensorboard_reading_guide.md`
+- `docs/literature/README.md`
+- `docs/literature/catalog.md`
+- `docs/literature/rl_env_reading_notes.md`
+- `scripts/literature/mineru_batch_convert.sh`
 - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_rl_training_env_cfg.py`
 - `src/rl_lab/complete_car_rl_training/scripts/tensorboard_export.py`
 - `src/rl_lab/complete_car_rl_training/skills/isaac-rl-run-diagnosis/SKILL.md`

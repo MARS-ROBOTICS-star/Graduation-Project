@@ -391,3 +391,38 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Impact:
   - future literature assistance in this repository should behave more like guided teaching than direct summarization
   - for high-relevance papers, Codex should not jump too early to project transfer before the paper itself is understood
+
+
+## 2026-03-22
+
+### MARCEL motivation-reference decision
+- Reviewed `Bouton和Gao - 2023 - MARCEL mobile active rover chassis for enhanced locomotion` and concluded it is not a primary RL environment-design paper for the current stage.
+- Durable use for this project:
+  - keep it as a motivation / mechanism-reference paper for the thesis writing stage
+  - revisit it when drafting why a wheeled platform should include a small number of active internal joints instead of remaining purely passive or becoming fully over-actuated
+- Reason:
+  - high relevance to the project's structural motivation and physical mechanism explanation
+  - lower direct relevance to the current RL env cfg design than `Wiberg 2022` and `Xu 2024`
+- Impact:
+  - for now, literature reading should stay focused on RL environment configuration papers
+  - when writing the thesis motivation section, MARCEL should be revisited explicitly
+
+## 2026-03-23
+
+### Two-stage RL training route confirmation
+- Replaced the previous default roadmap of “flat-ground velocity tracking first, then add spherical-joint control on flat ground” with a stricter two-stage route tied to the thesis discussion.
+- Stage 1 is now defined as:
+  - flat ground
+  - proprioception only
+  - fixed spherical-joint posture
+  - goal-directed mobility
+  - 6 wheel-speed actions only
+- Stage 2 is now defined as:
+  - spherical-joint control added to the policy stack
+  - high-level RL outputs plus low-level PID and inverse-kinematics mapping
+  - diverse terrain introduced
+  - exteroceptive terrain sensing fused with proprioception
+- Durable boundary:
+  - Stage 1 is only for proving stable goal-directed locomotion and does not claim spherical-joint contribution
+  - Stage 2 is the first stage where structure control, terrain adaptation, and sensor fusion enter the main task
+  - dynamics/torque-level realism is intentionally postponed until after the Stage 2 route is completed

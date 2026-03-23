@@ -433,3 +433,115 @@
 
 下一步：
 - 按新的交互协议，从 `Wiberg 等 - 2022` 的引言开始，依照文章顺序继续带读。
+## 2026-03-22
+
+已完成：
+- 围绕 `Wiberg 等 - 2022 - Control of Rough Terrain Vehicles Using Deep Reinforcement Learning` 开展了一轮问答式精读，重点聚焦 RL 环境设计而非全文泛读。
+- 将本轮对话中关于任务定义、observation、action、reward、termination、curriculum、evaluation 的梳理整理为结构化阅读笔记。
+- 在该文献的 MinerU 输出目录下新增 `reading_notes.md`，便于后续直接在文献旁复习，不再只依赖聊天记录。
+- 同步更新 `docs/current_status.md`，记录该文献目录下已形成可复用阅读笔记这一状态。
+
+修改文件：
+- `docs/literature/mineru_output/Wiberg 等 - 2022 - Control of Rough Terrain Vehicles Using Deep Reinforcement Learning/auto/reading_notes.md`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前已将该文献的第一轮精读结论沉淀为本地笔记，核心包括：
+  - 任务定义应区分“目标”和“结果表现”
+  - observation 可整理为地形感知、本体状态、任务相关信息三组
+  - reward 设计应按“主任务 + 行为质量约束 + 终止条件 + 评估指标”来理解
+  - curriculum、自然化 reset、训练/评估地形分离是该文献的重要训练组织方法
+
+下一步：
+- 继续对比后续 rough-terrain RL 文献，形成跨文献的可迁移设计共识，再回到本课题任务定义收敛。
+
+## 2026-03-22
+
+已完成：
+- 安装并配置了独立的 `MinerU` 工作环境 `.venv-mineru`，避免污染现有 Isaac Lab 环境。
+- 首次运行中补齐了 MinerU 所需的本地模型缓存，包括主模型、版面分析、阅读顺序、OCR、表格识别等依赖。
+- 将 `Xu 等 - 2024 - Reinforcement learning for wheeled mobility on vertically challenging terrain.pdf` 按仓库既定脚本流程转换为 Markdown。
+- 围绕该文献完成了一轮问答式精读，重点提炼其 `observation / action / reward / termination / curriculum` 设计。
+- 在该文献对应目录下新增 `reading_notes.md`，沉淀可复用阅读笔记，服务后续跨文献横向对比。
+
+修改文件：
+- `docs/literature/mineru_output/Xu 等 - 2024 - Reinforcement learning for wheeled mobility on vertically challenging terrain/auto/Xu 等 - 2024 - Reinforcement learning for wheeled mobility on vertically challenging terrain.md`
+- `docs/literature/mineru_output/Xu 等 - 2024 - Reinforcement learning for wheeled mobility on vertically challenging terrain/auto/reading_notes.md`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 该文献提供了一种更轻量的 rough-terrain RL 任务定义：高层 action、简洁 observation、极简 reward、单一维度 curriculum。
+- 相比 `Wiberg 2022`，它更适合作为“任务简化、课程推进、goal-directed mobility 设计”的参考，而不是多执行器联合控制模板。
+- 当前已具备至少两篇高相关文献的本地 Markdown 与结构化阅读笔记，后续可继续积累 2-3 篇后开展横向对比与本课题方案规划。
+
+下一步：
+- 继续精读 2-3 篇高相关文献并整理阅读笔记。
+- 在文献样本足够后，系统输出面向本课题的横向对比与方案规划。
+
+## 2026-03-22
+
+已完成：
+- 将 `Bouton和Gao - 2023 - MARCEL mobile active rover chassis for enhanced locomotion.pdf` 转换为 Markdown。
+- 基于文献内容判断其更适合作为“结构动机与机理解释”参考，而不是当前阶段的 RL 环境配置主文献。
+- 按用户要求，将该文献标记为后续撰写论文动机部分时应回看的参考文献。
+
+修改文件：
+- `docs/literature/mineru_output/Bouton和Gao - 2023 - MARCEL mobile active rover chassis for enhanced locomotion/auto/Bouton和Gao - 2023 - MARCEL mobile active rover chassis for enhanced locomotion.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `MARCEL` 与当前课题在“主动内部关节提升轮式平台通过能力”的动机层面较高相关。
+- 但其不作为当前 RL 环境配置主线文献，后续写动机与结构价值时再重点回看。
+
+下一步：
+- 继续把阅读重点收敛到 RL 环境配置相关文献上。
+
+
+## 2026-03-23
+
+已完成：
+- 读取仓库启动上下文，确认当前文献工作应优先围绕 RL 环境与训练设计主线展开。
+- 检查 `docs/literature/` 目录、文献目录索引和 `rl_env_reading_notes.md`。
+- 按“直接涉及 RL 训练/策略设计”的标准，从现有文献中筛出 17 篇相关 PDF。
+- 新建 `docs/literature/rl_training_strategy_pdfs_2026-03-23/`，并将筛选出的 PDF 复制到该目录中，便于后续集中阅读。
+
+修改文件：
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前独立整理出的 RL 训练策略相关 PDF 目录为 `docs/literature/rl_training_strategy_pdfs_2026-03-23/`。
+- 该目录当前包含 17 篇文献，覆盖 rough terrain vehicle、articulated robot、curriculum、sim-to-real、state estimator joint training 等主题。
+
+下一步：
+- 若需要进一步收敛，可在这 17 篇中再细分出“最贴近本课题完整车 RL baseline”的高优先级子集。
+
+已完成：
+- 将本轮讨论确定的两阶段 RL 训练主线写入项目记忆文件。
+- 更新 `docs/current_status.md`，把旧的“速度跟踪/平地加入球铰”表述替换为新的两阶段目标。
+- 更新 `docs/conversation_history.md`，固化阶段 1 与阶段 2 的职责边界、任务定义和研究含义。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 阶段 1 正式定义为“平地 + 本体感知 + 固定球铰 + 目标导向移动”。
+- 阶段 2 正式定义为“球铰纳入控制 + 底层 PID 与逆运动学映射 + 多样地形 + 外部感知与本体感知融合”。
+
+下一步：
+- 按新的阶段 1 目标，重写 env 的 observation、reward、termination、reset 与目标采样逻辑。
+
+已完成：
+- 将当前项目工作区整理后准备同步到 GitHub 远端 `origin/main`。
+
+修改文件：
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前本地仓库状态已与待推送内容对齐，准备作为最新项目快照上传到 GitHub。

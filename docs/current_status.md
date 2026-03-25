@@ -27,6 +27,7 @@
 - 已在 `AGENTS.md` 中固化文献阅读交互协议：先确认阅读目标，再按文章写作顺序以“是什么 -> 为什么 -> 联想与反思”提问，并允许围绕同一问题做二次追问直到真正理解。
 - 已在该文献对应目录下新增 `reading_notes.md`，整理本轮围绕 observation / action / reward / termination / curriculum 的问答式阅读笔记。
 - 已完成 `Xu 等 - 2024 - Reinforcement learning for wheeled mobility on vertically challenging terrain.pdf` 的单篇 MinerU 转换，并在对应目录下新增 `reading_notes.md`，整理其 RL 环境设计精读笔记。
+- 已优化根目录 `IK_iteration.mlx`：关键中间结果现可逐步打印到命令行窗口，并统一增加符号化简流程，便于核对逆运动学推导。
 - 已按“RL 训练策略相关”主题，从 `docs/literature/` 中单独整理出一份 PDF 集合到 `docs/literature/rl_training_strategy_pdfs_2026-03-23/`，便于集中查阅。
 - 当前工作区已整理完毕，待同步到 GitHub `origin/main` 作为最新远端状态。
 

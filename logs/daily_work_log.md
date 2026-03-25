@@ -545,3 +545,23 @@
 
 产出/结论：
 - 当前本地仓库状态已与待推送内容对齐，准备作为最新项目快照上传到 GitHub。
+
+## 2026-03-24
+
+已完成：
+- 优化了根目录 `IK_iteration.mlx` 的符号推导脚本。
+- 为 `R01`、`u_i`、`R_local`、`R_w`、`w_i`、`R03`、`R_rpy`、`R_v`、`v_i`、约束方程、半角代换结果、分子分母、多项式以及 `A/B/C` 系数补充了命令行输出。
+- 为关键表达式统一增加 `expand + simplify` 化简流程，便于将移相三角表达式尽量压缩为更标准的 `sin/cos` 形式后再核对文献公式。
+- 重新打包生成更新后的 `IK_iteration.mlx`。
+
+修改文件：
+- `IK_iteration.mlx`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 live script 在每一步关键推导后都会显示结果，更适合逐步检查逆运动学推导链路。
+- 当前脚本会先做展开再做符号化简，表达式可读性比原版更高。
+
+下一步：
+- 在 MATLAB 中实际运行 `IK_iteration.mlx`，确认本机符号工具箱对 `simplify(..., ''Steps'', 100, ''IgnoreAnalyticConstraints'', true)` 的输出形式满足预期。

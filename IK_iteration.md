@@ -281,7 +281,17 @@ d_term =
  
 
 ```matlab
+disp('constraint_scd =');disp(constraint_scd);
+```
 
+```matlabTextOutput
+constraint_scd =
+```
+
+ $\displaystyle \textrm{viy}\,\cos \left(\alpha_1 \right)\,\cos \left(\eta \right)\,\sin \left(\gamma \right)-\textrm{viz}\,\cos \left(\alpha_1 \right)\,\cos \left(\gamma \right)-\cos \left(\alpha_2 \right)-\textrm{vix}\,\cos \left(\eta \right)\,\sin \left(\alpha_1 \right)\,\cos \left(\theta_i \right)-\textrm{vix}\,\cos \left(\alpha_1 \right)\,\sin \left(\eta \right)\,\sin \left(\gamma \right)-\textrm{viy}\,\sin \left(\alpha_1 \right)\,\cos \left(\theta_i \right)\,\sin \left(\eta \right)+\textrm{viz}\,\sin \left(\alpha_1 \right)\,\sin \left(\gamma \right)\,\sin \left(\theta_i \right)+\textrm{viy}\,\cos \left(\eta \right)\,\cos \left(\gamma \right)\,\sin \left(\alpha_1 \right)\,\sin \left(\theta_i \right)-\textrm{vix}\,\cos \left(\gamma \right)\,\sin \left(\alpha_1 \right)\,\sin \left(\eta \right)\,\sin \left(\theta_i \right)$
+ 
+
+```matlab
 disp('check constraint_eq - constraint_scd =');
 ```
 
@@ -671,4 +681,139 @@ fprintf('3) theta_i_sol_1/2 对应论文式(13)的两组解。\n');
 ```matlabTextOutput
 3) theta_i_sol_1/2 对应论文式(13)的两组解。
 ```
+
+```matlab
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% 15) 数值赋值（按论文参数）
+fprintf('\n=== 数值验证：代入论文参数 ===\n');
+```
+
+```matlabTextOutput
+=== 数值验证：代入论文参数 ===
+```
+
+```matlab
+
+deg = @(x) x*pi/180;
+
+alpha1_num = deg(90);
+alpha2_num = deg(90);
+beta_num   = deg(54.75);
+gamma_num  = deg(54.75);
+
+% 三条支链的 eta_i
+eta_list = [deg(0), deg(120), deg(240)];
+
+% 这里先取 home 姿态作为示例
+% 你后面可以改成任意目标姿态
+theta_num = deg(0);   % roll
+phi_num   = deg(0);   % pitch
+psi_num   = deg(0);   % yaw
+
+fprintf('使用姿态: roll = %.2f deg, pitch = %.2f deg, yaw = %.2f deg\n', ...
+    theta_num*180/pi, phi_num*180/pi, psi_num*180/pi);
+```
+
+```matlabTextOutput
+使用姿态: roll = 0.00 deg, pitch = 0.00 deg, yaw = 0.00 deg
+```
+
+```matlab
+
+for k = 1:3
+    eta_num = eta_list(k);
+
+    % 代入真实 v_i_full 到 A_full, B_full, C_full
+    A_num = double(subs(A_full, ...
+        [alpha1, alpha2, beta, gamma, eta, theta, phi, psi], ...
+        [alpha1_num, alpha2_num, beta_num, gamma_num, eta_num, theta_num, phi_num, psi_num]));
+
+    B_num = double(subs(B_full, ...
+        [alpha1, alpha2, beta, gamma, eta, theta, phi, psi], ...
+        [alpha1_num, alpha2_num, beta_num, gamma_num, eta_num, theta_num, phi_num, psi_num]));
+
+    C_num = double(subs(C_full, ...
+        [alpha1, alpha2, beta, gamma, eta, theta, phi, psi], ...
+        [alpha1_num, alpha2_num, beta_num, gamma_num, eta_num, theta_num, phi_num, psi_num]));
+
+    Delta_num = B_num^2 - 4*A_num*C_num;
+
+    fprintf('\n--- Leg %d ---\n', k);
+    fprintf('eta_%d = %.2f deg\n', k, eta_num*180/pi);
+    fprintf('A = %.12f\n', A_num);
+    fprintf('B = %.12f\n', B_num);
+    fprintf('C = %.12f\n', C_num);
+    fprintf('Delta = %.12f\n', Delta_num);
+
+    if Delta_num < 0
+        fprintf('该支链无实数解（当前姿态不可达）\n');
+        continue;
+    end
+
+    t1 = (-B_num + sqrt(Delta_num)) / (2*A_num);
+    t2 = (-B_num - sqrt(Delta_num)) / (2*A_num);
+
+    theta_i_1 = 2*atan(t1);
+    theta_i_2 = 2*atan(t2);
+
+    fprintf('t1 = %.12f\n', t1);
+    fprintf('t2 = %.12f\n', t2);
+    fprintf('theta_i^(1) = %.12f rad = %.6f deg\n', theta_i_1, theta_i_1*180/pi);
+    fprintf('theta_i^(2) = %.12f rad = %.6f deg\n', theta_i_2, theta_i_2*180/pi);
+
+    % 代回原始约束检查残差
+    res1 = double(subs(constraint_eq_full, ...
+        [alpha1, alpha2, beta, gamma, eta, theta, phi, psi, theta_i], ...
+        [alpha1_num, alpha2_num, beta_num, gamma_num, eta_num, theta_num, phi_num, psi_num, theta_i_1]));
+
+    res2 = double(subs(constraint_eq_full, ...
+        [alpha1, alpha2, beta, gamma, eta, theta, phi, psi, theta_i], ...
+        [alpha1_num, alpha2_num, beta_num, gamma_num, eta_num, theta_num, phi_num, psi_num, theta_i_2]));
+
+    fprintf('residual(theta_i^(1)) = %.3e\n', res1);
+    fprintf('residual(theta_i^(2)) = %.3e\n', res2);
+end
+```
+
+```matlabTextOutput
+--- Leg 1 ---
+eta_1 = 0.00 deg
+A = -0.707232332556
+B = 1.413962236638
+C = 0.707232332556
+Delta = 3.999999495490
+t1 = -0.414317622553
+t2 = 2.413607207530
+theta_i^(1) = -0.785575798700 rad = -45.010178 deg
+theta_i^(2) = 2.356016854890 rad = 134.989822 deg
+residual(theta_i^(1)) = -4.692e-17
+residual(theta_i^(2)) = -5.266e-17
+--- Leg 2 ---
+eta_2 = 120.00 deg
+A = -0.707232332556
+B = 1.413962236638
+C = 0.707232332556
+Delta = 3.999999495490
+t1 = -0.414317622553
+t2 = 2.413607207530
+theta_i^(1) = -0.785575798700 rad = -45.010178 deg
+theta_i^(2) = 2.356016854890 rad = 134.989822 deg
+residual(theta_i^(1)) = -4.692e-17
+residual(theta_i^(2)) = -5.266e-17
+--- Leg 3 ---
+eta_3 = 240.00 deg
+A = -0.707232332556
+B = 1.413962236638
+C = 0.707232332556
+Delta = 3.999999495490
+t1 = -0.414317622553
+t2 = 2.413607207530
+theta_i^(1) = -0.785575798700 rad = -45.010178 deg
+theta_i^(2) = 2.356016854890 rad = 134.989822 deg
+residual(theta_i^(1)) = -4.692e-17
+residual(theta_i^(2)) = -5.266e-17
+```
+
 

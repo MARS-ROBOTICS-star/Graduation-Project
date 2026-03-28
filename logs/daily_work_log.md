@@ -565,3 +565,252 @@
 
 下一步：
 - 在 MATLAB 中实际运行 `IK_iteration.mlx`，确认本机符号工具箱对 `simplify(..., ''Steps'', 100, ''IgnoreAnalyticConstraints'', true)` 的输出形式满足预期。
+
+## 2026-03-26
+
+已完成：
+- 对比 `USD/complete_car.usd` 与 `USD/complete_car_equivlent.usd` 的机器人本体层级和关节树。
+- 新增 `scripts/isaac_sim/align_complete_car_structure_to_equivalent.py`，用于按 equivalent 主链清理 `complete_car.usd` 机器人子树。
+- 按用户要求，仅在 `/World/complete_car_final` 及其 `joints/` 范围内执行结构树收敛。
+- 删除了 12 个多余的 SPM 腿部刚体：
+  - `spm1_leg1_proximal`、`spm1_leg1_distal`、`spm1_leg2_proximal`、`spm1_leg2_distal`、`spm1_leg3_proximal`、`spm1_leg3_distal`
+  - `spm2_leg1_proximal`、`spm2_leg1_distal`、`spm2_leg2_proximal`、`spm2_leg2_distal`、`spm2_leg3_proximal`、`spm2_leg3_distal`
+- 删除了 `joints/` 下对应的 12 个 fixed joint，使保留链路收敛为 `base -> virtual_z -> virtual_y -> platform`。
+- 生成编辑前备份 `USD/complete_car.usd.spm_leg_cleanup.bak`。
+- 复查修改结果，确认 `/World/complete_car_final` 下已不再包含上述腿部刚体，`joints/` 下也只保留 equivalent 主链所需关节。
+
+修改文件：
+- `USD/complete_car.usd`
+- `USD/complete_car.usd.spm_leg_cleanup.bak`
+- `scripts/isaac_sim/align_complete_car_structure_to_equivalent.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `complete_car.usd` 的机器人本体结构树已按 equivalent 主链收敛，不再保留多余的 SPM 腿部层级。
+- 这一步只处理机器人本体层级，不涉及场景层 `/Environment`、`/Render`、`/physicsScene` 以及根级 `/visuals`、`/colliders`、`/meshes`。
+- 当前资产仍存在未解决问题，包括轮子零速 drive、损坏的 visual 引用、远端 `Example_Rotary` 引用和内嵌 `PhysicsScene` 风险。
+
+下一步：
+- 在新的结构树基础上继续清理 `complete_car.usd` 的 drive、损坏引用与 replicated 不兼容项，再重新验证 `Play` 时是否仍出现 transform 爆炸。
+
+已完成：
+- 新增 `scripts/isaac_sim/add_wheel_friction_material.py`，用于给 `complete_car.usd` 的 6 个轮子 collision 子树统一绑定 physics material。
+- 在 `USD/complete_car.usd` 中新增共享材质 `/World/complete_car_final/Looks/wheel_physics_material`。
+- 将该材质参数设置为：`staticFriction=1.0`、`dynamicFriction=1.0`、`frictionCombineMode=multiply`。
+- 将该材质绑定到 6 个轮子的 `collisions` 子树。
+- 生成编辑前备份 `USD/complete_car.usd.wheel_friction.bak`。
+- 复查确认材质属性和 6 个 wheel collision 绑定均已写入 USD。
+
+修改文件：
+- `USD/complete_car.usd`
+- `USD/complete_car.usd.wheel_friction.bak`
+- `scripts/isaac_sim/add_wheel_friction_material.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `complete_car.usd` 的 6 个轮子已不再依赖默认地面摩擦，而是显式使用统一的轮胎 physics material。
+- 这一步只增加轮子接触摩擦参数，不处理轮子 drive、visual 引用错误、远端 `Example_Rotary` 引用和 `PhysicsScene` 风险。
+
+已完成：
+- 将 `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py` 从原始关节直控脚本改为第一版 Isaac Sim IK 键控验证脚本。
+- 将键盘控制对象从“6 个球铰关节角”改为“前后两个平台目标姿态”。
+- 接入 `IK_3RRR_Spherical`，实现每帧根据目标姿态解算前后两组 3 电机角，并映射到 6 个球铰关节目标。
+- 保留轮子速度控制，并增加周期性调试输出：`rpy_des / q_ik / q_sim / residual`。
+- 将资产路径切换到 `USD/complete_car.usd`，机器人根路径切换到 `/World/complete_car_final`。
+- 对更新后的脚本执行了 `python3 -m py_compile` 语法检查，结果通过。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前已有一个可用于“姿态目标 -> IK -> 球铰目标 -> Isaac Sim 读回对比”的第一版键控验证脚本。
+- 当前脚本仍使用第一轮假设的 `IK -> sim joint` 顺序、`signs` 和 `biases`，后续需要结合实际运动方向做标定。
+
+已完成：
+- 为 `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py` 增加 CSV 日志功能。
+- 新增日志目录 `results/ik_keyboard_logs/`，脚本启动时会自动创建时间戳日志文件。
+- 日志内容包含 `rpy_des`、`q_ik`、`q_sim`、前后球铰残差以及 `ik_error` 字段，并在每次快照打印时同步落盘。
+- 在终端调试输出中增加 `log_path` 字段，便于定位本次运行对应的日志文件。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 IK 键控验证脚本除终端快照外，还能把关键结果稳定保存到 CSV，便于后续直接读取和复盘。
+
+## 2026-03-26
+
+已完成：
+- 重新梳理了 `test_ik_keyboard.py` 的验证目标，确认用户当前需要的是“静态几何一致性验证”，而不是“姿态命令下发后由 drive 跟踪”的控制执行验证。
+- 将 `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py` 改为新的静态一致性验证逻辑：
+  - 键盘直接摆动 6 个球铰等效关节角
+  - 每帧读取前后 platform 相对各自 base 的当前姿态
+  - 将当前姿态送入 `IK_3RRR_Spherical`
+  - 将 IK 预测关节角与 Isaac Sim 当前实际关节角直接对比
+- 在脚本中新增前后 `base/platform` prim 路径读取、相对旋转矩阵提取，以及 `Rz(yaw) @ Ry(pitch) @ Rx(roll)` 对应的 ZYX 欧拉角反解。
+- 保留并适配了 CSV 日志落盘，日志现记录当前平台姿态、手动关节命令、IK 预测关节角、Isaac Sim 实际关节角、残差和 `ik_error`。
+- 对修改后的脚本执行了 `python3 -m py_compile` 语法检查，结果通过。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `test_ik_keyboard.py` 不再把 IK 输出回写给 Isaac Sim 关节执行，而是作为“当前姿态 -> IK 预测关节角”的几何一致性验证脚本使用。
+- 之后读取日志时，应把 `q_ik` 与 `q_sim` 的差异理解为静态映射误差、坐标定义误差、零位/符号/偏置标定误差，而不再理解为 drive 跟踪误差。
+
+下一步：
+- 运行新的 `test_ik_keyboard.py`，分别做前球铰和后球铰的单轴扫描，进一步标定 `IK_SIGNS_*`、关节顺序和偏置。
+## 2026-03-27
+
+已完成：
+- 读取并分析了 `results/ik_keyboard_logs/ik_keyboard_2026-03-27_09-58-33.csv`。
+- 统计确认该日志共 160 条采样，`ik_error` 全程为空，6 个 residual 全为 `0.0`。
+- 统计确认 `joint_cmd` 与 `q_sim` 的误差整体较小，说明 Isaac Sim 关节执行跟踪基本正常。
+- 统计确认 `q_ik` 与 `q_sim` 长期存在几十度级系统偏差，前后球铰都存在，且并非只出现在瞬态阶段。
+- 结合 `test_ik_keyboard.py` 与 `IK_model.py` 的当前实现，确认本轮主要问题是 IK 比较链路中的零位/分支/映射定义未与仿真关节约定对齐，而不是 IK 方程求解失败。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 IK 键盘验证脚本的 residual 为 0，只能说明“给定姿态存在一组数学合法解”，不能说明“该解已映射回 Isaac Sim 当前实际关节分支”。
+- 后续应优先标定零命令姿态下的球铰零位、分支选择和 `signs/biases`，再继续用该脚本做一致性验证。
+
+下一步：
+- 在 `test_ik_keyboard.py` 中把当前零命令姿态作为映射基准重新标定，并验证 `read_relative_rpy -> IK -> map_to_sim_joints -> q_sim` 是否能闭合。
+已完成：
+- 直接检查 `USD/complete_car.usd` 的 SPM 主链层级，确认零位姿态偏置固定存在于 `spm*_base -> spm*_spherical_virtual_z` 之间。
+- 在 `USD/complete_car.usd` 中新增 `/World/complete_car_final/spm1_base/spm1_base_ref` 与 `/World/complete_car_final/spm2_base/spm2_base_ref`。
+- 新增脚本 `scripts/isaac_sim/add_spm_base_reference_frames.py`，用于为当前 complete car 资产补写上述两个参考系，并自动生成 `USD/complete_car.usd.base_ref.bak` 备份。
+- 重新打开 stage 验证新增 prim 后，确认 `spm1_base_ref -> spm1_platform` 与 `spm2_base_ref -> spm2_platform` 的相对 ZYX `rpy` 均已接近零。
+
+修改文件：
+- `USD/complete_car.usd`
+- `scripts/isaac_sim/add_spm_base_reference_frames.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 USD 已具备两个固定在 base 上、且在机械零位与 platform 轴方向对齐的姿态参考系，可作为后续平台 `rpy` 读取的正确起点。
+- 后续 `test_ik_keyboard.py` 应切换到 `spm*_base_ref -> spm*_platform` 读取零位姿态，而不应继续直接使用 `spm*_base -> spm*_platform`。
+
+下一步：
+- 在 `test_ik_keyboard.py` 中改用 `spm*_base_ref` 作为姿态参考 frame，并重新验证零位 `rpy` 与 IK 输入链路。
+已完成：
+- 将 `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py` 的平台姿态读取基准从 `spm*_base -> spm*_platform` 改为 `spm*_base_ref -> spm*_platform`。
+- 保留原有 `Rz(yaw) -> Ry(pitch) -> Rx(roll)` 的 ZYX 欧拉角分解与 IK 求解逻辑，仅替换姿态参考 frame。
+- 对修改后的脚本执行 `python3 -m py_compile`，语法检查通过。
+- 使用与脚本一致的读取公式重新检查机械零位，确认前球铰 `rpy≈[5.493e-06, 6.94e-07, -2.571e-06] deg`、后球铰 `rpy≈[-1.4661e-05, -1.3655e-05, 4.951e-06] deg`，可视为零。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 IK 静态验证脚本的 `rpy` 输入参考系已与 USD 中补入的零位参考 frame 对齐。
+- 后续若 `q_ik` 与 `q_sim` 仍不一致，应优先继续检查 `IK_model.py` 输出到仿真关节的零位、分支与符号/偏置映射，而不是继续怀疑平台姿态读取坐标系。
+
+下一步：
+- 在已对齐的姿态输入前提下，继续标定 `IK_SIGNS_FRONT/REAR`、`IK_BIASES_FRONT/REAR` 与分支初值。
+已完成：
+- 在 `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py` 中加入启动零偏标定逻辑。
+- 脚本启动后会先对 6 个球铰保持零目标、对 6 个轮子保持零轮速，先静置 `240` 步，再连续采样 `120` 步，对前后 `spm*_base_ref -> spm*_platform` 的原始 `rpy` 求均值作为 `rpy_bias`。
+- 后续 IK 输入改为 `raw_rpy - rpy_bias`，不再直接使用原始相对姿态。
+- CSV 日志新增 `raw / bias / corrected` 三组平台 `rpy` 字段，便于区分物理稳态偏置与送入 IK 的校正姿态。
+- 对修改后的脚本执行 `python3 -m py_compile`，语法检查通过。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 IK 键控验证脚本已具备启动零偏标定能力，可直接用新日志判断“原始平台姿态偏置”和“校正后送入 IK 的姿态”是否分离成功。
+
+下一步：
+- 重新运行脚本生成新日志，先检查 `front/rear_*_cur_deg` 是否在零命令稳态下接近 0，再继续分析 `q_ik` 与 `q_sim` 的剩余差异。
+已完成：
+- 读取并分析 `results/ik_keyboard_logs/ik_keyboard_2026-03-27_17-20-44.csv`，验证加入启动零偏标定后的新日志格式。
+- 统计确认零命令稳态下，平台原始姿态 `raw_rpy` 仍存在小幅物理偏置，但校正后 `corrected_rpy` 已明显逼近零。
+- 前平台 `corrected_rpy` 均值约为 `[0.013734, -0.010834, -0.00631] deg`，后平台约为 `[-0.001878, 0.000419, 0.003239] deg`。
+- 同时确认 `q_ik` 与 `q_sim` 在零命令稳态下仍有系统差异，说明当前主问题已从姿态读取收敛到关节映射标定。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 启动零偏标定已基本解决“平台 `rpy` 输入不为零”的问题，后续应优先继续标定 `IK_SIGNS_*`、`IK_BIASES_*` 与分支初值。
+
+下一步：
+- 在零偏校正保持不变的前提下，针对前后球铰分别做单轴扫描，继续拟合 `q_ik -> q_sim` 的零位、符号和偏置。
+已完成：
+- 重写 `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py`，将其从“关节直控 + 反算对照”脚本改为“姿态目标 -> IK -> joint target -> articulation controller 跟踪”验证脚本。
+- 键盘输入现直接修改前后平台的 `roll/pitch/yaw` 目标，不再直接修改 6 个球铰关节角。
+- 启动阶段新增联合零位标定：同时估计平台 `rpy` 零偏和 Sim 当前球铰关节零位，并将后者作为 `map_to_sim_joints()` 的零位偏置。
+- 控制链中新增两级一阶平滑：先对姿态目标做平滑，再对 IK 生成的 joint target 做平滑，最后再把 `q_cmd` 发送给 articulation controller。
+- 日志字段改为完整记录 `raw/meas/des/cmd` 姿态、`q_ik/q_cmd/q_sim`、joint 跟踪误差以及 IK residual。
+- 对重写后的脚本执行 `python3 -m py_compile`，语法检查通过。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `test_ik_keyboard.py` 已能直接验证三个关键问题：姿态目标是否稳定送进 IK、IK 生成的 joint target 是否和零位标定一致、articulation controller 是否能平滑跟踪 joint target。
+
+下一步：
+- 实际运行新脚本并读取新日志，检查 `rpy_des -> rpy_meas`、`q_cmd -> q_sim` 和 `track_err` 三条误差曲线，再决定是否需要继续调 `IK_SIGNS_*`、姿态/关节平滑系数或底层 drive 参数。
+已完成：
+- 读取并分析 `results/ik_keyboard_logs/ik_keyboard_2026-03-27_18-53-34.csv`，评估重构后 `test_ik_keyboard.py` 的整条控制链。
+- 确认 `q_cmd -> q_sim` 跟踪效果较好，前后球铰关节平均绝对跟踪误差均在约 `0.02~0.07 deg` 量级，说明 articulation controller 可以平滑跟踪 joint target。
+- 确认 IK 全程可解，`residual` 为 0，`ik_error` 为空。
+- 同时确认 `rpy_cmd -> rpy_meas` 误差很大，前平台平均绝对误差约 `[5.62, 4.69, 4.71] deg`，后平台约 `[2.42, 0.50, 2.20] deg`，且单轴姿态命令会激发错误轴或相反方向。
+- 据此得出当前关键结论：问题不在关节跟踪，而在“IK 电机角”和“USD 等效球铰关节坐标”不是同一组坐标，无法直接把 IK 输出当作现有等效模型的关节目标。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 现阶段已验证：IK 可稳定求解，joint target 可被底层平滑跟踪；但姿态目标通过 IK 直接驱动当前等效球铰模型这条路线在语义上不成立。
+
+下一步：
+- 回到研究层重新决定架构：是保留等效球铰姿态控制并让 IK 仅作为真实电机角映射层，还是重建一个真实电机坐标可控的下层模型。
+已完成：
+- 明确了当前仿真建模的语义：USD 中 3 个等效球铰关节角本身就是移动平台姿态坐标，而不是 3-RRR 真实电机角代理。
+- 因此重新界定 RL 与 IK 的角色分工：RL 在仿真中应直接控制等效球铰姿态角；IK 只负责把平台姿态并行映射为真实机构电机角，供后续可能的实物阶段使用。
+- 据此停止继续沿“IK 电机角直接驱动当前等效球铰模型”这条路线投入。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 RL 主线重新收敛为：直接控制 3 个等效球铰姿态角和轮子动作；IK 暂不进入仿真闭环控制。
+
+下一步：
+- 回到 RL 环境设计与实现，明确动作空间、观测和奖励如何围绕等效球铰姿态控制来组织。
+

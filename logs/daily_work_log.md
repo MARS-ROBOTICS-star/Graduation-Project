@@ -1,5 +1,74 @@
 # 每日工作日志
 
+## 2026-03-29
+
+已完成：
+- 核对本地 `main` 与 GitHub `origin/main` 的提交关系，确认远端在同步前没有额外新提交。
+- 按当前工作区原样整理并提交 Git 变更，包含现有删除项与未跟踪新增内容。
+- 将当前仓库快照推送到 GitHub `origin/main`，使远端与本地工作区保持一致。
+- 同步更新 `docs/current_status.md`，移除“待同步”状态。
+
+修改文件：
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- GitHub `origin/main` 已更新为当前本地工作区快照。
+- 本轮同步后，仓库当前状态与远端主分支已一致。
+
+下一步：
+- 回到 RL baseline 收敛、USD 清理与论文写作主线。
+
+## 2026-03-29
+
+已完成：
+- 根据 3-RRR 球面并联机构文献与现有符号化推导结果，重写毕业论文 `chapter03` 的球铰逆运动学部分。
+- 在章节中补入三维旋转矩阵、齐次变换矩阵、方向向量约束、半角代换以及闭式逆解公式。
+- 统一论文符号口径，将动平台姿态写为 `(\phi,\vartheta,\psi)`，将主动关节角保留为 `\theta_i`，避免姿态角与关节角冲突。
+- 向论文参考文献库新增 `Sadeqi 等 2017` 的 BibTeX 条目。
+- 实际执行 `xelatex -> bibtex -> xelatex -> xelatex` 编译验证，确认新增章节可被模板接受。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `毕业论文/毕业论文模板/LaTeX/reference/ref.bib`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `chapter03.tex` 已从占位模板改写为可直接用于论文正文的中文逆运动学章节。
+- 当前章节推导链路已经固定为 方向向量建模 -> 几何约束 -> 半角代换 -> 二次方程闭式求解。
+- 编译过程中与本次改动直接相关的引用和交叉引用均已收敛；主文档仍保留 `chapter01` 历史未补的两个旧引用告警，与本次修改无关。
+
+下一步：
+- 若需要，可继续在 `chapter04` 或 `chapter05` 中承接本章公式，补写控制映射、仿真验证或实验结果分析内容。
+
+## 2026-03-28
+
+已完成：
+- 基于原始 PDF 重新整理 `Learning-based legged locomotion: State of the art and future perspectives` 的阅读笔记。
+- 按已安装的 `literature-reading-notes` skill 模板重写了文献笔记结构，补齐论文快照、章节逻辑、mind map、分章节精读、术语表、重要参考文献和可复用 related-work 段落。
+- 将该文献的总结重点进一步对齐到当前课题两阶段主线，明确其对 observation / reward / action / training framework / sim-to-real 的可迁移启发。
+- 同步更新 `docs/current_status.md`，记录该阅读笔记已完成规范化重写。
+- 根据用户新要求，将该笔记再次改写为“重要内容摘录与整理”版本，重点围绕正文中的概念定义、使用方式、该段引用的相关工作，以及对应完整参考文献信息。
+- 去除了与当前课题直接绑定的分析内容，回到面向原文内容本身的综述笔记写法。
+- 继续按用户给出的示例格式重写整份笔记，结构明确对齐为：论文快照、全文结构、mind map、章节精读笔记、关键知识点、术语表、重要参考文献、可复用综述段落。
+- 将 `Section 3.2 Observation` 及其子节改为“核心观点 / 本节作用 / 段落主旨 / 重点概念提炼 / 学术含义 / 完整参考文献”风格，并同步重排 `Reward`、`Action Space`、`Learning Frameworks`、`Sim-to-real`、`Combining control and learning` 等关键章节。
+
+修改文件：
+- `docs/literature/mineru_output/Ha 等 - 2025 - Learning-based legged locomotion State of the art and future perspectives/auto/reading_notes.md`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前该文献对应目录下的 `reading_notes.md` 已不再只是首轮高层梳理，而是可直接复用的结构化综述笔记。
+- 该综述继续支持当前仓库已固化的阶段化路线：先最小 baseline，再逐步加入复杂 observation、球铰控制、复杂地形和 sim-to-real 设计。
+- 当前版本更符合“文献摘录式阅读笔记”用途：可以直接按节查看某个概念在综述中的定义、作用与引用来源。
+- 当前版本已更接近“综述型文献精读卡片”，便于后续继续逐段扩写。
+
+下一步：
+- 若需要，可继续把 `3.3 Reward`、`3.4 Action space`、`4 Learning frameworks` 进一步扩展成逐段摘录版，并补得更全。
+
 ## 2026-03-16
 
 已完成：
@@ -258,6 +327,28 @@
 - 重新整理了仓库级 `AGENTS.md` 结构，将启动上下文、项目背景、优先级、协作规则、记忆规则和规范文件职责重新归类。
 - 将 RL 训练路径正式固化到 `AGENTS.md`：
   - 阶段 0 先跑通训练闭环
+
+## 2026-03-28
+
+已完成：
+- 读取并整理了根目录草稿 `literature_note_skill.md`。
+- 将其安装为可被 Codex 发现的本地 skill：`/home/lbz/.codex/skills/literature-reading-notes/`。
+- 新增该 skill 的 `SKILL.md` 与 `agents/openai.yaml`，统一技能名为 `literature-reading-notes`。
+- 将本次变更同步写入 `docs/current_status.md` 与 `docs/conversation_history.md`，保证后续会话可继承。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `/home/lbz/.codex/skills/literature-reading-notes/SKILL.md`
+- `/home/lbz/.codex/skills/literature-reading-notes/agents/openai.yaml`
+
+产出/结论：
+- 当前已可直接使用 `$literature-reading-notes` 触发结构化文献阅读笔记工作流。
+- 根目录 `literature_note_skill.md` 现可视为技能草稿源，而不是最终可发现的 skill 入口。
+
+下一步：
+- 如需继续完善，可再按实际使用频率补充该 skill 的示例、引用规则细化或与 `docs/literature/` 的仓库内工作流衔接说明。
   - 阶段 1 做平地基础速度跟踪 baseline
   - 阶段 2 再加入球铰控制
   - 更后续阶段再加入运动学先验、地形适应和感知融合
@@ -814,3 +905,23 @@
 下一步：
 - 回到 RL 环境设计与实现，明确动作空间、观测和奖励如何围绕等效球铰姿态控制来组织。
 
+## 2026-03-28
+
+已完成：
+- 按 `literature-reading-notes` 的结构化方式整理 `Ha 等 - 2025 - Learning-based legged locomotion: State of the art and future perspectives`。
+- 基于原始 PDF 提炼出该综述的整体逻辑、`MDP` 组成、训练框架、`sim-to-real` 路线以及 `control + learning` 组合方式。
+- 将阅读笔记落盘到对应文献目录下，保持与现有 `Wiberg 2022`、`Xu 2024` 笔记一致的仓库组织方式。
+- 同步更新项目状态与长期会话记忆，避免后续重复整理该综述。
+
+修改文件：
+- `docs/literature/mineru_output/Ha 等 - 2025 - Learning-based legged locomotion State of the art and future perspectives/auto/reading_notes.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前已形成一份可直接复用的综述型阅读笔记，重点不是复述全文，而是为本课题提炼任务设计与训练组织方法。
+- 该综述支持当前已确定的两阶段主线：先做最小可训练 baseline，再逐步加入外感知、分层控制和更强的 sim-to-real 机制。
+
+下一步：
+- 若继续沿文献主线推进，可把 `Ha 2025` 与 `Wiberg 2022`、`Xu 2024` 做一次横向对比，专门整理“baseline 如何定义、复杂度如何分阶段引入”的共性结论。

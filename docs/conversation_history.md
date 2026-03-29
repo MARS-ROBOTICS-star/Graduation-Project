@@ -258,6 +258,30 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - velocity-command tracking
   - fixed spherical-joint posture
   - wheel locomotion control first
+
+## 2026-03-29
+
+### Thesis chapter 3 inverse kinematics draft
+- Wrote the spherical-joint inverse kinematics section into `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`.
+- Fixed the thesis notation so that platform attitude is written as `(\phi,\vartheta,\psi)` and active joint angles remain `\theta_i`, avoiding symbol collision in the derivation.
+- For the thesis coordinate convention, the distal reference orientation is recorded as `R_{03}^{(i)} = R_z(\eta_i + 5\pi/6) R_y(\beta - \pi/2)`, consistent with the local symbolic verification workflow.
+- The durable derivation route for future thesis edits is now:
+  - rotation matrices and homogeneous transform basics
+  - direction-vector constraint `w_i^\mathrm{T} v_i = \cos\alpha_2`
+  - half-angle substitution `t_i = \tan(\theta_i/2)`
+  - quadratic solution for the closed-form inverse kinematics
+- Added the BibTeX entry `sadeqi2017` to `毕业论文/毕业论文模板/LaTeX/reference/ref.bib` for subsequent thesis citations.
+
+## 2026-03-28
+
+### Literature note skill installation
+- Promoted the repository draft `literature_note_skill.md` into a discoverable local Codex skill at `/home/lbz/.codex/skills/literature-reading-notes/`.
+- The canonical invocation name is now `literature-reading-notes`.
+- The installed skill is intended for source-faithful structured reading notes from full papers, sections, excerpts, screenshots, and OCR text, with emphasis on paper structure, paragraph extraction, bilingual terminology, reference linkage, and reusable related-work text.
+- Impact:
+  - future sessions can invoke `$literature-reading-notes` directly instead of reusing the raw draft markdown
+  - the original root-level `literature_note_skill.md` should be treated as the drafting source, not the discoverable runtime skill
+- Status: installed and ready for use.
 - Reason:
   - this is the shortest path to a stable, controllable, and reproducible RL baseline
   - it avoids mixing mechanism novelty, perception, terrain diversity, and training-loop debugging in the same first experiment
@@ -584,3 +608,19 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - future RL work should return to the baseline of directly controlling the equivalent joints in simulation
   - IK remains useful for later hardware-facing stages or for thesis discussion of the real mechanism mapping
 
+## 2026-03-28
+
+### Ha 2025 survey reading note outcome
+- Added a first structured reading note for `Learning-based legged locomotion: State of the art and future perspectives` at `docs/literature/mineru_output/Ha 等 - 2025 - Learning-based legged locomotion State of the art and future perspectives/auto/reading_notes.md`.
+- Durable reading conclusion:
+  - the paper is best treated as a research-design survey rather than as an algorithm survey
+  - its main reusable structure for this project is:
+    - `MDP` design (`observation`, `reward`, `action`)
+    - learning framework selection (`end-to-end`, `curriculum`, `hierarchical`, `privileged learning`)
+    - `sim-to-real` strategy ordering (`good system design` before `randomization`)
+    - control-learning combinations for staged architectures
+- Project-specific implication:
+  - the current two-stage complete-car RL roadmap remains aligned with the survey's logic
+  - Stage 1 should continue to prioritize a minimal trainable baseline with proprioception and goal-related inputs
+  - richer exteroception, hierarchical control, privileged learning, and stronger sim-to-real machinery belong to later stages after the baseline stabilizes
+- Status: first-pass note completed from the source PDF; suitable as a reusable survey reference for future environment-design discussions.

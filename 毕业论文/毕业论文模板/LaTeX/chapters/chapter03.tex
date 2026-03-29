@@ -1,0 +1,250 @@
+\setlength{\baselineskip}{20pt}
+\chapter{球铰等效机构逆运动学建模}
+\label{cha:chap3}
+
+\section{逆运动学推导基础}
+
+\subsection{三维旋转矩阵}
+
+本文研究对象可抽象为以公共球心 $O$ 为旋转中心的球面机构，因此其位姿变化本质上是刚体绕固定点的三维转动。为避免符号混淆，动平台姿态采用滚转角 $\phi$、俯仰角 $\vartheta$ 和偏航角 $\psi$ 表示，主动关节输入角采用 $\theta_i$ 表示，其中 $i=1,2,3$。在右手坐标系和列向量表示下，绕 $x$、$y$、$z$ 轴的基本旋转矩阵分别为
+\begin{equation}
+R_x(\phi)=
+\begin{bmatrix}
+1 & 0 & 0 \\
+0 & \cos\phi & -\sin\phi \\
+0 & \sin\phi & \cos\phi
+\end{bmatrix}
+\label{eq:03:rx}
+\end{equation}
+
+\begin{equation}
+R_y(\vartheta)=
+\begin{bmatrix}
+\cos\vartheta & 0 & \sin\vartheta \\
+0 & 1 & 0 \\
+-\sin\vartheta & 0 & \cos\vartheta
+\end{bmatrix}
+\label{eq:03:ry}
+\end{equation}
+
+\begin{equation}
+R_z(\psi)=
+\begin{bmatrix}
+\cos\psi & -\sin\psi & 0 \\
+\sin\psi & \cos\psi & 0 \\
+0 & 0 & 1
+\end{bmatrix}
+\label{eq:03:rz}
+\end{equation}
+
+若向量 $a$ 在坐标系 $\{B\}$ 中的表示为 $a^B$，则其在坐标系 $\{A\}$ 中的表示满足
+\begin{equation}
+a^A = R_A^B a^B
+\label{eq:03:vector_transform}
+\end{equation}
+因此，逆运动学推导的核心就是建立各局部坐标系到基坐标系的旋转映射关系，并从旋转后的方向向量中提取主动关节角。
+
+\subsection{齐次变换矩阵}
+
+一般刚体位姿既包含方向也包含位置，统一表达方式为齐次变换矩阵
+\begin{equation}
+T_A^B=
+\begin{bmatrix}
+R_A^B & p_A^B \\
+0\ 0\ 0 & 1
+\end{bmatrix}
+\label{eq:03:htm_general}
+\end{equation}
+式中，$R_A^B$ 表示坐标系 $\{B\}$ 相对 $\{A\}$ 的姿态，$p_A^B$ 表示坐标系 $\{B\}$ 原点在 $\{A\}$ 中的位置。
+
+对于 3-RRR 球面并联机构，所有转轴均交于公共点 $O$，动平台仅发生绕该点的转动而不存在平移自由度，因此可将式 \eqref{eq:03:htm_general} 简化为
+\begin{equation}
+T_A^B=
+\begin{bmatrix}
+R_A^B & 0 \\
+0\ 0\ 0 & 1
+\end{bmatrix}
+\label{eq:03:htm_spherical}
+\end{equation}
+这意味着本文的逆运动学问题可以完全转化为姿态矩阵与方向余弦向量之间的关系求解，而不必额外处理末端位置变量。
+
+\subsection{球面机构的方向向量约束}
+
+3-RRR 球面并联机构的每条支链均由主动转轴、近端转轴和远端转轴组成。设三类转轴在基坐标系中的单位方向向量分别为 $u_i$、$w_i$ 和 $v_i$，则由球面机构的几何约束可知，$w_i$ 与 $v_i$ 的夹角恒为结构常数 $\alpha_2$，因此满足
+\begin{equation}
+w_i^{\mathrm{T}} v_i = \cos\alpha_2,\quad i=1,2,3
+\label{eq:03:dot_constraint}
+\end{equation}
+式 \eqref{eq:03:dot_constraint} 是后续逆运动学闭式求解的出发点。只要将 $w_i$ 和 $v_i$ 分别表示为主动关节角与末端姿态角的函数，就可以把机构几何约束转写为关于 $\theta_i$ 的代数方程。
+
+\section{3-RRR 球面并联机构逆运动学推导}
+
+参考文献 \cite{sadeqi2017} 给出了 3-RRR 球面并联机构的经典逆运动学求解框架。结合本文球铰等效机构的坐标定义以及符号化校核结果，现将与后续仿真模型一致的推导过程整理如下。
+
+\subsection{机构参数与主动关节轴向量}
+
+设 $\eta_i$ 表示第 $i$ 条支链在基坐标系 $x$-$y$ 平面内的方位角，$\gamma$ 表示主动转轴与全局 $z$ 轴之间的夹角，$\alpha_1$ 表示主动转轴与近端转轴之间的夹角，$\beta$ 表示机构处于零位时远端转轴相对全局 $z$ 轴的夹角。记
+\begin{equation}
+e_x=
+\begin{bmatrix}
+1 \\ 0 \\ 0
+\end{bmatrix}
+\label{eq:03:ex}
+\end{equation}
+则第 $i$ 条支链主动关节轴对应的姿态变换可写为
+\begin{equation}
+R_{01}^{(i)} = R_z\left(\eta_i + \frac{\pi}{2}\right) R_y\left(\frac{\pi}{2} - \gamma\right)
+\label{eq:03:r01}
+\end{equation}
+主动关节轴方向向量即为该矩阵的第一列
+\begin{equation}
+u_i = R_{01}^{(i)} e_x =
+\begin{bmatrix}
+-\sin\eta_i \sin\gamma \\
+\cos\eta_i \sin\gamma \\
+-\cos\gamma
+\end{bmatrix}
+\label{eq:03:ui}
+\end{equation}
+
+\subsection{近端转轴方向向量}
+
+在第 $i$ 条支链中，近端转轴方向向量 $w_i$ 由两步旋转得到。第一步绕局部 $x$ 轴转动主动关节角 $\theta_i$；第二步绕更新后的局部 $z$ 轴转动结构角 $\alpha_1$。因此局部旋转矩阵为
+\begin{equation}
+R_{\mathrm{loc}}^{(i)} = R_x(\theta_i) R_z(\alpha_1)
+\label{eq:03:rloc}
+\end{equation}
+将其映射到基坐标系可得
+\begin{equation}
+R_w^{(i)} = R_{01}^{(i)} R_{\mathrm{loc}}^{(i)}
+\label{eq:03:rw}
+\end{equation}
+于是，近端转轴方向向量写为
+\begin{equation}
+w_i = R_w^{(i)} e_x
+\label{eq:03:wi_def}
+\end{equation}
+展开后得到
+\begin{equation}
+w_i =
+\begin{bmatrix}
+-\cos\eta_i \sin\alpha_1 \cos\theta_i - \cos\alpha_1 \sin\eta_i \sin\gamma - \cos\gamma \sin\alpha_1 \sin\eta_i \sin\theta_i \\
+\cos\alpha_1 \cos\eta_i \sin\gamma - \sin\alpha_1 \cos\theta_i \sin\eta_i + \cos\eta_i \cos\gamma \sin\alpha_1 \sin\theta_i \\
+\sin\alpha_1 \sin\gamma \sin\theta_i - \cos\alpha_1 \cos\gamma
+\end{bmatrix}
+\label{eq:03:wi}
+\end{equation}
+
+\subsection{动平台远端转轴方向向量}
+
+为了建立末端姿态与远端转轴方向之间的关系，先定义机构零位下第 $i$ 条支链远端转轴的参考姿态矩阵。按照本文坐标约定，其表达式取为
+\begin{equation}
+R_{03}^{(i)} = R_z\left(\eta_i + \frac{5\pi}{6}\right) R_y\left(\beta - \frac{\pi}{2}\right)
+\label{eq:03:r03}
+\end{equation}
+
+动平台相对基坐标系的姿态采用固定轴 ZYX 旋转序列表示，即
+\begin{equation}
+R_{rpy} = R_z(\psi) R_y(\vartheta) R_x(\phi)
+\label{eq:03:rrpy}
+\end{equation}
+于是，末端姿态作用后的远端转轴方向向量为
+\begin{equation}
+v_i = R_{rpy} R_{03}^{(i)} e_x =
+\begin{bmatrix}
+v_{ix} \\
+v_{iy} \\
+v_{iz}
+\end{bmatrix}
+\label{eq:03:vi}
+\end{equation}
+式中，$v_{ix}$、$v_{iy}$ 和 $v_{iz}$ 是 $\phi$、$\vartheta$、$\psi$、$\beta$ 与 $\eta_i$ 的函数。由于其完整展开式较长，后续推导保留分量形式，以便直接整理出关于 $\theta_i$ 的闭式方程。
+
+\subsection{约束方程整理与闭式求解}
+
+将式 \eqref{eq:03:wi} 和式 \eqref{eq:03:vi} 代入几何约束式 \eqref{eq:03:dot_constraint}，可以得到关于主动关节角 $\theta_i$ 的三角方程
+\begin{equation}
+a_i \sin\theta_i + b_i \cos\theta_i + d_i = 0
+\label{eq:03:trig_constraint}
+\end{equation}
+其中
+\begin{equation}
+a_i = \sin\alpha_1 \left( v_{iz}\sin\gamma + v_{iy}\cos\eta_i\cos\gamma - v_{ix}\cos\gamma\sin\eta_i \right)
+\label{eq:03:a}
+\end{equation}
+
+\begin{equation}
+b_i = -\sin\alpha_1 \left( v_{ix}\cos\eta_i + v_{iy}\sin\eta_i \right)
+\label{eq:03:b}
+\end{equation}
+
+\begin{equation}
+d_i = v_{iy}\cos\alpha_1\cos\eta_i\sin\gamma - v_{iz}\cos\alpha_1\cos\gamma - \cos\alpha_2 - v_{ix}\cos\alpha_1\sin\eta_i\sin\gamma
+\label{eq:03:d}
+\end{equation}
+
+为将式 \eqref{eq:03:trig_constraint} 化为代数方程，令
+\begin{equation}
+t_i = \tan\frac{\theta_i}{2}
+\label{eq:03:half_angle}
+\end{equation}
+则有
+\begin{equation}
+\sin\theta_i = \frac{2t_i}{1+t_i^2}, \qquad
+\cos\theta_i = \frac{1-t_i^2}{1+t_i^2}
+\label{eq:03:half_angle_expand}
+\end{equation}
+代入并整理后，可得标准二次方程
+\begin{equation}
+A_i t_i^2 + B_i t_i + C_i = 0
+\label{eq:03:quadratic}
+\end{equation}
+其中
+\begin{equation}
+\begin{aligned}
+A_i ={}& v_{ix}\cos\eta_i\sin\alpha_1 - v_{iz}\cos\alpha_1\cos\gamma - \cos\alpha_2 \\
+&+ v_{iy}\sin\alpha_1\sin\eta_i + v_{iy}\cos\alpha_1\cos\eta_i\sin\gamma \\
+&- v_{ix}\cos\alpha_1\sin\eta_i\sin\gamma
+\end{aligned}
+\label{eq:03:A}
+\end{equation}
+
+\begin{equation}
+B_i = 2\sin\alpha_1 \left( v_{iz}\sin\gamma + v_{iy}\cos\eta_i\cos\gamma - v_{ix}\cos\gamma\sin\eta_i \right)
+\label{eq:03:B}
+\end{equation}
+
+\begin{equation}
+\begin{aligned}
+C_i ={}& v_{iy}\cos\alpha_1\cos\eta_i\sin\gamma - v_{iz}\cos\alpha_1\cos\gamma - v_{ix}\cos\eta_i\sin\alpha_1 \\
+&- v_{iy}\sin\alpha_1\sin\eta_i - \cos\alpha_2 - v_{ix}\cos\alpha_1\sin\eta_i\sin\gamma
+\end{aligned}
+\label{eq:03:C}
+\end{equation}
+
+定义判别式
+\begin{equation}
+\Delta_i = B_i^2 - 4A_i C_i
+\label{eq:03:delta}
+\end{equation}
+则半角变量的解为
+\begin{equation}
+t_i = \frac{-B_i \pm \sqrt{\Delta_i}}{2A_i}
+\label{eq:03:t_solution}
+\end{equation}
+从而主动关节角的闭式解写为
+\begin{equation}
+\theta_i = 2\arctan\left(\frac{-B_i \pm \sqrt{\Delta_i}}{2A_i}\right), \quad i=1,2,3
+\label{eq:03:theta_solution}
+\end{equation}
+
+式 \eqref{eq:03:theta_solution} 给出了在已知动平台期望姿态 $(\phi,\vartheta,\psi)$ 时，各主动转轴所需输入角的解析表达式。若在数值实现中需要避免反正切函数的象限歧义，可进一步采用
+\begin{equation}
+\theta_i = 2\operatorname{atan2}\left(-B_i \pm \sqrt{\Delta_i},\, 2A_i\right)
+\label{eq:03:theta_solution_atan2}
+\end{equation}
+由此，3-RRR 球面并联机构的逆运动学问题被转化为从目标姿态矩阵计算方向向量分量，再利用闭式公式求取三个主动关节角的过程。该结果既可直接用于本文后续的球铰控制映射，也为下一章中的关节驱动与姿态验证提供了理论基础。
+
+\section{本章小结}
+
+本章围绕球铰等效机构的逆运动学问题，首先梳理了三维旋转矩阵、齐次变换矩阵以及球面机构方向向量约束等基础理论；随后在 3-RRR 球面并联机构几何模型下，完成了从主动关节轴向量、近端转轴向量和远端转轴向量构造，到几何约束整理、半角代换以及闭式求解公式建立的完整推导。最终得到的主动关节角解析式为后续姿态控制、仿真验证和控制器设计提供了统一的数学描述。

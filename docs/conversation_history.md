@@ -2,6 +2,85 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-03-30
+
+### GitHub push blocker from SAT CAD files
+- A full-repository push on `main` was rejected by GitHub because `Drawing/完整小车等效串联.SAT` is about 194 MB, exceeding GitHub's 100 MB normal-file limit.
+- Durable repository rule for this project:
+  - `.SAT` CAD files should be ignored by default and should not be uploaded through normal Git history
+  - if these assets ever need versioned remote storage, use Git LFS or another artifact channel explicitly instead of plain `git push`
+
+### Isaac Sim terrain preview script organization and validation
+- Organized the user's terrain-preview additions under `scripts/isaac_sim/terrain_preview/`:
+  - `mgdp_terrain_preview.py`
+  - `run_terrain_preview.sh`
+  - `terrain_builder.py`
+  - `README.md`
+- Fixed the Python script's repository-root discovery so default USD export now resolves from the actual repo root instead of walking too far upward.
+- Fixed the README launch examples to use the real folder path `scripts/isaac_sim/terrain_preview/`.
+- Verified local static checks pass:
+  - `python3 -m py_compile scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py`
+  - `bash -n scripts/isaac_sim/terrain_preview/run_terrain_preview.sh`
+- Attempted a minimal Isaac Sim launch with:
+  - `/home/lbz/isaac-sim/python.sh scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py --headless --frames 1 --gallery stage1`
+- Durable conclusion:
+  - the script package is structurally runnable from the repository and the wrapper path is correct
+  - the current workstation cannot complete Isaac Sim startup because the host graphics stack fails before scene execution, with `Vulkan 1.1 is not supported`, `no CUDA-capable device is detected`, and a subsequent segmentation fault
+  - treat this as an environment-side blocker, not as evidence of a bug in the terrain-preview script itself
+
+### Keyboard teleop now injects one terrain tile into the same stage
+- Refactored the terrain-generation code into a reusable helper module:
+  - `scripts/isaac_sim/terrain_preview/terrain_builder.py`
+- Updated `scripts/isaac_sim/control_keyboard.py` so teleop can now add one terrain tile into the same Isaac Sim stage before `World.reset()`.
+- Current teleop terrain behavior:
+  - default terrain is `slope_ramp`
+  - switch terrain with `--terrain <name>`
+  - disable terrain injection with `--terrain none`
+- The teleop script also attempts to deactivate several common default ground prim paths before injecting terrain so negative-height features such as `gap` are less likely to be neutralized by an existing plane.
+- Verified the edited teleop and terrain scripts pass `python3 -m py_compile`.
+
+### Isaac Sim keyboard teleop wheel restore and smoothing
+- Refined `scripts/isaac_sim/control_keyboard.py` again after the numpad remap.
+- Wheel teleop is now restored using the existing repository convention:
+  - `W/S` for forward and backward
+  - `A/D` for differential left and right turning
+  - `SPACE` to zero the wheel target
+- The six spherical-joint DOFs remain on the numeric keypad bindings:
+  - `NUMPAD_1` to `NUMPAD_9`
+  - `NUMPAD_DIVIDE`
+  - `NUMPAD_MULTIPLY`
+  - `NUMPAD_SUBTRACT`
+- Added first-order smoothing to both command paths:
+  - wheel velocity commands
+  - ball-joint position commands
+- Verified the edited script passes `python3 -m py_compile`.
+
+### Isaac Sim keyboard teleop remap
+- Updated `scripts/isaac_sim/control_keyboard.py` to open `USD/complete_car.usd` instead of the old repository-root `complete_car_alternative.usd`.
+- Updated the articulation root path in that script to `/World/complete_car_final`.
+- Replaced the old letter-key mapping with numeric keypad bindings using:
+  - `NUMPAD_1` to `NUMPAD_9`
+  - `NUMPAD_DIVIDE`
+  - `NUMPAD_MULTIPLY`
+  - `NUMPAD_SUBTRACT`
+- In this numpad-only mode, the script no longer exposes wheel teleop keys; wheel joints are held at zero velocity while the six spherical-joint DOFs are adjusted incrementally.
+- Verified the edited script passes `python3 -m py_compile`.
+
+### Thesis chapter03 rewrite and build dependency
+- Replaced `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex` with the new "运动学模型" draft provided by the user.
+- The chapter now covers:
+  - spatial position / orientation / pose
+  - rotation matrices
+  - homogeneous transforms
+  - 3-RRR spherical parallel mechanism inverse kinematics
+- The new draft uses `tikzpicture` figures, so `毕业论文/毕业论文模板/LaTeX/main.tex` now loads:
+  - `\usepackage{tikz}`
+  - `\usetikzlibrary{arrows.meta}`
+- Rebuilt the thesis with `xelatex` twice and confirmed the document now compiles successfully with the new chapter content.
+- Residual warnings are not caused by this replacement alone:
+  - existing undefined citations remain in `chapter01`
+  - the new chapter has some overfull equation boxes, but no blocking LaTeX errors
+
 ## 2026-03-16
 
 ### RL code path consolidation
@@ -258,6 +337,22 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - velocity-command tracking
   - fixed spherical-joint posture
   - wheel locomotion control first
+
+## 2026-03-29
+
+### Repository file-map consolidation
+- Added `docs/project_file_map.md` as the repository-wide structure map.
+- Rewrote the root `README.md` so it matches the actual current mainline instead of the earlier minimal-baseline placeholder.
+- Durable file-organization conclusion:
+  - `src/rl_lab/complete_car_rl_training/` remains the only active RL code workspace
+  - `USD/`, `scripts/isaac_sim/`, and `complete_car_*` should be treated as the asset and simulator-validation line
+  - `docs/literature/` is the literature line
+  - `毕业论文/` is the thesis-writing line
+  - `IK_iteration.*` and `Drawing/` belong to the derivation / illustration line
+  - `results/` is evidence output, not source code
+- Impact:
+  - future sessions can orient around the file map instead of rediscovering directory roles from scratch
+  - README is now aligned with the current Stage 1 RL baseline route
 
 ## 2026-03-29
 

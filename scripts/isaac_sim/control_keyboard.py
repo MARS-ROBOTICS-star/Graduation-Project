@@ -1,9 +1,32 @@
+import argparse
+from pathlib import Path
+
 from isaacsim import SimulationApp
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Keyboard teleop for the complete car with optional terrain preview."
+    )
+    parser.add_argument(
+        "--terrain",
+        choices=["none", "slope_ramp", "stairs_up", "discrete_obstacles", "gap", "single_gap", "stepping_stones", "single_bridge", "air_beams", "corridor"],
+        default="slope_ramp",
+        help="Optional terrain tile to build under the robot before teleop starts.",
+    )
+    parser.add_argument(
+        "--terrain-seed",
+        type=int,
+        default=7,
+        help="Random seed for obstacle-like terrain tiles.",
+    )
+    return parser.parse_args()
+
+
+ARGS = parse_args()
 
 # 先启动 Isaac Sim，再导入其他 Isaac Sim 模块
 simulation_app = SimulationApp({"headless": False})
-
-from pathlib import Path
 
 import numpy as np
 import carb
@@ -14,14 +37,25 @@ from isaacsim.core.api.world import World
 from isaacsim.core.prims import SingleArticulation
 from isaacsim.core.utils.stage import open_stage
 from isaacsim.core.utils.types import ArticulationAction
+from terrain_preview.terrain_builder import build_single_tile
 
 
 # =========================
 # 1. 基本配置
 # =========================
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-USD_PATH = str(PROJECT_ROOT / "complete_car_alternative.usd")
-ROBOT_PRIM_PATH = "/World/complete_car_alternative"
+_THIS_FILE = Path(__file__).resolve()
+PROJECT_ROOT = next(parent for parent in _THIS_FILE.parents if (parent / "AGENTS.md").exists())
+USD_PATH = str(PROJECT_ROOT / "USD" / "complete_car.usd")
+ROBOT_PRIM_PATH = "/World/complete_car_final"
+TERRAIN_ROOT_PATH = "/World/terrain_preview"
+TERRAIN_ORIGIN = (-1.0, 0.0, 0.0)
+GROUND_PRIM_CANDIDATES = [
+    "/World/defaultGroundPlane",
+    "/World/GroundPlane",
+    "/World/ground",
+    "/World/groundPlane",
+    "/World/Environment/defaultGroundPlane",
+]
 
 # 轮子关节名
 WHEEL_JOINT_NAMES = [
@@ -44,9 +78,22 @@ BALL_JOINT_NAMES = [
 ]
 
 # 控制参数
-WHEEL_SPEED = 8.0
+WHEEL_LINEAR_SPEED = 8.0
+WHEEL_TURN_SPEED = 4.0
 BALL_JOINT_DELTA = 0.01
 BALL_JOINT_LIMIT = 0.8
+WHEEL_VELOCITY_SMOOTHING = 0.20
+BALL_POSITION_SMOOTHING = 0.20
+
+# 数字小键盘键位映射
+BALL_JOINT_KEY_BINDINGS = [
+    (carb.input.KeyboardInput.NUMPAD_7, carb.input.KeyboardInput.NUMPAD_4),
+    (carb.input.KeyboardInput.NUMPAD_8, carb.input.KeyboardInput.NUMPAD_5),
+    (carb.input.KeyboardInput.NUMPAD_9, carb.input.KeyboardInput.NUMPAD_6),
+    (carb.input.KeyboardInput.NUMPAD_1, carb.input.KeyboardInput.NUMPAD_DIVIDE),
+    (carb.input.KeyboardInput.NUMPAD_2, carb.input.KeyboardInput.NUMPAD_MULTIPLY),
+    (carb.input.KeyboardInput.NUMPAD_3, carb.input.KeyboardInput.NUMPAD_SUBTRACT),
+]
 
 
 # =========================
@@ -54,11 +101,13 @@ BALL_JOINT_LIMIT = 0.8
 # =========================
 key_state = {}
 
-def set_key(key_name, pressed):
-    key_state[key_name] = pressed
 
-def is_pressed(key_name):
-    return key_state.get(key_name, False)
+def set_key(key_code, pressed):
+    key_state[key_code] = pressed
+
+
+def is_pressed(key_code):
+    return key_state.get(key_code, False)
 
 
 # =========================
@@ -68,15 +117,50 @@ appwindow = omni.appwindow.get_default_app_window()
 keyboard = appwindow.get_keyboard()
 input_iface = carb.input.acquire_input_interface()
 
+
 def on_keyboard_event(event, *args, **kwargs):
-    key_name = event.input.name
+    key_code = event.input
     if event.type == carb.input.KeyboardEventType.KEY_PRESS:
-        set_key(key_name, True)
+        set_key(key_code, True)
     elif event.type == carb.input.KeyboardEventType.KEY_RELEASE:
-        set_key(key_name, False)
+        set_key(key_code, False)
     return True
 
+
 keyboard_sub = input_iface.subscribe_to_keyboard_events(keyboard, on_keyboard_event)
+
+
+def deactivate_default_ground(stage):
+    disabled_paths = []
+    for prim_path in GROUND_PRIM_CANDIDATES:
+        prim = stage.GetPrimAtPath(prim_path)
+        if prim.IsValid() and prim.IsActive():
+            prim.SetActive(False)
+            disabled_paths.append(prim_path)
+    if disabled_paths:
+        print("[INFO] Disabled existing ground prims:")
+        for prim_path in disabled_paths:
+            print("  ", prim_path)
+
+
+def maybe_build_terrain(stage):
+    if ARGS.terrain == "none":
+        print("[INFO] Terrain preview disabled for control_keyboard.py")
+        return
+
+    deactivate_default_ground(stage)
+    spec = build_single_tile(
+        stage,
+        terrain_name=ARGS.terrain,
+        origin=TERRAIN_ORIGIN,
+        seed=ARGS.terrain_seed,
+        root_path=TERRAIN_ROOT_PATH,
+    )
+    print(
+        "[INFO] Built terrain tile:",
+        spec.name,
+        f"(origin={TERRAIN_ORIGIN}, size=({spec.length:.2f}, {spec.width:.2f}))",
+    )
 
 
 # =========================
@@ -89,6 +173,9 @@ print("[INFO] open_stage result:", ok)
 if not ok:
     raise RuntimeError(f"Failed to open stage: {USD_PATH}")
 
+stage = omni.usd.get_context().get_stage()
+maybe_build_terrain(stage)
+
 if World.instance():
     World.instance().clear_instance()
 
@@ -96,7 +183,6 @@ world = World(stage_units_in_meters=1.0)
 world.reset()
 
 # 检查 prim 是否存在
-stage = omni.usd.get_context().get_stage()
 target_prim = stage.GetPrimAtPath(ROBOT_PRIM_PATH)
 
 print("\n===== CHECK ROBOT PRIM =====")
@@ -138,71 +224,83 @@ print("Ball joint indices:", ball_indices)
 # =========================
 current_positions = robot.get_joint_positions()
 ball_targets = np.array([current_positions[i] for i in ball_indices], dtype=np.float64)
+ball_position_cmd = ball_targets.copy()
+wheel_velocity_cmd = np.zeros(len(wheel_indices), dtype=np.float64)
 
 
 def clamp(x, low, high):
     return max(low, min(high, x))
 
 
+def blend_command(current, target, alpha):
+    return current + alpha * (target - current)
+
+
+def signed_axis(positive_key, negative_key):
+    positive = is_pressed(positive_key)
+    negative = is_pressed(negative_key)
+    if positive and not negative:
+        return 1.0
+    if negative and not positive:
+        return -1.0
+    return 0.0
+
+
 def update_ball_joint_targets():
     global ball_targets
 
-    # 第一个球绞
-    if is_pressed("R"):
-        ball_targets[0] += BALL_JOINT_DELTA
-    if is_pressed("F"):
-        ball_targets[0] -= BALL_JOINT_DELTA
-
-    if is_pressed("T"):
-        ball_targets[1] += BALL_JOINT_DELTA
-    if is_pressed("G"):
-        ball_targets[1] -= BALL_JOINT_DELTA
-
-    if is_pressed("Y"):
-        ball_targets[2] += BALL_JOINT_DELTA
-    if is_pressed("H"):
-        ball_targets[2] -= BALL_JOINT_DELTA
-
-    # 第二个球绞
-    if is_pressed("U"):
-        ball_targets[3] += BALL_JOINT_DELTA
-    if is_pressed("J"):
-        ball_targets[3] -= BALL_JOINT_DELTA
-
-    if is_pressed("I"):
-        ball_targets[4] += BALL_JOINT_DELTA
-    if is_pressed("K"):
-        ball_targets[4] -= BALL_JOINT_DELTA
-
-    if is_pressed("O"):
-        ball_targets[5] += BALL_JOINT_DELTA
-    if is_pressed("L"):
-        ball_targets[5] -= BALL_JOINT_DELTA
+    for i, (increase_key, decrease_key) in enumerate(BALL_JOINT_KEY_BINDINGS):
+        if is_pressed(increase_key):
+            ball_targets[i] += BALL_JOINT_DELTA
+        if is_pressed(decrease_key):
+            ball_targets[i] -= BALL_JOINT_DELTA
 
     for i in range(len(ball_targets)):
         ball_targets[i] = clamp(ball_targets[i], -BALL_JOINT_LIMIT, BALL_JOINT_LIMIT)
 
 
-def compute_wheel_velocities():
-    v = 0.0
-    if is_pressed("W"):
-        v = WHEEL_SPEED
-    elif is_pressed("S"):
-        v = -WHEEL_SPEED
+def compute_wheel_velocity_targets():
+    if is_pressed(carb.input.KeyboardInput.SPACE):
+        return np.zeros(len(wheel_indices), dtype=np.float64)
 
-    if is_pressed("SPACE"):
-        v = 0.0
+    linear_axis = signed_axis(carb.input.KeyboardInput.W, carb.input.KeyboardInput.S)
+    turn_axis = signed_axis(carb.input.KeyboardInput.A, carb.input.KeyboardInput.D)
 
-    return np.array([v] * len(wheel_indices), dtype=np.float64)
+    linear_velocity = WHEEL_LINEAR_SPEED * linear_axis
+    turn_velocity = WHEEL_TURN_SPEED * turn_axis
+
+    left_velocity = linear_velocity - turn_velocity
+    right_velocity = linear_velocity + turn_velocity
+
+    return np.array(
+        [
+            left_velocity,
+            right_velocity,
+            left_velocity,
+            right_velocity,
+            left_velocity,
+            right_velocity,
+        ],
+        dtype=np.float64,
+    )
 
 
 print("\n==== Control Keys ====")
-print("W/S        : forward/backward")
-print("SPACE      : stop")
-print("R/F T/G Y/H: SPM1 z/y/x +/-")
-print("U/J I/K O/L: SPM2 z/y/x +/-")
+print("W / S                       : forward / backward")
+print("A / D                       : differential left / right turn")
+print("SPACE                       : zero wheel target")
+print("NUMPAD_7 / NUMPAD_4        : SPM1 z +/-")
+print("NUMPAD_8 / NUMPAD_5        : SPM1 y +/-")
+print("NUMPAD_9 / NUMPAD_6        : SPM1 x +/-")
+print("NUMPAD_1 / NUMPAD_DIVIDE   : SPM2 z +/-")
+print("NUMPAD_2 / NUMPAD_MULTIPLY : SPM2 y +/-")
+print("NUMPAD_3 / NUMPAD_SUBTRACT : SPM2 x +/-")
+print(f"Active terrain              : {ARGS.terrain}")
+print(f"Terrain seed                : {ARGS.terrain_seed}")
+print(f"Wheel smoothing alpha       : {WHEEL_VELOCITY_SMOOTHING:.2f}")
+print(f"Ball smoothing alpha        : {BALL_POSITION_SMOOTHING:.2f}")
 print("ESC        : quit")
-print("IMPORTANT  : click Isaac Sim window first to focus keyboard\n")
+print("IMPORTANT  : click Isaac Sim window first; wheels use WASD, ball joints use the numeric keypad\n")
 
 
 # =========================
@@ -210,22 +308,24 @@ print("IMPORTANT  : click Isaac Sim window first to focus keyboard\n")
 # =========================
 try:
     while simulation_app.is_running():
-        if is_pressed("ESCAPE"):
+        if is_pressed(carb.input.KeyboardInput.ESCAPE):
             break
 
         update_ball_joint_targets()
-        wheel_vel_cmd = compute_wheel_velocities()
+        ball_position_cmd = blend_command(ball_position_cmd, ball_targets, BALL_POSITION_SMOOTHING)
+        wheel_velocity_targets = compute_wheel_velocity_targets()
+        wheel_velocity_cmd = blend_command(wheel_velocity_cmd, wheel_velocity_targets, WHEEL_VELOCITY_SMOOTHING)
 
         # 轮子速度命令
         wheel_action = ArticulationAction(
-            joint_velocities=wheel_vel_cmd,
+            joint_velocities=np.array(wheel_velocity_cmd, dtype=np.float64),
             joint_indices=np.array(wheel_indices, dtype=np.int32),
         )
         robot.apply_action(wheel_action)
 
         # 球绞位置命令
         ball_action = ArticulationAction(
-            joint_positions=np.array(ball_targets, dtype=np.float64),
+            joint_positions=np.array(ball_position_cmd, dtype=np.float64),
             joint_indices=np.array(ball_indices, dtype=np.int32),
         )
         robot.apply_action(ball_action)
@@ -234,4 +334,4 @@ try:
 
 finally:
     input_iface.unsubscribe_from_keyboard_events(keyboard, keyboard_sub)
-    simulation_app.close()  
+    simulation_app.close()

@@ -1,5 +1,97 @@
 # 每日工作日志
 
+## 2026-03-30
+
+已完成：
+- 继续修改 `scripts/isaac_sim/control_keyboard.py`，将此前被固定为零速的 6 个轮子重新接回键盘遥操作。
+- 按仓库已有遥操作习惯，将车轮控制设为 `W/S` 前后、`A/D` 差速转向、`SPACE` 将轮速目标清零。
+- 保留数字小键盘 `1-9`、`/`、`*`、`-` 对 6 个球铰自由度的正负位置调节。
+- 为车轮速度命令与球铰位置命令都加入一阶平滑，避免按键切换时目标突变。
+- 对更新后的脚本执行 `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`，语法检查通过。
+
+修改文件：
+- `scripts/isaac_sim/control_keyboard.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `control_keyboard.py` 现同时支持轮式差速控制和球铰位置控制。
+- 当前键位分工为：`W/S/A/D/SPACE` 控轮子，数字小键盘控球铰，二者互不冲突。
+- 控制链路已加入基础平滑，更接近可用于手动调试的实际 teleop 形式。
+
+下一步：
+- 若需要，可继续在 Isaac Sim 中实际启动脚本，观察平滑系数是否偏软或偏硬，再调 `WHEEL_VELOCITY_SMOOTHING` 与 `BALL_POSITION_SMOOTHING`。
+
+## 2026-03-30
+
+已完成：
+- 修改 `scripts/isaac_sim/control_keyboard.py`，将加载的机器人资产从旧的仓库根目录 `complete_car_alternative.usd` 切换为 `USD/complete_car.usd`。
+- 将脚本中的机器人根 prim 路径同步改为 `/World/complete_car_final`，与当前 `complete_car.usd` 的实际机器人本体一致。
+- 将原先的字母键控制方案改为数字小键盘控制方案，使用 `1-9`、`/`、`*`、`-` 对 6 个球铰自由度进行正负调节。
+- 由于这 12 个键已全部用于 6 个自由度的正负控制，当前脚本模式下将 6 个轮子保持为零速度，不再单独提供轮速键盘控制。
+- 对修改后的脚本执行 `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`，语法检查通过。
+
+修改文件：
+- `scripts/isaac_sim/control_keyboard.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `control_keyboard.py` 已与当前主 USD 资产 `USD/complete_car.usd` 和 `/World/complete_car_final` 对齐。
+- 新键位方案已经从字符串按键名切换为 `carb.input.KeyboardInput` 的数字小键盘枚举，避免对事件名做字符串猜测。
+- 当前脚本更适合做 6 自由度球铰姿态手动调试，不再承担轮式推进键盘遥操作。
+
+下一步：
+- 若后续仍需要同时做轮速遥控和球铰遥控，需要重新定义一套不与数字小键盘冲突的轮子控制键位。
+
+## 2026-03-30
+
+已完成：
+- 按用户给出的新稿，整体替换 `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`。
+- 新版 `chapter03` 现以“运动学模型”为题，覆盖空间位置/姿态/位姿、旋转矩阵、齐次变换矩阵，以及 3-RRR 球面并联机构逆运动学解析推导。
+- 由于新稿引入了 `tikzpicture` 插图，在 `毕业论文/毕业论文模板/LaTeX/main.tex` 中补入 `tikz` 与 `arrows.meta` 宏包依赖。
+- 在论文主目录下连续执行两次 `xelatex -interaction=nonstopmode -halt-on-error main.tex`，确认替换后的正文可编译。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `毕业论文/毕业论文模板/LaTeX/main.tex`
+- `毕业论文/毕业论文模板/LaTeX/main.pdf`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `chapter03.tex` 已切换为用户提供的新版本内容，不再是上一版“球铰等效机构逆运动学建模”文本。
+- 新稿引入的 TikZ 插图依赖已经补齐，主文档编译链路可正常通过。
+- 当前仍存在两类非阻塞告警：`chapter01` 的历史未定义引用，以及新章节长公式带来的 `Overfull \hbox` 提示。
+
+下一步：
+- 若后续需要继续打磨论文排版，可优先处理 `chapter03` 中长公式的断行与版面压缩。
+
+## 2026-03-29
+
+已完成：
+- 对整个仓库做了目录级盘点，梳理当前各文件组的职责边界。
+- 新增 `docs/project_file_map.md`，把仓库内容归纳为 RL 主线、资产与仿真验证、文献、论文、逆运动学推导与配图、结果输出六大块。
+- 重写根 `README.md`，使其与当前阶段主线一致，并补充当前最重要的目录入口说明。
+- 将本次仓库文件归纳结果同步写入长期记忆和当前状态，避免后续再次靠聊天临时解释目录用途。
+
+修改文件：
+- `README.md`
+- `docs/project_file_map.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前仓库已经有一份显式的文件地图，可直接用于后续定位代码、论文、文献和资产文件。
+- 根 README 不再停留在早期最小 baseline 描述，而是对齐到当前真实主线和目录结构。
+
+下一步：
+- 若后续需要做物理目录重组，可直接以 `docs/project_file_map.md` 的六块职责划分为准继续收敛。
+
 ## 2026-03-29
 
 已完成：
@@ -925,3 +1017,69 @@
 
 下一步：
 - 若继续沿文献主线推进，可把 `Ha 2025` 与 `Wiberg 2022`、`Xu 2024` 做一次横向对比，专门整理“baseline 如何定义、复杂度如何分阶段引入”的共性结论。
+
+## 2026-03-30
+
+已完成：
+- 检查用户新增的地形相关脚本，确认有效源码/文档为 `mgdp_terrain_preview.py`、`run_terrain_preview.sh`、`README.md`，并将其统一整理到 `scripts/isaac_sim/terrain_preview/`。
+- 修正 `mgdp_terrain_preview.py` 的仓库根路径解析逻辑，避免默认导出 USD 路径错误指向仓库外。
+- 修正 `README.md` 中旧的启动路径示例，使其与实际目录 `scripts/isaac_sim/terrain_preview/` 一致。
+- 对地形脚本执行静态校验：`python3 -m py_compile scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py` 通过，`bash -n scripts/isaac_sim/terrain_preview/run_terrain_preview.sh` 通过。
+- 实际尝试使用 `/home/lbz/isaac-sim/python.sh` 以 `--headless --frames 1 --gallery stage1` 启动地形预览脚本。
+
+修改文件：
+- `scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py`
+- `scripts/isaac_sim/terrain_preview/run_terrain_preview.sh`
+- `scripts/isaac_sim/terrain_preview/README.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前地形预览脚本的仓库内路径与启动包装关系已整理清楚，脚本层不存在语法错误。
+- 这次实际启动未能进入场景执行阶段，阻塞来自本机 Isaac Sim 图形环境：日志报错 `Vulkan 1.1 is not supported`、`no CUDA-capable device is detected`，随后段错误退出。
+- 因此当前可得结论是：脚本包本身可以作为 Isaac Sim 启动入口使用，但这台机器当前不具备完成 Isaac Sim 启动的图形/驱动条件。
+
+下一步：
+- 若要继续验证窗口显示或 USD 导出，应在具备可用 Vulkan / CUDA / 显示环境的 Isaac Sim 主机上执行 `scripts/isaac_sim/terrain_preview/run_terrain_preview.sh`。
+
+已完成：
+- 新增 `scripts/isaac_sim/terrain_preview/terrain_builder.py`，将地形构建逻辑从单独预览脚本中抽成可复用模块。
+- 重写 `scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py`，改为复用公共地形模块构建 gallery。
+- 修改 `scripts/isaac_sim/control_keyboard.py`，使其在打开 `USD/complete_car.usd` 后、`World.reset()` 前可同步向同一 stage 注入一块地形。
+- 当前 `control_keyboard.py` 新增 `--terrain`、`--terrain-seed` 参数；默认地形为 `slope_ramp`，也可切换为 `stairs_up`、`gap`、`corridor` 等，或用 `--terrain none` 禁用。
+- 为避免已有地面把 `gap` 之类地形覆盖，脚本会优先尝试关闭若干常见默认 ground prim。
+- 对 `control_keyboard.py`、`mgdp_terrain_preview.py`、`terrain_builder.py` 执行 `python3 -m py_compile`，语法检查通过。
+
+修改文件：
+- `scripts/isaac_sim/control_keyboard.py`
+- `scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py`
+- `scripts/isaac_sim/terrain_preview/terrain_builder.py`
+- `scripts/isaac_sim/terrain_preview/README.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 现在不需要分别启动两个 Isaac Sim 进程；直接运行 `control_keyboard.py` 就可以把车辆和单块地形放进同一个场景里做键盘联调。
+- 该改动目前已完成静态校验，但由于当前主机的 Isaac Sim 图形环境仍有 Vulkan/CUDA 阻塞，尚未在本机完成实际窗口联调验证。
+
+下一步：
+- 在可正常启动 Isaac Sim 的主机上优先测试 `python3 scripts/isaac_sim/control_keyboard.py --terrain slope_ramp`，确认车辆初始位置、地面关闭逻辑和碰撞行为符合预期。
+
+已完成：
+- 定位 GitHub 推送失败原因，确认不是 SSH 认证问题，而是 `Drawing/完整小车等效串联.SAT` 超过 GitHub 普通仓库 100 MB 单文件限制。
+- 按当前新要求将 `.SAT` 文件加入根目录 `.gitignore`，后续不再作为普通 Git 提交内容上传。
+- 同步把这一推送约束写入项目状态与长期会话记忆，避免后续再次因为 `.SAT` 阻塞整仓上传。
+
+修改文件：
+- `.gitignore`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 现阶段仓库的普通 Git 上传路径应排除 `.SAT` 原始 CAD 文件；否则会再次触发 GitHub 预接收钩子拒绝。
+
+下一步：
+- 从最近一次本地提交中移除已纳入历史的 `.SAT` 文件，重做提交并重新推送到 `origin/main`。

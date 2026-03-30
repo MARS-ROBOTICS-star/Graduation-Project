@@ -1,38 +1,67 @@
 # Graduation Project
 
-This repository is organized around one immediate objective: get a minimal Isaac Lab RL baseline running for the articulated ground robot as quickly as possible.
+This repository is the long-term working tree for an undergraduate robotics thesis on an articulated ground vehicle with spherical-parallel-joint-inspired morphology. The project combines robot assets, Isaac Sim validation scripts, Isaac Lab RL training code, literature reading notes, and thesis-writing materials in one place.
 
-## Current layout
+## Active Mainline
 
-- `complete_car*.usd`, `default_scene.usd`, `Spherical_Parallel_test.usd`
-  - Root-level USD entry files kept in place to avoid breaking existing relative references.
-- `complete_car_alternative/`
-  - Main robot package currently used for Isaac Sim validation.
-- `complete_car_final/`
-  - Alternative/finalized robot package variant for comparison and later migration.
+The current engineering mainline is the single Isaac Lab project under `src/rl_lab/complete_car_rl_training/`.
+
+The current research stage is:
+
+1. Stage 0 completed: prove `reset -> step -> reward -> termination -> train` works end to end.
+2. Stage 1 ongoing: flat ground, proprioception, fixed spherical joints, goal-directed locomotion, wheel control only.
+3. Stage 2 later: add spherical-joint control, lower-level PID plus IK mapping, diverse terrain, and perception fusion.
+
+## Repository Map
+
+- `AGENTS.md`
+  - Repository-level rules, project background, role boundary, and persistent-memory policy.
 - `docs/`
-  - Project notes, status tracking, and design decisions.
-- `docs/literature/`
-  - Local literature corpus. Keep source PDFs here and MinerU-derived Markdown under `docs/literature/mineru_output/`.
+  - Project memory, workflow notes, and literature workspace.
+- `docs/project_file_map.md`
+  - Detailed Chinese map of the repository structure and the role of each major file group.
+- `logs/`
+  - Date-based work log.
+- `src/rl_lab/complete_car_rl_training/`
+  - The only active Isaac Lab RL code workspace.
 - `scripts/isaac_sim/`
-  - Isaac Sim utility scripts for teleoperation and sensor validation.
+  - Isaac Sim validation, keyboard control, USD inspection, and asset-repair helpers.
 - `scripts/literature/`
-  - Literature conversion and catalog scripts for MinerU-based PDF to Markdown parsing.
-- `results/sensor_validation/`
-  - Saved outputs from camera, LiDAR, and IMU validation runs.
+  - MinerU conversion and literature-manifest helpers.
+- `USD/`
+  - Active USD entry files and their configuration sublayers.
+- `complete_car_alternative/`, `complete_car_final/`
+  - Robot package exports used as asset references and comparison baselines.
+- `results/`
+  - Saved outputs such as sensor validation dumps and IK keyboard logs.
 - `refs/isaac_kb/`
-  - Searchable local knowledge base for Isaac Sim 5.1 and Isaac Lab 2.3.x manuals.
-- `src/rl_lab/`
-  - Isaac Lab RL workspace. The retained baseline is the cleaned single-project training workspace under `src/rl_lab/complete_car_rl_training/`.
+  - Local Isaac Sim 5.1 and Isaac Lab 2.3.x manuals.
+- `docs/literature/`
+  - Local paper corpus, MinerU outputs, and curated PDF subsets.
+- `毕业论文/`
+  - Thesis template, LaTeX sources, and compiled thesis artifacts.
+- `Drawing/`
+  - CAD and illustration assets.
+- `IK_iteration.md`, `IK_iteration.mlx`
+  - Symbolic inverse-kinematics derivation workspace.
 
-## Recommended next code placement
+## Where To Work
 
-- Build the first runnable complete-car task inside `src/rl_lab/complete_car_rl_training/`.
-- Keep task configs and reward/observation logic inside `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/`.
-- Keep generated logs and training outputs under `logs/` and `results/`.
+- RL environment logic:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/`
+- RL launch scripts:
+  - `src/rl_lab/complete_car_rl_training/scripts/`
+- Isaac Sim validation and teleoperation:
+  - `scripts/isaac_sim/`
+- Literature notes and PDFs:
+  - `docs/literature/`
+- Thesis writing:
+  - `毕业论文/毕业论文模板/LaTeX/`
 
-## Current priority
+## Practical Rule
 
-1. Build a minimal attitude stabilization environment.
-2. Train only the equivalent spherical joint DOFs first.
-3. Add wheels and terrain complexity only after the baseline policy runs.
+If a task is about runnable RL code, default to `src/rl_lab/complete_car_rl_training/`.
+
+If a task is about robot assets or simulator-side validation, inspect `USD/` and `scripts/isaac_sim/` first.
+
+If a task is about project continuity, start from `AGENTS.md`, `docs/current_status.md`, `docs/conversation_history.md`, `logs/daily_work_log.md`, and then this README.

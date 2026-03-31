@@ -124,7 +124,7 @@ The student must retain decision authority over the following:
    - why the problem is worth solving in the context of the thesis
 
 3. modeling and abstraction choices
-   - why the real parallel mechanism is simplified into an equivalent serial spherical joint in simulation
+   - why the real parallel mechanism is simplified into an equivalent serial spherical joint in simulation 
    - what is preserved by this simplification
    - what is sacrificed by this simplification
    - why that trade-off is acceptable for the current stage

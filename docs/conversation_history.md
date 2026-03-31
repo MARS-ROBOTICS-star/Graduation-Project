@@ -2,13 +2,142 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-03-31
+
+### new interactive bash shells now default to env_isaacLab instead of base
+- Rechecked the current global conda startup behavior on this workstation.
+- Observed before the change:
+  - `conda config --show auto_activate_base` returned `True`
+  - a fresh interactive `bash` session entered `base` by default
+- Updated the machine-level shell startup so that:
+  - `~/.condarc` now sets `auto_activate: false`
+  - `~/.bashrc` now auto-runs `conda activate env_isaacLab` for interactive shells after the normal `conda init` block
+- Verified locally with:
+  - `bash -ic 'printf "%s\n" "CONDA_DEFAULT_ENV=$CONDA_DEFAULT_ENV" "CONDA_PREFIX=$CONDA_PREFIX"'`
+- Durable conclusion:
+  - on this machine, future interactive `bash` sessions should be expected to start inside `env_isaacLab`, not `base`
+  - if a later session unexpectedly lands in `base`, check `~/.bashrc` and `~/.condarc` before diagnosing repository code or Isaac environment issues
+
+### control_keyboard teleop now survives Stop -> Play in Isaac Sim
+- Rechecked the user's report that after pressing the Isaac Sim toolbar `Stop` and then `Play`, the vehicle no longer responded to keyboard teleop.
+- Durable diagnosis:
+  - this was not only a focus issue
+  - `control_keyboard.py` initialized the articulation only once during startup
+  - according to the local Isaac Sim 5.1 manual, articulation assets must be re-initialized when the timeline goes from `stopped` back to `playing`
+- Updated `scripts/isaac_sim/control_keyboard.py` so interactive teleop now:
+  - detects when the timeline stops back to timestep `0`
+  - clears held key state on stop / pause transitions
+  - calls `world.reset()` and re-runs `robot.initialize()` when `Play` resumes after a stop
+  - refreshes wheel / ball-joint indices and resets command targets from the current articulation state
+- Additional compatibility fix:
+  - moved the `mgdp_gallery_builder` import in `control_keyboard.py` to lazy import inside the full-gallery branch
+  - this prevents the old host `python.sh` path for `--terrain none` or single-tile terrain from failing early due to missing `pydelatin`
+- Verified locally with:
+  - `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`
+  - `timeout 180s python3 -u scripts/isaac_sim/control_keyboard.py --terrain none --headless --frames 1`
+- Durable conclusion:
+  - future sessions should treat `Stop -> Play` as a state transition that requires articulation reinitialization inside this teleop script
+  - full MGDP gallery support must remain lazily imported so the legacy host teleop path keeps working
+
+### terrain_builder create_box is now idempotent for reused prim paths
+- After the MGDP gallery integration, the user hit:
+  - `pxr.Tf.ErrorException`
+  - `The xformOp 'xformOp:translate' already exists in xformOpOrder`
+- Root cause:
+  - `scripts/isaac_sim/terrain_preview/terrain_builder.py:create_box()` always called `AddTranslateOp()` and `AddScaleOp()`
+  - when the same prim path already existed in the stage, USD rejected the duplicate xform op creation
+- Fixed behavior:
+  - `create_box()` now scans existing ordered xform ops
+  - it reuses an existing translate / scale op when present
+  - it only adds the op if it does not already exist
+- Durable conclusion:
+  - terrain helper functions should be written to tolerate re-definition on an existing stage, especially for teleop and interactive workflows that may reuse the same prim paths across reruns
+
+### control_keyboard teleop now supports full MGDP stage galleries
+- Added a shared MGDP gallery builder at:
+  - `scripts/isaac_sim/terrain_preview/mgdp_gallery_builder.py`
+- Refactored `scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py` to use that shared builder instead of keeping a separate copy of the stage1/stage2 construction logic.
+- Updated `scripts/isaac_sim/control_keyboard.py` so `--terrain` now supports:
+  - full MGDP `stage1`
+  - full MGDP `stage2`
+  - `both`
+- Durable teleop behavior:
+  - single-tile terrain options still use the previous lightweight tile injection path
+  - full MGDP gallery options now build the complete terrain section into the same teleop stage before `World.reset()`
+  - the terrain root `/World/terrain_preview` now also receives the shared physics material binding, not only the wheel collision roots
+- Durable startup decision:
+  - `control_keyboard.py` should still re-exec from conda into host `/home/ubuntu/isaacsim/python.sh` for the old single-tile / no-terrain path
+  - but for `--terrain stage1|stage2|both`, it must stay in `env_isaacLab` Python because the MGDP gallery build depends on packages such as `pydelatin` that are available there
+- Verified locally with:
+  - `conda run -n env_isaacLab python -u scripts/isaac_sim/control_keyboard.py --terrain stage1 --headless --frames 1`
+  - `conda run -n env_isaacLab python -u scripts/isaac_sim/control_keyboard.py --terrain stage2 --headless --frames 1`
+- Observed result:
+  - both commands completed successfully with exit code `0`
+  - `stage1` built a full gallery with bounds about `[-4.0, -4.0, -1.98]` to `[205.9, 125.9, 1.98]`
+  - `stage2` built a full gallery with bounds about `[-5.0, -2.0, -0.64]` to `[104.95, 47.95, 1.54]`
+  - the robot origin is now aligned near the first gallery spawn hint around world `(0, 0, z)`
+
 ## 2026-03-30
+
+### MGDP terrain-generation and curriculum port for Isaac Sim
+- Copied the MGDP terrain-generation code needed for terrain preview into:
+  - `scripts/isaac_sim/terrain_preview/mgdp_port/terrain.py`
+  - `scripts/isaac_sim/terrain_preview/mgdp_port/terrain_utils.py`
+  - `scripts/isaac_sim/terrain_preview/mgdp_port/new_terrains/`
+- Added local Isaac-Sim-side support modules:
+  - `scripts/isaac_sim/terrain_preview/mgdp_port/configs.py`
+  - `scripts/isaac_sim/terrain_preview/mgdp_port/curriculum.py`
+- Durable implementation decision:
+  - this repository should not depend on importing MGDP's original `isaacgym` / `legged_gym` package layout at runtime for terrain preview
+  - the preview path should use the copied local `mgdp_port` package with relative imports only
+- The new preview entry:
+  - `scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py`
+  now builds actual MGDP-derived terrain meshes for `stage1` and `stage2` inside Isaac Sim and adds curriculum origin markers for inspection.
+
+### Isaac Sim conda launch path for the MGDP terrain preview
+- Reworked `scripts/isaac_sim/terrain_preview/run_terrain_preview.sh` so it now:
+  - sources conda
+  - activates `env_isaacLab`
+  - launches `python mgdp_terrain_preview.py`
+- Durable repository rule for this preview path:
+  - the default launch route is the conda environment `env_isaacLab`
+  - do not switch this wrapper back to the old `isaacsim/python.sh` path unless the environment strategy for the whole repository changes explicitly
+
+### Isaac Sim numerical-stack repair for window-mode startup
+- Reproduced that the user's `env_isaacLab` had drifted to:
+  - `numpy 2.4.3`
+  - `scipy 1.17.1`
+- Confirmed from installed package metadata that:
+  - `isaacsim-kernel` requires `numpy==1.26.0`
+  - `isaaclab` requires `numpy<2`
+- Restored the active numerical stack to:
+  - `numpy==1.26.0`
+  - `scipy==1.14.1`
+- After this repair, the MGDP terrain preview was verified locally with both headless and window startup:
+  - `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --headless --frames 1 --gallery stage1`
+  - `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --headless --frames 1 --gallery stage2`
+  - `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --frames 1 --gallery stage1`
+  - `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --frames 1 --gallery stage2`
+- Durable conclusion:
+  - for this repository, the MGDP terrain preview is now actually launchable inside Isaac Sim from `env_isaacLab`
+  - if future Isaac Sim startup fails again with extension import or binary-compatibility errors, first check whether `numpy` has drifted away from `1.26.0`
 
 ### GitHub push blocker from SAT CAD files
 - A full-repository push on `main` was rejected by GitHub because `Drawing/完整小车等效串联.SAT` is about 194 MB, exceeding GitHub's 100 MB normal-file limit.
 - Durable repository rule for this project:
   - `.SAT` CAD files should be ignored by default and should not be uploaded through normal Git history
   - if these assets ever need versioned remote storage, use Git LFS or another artifact channel explicitly instead of plain `git push`
+
+### Git ignore scope for local Isaac Sim artifacts
+- Expanded the repository-root `.gitignore` so normal pushes on `main` now exclude local-only artifacts such as:
+  - `.cache/`
+  - `outputs/`
+  - `__pycache__/`
+  - `*.py[cod]`
+  - `*.bak`
+- Durable repository rule:
+  - Isaac Sim runtime caches, generated USD exports, Python bytecode caches, and local backup files should stay out of normal Git history
+  - only source files, documentation, and intentional result artifacts should be staged for routine pushes
 
 ### Isaac Sim terrain preview script organization and validation
 - Organized the user's terrain-preview additions under `scripts/isaac_sim/terrain_preview/`:
@@ -28,6 +157,34 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - the current workstation cannot complete Isaac Sim startup because the host graphics stack fails before scene execution, with `Vulkan 1.1 is not supported`, `no CUDA-capable device is detected`, and a subsequent segmentation fault
   - treat this as an environment-side blocker, not as evidence of a bug in the terrain-preview script itself
 
+### Isaac Sim terrain preview wrapper path and execute-bit fix
+- Verified this workstation's available Isaac Sim launcher path is:
+  - `/home/ubuntu/isaacsim/python.sh`
+- Updated `scripts/isaac_sim/terrain_preview/run_terrain_preview.sh` to use that path as the default `ISAAC_SIM_ROOT`.
+- Restored the wrapper's execute permission so it can be launched directly with:
+  - `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --gallery stage1`
+- Durable conclusion:
+  - for this machine, `/home/lbz/isaac-sim` is an outdated default and should not be reused in the terrain-preview wrapper
+  - if the script still fails after this fix, the next diagnosis target remains the host graphics / driver stack rather than the wrapper path itself
+
+### Isaac Sim terrain preview conda-wrapper and import-order fix
+- Reproduced the user's failure under the active `env_isaacLab` conda environment:
+  - `ModuleNotFoundError: No module named 'omni.timeline'`
+- Root cause was not the terrain logic itself. It was a startup-chain issue:
+  - `run_terrain_preview.sh` inherited active `CONDA_*` variables
+  - `mgdp_terrain_preview.py` imported `omni.*` before `SimulationApp` initialization
+- Fixed both sides:
+  - `run_terrain_preview.sh` now unsets the common `CONDA_*` variables before delegating to Isaac Sim's `python.sh`
+  - `mgdp_terrain_preview.py` now creates `SimulationApp` first and imports `omni.timeline` / `omni.usd` afterward
+- Revalidated with:
+  - `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --headless --frames 1 --gallery stage1`
+- Observed result:
+  - the script completed successfully and generated `outputs/isaacsim/mgdp_terrain_stage1.usd`
+  - the previous `omni.timeline` import failure is resolved
+- Durable conclusion:
+  - on this repository, the terrain-preview script is now runnable from the active conda shell through the wrapper without requiring manual deactivation
+  - remaining GPU / Vulkan / display warnings during Isaac Sim startup do not prevent the current headless USD export path from finishing successfully
+
 ### Keyboard teleop now injects one terrain tile into the same stage
 - Refactored the terrain-generation code into a reusable helper module:
   - `scripts/isaac_sim/terrain_preview/terrain_builder.py`
@@ -38,6 +195,32 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - disable terrain injection with `--terrain none`
 - The teleop script also attempts to deactivate several common default ground prim paths before injecting terrain so negative-height features such as `gap` are less likely to be neutralized by an existing plane.
 - Verified the edited teleop and terrain scripts pass `python3 -m py_compile`.
+
+### Keyboard teleop ground contact and speed tuning
+- Rechecked `scripts/isaac_sim/control_keyboard.py` after the user reported that forward/backward motion looked like the chassis being dragged instead of the wheels driving.
+- Durable diagnosis:
+  - the wheel velocity command path itself was working
+  - the real issue under `--terrain none` was that the stage had no usable ground contact, so the robot could fall or lose meaningful wheel-ground traction
+- Fixed the teleop script so that when `--terrain none` is used it now:
+  - creates a runtime `ground plane`
+  - binds one shared physics material to the ground and all six wheel collision roots
+  - uses `static_friction = 0.5`
+  - uses `dynamic_friction = 0.5`
+- Also reduced the default teleop aggressiveness:
+  - `WHEEL_LINEAR_SPEED = 2.5`
+  - `WHEEL_TURN_SPEED = 1.0`
+  - `BALL_JOINT_DELTA = 0.005`
+  - wheel smoothing alpha `= 0.10`
+  - ball-joint smoothing alpha `= 0.10`
+- Durable control logic summary for future sessions:
+  - `W/S` drive all six wheels forward or backward with the same base wheel-speed target
+  - `A/D` add left-right differential wheel speed for turning
+  - numeric keypad keys increment the six equivalent spherical-joint pose targets
+  - both wheel commands and ball-joint pose commands already use first-order smoothing
+- Verification performed:
+  - `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`
+  - `timeout 90s python -u scripts/isaac_sim/control_keyboard.py --terrain none --headless --frames 1` exited with code `0`
+  - a standalone Isaac Sim diagnostic with the same ground/material setup showed the chassis moved forward by about `0.36 m` over 120 physics steps while wheel velocities stayed near `1 rad/s`
 
 ### Isaac Sim keyboard teleop wheel restore and smoothing
 - Refined `scripts/isaac_sim/control_keyboard.py` again after the numpad remap.
@@ -230,6 +413,24 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Moved the live package to `src/rl_lab/complete_car_rl_training/complete_car_rl_training/`.
 - Moved `setup.py` and `config/extension.toml` to the project root and changed the editable install path to `pip install -e .`.
 - Removed the nested `.git`, `.vscode`, UI example module, and the empty legacy `src/rl_lab/tasks/` leftover.
+
+## 2026-03-30
+
+### control_keyboard.py startup path revalidated
+- Revalidated `USD/complete_car.usd` under host Isaac Sim and confirmed again that the live robot root is `/World/complete_car_alternative`, not `/World/complete_car_final`.
+- Updated `scripts/isaac_sim/control_keyboard.py` to target `/World/complete_car_alternative`.
+- Added an automatic re-exec path so that when the script is launched from an active conda shell it restarts itself through `/home/ubuntu/isaacsim/python.sh` before importing `SimulationApp`.
+- Added headless-smoke support to the script:
+  - `--headless`
+  - `--frames`
+  - automatic fallback to headless smoke mode when no usable X display is available
+- Removed the earlier in-script `--portable-root` injection because it caused very slow or stalled host startup on this machine, while the normal host Isaac Sim cache path starts quickly and cleanly.
+- Host verification outcome:
+  - `python -u scripts/isaac_sim/control_keyboard.py --terrain none --headless --frames 1` now exits successfully
+  - `python -u scripts/isaac_sim/control_keyboard.py --terrain none` now starts successfully and stays alive in interactive mode until externally interrupted
+- Impact:
+  - future sessions should treat `/World/complete_car_alternative` as the current runtime root for `control_keyboard.py`
+  - if the script is reported as failing again, first distinguish between real Python/asset failures and host graphics-stack issues rather than reverting the prim path back to `complete_car_final`
 - Updated `setup.py` to use standard-library `tomllib` on Python 3.11, with `tomli` fallback for Python 3.10, so editable install no longer depends on the third-party `toml` package in the common case.
 - Future sessions should treat the cleaned single-root structure as canonical and should not reintroduce the old template shell.
 

@@ -1,6 +1,135 @@
 # 每日工作日志
 
+## 2026-03-31
+
+已完成：
+- 修复完整 MGDP 画廊模式下的一个 USD 构建报错：`terrain_builder.py` 中 `create_box()` 之前每次都无条件 `AddTranslateOp()` / `AddScaleOp()`，当同一路径 prim 已存在时会触发 `xformOp:translate already exists`。
+- 将 `create_box()` 改为幂等写法：先检查已有 `translate/scale` xform op，存在则直接复用并更新数值，不存在时才新增。
+- 实际执行：
+  - `python3 -m py_compile scripts/isaac_sim/terrain_preview/terrain_builder.py`
+  - `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`
+- 修复 `scripts/isaac_sim/control_keyboard.py` 在 Isaac Sim 工具栏执行 `Stop -> Play` 后失去键盘控制的问题。
+- 根据本地 `isaacsim_5.1` 手册与脚本现状，确认根因是 articulation 只在启动时初始化了一次，而 timeline 从 `stopped` 重新切回 `playing` 后没有重新 `initialize()`。
+- 将脚本中的 articulation 初始化重构为可重复调用的 `initialize_robot_handles(...)` 流程，统一负责重新绑定 DOF 名称、关节索引、控制目标和键盘状态。
+- 修改交互主循环：现在会在检测到 timeline 停回第 0 帧后，把下一次 `Play` 视为一次需要 `world.reset()` + articulation 重初始化的状态跳变；对普通 `Pause -> Play` 只恢复物理，不强制 reset。
+- 补充懒加载修复：把 `mgdp_gallery_builder` 的导入从模块顶层移到完整画廊分支内部，避免 `--terrain none` 或单块 tile 旧路径被 `pydelatin` 依赖提前打坏。
+- 实际执行：
+  - `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`
+  - `timeout 180s python3 -u scripts/isaac_sim/control_keyboard.py --terrain none --headless --frames 1`
+- 新增 `scripts/isaac_sim/terrain_preview/mgdp_gallery_builder.py`，把完整 MGDP `stage1/stage2` 画廊地形的构建逻辑从预览脚本中抽成可复用共享模块。
+- 重构 `scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py`，改为直接调用上述共享模块，不再在脚本内保留一份独立的完整地形构建实现。
+- 修改 `scripts/isaac_sim/control_keyboard.py`，使 `--terrain` 除了原有单块 tile 外，还支持完整 `stage1`、`stage2` 与 `both`。
+- 为完整画廊模式补充启动环境分流：单块 tile / `none` 仍沿用 conda shell 自动重启到宿主 `/home/ubuntu/isaacsim/python.sh` 的旧路径；当 `--terrain` 为 `stage1/stage2/both` 时，脚本保留在 `env_isaacLab` Python 中运行，以复用 `pydelatin` 等 `terrain_preview` 依赖。
+- 修改 `control_keyboard.py` 的地形材质绑定逻辑，使共享物理材质除了绑定六个轮子碰撞体外，也会绑定到 `/World/terrain_preview` 地形根节点。
+- 实际执行以下静态检查：
+  - `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`
+  - `python3 -m py_compile scripts/isaac_sim/terrain_preview/mgdp_gallery_builder.py`
+  - `python3 -m py_compile scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py`
+- 实际执行以下 headless 冒烟验证：
+  - `conda run -n env_isaacLab python -u scripts/isaac_sim/control_keyboard.py --terrain stage1 --headless --frames 1`
+  - `conda run -n env_isaacLab python -u scripts/isaac_sim/control_keyboard.py --terrain stage2 --headless --frames 1`
+
+修改文件：
+- `scripts/isaac_sim/control_keyboard.py`
+- `scripts/isaac_sim/terrain_preview/mgdp_gallery_builder.py`
+- `scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 完整 MGDP `stage1/stage2` 画廊现在不会再因为重复定义同一路径下的 base box 而在 `create_box()` 处抛出 USD xform op 冲突异常。
+- `control_keyboard.py` 现在会在 Stop 后重新 Play 时自动重建 teleop 所需的 articulation 句柄和目标状态，不再沿用已经失效的启动期句柄。
+- 当前脚本已恢复兼容两条路径：
+  - 宿主 `python.sh` 下的 `--terrain none` / 单块 tile
+  - `env_isaacLab` 下的完整 MGDP `stage1/stage2` 画廊
+- `control_keyboard.py` 现在已经不是只能注入单块 `slope_ramp/gap/corridor` 之类的局部地形，而是可以直接把 `terrain_preview` 中的完整 MGDP `stage1` 或 `stage2` 画廊放进同一个 teleop stage。
+- 当前机器上，完整 MGDP 画廊模式不能继续走宿主 `isaacsim/python.sh` 默认路径，因为该路径缺少 `pydelatin`；正确运行方式应为激活 `env_isaacLab` 后执行 `python scripts/isaac_sim/control_keyboard.py --terrain stage1` 或 `--terrain stage2`。
+- `stage1` 与 `stage2` 两条新路径都已在本机 headless 1 帧模式下实际跑通并正常退出，说明这次修改不只是静态代码改动。
+
+下一步：
+- 若要继续人工联调，可在 `env_isaacLab` 中直接运行 `python scripts/isaac_sim/control_keyboard.py --terrain stage1` 或 `python scripts/isaac_sim/control_keyboard.py --terrain stage2`，再观察车体初始落点、轮地接触与通过性表现。
+
+已完成：
+- 检查当前机器的 Conda 启动默认值，确认新开的交互式 `bash` 仍会因为 `auto_activate_base=True` 而默认进入 `base`。
+- 将 `~/.condarc` 改为 `auto_activate: false`，关闭 `base` 自动激活。
+- 在 `~/.bashrc` 的 `conda init` 之后追加交互式 shell 自动 `conda activate env_isaacLab` 的启动逻辑。
+- 实际验证：
+  - `conda config --show auto_activate_base`
+  - `bash -ic 'printf "%s\n" "CONDA_DEFAULT_ENV=$CONDA_DEFAULT_ENV" "CONDA_PREFIX=$CONDA_PREFIX"'`
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前机器新开的交互式 `bash` 终端默认已不再进入 `base`，而是直接进入 `env_isaacLab`。
+- 后续在这个工作站里执行本仓库的 Isaac Lab / Isaac Sim 相关命令时，一般不再需要先手动 `conda activate env_isaacLab`。
+
+下一步：
+- 若后续更换 shell、用户或机器，需要重新检查对应启动文件是否也继承了这一默认环境设置。
+
 ## 2026-03-30
+
+已完成：
+- 按“代码与文档改动 + `mgdp_port/` 新源码，排除缓存/输出/备份文件”的范围重新整理本次待上传内容。
+- 扩充根目录 `.gitignore`，新增忽略 `.cache/`、`outputs/`、`__pycache__/`、`*.py[cod]`、`*.bak`，避免 Isaac Sim 本地缓存、导出物和备份文件再次混入普通 Git 提交。
+- 复核工作区后确认本次未跟踪内容只剩 `scripts/isaac_sim/terrain_preview/mgdp_port/` 源码目录，缓存与生成物已从待提交列表中排除。
+- 将这一仓库级提交边界补写进 `docs/conversation_history.md`，作为后续常规 Git 上传默认规则。
+
+修改文件：
+- `.gitignore`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前仓库普通 Git 上传的默认范围已进一步收敛为“源码、文档、必要结果”，不再混入本地运行时制品。
+- 后续若继续用 Isaac Sim 做联调，生成的 `.cache/`、`outputs/`、`__pycache__` 与 `*.bak` 将默认留在本地，不再干扰正常推送。
+
+下一步：
+- 将本次整理后的源码与文档提交并推送到 GitHub `origin/main`。
+
+已完成：
+- 将 MGDP 中与地形生成、terrain curriculum 相关的脚本复制到 `scripts/isaac_sim/terrain_preview/mgdp_port/`，包括 `terrain.py`、`terrain_utils.py` 和 `new_terrains/`。
+- 新增 `scripts/isaac_sim/terrain_preview/mgdp_port/configs.py` 与 `curriculum.py`，把 MGDP 的 stage1 / stage2 地形参数和课程学习地形分配逻辑独立迁移到本仓库。
+- 重写 `scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py`，改为基于 `isaaclab.app.AppLauncher` 直接在 Isaac Sim 中构建 MGDP 地形网格、转换 mesh，并附带课程学习环境原点标记。
+- 修改 `scripts/isaac_sim/terrain_preview/run_terrain_preview.sh`，使其默认激活 `conda` 环境 `env_isaacLab` 后直接用 `python` 启动，不再依赖旧的 `isaacsim/python.sh` 包装路径。
+- 修复迁移后地形工具在新环境下的兼容问题，包括去掉对 `isaacgym` / `legged_gym` 包结构的硬依赖，以及将 `scipy.interpolate.interp2d` 替换为 `RegularGridInterpolator`。
+- 为当前 `env_isaacLab` 修复 Isaac Sim 窗口启动所需的数值栈，将 `numpy` 回滚到 `1.26.0`，并将 `scipy` 调整为 `1.14.1`。
+- 实际完成以下验证：
+  - `python -m py_compile scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py`
+  - `python -m py_compile scripts/isaac_sim/terrain_preview/mgdp_port/*.py` 相关核心脚本
+  - `bash -n scripts/isaac_sim/terrain_preview/run_terrain_preview.sh`
+  - `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --headless --frames 1 --gallery stage1`
+  - `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --headless --frames 1 --gallery stage2`
+  - `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --frames 1 --gallery stage1`
+  - `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --frames 1 --gallery stage2`
+
+修改文件：
+- `scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py`
+- `scripts/isaac_sim/terrain_preview/run_terrain_preview.sh`
+- `scripts/isaac_sim/terrain_preview/README.md`
+- `scripts/isaac_sim/terrain_preview/mgdp_port/__init__.py`
+- `scripts/isaac_sim/terrain_preview/mgdp_port/configs.py`
+- `scripts/isaac_sim/terrain_preview/mgdp_port/curriculum.py`
+- `scripts/isaac_sim/terrain_preview/mgdp_port/terrain.py`
+- `scripts/isaac_sim/terrain_preview/mgdp_port/terrain_utils.py`
+- `scripts/isaac_sim/terrain_preview/mgdp_port/new_terrains/__init__.py`
+- `scripts/isaac_sim/terrain_preview/mgdp_port/new_terrains/add_mix_terrain.py`
+- `scripts/isaac_sim/terrain_preview/mgdp_port/new_terrains/add_trimesh_terrain.py`
+- `scripts/isaac_sim/terrain_preview/mgdp_port/new_terrains/add_extreme_gap_terrain.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前仓库中已经有一份可独立于原 MGDP 仓库启动的地形预览迁移版，核心目标是“在 Isaac Sim 中查看 MGDP 地形生成和地形课程学习布局”。
+- 当前 `env_isaacLab` 下，MGDP 地形预览已不是仅能 headless 导出 USD，而是可以实际启动 Isaac Sim 窗口查看。
+- 当前这条预览链路依赖 `numpy==1.26.0`；若后续又被升级到 `numpy 2.x`，Isaac Sim 扩展加载大概率会再次报二进制兼容错误。
+
+下一步：
+- 若需要继续与完整车联调，可在现有 MGDP 地形预览基础上再决定是否把完整车资产放进同一个 stage 做实际通过性观察。
 
 已完成：
 - 继续修改 `scripts/isaac_sim/control_keyboard.py`，将此前被固定为零速的 6 个轮子重新接回键盘遥操作。
@@ -1083,3 +1212,101 @@
 
 下一步：
 - 从最近一次本地提交中移除已纳入历史的 `.SAT` 文件，重做提交并重新推送到 `origin/main`。
+
+## 2026-03-30
+
+已完成：
+- 检查 `scripts/isaac_sim/terrain_preview/run_terrain_preview.sh` 的执行失败原因，确认直接 `./scripts/...` 报“权限不够”是因为脚本缺少执行位，而不是 Bash 语法错误。
+- 在本机实际文件系统中确认可用 Isaac Sim 启动器路径为 `/home/ubuntu/isaacsim/python.sh`，不是脚本中旧的 `/home/lbz/isaac-sim/python.sh`。
+- 将 `run_terrain_preview.sh` 的默认 `ISAAC_SIM_ROOT` 修正为 `/home/ubuntu/isaacsim`，并同步更新 `scripts/isaac_sim/terrain_preview/README.md` 中的说明。
+- 同步更新项目状态与长期会话记忆，避免后续继续沿用旧路径判断脚本不可用。
+
+修改文件：
+- `scripts/isaac_sim/terrain_preview/run_terrain_preview.sh`
+- `scripts/isaac_sim/terrain_preview/README.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前地形预览包装脚本的默认 Isaac Sim 路径已与本机真实安装位置对齐。
+- 修复后若仍无法启动 Isaac Sim，应优先归因为本机 Vulkan / CUDA / 显示环境问题，而不是脚本权限或默认路径问题。
+
+下一步：
+- 给 `scripts/isaac_sim/terrain_preview/run_terrain_preview.sh` 补上执行权限后，直接用 `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --gallery stage1` 做一次本机验证。
+
+## 2026-03-30
+
+已完成：
+- 复现并定位 `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh` 在激活 `env_isaacLab` 时的真实报错链：不是地形脚本逻辑错误，而是 `run_terrain_preview.sh` 继承了 `CONDA_*` 环境变量，且 `mgdp_terrain_preview.py` 在 `SimulationApp` 初始化前就导入了 `omni.timeline`。
+- 修改 `scripts/isaac_sim/terrain_preview/run_terrain_preview.sh`，在调用 Isaac Sim `python.sh` 之前主动 `unset` 常见 `CONDA_*` 变量。
+- 修改 `scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py`，改为先创建 `SimulationApp`，再导入 `omni.timeline`、`omni.usd` 与 Isaac Sim 相关模块。
+- 重新执行 `python3 -m py_compile scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py` 与 `bash -n scripts/isaac_sim/terrain_preview/run_terrain_preview.sh`，静态检查通过。
+- 实际执行 `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --headless --frames 1 --gallery stage1`，本次已成功跑通并生成 `outputs/isaacsim/mgdp_terrain_stage1.usd`。
+
+修改文件：
+- `scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py`
+- `scripts/isaac_sim/terrain_preview/run_terrain_preview.sh`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前地形预览脚本已经可以从激活的 `env_isaacLab` shell 直接通过包装脚本启动，不再需要用户手工先 `conda deactivate`。
+- 之前的 `ModuleNotFoundError: No module named 'omni.timeline'` 已被修复。
+- 当前主机在 Isaac Sim 启动日志里仍会出现 GPU / CUDA / 显示相关警告，但至少对当前 `--headless --frames 1 --gallery stage1` 的 USD 导出路径不再构成阻塞。
+
+下一步：
+- 若要继续验证更多 gallery，可直接执行 `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --gallery both`，或在 headless 模式下继续导出其他地形 USD。
+
+## 2026-03-30
+
+已完成：
+- 复现 `python scripts/isaac_sim/control_keyboard.py --terrain none` 的失败链路，先确认原始报错不是地形逻辑，而是当前脚本写死了错误的机器人根 prim。
+- 在宿主 Isaac Sim 下重新检查 `USD/complete_car.usd`，确认 `/World/complete_car_final` 不存在，当前真实机器人根路径仍是 `/World/complete_car_alternative`。
+- 修改 `scripts/isaac_sim/control_keyboard.py`，将 `ROBOT_PRIM_PATH` 改为 `/World/complete_car_alternative`。
+- 给 `control_keyboard.py` 加入从 conda shell 自动重启到宿主 `/home/ubuntu/isaacsim/python.sh` 的启动链，避免继续在错误的 Python/Isaac Sim 组合下运行。
+- 给 `control_keyboard.py` 加入 `--headless`、`--frames` 与无显示环境自动 headless smoke 验证路径。
+- 去掉脚本内此前加入的 `--portable-root` 注入；实测该路径会让本机 host 启动明显变慢甚至看似卡住，而使用宿主默认缓存路径可快速完成启动。
+- 实际验证 `python -u scripts/isaac_sim/control_keyboard.py --terrain none --headless --frames 1`，本次已正常退出且返回码为 0。
+- 实际验证 `timeout --signal=SIGINT 20s python -u scripts/isaac_sim/control_keyboard.py --terrain none`，本次脚本成功进入交互态并持续运行到超时，返回码为 124，说明不是崩溃退出。
+
+修改文件：
+- `scripts/isaac_sim/control_keyboard.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `control_keyboard.py` 当前可用的运行根 prim 是 `/World/complete_car_alternative`。
+- 当前机器上要稳定启动该脚本，应优先让它走宿主 `/home/ubuntu/isaacsim/python.sh`，而不是继续依赖激活中的 conda Python 解释器。
+- 当前机器上不应再给该脚本强行注入新的 portable-root；这会放大 Isaac Sim 首次缓存初始化开销，影响“先跑起来”的目标。
+
+下一步：
+- 若要继续人工键盘联调，可直接执行 `python scripts/isaac_sim/control_keyboard.py --terrain none` 或替换为其他 `--terrain` 选项。
+
+## 2026-03-30
+
+已完成：
+- 解释并复核 `scripts/isaac_sim/control_keyboard.py` 的当前键盘控制逻辑，确认 `W/S` 为六轮统一前进/后退轮速，`A/D` 为左右差速转向，数字小键盘为两个等效球铰的 6 个姿态自由度增量控制。
+- 检查轮速与球铰控制链路，确认两者都已经有一阶平滑；其中轮速与球铰平滑系数此前均为 `0.20`。
+- 诊断“前进后退像拖动不是轮子在转”的原因，确认不是轮子命令失效，而是 `--terrain none` 时缺少有效 ground contact，导致地面接触链路不成立。
+- 修改 `scripts/isaac_sim/control_keyboard.py`：在 `--terrain none` 下自动创建 `ground plane`，并给地面与六个轮子碰撞体统一绑定 `static_friction=0.5`、`dynamic_friction=0.5` 的共享物理材质。
+- 同步下调键盘联调默认速度与响应：`WHEEL_LINEAR_SPEED=2.5`、`WHEEL_TURN_SPEED=1.0`、`BALL_JOINT_DELTA=0.005`、`WHEEL_VELOCITY_SMOOTHING=0.10`、`BALL_POSITION_SMOOTHING=0.10`。
+- 实际执行 `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`，静态检查通过。
+- 实际执行 `timeout 90s python -u scripts/isaac_sim/control_keyboard.py --terrain none --headless --frames 1`，本次返回码为 `0`。
+- 额外编写并执行宿主 Isaac Sim 诊断脚本，验证补地面与摩擦后小车在 120 步内前进约 `0.36 m`，且六个轮子角速度始终接近 `1 rad/s`。
+
+修改文件：
+- `scripts/isaac_sim/control_keyboard.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `control_keyboard.py` 在 `--terrain none` 下不再是“无地面接触”的状态，车体可通过轮地摩擦产生真实推进，而不是仅表现为拖动感。
+- 当前脚本内车轮速度和平滑、球铰步进和平滑都已下调，默认联调速度明显比之前更温和。
+- 当前终端环境下 Isaac Sim 启动较慢且会伴随无 GPU、远端 `Example_Rotary` 引用等警告，但这些不影响本轮键盘控制修复结论。
+
+下一步：
+- 在具备可用图形环境的 Isaac Sim 主机上直接执行 `python scripts/isaac_sim/control_keyboard.py --terrain none` 做一次窗口联调，重点观察轮子可视旋转、底盘实际位移和球铰姿态响应是否与新的减速参数一致。

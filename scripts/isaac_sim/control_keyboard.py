@@ -1,5 +1,53 @@
 import argparse
+import ctypes
+import ctypes.util
+import os
+import subprocess
+import sys
 from pathlib import Path
+
+_THIS_FILE = Path(__file__).resolve()
+PROJECT_ROOT = next(parent for parent in _THIS_FILE.parents if (parent / "AGENTS.md").exists())
+DEFAULT_HEADLESS_FRAMES = 120
+ISAAC_SIM_ROOT = Path(os.environ.get("ISAAC_SIM_ROOT", "/home/ubuntu/isaacsim"))
+ISAAC_SIM_PYTHON = ISAAC_SIM_ROOT / "python.sh"
+REEXEC_ENV_FLAG = "CONTROL_KEYBOARD_ISAACSIM_REEXEC"
+FULL_GALLERY_ARG_CHOICES = {"stage1", "stage2", "both"}
+
+
+def requested_full_gallery(argv: list[str]) -> bool:
+    for index, arg in enumerate(argv):
+        if arg == "--terrain" and index + 1 < len(argv):
+            return argv[index + 1] in FULL_GALLERY_ARG_CHOICES
+    return False
+
+
+def maybe_reexec_via_standalone_isaacsim() -> None:
+    if os.environ.get(REEXEC_ENV_FLAG) == "1":
+        return
+    if not ISAAC_SIM_PYTHON.is_file():
+        return
+    if os.environ.get("CONDA_PREFIX") is None:
+        return
+    if requested_full_gallery(sys.argv[1:]):
+        return
+
+    env = os.environ.copy()
+    for key in (
+        "CONDA_PREFIX",
+        "CONDA_DEFAULT_ENV",
+        "CONDA_EXE",
+        "CONDA_PYTHON_EXE",
+        "CONDA_SHLVL",
+        "_CE_M",
+        "_CE_CONDA",
+    ):
+        env.pop(key, None)
+    env[REEXEC_ENV_FLAG] = "1"
+    os.execvpe(str(ISAAC_SIM_PYTHON), [str(ISAAC_SIM_PYTHON), str(_THIS_FILE), *sys.argv[1:]], env)
+
+
+maybe_reexec_via_standalone_isaacsim()
 
 from isaacsim import SimulationApp
 
@@ -9,10 +57,35 @@ def parse_args() -> argparse.Namespace:
         description="Keyboard teleop for the complete car with optional terrain preview."
     )
     parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run without opening a window. Useful for smoke validation on remote or no-display shells.",
+    )
+    parser.add_argument(
+        "--frames",
+        type=int,
+        default=0,
+        help="If > 0, stop after this many simulation steps. In auto-headless mode, 0 uses a default smoke-run length.",
+    )
+    parser.add_argument(
         "--terrain",
-        choices=["none", "slope_ramp", "stairs_up", "discrete_obstacles", "gap", "single_gap", "stepping_stones", "single_bridge", "air_beams", "corridor"],
+        choices=[
+            "none",
+            "slope_ramp",
+            "stairs_up",
+            "discrete_obstacles",
+            "gap",
+            "single_gap",
+            "stepping_stones",
+            "single_bridge",
+            "air_beams",
+            "corridor",
+            "stage1",
+            "stage2",
+            "both",
+        ],
         default="slope_ramp",
-        help="Optional terrain tile to build under the robot before teleop starts.",
+        help="Optional terrain to build under the robot before teleop starts. Supports single tiles and full MGDP stage galleries.",
     )
     parser.add_argument(
         "--terrain-seed",
@@ -25,14 +98,61 @@ def parse_args() -> argparse.Namespace:
 
 ARGS = parse_args()
 
+
+def has_usable_x_display() -> bool:
+    if not sys.platform.startswith("linux"):
+        return True
+
+    display_name = os.environ.get("DISPLAY")
+    if not display_name:
+        return False
+
+    try:
+        probe = subprocess.run(
+            ["xset", "q"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=2.0,
+        )
+        if probe.returncode == 0:
+            return True
+    except (FileNotFoundError, subprocess.SubprocessError):
+        pass
+
+    x11_library = ctypes.util.find_library("X11")
+    if x11_library is None:
+        return False
+
+    x11 = ctypes.cdll.LoadLibrary(x11_library)
+    x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x11.XOpenDisplay.restype = ctypes.c_void_p
+    x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    x11.XCloseDisplay.restype = ctypes.c_int
+
+    handle = x11.XOpenDisplay(display_name.encode("utf-8"))
+    if not handle:
+        return False
+
+    x11.XCloseDisplay(handle)
+    return True
+
+
+RUN_HEADLESS = ARGS.headless or not has_usable_x_display()
+
 # 先启动 Isaac Sim，再导入其他 Isaac Sim 模块
-simulation_app = SimulationApp({"headless": False})
+SIMULATION_LAUNCH_CONFIG = {"headless": RUN_HEADLESS}
+if RUN_HEADLESS:
+    SIMULATION_LAUNCH_CONFIG["hide_ui"] = True
+    SIMULATION_LAUNCH_CONFIG["extra_args"] = ["--no-window", "--/app/window/hideUi=1"]
+simulation_app = SimulationApp(SIMULATION_LAUNCH_CONFIG)
 
 import numpy as np
 import carb
 import omni.appwindow
 import omni.usd
 
+from pxr import Gf, PhysxSchema, PhysicsSchemaTools, UsdPhysics, UsdShade
 from isaacsim.core.api.world import World
 from isaacsim.core.prims import SingleArticulation
 from isaacsim.core.utils.stage import open_stage
@@ -43,12 +163,17 @@ from terrain_preview.terrain_builder import build_single_tile
 # =========================
 # 1. 基本配置
 # =========================
-_THIS_FILE = Path(__file__).resolve()
-PROJECT_ROOT = next(parent for parent in _THIS_FILE.parents if (parent / "AGENTS.md").exists())
 USD_PATH = str(PROJECT_ROOT / "USD" / "complete_car.usd")
-ROBOT_PRIM_PATH = "/World/complete_car_final"
+ROBOT_PRIM_PATH = "/World/complete_car_alternative"
 TERRAIN_ROOT_PATH = "/World/terrain_preview"
 TERRAIN_ORIGIN = (-1.0, 0.0, 0.0)
+GROUND_PRIM_PATH = "/World/defaultGroundPlane"
+GROUND_COLLISION_PRIM_CANDIDATES = [
+    "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "/World/defaultGroundPlane/CollisionPlane",
+    "/World/defaultGroundPlane",
+]
+CONTROL_PHYSICS_MATERIAL_PATH = "/World/PhysicsMaterials/control_keyboard_material"
 GROUND_PRIM_CANDIDATES = [
     "/World/defaultGroundPlane",
     "/World/GroundPlane",
@@ -66,6 +191,14 @@ WHEEL_JOINT_NAMES = [
     "tail_car_wheel_left_joint",
     "tail_car_wheel_right_joint",
 ]
+WHEEL_COLLISION_ROOTS = [
+    f"{ROBOT_PRIM_PATH}/body_car_wheel_left/collisions",
+    f"{ROBOT_PRIM_PATH}/body_car_wheel_right/collisions",
+    f"{ROBOT_PRIM_PATH}/head_car_wheel_left/collisions",
+    f"{ROBOT_PRIM_PATH}/head_car_wheel_right/collisions",
+    f"{ROBOT_PRIM_PATH}/tail_car_wheel_left/collisions",
+    f"{ROBOT_PRIM_PATH}/tail_car_wheel_right/collisions",
+]
 
 # 两个球绞各 3 自由度
 BALL_JOINT_NAMES = [
@@ -78,12 +211,15 @@ BALL_JOINT_NAMES = [
 ]
 
 # 控制参数
-WHEEL_LINEAR_SPEED = 8.0
-WHEEL_TURN_SPEED = 4.0
-BALL_JOINT_DELTA = 0.01
+WHEEL_LINEAR_SPEED = 2.5
+WHEEL_TURN_SPEED = 1.0
+BALL_JOINT_DELTA = 0.005
 BALL_JOINT_LIMIT = 0.8
-WHEEL_VELOCITY_SMOOTHING = 0.20
-BALL_POSITION_SMOOTHING = 0.20
+WHEEL_VELOCITY_SMOOTHING = 0.10
+BALL_POSITION_SMOOTHING = 0.10
+STATIC_FRICTION = 0.5
+DYNAMIC_FRICTION = 0.5
+GROUND_SIZE = 50.0
 
 # 数字小键盘键位映射
 BALL_JOINT_KEY_BINDINGS = [
@@ -101,11 +237,8 @@ BALL_JOINT_KEY_BINDINGS = [
 # =========================
 key_state = {}
 
-
 def set_key(key_code, pressed):
     key_state[key_code] = pressed
-
-
 def is_pressed(key_code):
     return key_state.get(key_code, False)
 
@@ -113,9 +246,23 @@ def is_pressed(key_code):
 # =========================
 # 3. 订阅键盘事件
 # =========================
-appwindow = omni.appwindow.get_default_app_window()
-keyboard = appwindow.get_keyboard()
-input_iface = carb.input.acquire_input_interface()
+appwindow = None
+keyboard = None
+input_iface = None
+keyboard_sub = None
+
+if not RUN_HEADLESS:
+    appwindow = omni.appwindow.get_default_app_window()
+    if appwindow is None:
+        print("[WARN] Isaac Sim did not expose a default window. Switching to headless smoke mode.")
+        RUN_HEADLESS = True
+    else:
+        keyboard = appwindow.get_keyboard()
+        if keyboard is None:
+            print("[WARN] Isaac Sim window exists but keyboard interface is unavailable. Switching to headless smoke mode.")
+            RUN_HEADLESS = True
+        else:
+            input_iface = carb.input.acquire_input_interface()
 
 
 def on_keyboard_event(event, *args, **kwargs):
@@ -127,7 +274,8 @@ def on_keyboard_event(event, *args, **kwargs):
     return True
 
 
-keyboard_sub = input_iface.subscribe_to_keyboard_events(keyboard, on_keyboard_event)
+if input_iface is not None and keyboard is not None:
+    keyboard_sub = input_iface.subscribe_to_keyboard_events(keyboard, on_keyboard_event)
 
 
 def deactivate_default_ground(stage):
@@ -149,6 +297,28 @@ def maybe_build_terrain(stage):
         return
 
     deactivate_default_ground(stage)
+    if ARGS.terrain in FULL_GALLERY_ARG_CHOICES:
+        from terrain_preview.mgdp_gallery_builder import build_mgdp_gallery
+
+        summary = build_mgdp_gallery(
+            stage=stage,
+            gallery=ARGS.terrain,
+            root_path=TERRAIN_ROOT_PATH,
+            seed=ARGS.terrain_seed,
+            curriculum_envs=64,
+            include_markers=False,
+        )
+        print(
+            "[INFO] Built MGDP terrain gallery:",
+            summary.gallery,
+            f"(bounds_min={summary.min_corner.tolist()}, bounds_max={summary.max_corner.tolist()})",
+        )
+        print(
+            "[INFO] Robot origin aligned near gallery spawn hint:",
+            summary.spawn_origin.tolist(),
+        )
+        return
+
     spec = build_single_tile(
         stage,
         terrain_name=ARGS.terrain,
@@ -163,6 +333,74 @@ def maybe_build_terrain(stage):
     )
 
 
+def ensure_shared_physics_material(stage):
+    material = UsdShade.Material.Define(stage, CONTROL_PHYSICS_MATERIAL_PATH)
+    material_prim = material.GetPrim()
+
+    material_api = UsdPhysics.MaterialAPI.Apply(material_prim)
+    material_api.CreateStaticFrictionAttr(STATIC_FRICTION)
+    material_api.CreateDynamicFrictionAttr(DYNAMIC_FRICTION)
+
+    physx_material_api = PhysxSchema.PhysxMaterialAPI.Apply(material_prim)
+    physx_material_api.CreateFrictionCombineModeAttr("multiply")
+
+    return material
+
+
+def bind_physics_material(stage, prim_path, material):
+    prim = stage.GetPrimAtPath(prim_path)
+    if not prim.IsValid():
+        return False
+
+    binding_api = UsdShade.MaterialBindingAPI.Apply(prim)
+    binding_api.Bind(material, UsdShade.Tokens.weakerThanDescendants, "physics")
+    return True
+
+
+def ensure_ground_and_friction(stage):
+    material = ensure_shared_physics_material(stage)
+
+    if ARGS.terrain == "none":
+        ground_prim = stage.GetPrimAtPath(GROUND_PRIM_PATH)
+        if not ground_prim.IsValid():
+            PhysicsSchemaTools.addGroundPlane(
+                stage,
+                GROUND_PRIM_PATH,
+                "Z",
+                GROUND_SIZE,
+                Gf.Vec3f(0.0, 0.0, 0.0),
+                Gf.Vec3f(0.45, 0.45, 0.45),
+            )
+            print(
+                "[INFO] Added ground plane:",
+                GROUND_PRIM_PATH,
+                f"(size={GROUND_SIZE:.1f}, static_friction={STATIC_FRICTION}, dynamic_friction={DYNAMIC_FRICTION})",
+            )
+
+        ground_bound = False
+        for prim_path in GROUND_COLLISION_PRIM_CANDIDATES:
+            ground_bound = bind_physics_material(stage, prim_path, material) or ground_bound
+        if not ground_bound:
+            print("[WARN] Ground plane was created but no collision prim was found for physics material binding.")
+    else:
+        if bind_physics_material(stage, TERRAIN_ROOT_PATH, material):
+            print("[INFO] Applied shared terrain friction material:", TERRAIN_ROOT_PATH)
+        else:
+            print("[WARN] Terrain root was not found for physics material binding:", TERRAIN_ROOT_PATH)
+
+    bound_wheels = []
+    for prim_path in WHEEL_COLLISION_ROOTS:
+        if bind_physics_material(stage, prim_path, material):
+            bound_wheels.append(prim_path)
+
+    if bound_wheels:
+        print("[INFO] Applied shared wheel/ground friction material:")
+        for prim_path in bound_wheels:
+            print("  ", prim_path)
+    else:
+        print("[WARN] No wheel collision roots were found for friction material binding.")
+
+
 # =========================
 # 4. 创建世界并打开完整场景
 # =========================
@@ -175,6 +413,7 @@ if not ok:
 
 stage = omni.usd.get_context().get_stage()
 maybe_build_terrain(stage)
+ensure_ground_and_friction(stage)
 
 if World.instance():
     World.instance().clear_instance()
@@ -194,38 +433,57 @@ print("===== END CHECK =====\n")
 if not target_prim.IsValid():
     raise RuntimeError(f"Robot prim not found: {ROBOT_PRIM_PATH}")
 
-# 包装 articulation
 robot = SingleArticulation(prim_path=ROBOT_PRIM_PATH, name="my_car")
-robot.initialize()
-
-# 输出 DOF 信息
-dof_names = robot.dof_names
-print("==== Robot DOF Names ====")
-for i, name in enumerate(dof_names):
-    print(i, name)
-
-# 构建 joint name -> index 映射
-joint_name_to_index = {name: i for i, name in enumerate(dof_names)}
-
-# 检查 joint 是否都存在
-for name in WHEEL_JOINT_NAMES + BALL_JOINT_NAMES:
-    if name not in joint_name_to_index:
-        raise RuntimeError(f"Joint name not found in DOF list: {name}")
-
-wheel_indices = [joint_name_to_index[name] for name in WHEEL_JOINT_NAMES]
-ball_indices = [joint_name_to_index[name] for name in BALL_JOINT_NAMES]
-
-print("Wheel joint indices:", wheel_indices)
-print("Ball joint indices:", ball_indices)
+dof_names = []
+joint_name_to_index = {}
+wheel_indices = []
+ball_indices = []
 
 
 # =========================
 # 5. 初始目标
 # =========================
-current_positions = robot.get_joint_positions()
-ball_targets = np.array([current_positions[i] for i in ball_indices], dtype=np.float64)
+ball_targets = np.zeros(len(BALL_JOINT_NAMES), dtype=np.float64)
 ball_position_cmd = ball_targets.copy()
 wheel_velocity_cmd = np.zeros(len(wheel_indices), dtype=np.float64)
+
+
+def clear_all_keys():
+    key_state.clear()
+
+
+def initialize_robot_handles(*, reset_targets: bool, reason: str) -> None:
+    global dof_names, joint_name_to_index, wheel_indices, ball_indices
+    global ball_targets, ball_position_cmd, wheel_velocity_cmd
+
+    robot.initialize()
+    dof_names = list(robot.dof_names)
+
+    print(f"[INFO] Robot articulation initialized ({reason}).")
+    print("==== Robot DOF Names ====")
+    for i, name in enumerate(dof_names):
+        print(i, name)
+
+    joint_name_to_index = {name: i for i, name in enumerate(dof_names)}
+    for name in WHEEL_JOINT_NAMES + BALL_JOINT_NAMES:
+        if name not in joint_name_to_index:
+            raise RuntimeError(f"Joint name not found in DOF list: {name}")
+
+    wheel_indices = [joint_name_to_index[name] for name in WHEEL_JOINT_NAMES]
+    ball_indices = [joint_name_to_index[name] for name in BALL_JOINT_NAMES]
+    print("Wheel joint indices:", wheel_indices)
+    print("Ball joint indices:", ball_indices)
+
+    if reset_targets:
+        current_positions = robot.get_joint_positions()
+        ball_targets = np.array([current_positions[i] for i in ball_indices], dtype=np.float64)
+        ball_position_cmd = ball_targets.copy()
+        wheel_velocity_cmd = np.zeros(len(wheel_indices), dtype=np.float64)
+        clear_all_keys()
+        print("[INFO] Control targets and key state were reset to match the current articulation state.")
+
+
+initialize_robot_handles(reset_targets=True, reason="initial startup")
 
 
 def clamp(x, low, high):
@@ -297,8 +555,12 @@ print("NUMPAD_2 / NUMPAD_MULTIPLY : SPM2 y +/-")
 print("NUMPAD_3 / NUMPAD_SUBTRACT : SPM2 x +/-")
 print(f"Active terrain              : {ARGS.terrain}")
 print(f"Terrain seed                : {ARGS.terrain_seed}")
+print(f"Window mode                 : {'headless smoke run' if RUN_HEADLESS else 'interactive teleop'}")
 print(f"Wheel smoothing alpha       : {WHEEL_VELOCITY_SMOOTHING:.2f}")
 print(f"Ball smoothing alpha        : {BALL_POSITION_SMOOTHING:.2f}")
+if RUN_HEADLESS:
+    effective_frames = ARGS.frames if ARGS.frames > 0 else DEFAULT_HEADLESS_FRAMES
+    print(f"Smoke frames                : {effective_frames}")
 print("ESC        : quit")
 print("IMPORTANT  : click Isaac Sim window first; wheels use WASD, ball joints use the numeric keypad\n")
 
@@ -306,32 +568,65 @@ print("IMPORTANT  : click Isaac Sim window first; wheels use WASD, ball joints u
 # =========================
 # 6. 主循环
 # =========================
+def apply_current_command() -> None:
+    wheel_action = ArticulationAction(
+        joint_velocities=np.array(wheel_velocity_cmd, dtype=np.float64),
+        joint_indices=np.array(wheel_indices, dtype=np.int32),
+    )
+    robot.apply_action(wheel_action)
+
+    ball_action = ArticulationAction(
+        joint_positions=np.array(ball_position_cmd, dtype=np.float64),
+        joint_indices=np.array(ball_indices, dtype=np.int32),
+    )
+    robot.apply_action(ball_action)
+
+
 try:
-    while simulation_app.is_running():
-        if is_pressed(carb.input.KeyboardInput.ESCAPE):
-            break
+    if RUN_HEADLESS:
+        smoke_frames = ARGS.frames if ARGS.frames > 0 else DEFAULT_HEADLESS_FRAMES
+        print(f"[INFO] Running headless smoke validation for {smoke_frames} frames.")
+        for _ in range(smoke_frames):
+            apply_current_command()
+            world.step(render=False)
+        print("[INFO] Headless smoke validation finished successfully.")
+    else:
+        needs_reinitialize_after_stop = False
+        last_playing_state = world.is_playing()
+        while simulation_app.is_running():
+            if is_pressed(carb.input.KeyboardInput.ESCAPE):
+                break
 
-        update_ball_joint_targets()
-        ball_position_cmd = blend_command(ball_position_cmd, ball_targets, BALL_POSITION_SMOOTHING)
-        wheel_velocity_targets = compute_wheel_velocity_targets()
-        wheel_velocity_cmd = blend_command(wheel_velocity_cmd, wheel_velocity_targets, WHEEL_VELOCITY_SMOOTHING)
+            is_playing = world.is_playing()
+            if not is_playing:
+                if last_playing_state:
+                    clear_all_keys()
+                    if world.current_time_step_index == 0:
+                        needs_reinitialize_after_stop = True
+                        print("[INFO] Timeline stopped. Waiting for Play to reinitialize teleop control.")
+                    else:
+                        print("[INFO] Timeline paused. Teleop commands will resume when Play continues physics.")
+                last_playing_state = False
+                world.step(render=True)
+                continue
 
-        # 轮子速度命令
-        wheel_action = ArticulationAction(
-            joint_velocities=np.array(wheel_velocity_cmd, dtype=np.float64),
-            joint_indices=np.array(wheel_indices, dtype=np.int32),
-        )
-        robot.apply_action(wheel_action)
+            if needs_reinitialize_after_stop or (not last_playing_state) or world.current_time_step_index == 0:
+                print("[INFO] Timeline entered Play. Resetting world and reinitializing articulation handles.")
+                world.reset()
+                initialize_robot_handles(reset_targets=True, reason="timeline play/resume")
+                needs_reinitialize_after_stop = False
 
-        # 球绞位置命令
-        ball_action = ArticulationAction(
-            joint_positions=np.array(ball_position_cmd, dtype=np.float64),
-            joint_indices=np.array(ball_indices, dtype=np.int32),
-        )
-        robot.apply_action(ball_action)
+            last_playing_state = True
 
-        world.step(render=True)
+            update_ball_joint_targets()
+            ball_position_cmd = blend_command(ball_position_cmd, ball_targets, BALL_POSITION_SMOOTHING)
+            wheel_velocity_targets = compute_wheel_velocity_targets()
+            wheel_velocity_cmd = blend_command(wheel_velocity_cmd, wheel_velocity_targets, WHEEL_VELOCITY_SMOOTHING)
+
+            apply_current_command()
+            world.step(render=True)
 
 finally:
-    input_iface.unsubscribe_from_keyboard_events(keyboard, keyboard_sub)
+    if input_iface is not None and keyboard is not None and keyboard_sub is not None:
+        input_iface.unsubscribe_from_keyboard_events(keyboard, keyboard_sub)
     simulation_app.close()

@@ -1,2 +1,7 @@
 .venv-mineru/
 *.SAT
+.cache/
+outputs/
+__pycache__/
+*.py[cod]
+*.bak

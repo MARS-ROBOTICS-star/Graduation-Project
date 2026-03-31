@@ -2,11 +2,16 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ISAAC_SIM_ROOT="${ISAAC_SIM_ROOT:-/home/lbz/isaac-sim}"
+CONDA_BASE="${CONDA_BASE:-/home/ubuntu/miniconda3}"
+ENV_NAME="${ENV_NAME:-env_isaacLab}"
 
-if [[ ! -x "${ISAAC_SIM_ROOT}/python.sh" ]]; then
-  echo "Isaac Sim python launcher not found: ${ISAAC_SIM_ROOT}/python.sh" >&2
+if [[ ! -f "${CONDA_BASE}/etc/profile.d/conda.sh" ]]; then
+  echo "conda.sh not found under ${CONDA_BASE}" >&2
   exit 1
 fi
 
-exec "${ISAAC_SIM_ROOT}/python.sh" "${SCRIPT_DIR}/mgdp_terrain_preview.py" "$@"
+source "${CONDA_BASE}/etc/profile.d/conda.sh"
+conda activate "${ENV_NAME}"
+export OMNI_KIT_ACCEPT_EULA="${OMNI_KIT_ACCEPT_EULA:-YES}"
+
+exec python "${SCRIPT_DIR}/mgdp_terrain_preview.py" "$@"

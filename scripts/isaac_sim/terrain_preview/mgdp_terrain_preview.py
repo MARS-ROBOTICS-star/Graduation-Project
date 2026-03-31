@@ -2,31 +2,22 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 
-import omni.timeline
-import omni.usd
-from isaacsim import SimulationApp
-from isaacsim.core.utils.stage import save_stage
-from isaacsim.core.utils.viewports import set_camera_view
-
-from terrain_builder import build_gallery_layout, build_gallery_specs, setup_base_scene
+import numpy as np
+from isaaclab.app import AppLauncher
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Preview representative MGDP terrains inside Isaac Sim."
+        description="Preview the original MGDP terrain generation and curriculum layout inside Isaac Sim via env_isaacLab."
     )
     parser.add_argument(
         "--gallery",
         choices=["stage1", "stage2", "both"],
         default="both",
-        help="Which terrain gallery to build.",
-    )
-    parser.add_argument(
-        "--headless",
-        action="store_true",
-        help="Run Isaac Sim without opening a window.",
+        help="Which MGDP terrain family to build.",
     )
     parser.add_argument(
         "--frames",
@@ -44,24 +35,34 @@ def parse_args() -> argparse.Namespace:
         "--seed",
         type=int,
         default=7,
-        help="Random seed for obstacle placement.",
+        help="Random seed for terrain generation and curriculum sampling.",
     )
+    parser.add_argument(
+        "--curriculum-envs",
+        type=int,
+        default=64,
+        help="How many curriculum assignment markers to place on the terrain grid.",
+    )
+    AppLauncher.add_app_launcher_args(parser)
     return parser.parse_args()
 
 
 ARGS = parse_args()
+APP_LAUNCHER = AppLauncher(ARGS)
+SIMULATION_APP = APP_LAUNCHER.app
 
-SIMULATION_APP = SimulationApp(
-    {
-        "headless": ARGS.headless,
-        "renderer": "RaytracedLighting",
-    }
-)
+import omni.timeline
+import omni.usd
+from isaacsim.core.utils.stage import save_stage
+from isaacsim.core.utils.viewports import set_camera_view
+
+from mgdp_gallery_builder import build_mgdp_gallery
+from terrain_builder import setup_base_scene
+
 
 _THIS_FILE = Path(__file__).resolve()
 REPO_ROOT = next(parent for parent in _THIS_FILE.parents if (parent / "AGENTS.md").exists())
-DEFAULT_SAVE_PATH = REPO_ROOT / "outputs" / "isaacsim" / f"mgdp_terrain_{ARGS.gallery}.usd"
-
+DEFAULT_SAVE_PATH = REPO_ROOT / "outputs" / "isaacsim" / f"mgdp_ported_terrain_{ARGS.gallery}.usd"
 
 def maybe_save_stage(output_path: str) -> Path | None:
     if not output_path:
@@ -74,26 +75,27 @@ def maybe_save_stage(output_path: str) -> Path | None:
     print(f"Saved USD stage to: {save_path}")
     return save_path
 
-
 def main() -> None:
     omni.usd.get_context().new_stage()
     stage = omni.usd.get_context().get_stage()
     setup_base_scene(stage)
-
-    specs = build_gallery_specs(ARGS.gallery)
-    if not specs:
-        raise RuntimeError("No terrain specs selected.")
-
-    center, extent = build_gallery_layout(stage, specs, root_path="/World", seed_base=ARGS.seed)
+    summary = build_mgdp_gallery(
+        stage=stage,
+        gallery=ARGS.gallery,
+        root_path="/World/mgdp_ported",
+        seed=ARGS.seed,
+        curriculum_envs=ARGS.curriculum_envs,
+        include_markers=True,
+    )
 
     if not ARGS.headless:
-        distance = max(extent[0] * 1.6, 18.0)
+        distance = max(float(summary.extent[0]), float(summary.extent[1])) * 1.2
         eye = [
-            float(center[0] - distance * 0.30),
-            float(center[1] - distance * 0.95),
-            float(max(8.0, extent[0] * 0.55)),
+            float(summary.center[0] - 0.15 * distance),
+            float(summary.center[1] - 0.95 * distance),
+            float(max(12.0, summary.extent[2] + 0.35 * distance)),
         ]
-        target = [float(center[0]), float(center[1]), 0.0]
+        target = [float(summary.center[0]), float(summary.center[1]), float(summary.center[2])]
         set_camera_view(eye=eye, target=target, camera_prim_path="/OmniverseKit_Persp")
 
     for _ in range(8):

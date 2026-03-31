@@ -163,8 +163,22 @@ def create_box(stage, path: str, box: StaticBox):
     cube = UsdGeom.Cube.Define(stage, path)
     cube.CreateSizeAttr(1.0)
     xformable = UsdGeom.Xformable(cube)
-    xformable.AddTranslateOp().Set(Gf.Vec3d(*box.center))
-    xformable.AddScaleOp().Set(Gf.Vec3f(*box.size))
+
+    translate_op = None
+    scale_op = None
+    for op in xformable.GetOrderedXformOps():
+        if op.GetOpType() == UsdGeom.XformOp.TypeTranslate and translate_op is None:
+            translate_op = op
+        elif op.GetOpType() == UsdGeom.XformOp.TypeScale and scale_op is None:
+            scale_op = op
+
+    if translate_op is None:
+        translate_op = xformable.AddTranslateOp(precision=UsdGeom.XformOp.PrecisionDouble)
+    if scale_op is None:
+        scale_op = xformable.AddScaleOp(precision=UsdGeom.XformOp.PrecisionFloat)
+
+    translate_op.Set(Gf.Vec3d(*box.center))
+    scale_op.Set(Gf.Vec3f(*box.size))
     set_display_color(cube.GetPrim(), box.color)
     apply_box_collision(cube.GetPrim())
     return cube

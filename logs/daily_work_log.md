@@ -1,5 +1,131 @@
 # 每日工作日志
 
+## 2026-04-02
+
+已完成：
+- 按用户要求撤销上一轮直接落下去的 `MGDP stage1` RL 训练接入代码，不再保留“先写完整实现、再解释”的协作方式。
+- 删除任务包内新增的 `mgdp_stage1_terrain.py`、`complete_car_terrain_env.py` 和占位 terrain USDA 文件。
+- 将 `Complete-Car-Rl-Training-v0` 的任务注册入口恢复为基础 `ManagerBasedRLEnv`。
+- 将 `complete_car_rl_training_env_cfg.py` 恢复到撤销前的基线状态，去掉 `TerrainImporterCfg`、rough-terrain 相关 reset/reward/termination 收敛和运行时地形导入依赖。
+- 更新 `docs/current_status.md` 与 `docs/conversation_history.md`，把项目状态改为“阶段 1 方案已确认，但代码实现已回退，后续按教学模式从空白重建”。
+- 在教学模式启动时，曾短暂代写一个 `mgdp_stage1_terrain.py` 骨架文件；随后按用户要求立即删除，后续改为只给手敲指导，不再由 Codex 代写教学步骤中的代码。
+- 按教学模式继续推进 `stage1_terrain.py`：已完成 `Stage1TerrainCfg/Stage1TerrainData`、`terrain_dict/terrain_proportions`、像素尺寸派生量、空地图分配函数、flat/slope/pit 三种 tile、tile 写入大地图、terrain_type 记录、env_origin 记录，以及 `choice -> terrain_idx -> tile` 的初版调度逻辑。
+- 已将 `row` 首次接入难度变量 `difficulty = row / cfg.num_rows`，并验证同一列 slope 在不同 row 上会表现出不同最大高度：第 0 行几乎为平地，第 19 行最大高度约为 18 个高度单位。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/__init__.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_rl_training_env_cfg.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_terrain_env.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/mgdp_stage1_terrain.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/assets/mgdp_stage1_placeholder.usda`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前仓库不再保留任务内 `MGDP stage1` rough-terrain 训练接入代码。
+- 研究层面仍保留“阶段 1 目标切到 `MGDP stage1` 混合地形 + 固定球铰 + 速度跟踪”的方向，但工程实现需要重新开始。
+- 后续协作方式已明确：先讲清方案，再按教学模式一步一步写；用户自己手敲代码，Codex 只做结构讲解、逐行指导和复查。
+- 当前 `stage1_terrain.py` 已经从零搭到“完整二维课程地图骨架 + 初版 row/col 语义”，但还没接入真实 MGDP 多地形完整分支，也还没接入 Isaac Lab terrain importer。
+
+下一步：
+- 先向用户讲清楚从当前基线出发时，`MGDP stage1` 接入应拆成哪些代码落点，再从第一步数据结构和参数定义开始，由用户手工敲入。
+- 继续在教学模式下扩展 `stage1_terrain.py`：让更多地形函数接入 `difficulty`，再逐步过渡到完整 `MGDP stage1` 地形选择和最终 mesh 导出。
+
+## 2026-04-01
+
+已完成：
+- 根据用户新确认的主线，停止沿用“阶段 1 平地 + 目标导向移动”定义，改为“`MGDP stage1` 混合地形 + 固定球铰 + 6 维轮速动作 + 速度跟踪”。
+- 在 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/` 下新增任务内 `mgdp_stage1_terrain.py`，把 `MGDP stage1` 的 mixed terrain 生成逻辑直接迁移到当前 Isaac Lab 任务包。
+- 新增自定义环境类 `complete_car_terrain_env.py`，通过自定义 `ManagerBasedRLEnv` 子类在环境启动后导入 stage1 mesh，并在 `_reset_idx()` 中执行 terrain curriculum 更新。
+- 新增占位文件 `assets/mgdp_stage1_placeholder.usda`，用于先初始化 Isaac Lab `TerrainImporterCfg`，再在运行时导入真实 `MGDP stage1` trimesh。
+- 修改 `complete_car_rl_training_env_cfg.py`：
+  - scene 从默认平地切到 `TerrainImporterCfg`
+  - commands 切到速度跟踪配置
+  - actions 收敛为仅 6 维轮速
+  - 观测移除球铰动作相关项
+  - reset 中将球铰固定为零位
+  - reward / termination 切到 rough-terrain velocity tracking 口径
+  - episode 长度改为 `20 s`
+- 修改任务注册入口 `__init__.py`，将 `Complete-Car-Rl-Training-v0` 的 entry point 从基础 `ManagerBasedRLEnv` 改为新的 `CompleteCarTerrainEnv`。
+- 实际执行静态检查：
+  - `python3 -m py_compile .../mgdp_stage1_terrain.py`
+  - `python3 -m py_compile .../complete_car_terrain_env.py`
+  - `python3 -m py_compile .../complete_car_rl_training_env_cfg.py`
+  - `python3 -m py_compile .../__init__.py`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/mgdp_stage1_terrain.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_terrain_env.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/assets/mgdp_stage1_placeholder.usda`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_rl_training_env_cfg.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/__init__.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 RL 任务主线已不再是“平地目标导向移动”，而是切到“`MGDP stage1` rough terrain + velocity tracking”。
+- 当前代码层已经具备 task-local 的 `MGDP stage1` 地形生成与 terrain curriculum 接口，但尚未在 `env_isaacLab` 里完成一次真实运行时 smoke 验证。
+- 当前终端上下文无法直接导入 `isaaclab`，因此本轮只能完成静态改造与语法检查，运行时接口是否完全匹配 Isaac Lab 2.3.x 仍待下轮验证。
+
+下一步：
+- 在 `env_isaacLab` 中依次执行 `list_envs`、`zero_agent` 和短程 `train --max_iterations 10`，先确认新任务入口可创建、可 reset、可 step。
+
+## 2026-04-02
+
+已完成：
+- 按用户要求停止“逐步教学到每个小步都由用户手敲”的节奏，直接完成 `stage1_terrain.py` 中从 Step 36 到 Step 45 的地形生成层实现。
+- 在 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/stage1_terrain.py` 中补齐 MGDP stage1 对应的地形函数与分发表：
+  - `stairs down`
+  - `stairs up`
+  - `new stairs down`
+  - `discrete obstacles`
+  - `hurdle`
+  - `gap`
+  - `ramp`
+  - `beam`
+- 将 `pyramid`、`hurdle`、`gap`、`ramp`、`beam` 等地形加入 roughness 处理，并为随机型地形加入基于 `(row, col, terrain_idx)` 的确定性 seed。
+- 将 `make_tile_by_col()` 升级为：
+  - `choice -> terrain_idx`
+  - `terrain_idx -> terrain_name`
+  - `terrain_name -> generator`
+  的完整分发结构。
+- 将各类关键地形参数接入 `difficulty`：
+  - 斜坡高度
+  - 台阶高度 / 台阶宽度
+  - 离散障碍高度
+  - hurdle 高度
+  - gap 宽度
+  - ramp 坡度
+  - beam 长度 / 间距 / 高度
+  - pit 深度
+- 修正 `stairs` 的初版实现偏差，改为更接近 MGDP 语义的“台阶段 + 中心 platform”结构，避免在整块 8 m tile 上无约束累加导致累计高度过大。
+- 完成运行验证：
+  - `python3 -m py_compile .../stage1_terrain.py`
+  - 逐个 terrain name 调用 `make_tile_by_name(...)`
+  - `build_stage1_terrain_data(...)`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/stage1_terrain.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `stage1_terrain.py` 已不再是教学骨架，而是完整的 MGDP stage1 地形生成层实现基础。
+- 当前 `build_stage1_terrain_data()` 已可同时生成：
+  - `height_field_raw`
+  - `env_origins`
+  - `terrain_type`
+  - `vertices`
+  - `faces`
+  - `x_edge_mask`
+- 当前按 MGDP 原 `choice = j / num_cols + 0.001` 与累计 `terrain_proportions` 的列选择逻辑，`20 x 10` 默认课程地图实际只命中前几类 terrain index；这是原配置逻辑的结果，不是本轮移植错误。
+
+下一步：
+- 从 Step 46 起恢复教学模式，继续处理 `env_origin` 与特殊地形出生点策略，再接 `TerrainImporter`、自定义 Isaac Lab 环境类和 terrain curriculum。
+
 ## 2026-03-31
 
 已完成：

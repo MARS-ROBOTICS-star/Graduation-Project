@@ -2,12 +2,12 @@
 
 ## 当前总目标
 - 在 Isaac Lab 中构建可稳定训练、可控、可复现的三节完整车 RL 两阶段主线。
-- 第一阶段先完成“平地 + 本体感知 + 固定球铰 + 目标导向移动” baseline。
+- 第一阶段先完成“MGDP stage1 混合地形 + 本体感知 + 固定球铰 + 速度跟踪” baseline。
 - 第二阶段再完成“球铰纳入控制 + 底层 PID 与逆运动学映射 + 多样地形 + 外部感知与本体感知融合”的增强任务。
 
 ## 当前阶段
 - 阶段 0 已完成：`reset -> step -> reward -> termination -> train` 闭环已实际跑通。
-- 阶段 1 进行中：平地、本体感知、固定球铰、目标导向移动 baseline 的任务定义收敛与训练稳定性提升。
+- 阶段 1 进行中：已确认转向 `MGDP stage1` 混合地形、本体感知、固定球铰、速度跟踪 baseline，但上一轮直接落下去的代码已撤回，接下来改为按教学模式从空白实现。
 
 ## 已完成
 - 已确认导师要求：优先尽快跑通 RL 基线，而不是先追求完整机构机理、感知或复杂地形。
@@ -71,16 +71,20 @@
   - `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --frames 1 --gallery stage2`
 - 已修正当前 `env_isaacLab` 中被污染的数值栈，使 Isaac Sim 窗口模式重新可启动；本机当前已验证可工作的关键版本为 `numpy==1.26.0`、`scipy==1.14.1`。
 - 当前仓库已确认 GitHub 推送阻塞来自 `Drawing/完整小车等效串联.SAT` 超过 100 MB；后续默认将 `.SAT` 文件加入 `.gitignore`，不再直接纳入普通 Git 提交。
+- 已确认本轮协作方式调整：后续围绕 `MGDP stage1` 的 RL 接入不再由 Codex 先写完整代码，而是先讲清方案，再按教学模式一步一步实现。
 
 ## 正在进行
-- 根据新的两阶段主线，收敛第 1 阶段 baseline 定义：平地、本体感知、固定球铰、目标导向移动，仅控制 6 个轮子速度。
+- 根据新的两阶段主线，收敛第 1 阶段 baseline 定义：`MGDP stage1` 混合地形、本体感知、固定球铰、速度跟踪，仅控制 6 个轮子速度。
 - 按“整体掌握文章内容与逻辑为主，RL 环境设计提炼为辅”的目标继续精读 `Wiberg 等 - 2022`，为后续 env 设计吸收可迁移部分。
 - 清理 `USD/complete_car.usd` 中剩余的外部引用与不适合多环境复制的内容。
-- 调整 `root_too_low`、初始高度、reset 范围和奖励权重，提升 rollout 存活时间和训练有效性。
+- 准备从现有 `Complete-Car-Rl-Training-v0` 基线出发，按教学模式继续实现 `terrain importer` 接入、课程学习更新和训练任务切换。
+- 当前教学实现已推进到 `stage1_terrain.py`：已完成配置类、空地图分配、完整 heightfield->mesh 转换、`env_origin` 记录，以及 `MGDP stage1` 全部地形名对应的 tile 生成与按名字分发。
 
 ## 当前阻塞点
-- 当前环境代码仍保留 12 维“轮子 + 球铰”联合控制原型，与最新确定的第 1 阶段默认路线不完全一致，后续需要按主线收敛。
-- 当前训练中 `Episode_Termination/root_too_low` 长时间为 `1.0`，episode 长度过短，说明虽然能训练，但环境健康度不足。
+- 当前 `MGDP stage1` 的 RL 接入代码已按用户要求撤回，任务包里尚不存在可运行的 rough-terrain 训练入口。
+- 当前需要先把教学起点和最小实现顺序讲清楚，再开始逐步写代码；不能再直接把完整实现一次性落下去。
+- 当前 `stage1_terrain.py` 虽已补齐 `MGDP stage1` 全部地形生成函数，但按 MGDP 原 `terrain_dict + choice=j/num_cols+0.001` 的列选择逻辑，当前 `20 x 10` 课程地图实际只会落到前 5 类索引；这属于原配置语义，不是当前移植 bug。
+- 当前训练中 `Episode_Termination/root_too_low` 长时间为 `1.0` 的旧问题仍存在于现有基线，后续迁移到 rough terrain 前后都需要重新标定。
 - `complete_car.usd` 仍存在离线不可解析或不利于 replicated RL 的残留内容，例如外部引用和内嵌 `PhysicsScene` 风险。
 - 虽然 `complete_car.usd` 的机器人本体树已收敛到 equivalent 主链，但轮子零速 drive、球铰高刚度 drive、损坏的 visual 引用和远端 `Example_Rotary` 引用仍可能导致 `Play` 后数值发散。
 - 当前终端会话下 CUDA / NVIDIA driver 不可用，GPU 训练暂不能作为默认路径。
@@ -90,12 +94,13 @@
 - 当前已明确新的默认抽象：USD 中 3 个等效球铰关节的坐标本身就是移动平台姿态坐标，RL 后续应直接控制这 3 个等效关节角；IK 仅作为“平台姿态 -> 真实机构电机角”的并行映射层，用于后续可能的实物阶段，不再作为当前仿真闭环的直接控制输入。
 
 ## 下一步优先事项
-- 先按第 1 阶段主线收敛 baseline：平地、目标导向移动、本体感知、固定球铰，仅保留 6 维轮速动作。
-- 将 reward、termination、reset 与目标采样方式统一改写为“目标导向移动”任务，而不是继续沿用速度跟踪思路。
+- 下一步进入 Step 46 起的教学模式：先继续完善 `env_origin` 与特殊地形出生点策略，再准备接 `TerrainImporter` 和自定义 RL 环境类。
+- 下一步在 `stage1_terrain.py` 基础上补一个预览/自检脚本，验证每种 tile 和整张 stage1 课程地图的几何是否符合预期。
+- 下一步开始把当前已完成的 stage1 地形数据结构接入 Isaac Lab：mesh 导入、`scene.env_origins` 配置、terrain curriculum 更新。
 - 清理 `USD/complete_car.usd` 的远端依赖和 replicated 不兼容项。
 - 在已对齐的机器人本体树基础上，继续清理轮子 drive、损坏的 visual 引用、远端 `Example_Rotary` 引用与内嵌 `PhysicsScene`。
-- 基于现有训练日志调节终止阈值、初始姿态和奖励权重，把 episode 从“几乎必然早终止”修到可持续 rollout。
-- 下一步优先回到 RL 主线：将策略输出和控制接口明确收敛为前后 3 个等效球铰姿态角与 6 个轮子动作，不再继续围绕“用 IK 电机角直接驱动等效球铰”这条路线投入。
+- 基于后续 rough-terrain 新日志再调节终止阈值、初始姿态和奖励权重，把 episode 从“几乎必然早终止”修到可持续 rollout。
+- 阶段 1 默认仍保持固定球铰和 6 维轮速动作，不在这一轮重新把球铰高层控制并回动作空间。
 - 若需要继续使用 MGDP 地形预览脚本，当前默认入口应直接使用 `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --gallery <stage1|stage2|both>`，并在 `env_isaacLab` 中启动。
 - 若要继续做车体与地形联调，当前默认入口应直接使用 `python3 scripts/isaac_sim/control_keyboard.py --terrain <terrain_name|stage1|stage2|both>`，而不是分别手工开两个 Isaac Sim 进程。
 - 待第 1 阶段稳定后，再进入第 2 阶段，接入球铰高层控制、底层 PID + 逆运动学、多样地形与外部感知。
@@ -103,12 +108,12 @@
 ## 当前默认方案
 - 训练路线默认遵循：
   - 阶段 0：先跑通可训练环境
-  - 阶段 1：平地 + 本体感知 + 固定球铰 + 目标导向移动
+  - 阶段 1：`MGDP stage1` 混合地形 + 本体感知 + 固定球铰 + 速度跟踪
   - 阶段 2：球铰纳入控制 + 底层 PID 与逆运动学映射 + 多样地形 + 外部感知与本体感知融合
 - 第 1 阶段默认采用：
-  - 平地
+  - `MGDP stage1` 混合地形
   - 本体状态输入
-  - 目标导向移动任务
+  - 速度跟踪任务
   - 固定球铰姿态
   - 仅训练 6 个轮子速度控制
 - 第 2 阶段默认采用：

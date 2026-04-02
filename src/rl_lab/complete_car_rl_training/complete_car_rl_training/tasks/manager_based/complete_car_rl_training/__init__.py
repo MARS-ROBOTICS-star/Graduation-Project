@@ -14,7 +14,7 @@ from . import agents
 
 gym.register(
     id="Complete-Car-Rl-Training-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point=f"{__name__}.complete_car_stage1_env:CompleteCarStage1Env",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.complete_car_rl_training_env_cfg:CompleteCarRlTrainingEnvCfg",

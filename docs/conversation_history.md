@@ -2,6 +2,72 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-02
+
+### stage1_terrain.py has been expanded to a full MGDP-stage1 terrain-generation layer, but RL integration is still pending
+- The teaching-mode implementation in:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/stage1_terrain.py`
+  has now been extended beyond the earlier skeleton.
+- Durable implementation status:
+  - `Stage1TerrainCfg` / `Stage1TerrainData` are in place
+  - the stage1 course map can generate `height_field_raw`, `env_origins`, `terrain_type`, `vertices`, `faces`, and `x_edge_mask`
+  - all MGDP stage1 terrain names now have corresponding tile-generator functions:
+    - `slope down`
+    - `pyramid`
+    - `stairs down`
+    - `stairs up`
+    - `discrete obstacles`
+    - `hurdle`
+    - `gap`
+    - `ramp`
+    - `beam`
+    - `new stairs down`
+    - `pit`
+  - key geometry parameters have been connected to `difficulty`
+- Important inherited caveat:
+  - the current column-selection logic still follows MGDP's original style:
+    - `choice = j / num_cols + 0.001`
+    - thresholds from cumulative `terrain_proportions`
+  - under the current stage1 weight table and `num_cols = 10`, the generated `20 x 10` map actually reaches only the early terrain indices during normal `build_stage1_map()` execution
+  - this should be treated as a faithful consequence of the original configuration logic, not as a bug introduced by the local port
+- Impact:
+  - future sessions should treat terrain-generation groundwork as largely complete
+  - the next engineering focus should move to origin refinement, preview/self-check tooling, and Isaac Lab environment integration rather than rebuilding terrain generators again
+
+### Direct task-local MGDP stage1 RL integration was intentionally withdrawn
+- The previous round had already added task-local rough-terrain files under:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/`
+- The user explicitly rejected that working mode because it skipped the requested teaching process and jumped straight to a complete implementation.
+- Durable conclusion:
+  - do not assume the task package currently contains a valid `MGDP stage1` terrain-training integration
+  - the rough-terrain code path was intentionally rolled back
+  - future work must resume from the pre-integration baseline and rebuild step by step in teaching mode
+- Impact:
+  - future sessions should separate the confirmed stage-1 target scheme from the actual code state
+  - the current codebase should be treated as “scheme chosen, implementation pending”
+
+## 2026-04-01
+
+### Stage-1 RL mainline switched from flat goal-navigation to MGDP stage1 rough-terrain velocity tracking
+- The user explicitly chose to stop using the previously planned stage-1 task formulation:
+  - flat ground
+  - goal-directed locomotion
+- The new durable stage-1 definition is now:
+  - `MGDP stage1` mixed terrain
+  - fixed spherical joints
+  - wheel-only control
+  - velocity-tracking task
+- Engineering impact:
+  - the active Isaac Lab task `Complete-Car-Rl-Training-v0` should no longer be treated as a flat-ground goal-navigation baseline
+  - future stage-1 work should align commands, rewards, resets, and curriculum with rough-terrain velocity tracking first
+
+### MGDP stage1 terrain generation was once integrated into the Isaac Lab task package, but this no longer reflects the current code state
+- Added task-local terrain integration files under:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/`
+- Historical note:
+  - that direct integration attempt was later withdrawn on `2026-04-02`
+  - future sessions must not assume those files still exist
+
 ## 2026-03-31
 
 ### new interactive bash shells now default to env_isaacLab instead of base

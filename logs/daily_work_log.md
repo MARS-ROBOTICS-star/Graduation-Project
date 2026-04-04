@@ -1,6 +1,229 @@
 # 每日工作日志
 
+## 2026-04-03
+
+已完成：
+- 针对用户提出的“训练时为什么像加载了好几张地图”，重新检查当前 RL 任务的真实地形导入链路：
+  - `Complete-Car-Rl-Training-v0`
+  - `complete_car_stage1_env.py`
+  - `complete_car_rl_training_env_cfg.py`
+  - `stage1_terrain.py`
+- 代码层确认当前训练环境的地形导入逻辑为：
+  - 先删除 `TerrainImporterCfg(terrain_type="plane")` 自动生成的默认 plane
+  - 再把整张 `stage1` 高度图转换得到的单个 trimesh 通过 `import_mesh("stage1", ...)` 只导入一次
+  - 再通过 `configure_env_origins(...)` 给不同并行环境分配出生点
+- 直接用纯 Python 方式复核 `stage1_terrain.py` 的数据规模，确认当前训练地形生成结果是单张完整大地图，而不是按 env 拆成多张：
+  - `height_field_raw.shape == (2100, 1300)`
+  - `env_origins.shape == (20, 10, 3)`
+  - `vertices.shape == (2730000, 3)`
+  - `faces.shape == (5453202, 3)`
+  - `terrain_type_unique == [0, 1, 2, 3, 4]`
+- 新增训练环境 stage 导出脚本：
+  - `src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py`
+  - 用途是直接实例化真实训练任务，并尝试把 live RL stage 保存成 USD，同时导出 prim tree 文本
+- 根据用户后续提供的 `isaaclab_2026-04-03_11-39-39.log` 与配套 `kit_20260403_113931.log` 继续排查：
+  - 日志显示当前启动的是 `export_training_stage.py`，不是 `scripts/rsl_rl/train.py`
+  - `Complete-Car-Rl-Training-v0` 的环境构建实际上已经成功完成，机器人 articulation、动作项和观测项都已初始化
+  - Kit 日志末尾为 `SimulationApp.close` 正常关闭，没有出现任务包自身的 Python traceback
+- 进一步确认这次调用里 `--save-usd` 传入的是目录 `/home/ubuntu/Graduation-Project/results/`，不是具体 USD 文件名。
+- 已修改 `export_training_stage.py`：
+  - 若 `--save-usd` 是已存在目录，立即抛出清晰 `ValueError`
+  - 若 `--save-usd` 不以 `.usd` 或 `.usda` 结尾，也立即报错
+- 已执行 `python3 -m py_compile src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py`，静态检查通过。
+- 在用户随后成功导出 `results/training_stage_num_envs10.usda` 后，直接检查导出的 prim tree：
+  - `/World/terrain` 下只有 1 张真实训练地形：
+    - `/World/terrain/stage1/mesh`
+  - 但每个 `/World/envs/env_i/Robot` 下都存在：
+    - `terrain_preview/mix/terrain_surface`
+    - `terrain_preview/mix/tile_base`
+  - 因而“像有好几张地图”的直接来源不是训练 terrain importer 重复导入多张 `stage1`，而是机器人资产里残留的 preview 地形被每个并行环境复制。
+- 按用户要求新增 `scripts/isaac_sim/remove_complete_car_terrain_preview.py`，并对 `USD/complete_car.usd` 执行清理：
+  - 自动创建备份 `USD/complete_car.usd.terrain_preview_cleanup.bak`
+  - 删除 `/World/terrain_preview` 子树
+- 删除后重新打开 `USD/complete_car.usd` 验证：
+  - `/World/terrain_preview` 已返回 `IsValid() == False`
+  - 当前顶层 prim 只剩 `/World`、`/Render`、`/physicsScene`
+- 实际在本机执行：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py`
+  - `python -u scripts/export_training_stage.py --task Complete-Car-Rl-Training-v0 --num_envs 10 --steps 0 --headless --device cpu --save-usd ...`
+- 实测结果：
+  - 脚本可以进入 Isaac Lab scene creation
+  - 但在当前无 NVIDIA driver / 无可用 CUDA 的环境里，进程会在 `gym.make(...)` 场景创建完成后提前退出，没有继续走到脚本自己的 `env.reset()` 与 `save_stage()` 逻辑
+  - 因此本轮未能在本机生成真实训练环境的 stage USD 文件
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py`
+- `scripts/isaac_sim/remove_complete_car_terrain_preview.py`
+- `USD/complete_car.usd`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前训练代码路径本身并没有“按并行环境复制多张完整 stage1 地图”的显式逻辑；它导入的是 1 张全局 `stage1` mesh，再给各 env 分配不同 origin。
+- 用户这次提供的日志并不支持“训练环境没拉起来”这个判断；从日志看，环境已经创建成功，关闭点更接近导出脚本参数或脚本执行流程，而不是任务配置本身崩溃。
+- 本次最明确的问题是 `--save-usd` 目标写成了目录，后续必须改成具体文件名。
+- 当前已经确认并修复：训练导出中每个 `env_i/Robot` 下反复出现的假地形来自 `complete_car.usd` 的 `/World/terrain_preview` 残留，而不是训练 terrain importer 自己重复导入多张 stage1 地图。
+- 若窗口里看起来像有多张地图，后续应优先从：
+  - `/World/terrain` 下是否存在多个 terrain prim
+  - `/World/envs/env_*` 的多环境复制
+  - 默认 plane / debug 可视化
+  这三类来源排查，而不是先假设 `stage1_terrain.py` 生成了多张地图。
+- 当前仓库已经有可复用的训练 stage 导出脚本，但真正导出 live RL stage 仍需放到有正常 GPU/驱动的 Isaac Lab 会话中执行。
+
+下一步：
+- 在可正常使用 `cuda:0` 的 Isaac Lab 环境中重新导出一次 `training_stage_num_envs10.usda`，确认每个 `env_i/Robot` 下已不再出现 `terrain_preview` 子树；若仍有异常，再继续排查 `PhysicsScene`、远端传感器引用和训练场景自身的多环境可视化。
+
 ## 2026-04-02
+
+已完成：
+- 按用户要求实际执行 `preview_stage1_terrain.py`，尝试在当前机器上通过 `--headless --device cpu --frames 1 --save-usd` 导出 preview stage 的 USD 文件，并额外保存完整日志到：
+  - `results/preview_save.log`
+  - `results/preview_save_unbuffered.log`
+- 结果确认：
+  - 当前 Isaac Sim 会话能启动到 headless 模式
+  - 但在这台无可用 CUDA / 无图形显示环境中，`--save-usd` 仍未实际生成 `results/stage1_preview.usda`
+- 直接读取 `USD/complete_car.usd`，导出 prim 树到：
+  - `results/complete_car_usd_tree.txt`
+- 基于导出的 prim 树确认 `complete_car.usd` 的主要结构：
+  - `/World/complete_car_alternative` 为机器人主根
+  - 机体/轮子/SPM 机构普遍采用 `visuals + collisions` 双子树
+  - `/World/complete_car_alternative/joints` 下集中存放轮子与两组等效球铰相关 `PhysicsRevoluteJoint/PhysicsFixedJoint`
+  - 传感器包括 `Imu_Sensor`、双目相机和 `Example_Rotary`
+  - 文件末尾仍存在顶层 `/physicsScene`
+- 再次通过文件级导入检查 `stage1_terrain.py` 的 `env_origins`：
+  - `shape == (20, 10, 3)`，说明逻辑上 20x10 共 200 个 tile 坐标系都已生成
+  - `x` 范围为 `4.0 ~ 156.0`
+  - `y` 范围为 `4.0 ~ 76.0`
+  - 左上角 tile 原点为 `(4, 4, z)`，右下角 tile 原点为 `(156, 76, z)`
+- 同时核对 Isaac Lab `TerrainImporter` 源码，确认 `scene.terrain.set_debug_vis(True)` 会在 `/Visuals/TerrainOrigin` 下创建 `VisualizationMarkers`，其本质是 `UsdGeom.PointInstancer`，并将 `env_origins.reshape(-1, 3)` 全部可视化，而不是为每个 tile 手工创建一个独立 Xform。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前已经实际验证：preview 导出 USD 文件这一步在本机 headless/CPU 环境里不可靠，不能再默认认为 `--save-usd` 一定会落盘。
+- 当前可以明确解释：
+  - live preview stage 的主要组成来自 `preview_stage1_terrain.py` 场景配置和 `TerrainImporter`
+  - 机器人本体资产的内部 prim 结构可直接参考 `results/complete_car_usd_tree.txt`
+  - tile 坐标系逻辑上并不缺列；若窗口里仍看到左侧坐标系缺失，应优先继续从 live stage 对齐或可视化层排查，而不是回到 `env_origins` 生成逻辑
+
+下一步：
+- 若用户还要继续精确核对 live preview stage，下一步应优先在可用 GUI 的 Isaac Sim 会话里导出 USD，或直接写一个专门的 stage-tree dump 脚本，绕开当前 `save_stage` 不落盘的问题。
+
+已完成：
+- 根据用户补充的窗口观察现象，继续定位 `stage1` 预览中的场景错位问题：用户反馈为“两个相同大地图堆叠、tile 坐标系从右边开始、左边两列没有坐标系”。
+- 复核后确认：
+  - `preview_stage1_terrain.py` 与 `stage1_terrain.py` 在地形生成参数层本身一致
+  - 剩余问题来自 `MGDP` 原版 mesh 放置规则未完整迁移：本地 `env_origins` 按无 border 的 tile 中心计算，但导入 mesh 若不整体减去 `border_size`，会比 marker 网格整体偏右/偏上约 `25 m`
+- 将 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_stage1_env.py` 补齐与 preview 相同的 mesh 坐标修正：
+  - 新增 `_offset_mesh_to_mgdp_frame(...)`
+  - 在 `import_mesh("stage1", ...)` 前先把整张 trimesh 的 `x/y` 顶点整体减去 `border_size`
+- 继续保留 scene 层默认 plane 清理逻辑，形成最终一致规则：
+  - 删默认 plane
+  - stage1 mesh 减去 `border_size`
+  - 再配置 `env_origins`
+- 实际验证：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_stage1_env.py`
+  - `python3 -m py_compile scripts/isaac_sim/preview_stage1_terrain.py`
+  - `python scripts/isaac_sim/preview_stage1_terrain.py --headless --frames 1`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_stage1_env.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `preview` 与训练环境在 stage1 场景放置层已经一致，都按 `MGDP` 规则处理了默认 plane 和 `border_size` 坐标偏移。
+- 用户在窗口里看到的“左边没坐标系、坐标系从右边开始”现象，已被固化为 mesh/world frame 对齐问题，不应再误判为 preview 和 generator 使用了不同参数。
+
+下一步：
+- 直接在 Isaac Sim 窗口里重新打开 `preview_stage1_terrain.py`，优先人工确认是否还存在第二张大地图和左侧 marker 缺失。
+
+已完成：
+- 根据用户要求，继续把本项目 `stage1_terrain.py` 与 MGDP 原始 stage1 地形生成代码逐项对齐，重点核对：
+  - `/home/ubuntu/MGDP/legged_gym/models/MGDP/stage1/001/random_dog_config_stage1.py`
+  - `/home/ubuntu/MGDP/legged_gym/legged_gym/utils/terrain.py`
+  - `/home/ubuntu/MGDP/legged_gym/legged_gym/utils/new_terrains/add_mix_terrain.py`
+  - `/home/ubuntu/MGDP/isaacgym/python/isaacgym/terrain_utils.py`
+- 重写 `src/rl_lab/complete_car_rl_training/.../stage1_terrain.py` 中的主要单块地形生成语义，使其更接近 MGDP 原版：
+  - `slope down` 改为 MGDP `pyramid_sloped_terrain`
+  - `pyramid` 改为 MGDP `pyramid_sloped_terrain + random_uniform_terrain`
+  - `stairs down / stairs up / new stairs down` 改为 MGDP `pyramid_stairs_terrain`
+  - `discrete obstacles` 改为 MGDP `discrete_obstacles_terrain`
+  - `hurdle / gap / ramp / beam / pit` 改为 MGDP `add_mix_terrain.py` 对应语义
+- 将 `env_origin` 计算改回 MGDP `mix` 的中心 `2m x 2m` patch 规则，不再对 `gap/pit/hurdle/beam` 单独做出生点偏移特判。
+- 保留并确认 `preview_stage1_terrain.py` 与 `CompleteCarStage1Env` 中默认 plane 清理逻辑，从 scene 层避免 ground plane 与自定义 stage1 mesh 叠加。
+- 实际验证：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/stage1_terrain.py`
+  - 通过文件级导入直接执行 `build_stage1_terrain_data()`
+  - `python scripts/isaac_sim/preview_stage1_terrain.py --headless --frames 1`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/stage1_terrain.py`
+- `scripts/isaac_sim/preview_stage1_terrain.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_stage1_env.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `preview_stage1_terrain.py` 和 `stage1_terrain.py` 在“地形生成参数与 mesh 来源”层是一致的：preview 直接调用 `Stage1TerrainCfg + build_stage1_terrain_data()`，不存在两套独立地形参数。
+- 当前“地形交叠 + 额外 ground”问题已经确认并修复为 scene 导入问题，而不是 `stage1_terrain.py` 和 preview 参数不一致。
+- 当前 `stage1_terrain.py` 虽已显著向 MGDP 原版收敛，但由于 `terrain_dict` 权重和 `num_cols = 10` 的组合仍未覆盖全部 terrain index，默认课程地图实际仍只会出现前 5 类地形。
+
+下一步：
+- 若要让预览图中真的看到 `gap / ramp / beam / pit` 等后半段 terrain，需要继续调整列分配逻辑或 `terrain_dict` 权重，而不是再去排查 preview 和 stage1 代码是否使用了不同参数。
+
+已完成：
+- 核对本项目 `stage1_terrain.py` 与 MGDP 原始 stage1 地形代码，定位 `terrain_dict / terrain_proportions / choice=j/num_cols+0.001 / heightfield->trimesh` 主体逻辑来源。
+- 确认当前 Isaac Sim 中“stage1 地形交叠 + 额外 ground/grid 存在”的直接根因不是地形生成公式本身，而是场景导入路径：
+  - `scripts/isaac_sim/preview_stage1_terrain.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_stage1_env.py`
+  先通过 `TerrainImporterCfg(terrain_type="plane")` 自动创建了 `/World/terrain/terrain`，随后又额外 `import_mesh("stage1", ...)`，导致默认 plane 与自定义地形 mesh 同时存在。
+- 在上述两个入口中新增默认 plane 清理逻辑：scene 创建后，先删除 `/World/terrain/terrain` 并从 `terrain_prim_paths` 中移除，再导入 stage1 mesh。
+- 实际验证：
+  - `python3 -m py_compile scripts/isaac_sim/preview_stage1_terrain.py`
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_stage1_env.py`
+  - `python scripts/isaac_sim/preview_stage1_terrain.py --headless --frames 1`
+
+修改文件：
+- `scripts/isaac_sim/preview_stage1_terrain.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_stage1_env.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `preview_stage1_terrain.py` 与 `CompleteCarStage1Env` 都不会再把默认 plane 和 stage1 mesh 叠加到同一场景中。
+- 当前“额外 ground/grid”问题已定位为 scene 初始化行为，不应再误判为 MGDP `gap / ramp / beam` 等单块地形函数本身生成了第二层网格。
+- 同时确认本项目与 MGDP 原版仍有若干几何层差异，主要集中在 `gap / hurdle / pit / env_origin` 的具体实现语义；这些差异会影响地形形状是否一致，但不是这次 plane 叠加问题的根因。
+
+下一步：
+- 若要继续把本项目 stage1 地形形状尽量对齐 MGDP，应优先按原版逐项收敛 `parkour_step_gap_terrain`、`parkour_step_terrain`、`pit_terrain` 和 `env_origin` 计算，而不是继续排查 scene 中是否还有第二张地面。
+
+已完成：
+- 修复 `scripts/isaac_sim/preview_stage1_terrain.py` 的启动参数冲突。此前脚本手动声明了 `--headless`，而 `isaaclab.app.AppLauncher.add_app_launcher_args()` 也会注入同名参数，导致脚本一启动就在参数解析阶段抛出 `ValueError`。
+- 删除脚本中重复的 `parser.add_argument("--headless", ...)`，保留 `AppLauncher` 注入的标准 `--headless` 参数。
+- 实际验证：
+  - `python3 -m py_compile scripts/isaac_sim/preview_stage1_terrain.py`
+  - `python scripts/isaac_sim/preview_stage1_terrain.py --help`
+
+修改文件：
+- `scripts/isaac_sim/preview_stage1_terrain.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `preview_stage1_terrain.py` 现在可以正常完成参数解析，不会再在 `AppLauncher.add_app_launcher_args()` 阶段因为重复定义 `--headless` 而直接报错。
+- 后续这个脚本若继续使用 `AppLauncher`，应避免手动重复声明其会自动注入的参数。
+
+下一步：
+- 可直接重新执行 `python scripts/isaac_sim/preview_stage1_terrain.py`，若后续再报错，再继续处理运行时层面的场景或资源问题。
 
 已完成：
 - 按用户要求撤销上一轮直接落下去的 `MGDP stage1` RL 训练接入代码，不再保留“先写完整实现、再解释”的协作方式。
@@ -1436,3 +1659,269 @@
 
 下一步：
 - 在具备可用图形环境的 Isaac Sim 主机上直接执行 `python scripts/isaac_sim/control_keyboard.py --terrain none` 做一次窗口联调，重点观察轮子可视旋转、底盘实际位移和球铰姿态响应是否与新的减速参数一致。
+
+## 2026-04-02
+
+已完成：
+- 新增 `scripts/isaac_sim/preview_stage1_tile.py`，提供 Isaac Sim 中单独查看单个 `stage1` tile 的入口。
+- 脚本当前支持两种选块方式：`--row/--col` 复现当前课程地图中的某一块，或 `--terrain-name` 直接指定某类地形。
+- 为避免 `--list-terrains` 在 Isaac Sim 启动前触发整条任务包导入链，脚本改为按文件路径直接加载 `stage1_terrain.py`，不再依赖完整包导入。
+- 脚本默认会删除 `TerrainImporterCfg(terrain_type="plane")` 自动生成的默认 plane，并只导入当前单块 tile mesh。
+- 脚本默认不实例化整车，只有显式传入 `--spawn-car` 时才加载机器人资产。
+- 已执行 `python3 -m py_compile scripts/isaac_sim/preview_stage1_tile.py`，静态检查通过。
+- 已执行 `python scripts/isaac_sim/preview_stage1_tile.py --list-terrains`，当前可正常列出全部 `stage1` terrain 名称。
+- 已执行 `timeout 60s python -u scripts/isaac_sim/preview_stage1_tile.py --headless --device cpu --frames 1 --row 0 --col 0`，本次返回码为 `0`。
+
+修改文件：
+- `scripts/isaac_sim/preview_stage1_tile.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 现在已经有一个比整张大地图 preview 更直接的检查入口，可优先用于核对单块地形的几何、原点和相机视角。
+- `--list-terrains` 当前已不再受 `pxr` 提前导入问题影响。
+- 当前这台无 GPU / 无正常显示环境的机器上，单 tile headless 冒烟可以正常退出，但不适合把窗口显示效果是否完全正确作为唯一验证标准。
+
+下一步：
+- 在有正常图形环境的 Isaac Sim 会话中执行 `python scripts/isaac_sim/preview_stage1_tile.py --row <r> --col <c>`，逐块核对 `stage1` 各类地形的真实视觉效果与坐标系位置。
+
+## 2026-04-02
+
+已完成：
+- 按用户要求将 `scripts/isaac_sim/preview_stage1_tile.py` 的默认行为从“单块预览”改为“同时显示所有单独 tile”。
+- 当前默认启动脚本时，会把 `stage1` 当前课程地图的全部 `20 x 10 = 200` 个 tile 作为独立 mesh 导入 Isaac Sim，并按固定 `tile-spacing` 分开摆放，不再拼成一整张连续地形。
+- 保留旧能力：新增 `--single-tile` 开关，仍可按 `--row/--col` 只看某一块；`--terrain-name <name>` 也仍可按地形名单独生成一块。
+- 调整脚本内部 origin 可视化逻辑：不再依赖 `TerrainImporter.configure_env_origins()`，而是直接为每个独立 tile 生成 1 个 frame marker。
+- 当前所有独立 tile 的 prim 路径统一为 `/World/terrain/tile_rXX_cYY_<terrain_name>`，便于在 Stage 面板中逐块定位。
+- 已执行 `python3 -m py_compile scripts/isaac_sim/preview_stage1_tile.py`，静态检查通过。
+- 已执行 `python scripts/isaac_sim/preview_stage1_tile.py --help` 与 `python scripts/isaac_sim/preview_stage1_tile.py --list-terrains`，参数与地形枚举正常。
+- 已执行 `timeout 120s python -u scripts/isaac_sim/preview_stage1_tile.py --headless --device cpu --frames 1`，gallery 默认路径返回码为 `0`。
+- 已执行 `timeout 90s python -u scripts/isaac_sim/preview_stage1_tile.py --headless --device cpu --frames 1 --single-tile --row 0 --col 0`，单块回退路径返回码为 `0`。
+- 本轮 headless 校验日志已落盘：
+  - `results/preview_stage1_tile_gallery.log`
+  - `results/preview_stage1_tile_single.log`
+
+修改文件：
+- `scripts/isaac_sim/preview_stage1_tile.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 现在直接运行 `python scripts/isaac_sim/preview_stage1_tile.py`，进入的就是“所有独立 tile 分离展示”模式，而不是旧的单块预览模式。
+- 若后续还需要只看某一块，不需要再写新脚本，直接加 `--single-tile` 即可。
+- 当前这台无 GPU / 无图形显示环境的机器上，headless 返回码可以证明脚本链路可跑通，但窗口里的最终视觉效果仍应以图形环境下的 Isaac Sim 实际画面为准。
+
+下一步：
+- 在有正常图形界面的 Isaac Sim 会话里直接执行 `python scripts/isaac_sim/preview_stage1_tile.py`，确认 200 个独立 tile 的相对布局、坐标系和相机总览是否符合预期；若太密，可再调 `--tile-spacing`。
+
+## 2026-04-03
+
+已完成：
+- 新增 `src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py`，用于直接实例化真实训练任务 `Complete-Car-Rl-Training-v0`，保存训练时的 stage USD，并导出完整 prim tree 与 `/World/terrain` 子树。
+- 基于用户在可用 GPU 机器上导出的 `training_stage_num_envs10.usda`、`training_stage_num_envs10.usda.tree.txt` 与 `training_stage_num_envs10.usda.terrain_tree.txt` 复核训练场景结构。
+- 确认训练环境中真正的地形 prim 只有 `/World/terrain/stage1` 一张；用户在窗口里看到的“多张地图”不是训练脚本重复导入地形，而是 `USD/complete_car.usd` 中残留的 `/World/terrain_preview` 被每个 `env_i/Robot` 引用复制。
+- 新增 `scripts/isaac_sim/remove_complete_car_terrain_preview.py`，为 `USD/complete_car.usd` 创建备份 `USD/complete_car.usd.terrain_preview_cleanup.bak` 后，移除 `/World/terrain_preview` 子树。
+- 重新打开 `USD/complete_car.usd` 验证，确认 `/World/terrain_preview` 已无效；当前资产顶层 prim 保持为 `/World`、`/Render`、`/physicsScene`。
+- 按用户要求在 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/stage1_terrain.py` 的 `terrain_dict` 首项加入 `flat: 0.2`。
+- 同步在 `make_tile_by_name(...)` 中补上 `flat -> make_flat_tile(...)` 分支，并调整 `slope down` 的区间中点计算，使插入 `flat` 后现有 `choice` 逻辑仍能正确落入 `slope down` 区间。
+- 执行 `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/stage1_terrain.py`，静态检查通过。
+- 复核当前默认 `num_cols = 10` 下的列映射，结果已变为 `flat x2 -> slope down x2 -> pyramid x2 -> stairs down x2 -> stairs up x2`。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py`
+- `scripts/isaac_sim/remove_complete_car_terrain_preview.py`
+- `USD/complete_car.usd`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/stage1_terrain.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 训练时的真实大地图只有 `/World/terrain/stage1`，之后若再看到多张“地图”，应优先排查机器人资产是否夹带 preview 几何，而不是先改训练地形导入逻辑。
+- `USD/complete_car.usd` 当前已经清理为机器人资产，不再应包含 `terrain_preview`。
+- 当前 Stage1 在不改 `choice` 框架的前提下，首个地形类型已改为 `flat`，且权重按用户要求设为 `0.2`。
+
+下一步：
+- 在用户有可用 GPU 的 Isaac Sim 会话里重新导出一次训练 stage，确认新的 `training_stage_num_envs10.usda.tree.txt` 中不再出现 `env_i/Robot/terrain_preview`。
+
+## 2026-04-03
+
+已完成：
+- 按用户要求新增独立预览脚本 `scripts/isaac_sim/preview_stage1_last_six.py`，用于在不修改 `stage1_terrain.py` 的前提下，单独查看当前 stage1 地形列表最后六种地形的外观。
+- 新脚本沿用 `preview_stage1_tile.py` 的总体方式：直接按文件路径加载 `stage1_terrain.py`，删除 `TerrainImporterCfg(terrain_type="plane")` 自动生成的默认 plane，将每个地形以独立 mesh 导入 Stage，并支持 `--show-origin`、`--spawn-car`、`--save-usd` 等常用预览参数。
+- 当前 gallery 默认加载的后六种地形已确认是：`hurdle`、`gap`、`ramp`、`beam`、`new stairs down`、`pit`。
+- 已执行 `python3 -m py_compile scripts/isaac_sim/preview_stage1_last_six.py`，静态检查通过。
+- 已执行 `python scripts/isaac_sim/preview_stage1_last_six.py --list-terrains`，地形枚举正常输出。
+
+修改文件：
+- `scripts/isaac_sim/preview_stage1_last_six.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 现在查看 `hurdle / gap / ramp / beam / new stairs down / pit` 的几何外观，不再需要临时改动训练用 `terrain_dict` 顺序或权重。
+- 该需求已有独立脚本入口，后续若要导出对应 USD 或在窗口里逐块看这六类地形，可直接复用该脚本。
+
+下一步：
+- 在可用 GPU / 图形环境的 Isaac Sim 会话中执行 `python scripts/isaac_sim/preview_stage1_last_six.py --device cuda:0`，直接观察这六种地形的窗口效果；若需要离线核对 Stage 结构，可再加 `--save-usd <path>.usda`。
+
+## 2026-04-03
+
+已完成：
+- 按用户进一步澄清后的要求，撤回对 `scripts/isaac_sim/preview_stage1_tile.py` 职责的改动，将其恢复为原先的 `20 x 10` 全课程 tile 分离画廊入口。
+- 同时改造 `scripts/isaac_sim/preview_stage1_last_six.py`，使其在保持“只看后六种地形”目标不变的前提下，也采用与 `preview_stage1_tile.py` 相同的 `20 x 10` tile 画廊形式。
+- 当前 `preview_stage1_last_six.py` 的 gallery 只使用 `terrain_names[-6:]`：`hurdle`、`gap`、`ramp`、`beam`、`new stairs down`、`pit`；列方向按这六类循环分配，行方向继续用于展示不同难度层。
+- 已执行 `python3 -m py_compile scripts/isaac_sim/preview_stage1_tile.py scripts/isaac_sim/preview_stage1_last_six.py`，静态检查通过。
+- 已执行 `python scripts/isaac_sim/preview_stage1_tile.py --list-terrains`，确认旧脚本再次输出完整 terrain 集。
+- 已执行 `python scripts/isaac_sim/preview_stage1_last_six.py --list-terrains`，确认新脚本仅输出后六种地形。
+
+修改文件：
+- `scripts/isaac_sim/preview_stage1_tile.py`
+- `scripts/isaac_sim/preview_stage1_last_six.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `preview_stage1_tile.py` 现在再次代表“全部 stage1 tile 画廊”，不再被重定向到后六种地形预览。
+- `preview_stage1_last_six.py` 现在是“后六种地形版的 20 x 10 tile 画廊”，更符合用户想直接比较这些尾部地形几何外观的用途。
+
+下一步：
+- 在有可用 GPU / 图形环境的 Isaac Sim 会话中执行 `python scripts/isaac_sim/preview_stage1_last_six.py --device cuda:0`，直接观察这套后六种地形的 `20 x 10` 画廊效果。
+
+## 2026-04-03
+
+已完成：
+- 按用户要求调整 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/stage1_terrain.py` 前段地形阈值，使默认 `num_cols = 10` 下的前 10 列映射变为：
+  - 第 1 列 `flat`
+  - 第 2 列 `slope down`
+  - 第 3 列 `slope up`
+  - 第 4-5 列 `uneven rough`
+  - 第 6-7 列 `stairs down`
+  - 第 8-9 列 `stairs up`
+  - 第 10 列 `discrete obstacles`
+- 在 `terrain_dict` 中新增独立地形名 `slope up`，并把 `slope down` / `slope up` 分别固定到 `descending=True` / `descending=False`，不再沿用原先在同一 `"slope down"` 区间内部再二分出上下坡方向的逻辑。
+- 将原公开地形名 `"pyramid"` 重命名为 `"uneven rough"`；当前保留原内部生成函数 `make_pyramid_tile(...)`，但对外列出的 terrain name 已改为更符合其“起伏粗糙、不规则变化”外观的名字。
+- 已执行 `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/stage1_terrain.py`，静态检查通过。
+- 已执行一次映射核对，当前默认 10 列实际输出为：
+  - `['flat', 'slope down', 'slope up', 'uneven rough', 'uneven rough', 'stairs down', 'stairs down', 'stairs up', 'stairs up', 'discrete obstacles']`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/stage1_terrain.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 现在前 10 列地形分配已经和用户指定顺序一致。
+- 原先视觉上容易误解的 `"pyramid"` 名称已从对外 terrain 列表中替换为 `"uneven rough"`。
+
+下一步：
+- 在 Isaac Sim 中重新执行相关 preview 脚本，确认新的前 10 列顺序和 `"uneven rough"` 名称是否与用户预期一致。
+
+## 2026-04-03
+
+已完成：
+- 按用户要求修改 `scripts/isaac_sim/control_keyboard.py`，使 `--terrain stage1` 不再接入旧的 preview/gallery 地形，而是直接复用训练环境使用的整张 `stage1` 地形。
+- 新的 `stage1` 键盘联调地形链路当前直接按文件路径加载 `stage1_terrain.py`，调用 `build_stage1_terrain_data()` 生成训练用 mesh，并按训练环境同样的逻辑在 `x/y` 方向整体减去 `border_size` 后导入 `/World/terrain/stage1/mesh`。
+- 同步给 `control_keyboard.py` 增加训练地形出生点对齐：当前在 `--terrain stage1` 下，机器人会在初始化句柄后自动移动到训练首个 env origin `[4.0, 4.0, 0.3]`，而不是继续停在地图边缘默认原点。
+- 将旧的 `terrain_preview.terrain_builder` 顶层导入改为按分支延迟导入，避免 `--terrain stage1` 路径在启动时被一个已不存在的 preview 依赖提前拦死。
+- 已执行 `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`，静态检查通过。
+- 已执行 `timeout 90s python -u scripts/isaac_sim/control_keyboard.py --terrain stage1 --headless --frames 1`，本次在当前无可用 CUDA 的工具环境中仍成功完成 1 帧 smoke run。
+- 本次运行日志已明确打印：
+  - `Built training stage1 terrain mesh: root=/World/terrain spawn_position=[4.0, 4.0, 0.3]`
+  - `Applied shared terrain friction material: /World/terrain/stage1/mesh`
+  - `Moved robot to terrain spawn position: [4.0, 4.0, 0.3]`
+  - `Headless smoke validation finished successfully.`
+
+修改文件：
+- `scripts/isaac_sim/control_keyboard.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 现在 `control_keyboard.py --terrain stage1` 已经和训练环境在“地形几何来源 + 地图坐标偏移 + 初始出生点”这三件事上对齐。
+- 当前保留 `--terrain stage2|both` 的旧 MGDP gallery preview 路径不变；本轮只把 `stage1` 键盘联调路径改成了训练同款地形。
+
+下一步：
+- 在用户有可用 GPU 的 Isaac Sim 会话中直接运行 `python scripts/isaac_sim/control_keyboard.py --terrain stage1`，窗口确认车辆是否已落在训练地图首块区域而非边框。
+
+## 2026-04-03
+
+已完成：
+- 按用户要求继续修改 `scripts/isaac_sim/control_keyboard.py`，将键盘驱动控制方式改成与训练环境同构的控制链路，而不是沿用原先的平滑 teleop 快捷逻辑。
+- 当前脚本中的球铰控制已改为与训练一致的 `JointPositionAction` 语义：
+  - 键盘输入先形成 `raw action`
+  - 再按 `scale = 0.25` 与默认关节位置 offset 转成球铰位置目标
+- 当前脚本中的轮子控制已改为与训练一致的 `JointVelocityAction` 语义：
+  - `W/S/A/D/SPACE` 先形成左右轮侧的 `raw action`
+  - 再按 `scale = 8.0` 与默认关节速度 offset 转成 6 个轮关节速度目标
+- 在 articulation 初始化后，脚本现在会显式把球铰与轮子的驱动参数设成训练环境同一组值：
+  - 球铰：`stiffness=80.0`、`damping=8.0`、`effort_limit=120.0`、`velocity_limit=6.0`
+  - 轮子：`stiffness=0.0`、`damping=10.0`、`effort_limit=80.0`、`velocity_limit=20.0`
+- 同步把 teleop 世界时间步改为与训练一致：
+  - `physics_dt = 1 / 120`
+  - `render_dt = 1 / 60`
+  - `action decimation = 2`
+  - 即键盘 action 以 `60 Hz` 刷新，并在两个物理子步间保持不变
+- 已执行 `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`，语法检查通过。
+- 已执行 `timeout 120s python -u scripts/isaac_sim/control_keyboard.py --terrain none --headless --frames 1`，返回码为 `0`；当前输出仍包含本机无可用 CUDA / 无驱动、只读缓存路径和远端 `Example_Rotary` 引用告警，但未出现本轮控制改动引入的 Python 级报错。
+
+修改文件：
+- `scripts/isaac_sim/control_keyboard.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `control_keyboard.py` 现在已经不再是“人工调出来的一套近似 teleop 参数”，而是与训练任务共享同一套球铰位置控制 / 轮子速度控制语义、同一组驱动参数和同一时间步结构。
+- 当前最直接可人工比对的轮速 target 区间为 `[-8, 8] rad/s`；如果后续手动联调时频繁接近 `20 rad/s` 的 PhysX 上限，应优先怀疑当前训练轮速 scale 偏大或地形/阻力导致策略想靠饱和输出来补偿。
+
+下一步：
+- 在有正常 GPU / 图形环境的 Isaac Sim 会话中直接运行 `python scripts/isaac_sim/control_keyboard.py --terrain stage1`，手动观察球铰响应和轮速 target 区间，再决定训练里的 `stiffness / damping` 与 `scale` 是否需要调整。
+
+## 2026-04-03
+
+已完成：
+- 按用户要求，仅对 `scripts/isaac_sim/control_keyboard.py` 中训练同构控制参数区补充中文行内注释，说明各参数对应的物理含义、控制语义和单位。
+- 本轮未改动任何控制数值、键位映射、关节目标生成逻辑或物理参数本身，只提升脚本可读性与后续人工联调时的可解释性。
+- 已执行 `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`，语法检查通过。
+
+修改文件：
+- `scripts/isaac_sim/control_keyboard.py`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `control_keyboard.py` 的训练同构参数块已经可以直接从代码注释中读出含义，不需要再反查训练配置文件或聊天记录。
+
+下一步：
+- 若还需要继续提升可读性，可再把“球铰 action -> 位置目标”和“轮子 action -> 速度目标”的公式说明补到对应函数上方。
+
+## 2026-04-03
+
+已完成：
+- 按用户要求，继续修改 `scripts/isaac_sim/control_keyboard.py`，移除键盘联调路径里的球铰人工运动范围限制。
+- 当前 `update_ball_joint_actions()` 不再对 `ball_action_raw` 做 `clamp` 限幅，球铰位置目标现在直接按：
+  - `ball_target = default_position + raw_action * 0.25`
+  累加生成。
+- 同步删除参数区中的 `BALL_JOINT_ACTION_LIMIT`，并把启动打印信息改为“球铰 raw action 无界，仅按 scale 映射到位置目标”。
+- 已执行 `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`，语法检查通过。
+- 额外复核训练环境配置，确认当前 RL 训练任务本身仍保留球铰越界终止项：
+  - `complete_car_rl_training_env_cfg.py`
+  - `ball_joint_out_of_bounds`
+  - `bounds = (-0.8, 0.8)`
+
+修改文件：
+- `scripts/isaac_sim/control_keyboard.py`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前“球铰无运动范围限制”只对键盘联调脚本生效，方便人工观察驱动响应。
+- 训练环境自身仍有 `ball_joint_out_of_bounds` 终止条件，尚未随本轮一起删除。
+
+下一步：
+- 若用户后续明确要求训练时也取消球铰范围限制，再单独修改 `complete_car_rl_training_env_cfg.py` 中的越界终止项。

@@ -2,7 +2,278 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-03
+
+### control_keyboard.py now uses the same drive semantics and core control parameters as the RL training task
+- Updated:
+  - `scripts/isaac_sim/control_keyboard.py`
+- Durable implementation conclusion:
+  - the keyboard teleop path no longer uses the older smoothed heuristic wheel-speed settings
+  - it now mirrors the training task's control structure:
+    - ball joints: position targets with `scale = 0.25`
+    - wheel joints: velocity targets with `scale = 8.0`
+    - same actuator-side gains and limits as training:
+      - ball joints: `stiffness = 80`, `damping = 8`, `effort_limit = 120`, `velocity_limit = 6`
+      - wheel joints: `stiffness = 0`, `damping = 10`, `effort_limit = 80`, `velocity_limit = 20`
+  - the teleop world timing is now aligned to training:
+    - `physics_dt = 1/120`
+    - `action decimation = 2`
+    - therefore keyboard commands are refreshed at `60 Hz` and held across two physics steps, matching the RL task timing structure
+- Durable practical implication:
+  - future manual tuning of `stiffness / damping` should use this teleop script first, because it now exercises the same position/velocity target semantics as training instead of an older convenience teleop profile
+  - the most directly comparable manual wheel-target interval is now `[-8, 8] rad/s` from the action scale, while the PhysX hard cap remains `20 rad/s`
+
+### Training terrain import path currently builds one global stage1 mesh, not one terrain per env
+- Rechecked the active RL task registration and training environment implementation:
+  - `Complete-Car-Rl-Training-v0` points to `complete_car_stage1_env:CompleteCarStage1Env`
+  - inside that env, terrain setup is:
+    - remove auto-created default plane under `/World/terrain/terrain`
+    - build one `Stage1TerrainCfg` full-map heightfield
+    - convert the full map into one trimesh
+    - import it once through `self.scene.terrain.import_mesh("stage1", terrain_mesh)`
+    - assign per-env spawn points via `configure_env_origins(...)`
+- Durable conclusion:
+  - the current training code path does **not** intentionally import one full terrain map per environment clone
+  - if the user sees “several maps” in the training viewport, future debugging should first distinguish among:
+    - one global terrain mesh
+    - multiple robot env namespaces under `/World/envs/env_*`
+    - leftover default plane or debug visualization artifacts
+- Additional local data check:
+  - current `stage1` build still produces one full map with:
+    - `height_field_raw.shape == (2100, 1300)`
+    - `env_origins.shape == (20, 10, 3)`
+    - `vertices.shape == (2730000, 3)`
+    - `faces.shape == (5453202, 3)`
+
+### A dedicated training-stage export script now exists, but this workstation still cannot reliably save the live RL stage
+- Added:
+  - `src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py`
+- Script purpose:
+  - instantiate the real training task
+  - save the assembled stage to USD
+  - dump the full prim tree and `/World/terrain` subtree for direct inspection
+- Local execution outcome on this workstation:
+  - the script can reach Isaac Lab scene creation for `Complete-Car-Rl-Training-v0`
+  - but under the current no-driver / no-CUDA environment, the process exits during or immediately after `gym.make(...)` scene creation and never reaches the script's own `env.reset()` / `save_stage()` section
+  - therefore no reliable training-stage USD was produced locally in this session
+- Durable implication:
+  - future sessions should use this script on a GPU-capable Isaac Lab host first when the goal is to inspect the **actual** training stage instead of the preview stage
+  - on the present machine, preview scripts may still run headless, but they are not a substitute for exporting the live RL stage
+
+### export_training_stage.py now rejects directory targets for --save-usd
+- The user later attempted to run the export script with:
+  - `--save-usd /home/ubuntu/Graduation-Project/results/`
+  which is a directory, not a USD filename.
+- Durable fix:
+  - `src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py` now validates that:
+    - `--save-usd` is not an existing directory
+    - the path ends with `.usd` or `.usda`
+- Impact:
+  - future stage-export runs should use explicit filenames such as:
+    - `/home/ubuntu/Graduation-Project/results/training_stage_num_envs10.usda`
+  - this prevents ambiguous “env seems not to start / no file was saved” debugging when the real issue is an invalid output target
+
+### complete_car.usd no longer carries the stale /World/terrain_preview subtree
+- The user then requested direct cleanup of the robot asset so the repeated fake terrain would stop appearing in exported training stages.
+- Durable diagnosis from the saved training stage:
+  - the real training terrain under `/World/terrain` contained only one mesh:
+    - `/World/terrain/stage1`
+  - the “multiple maps” effect came from:
+    - `/World/envs/env_i/Robot/terrain_preview/...`
+    repeated once per cloned environment
+  - therefore the duplication source was the robot asset reference itself, not the training terrain importer
+- Durable fix:
+  - added `scripts/isaac_sim/remove_complete_car_terrain_preview.py`
+  - created backup:
+    - `USD/complete_car.usd.terrain_preview_cleanup.bak`
+  - removed:
+    - `/World/terrain_preview`
+    from:
+    - `USD/complete_car.usd`
+- Verified:
+  - reopening `USD/complete_car.usd` now reports `/World/terrain_preview` as invalid
+  - top-level prims are now only:
+    - `/World`
+    - `/Render`
+    - `/physicsScene`
+- Impact:
+  - future training-stage exports should no longer show one extra `terrain_preview` subtree per `env_i/Robot`
+  - if extra terrain-like geometry is still seen later, it should be debugged in the live stage itself rather than blamed on the robot asset preview residue
+
 ## 2026-04-02
+
+### preview_stage1_tile.py now defaults to an all-tile separated gallery instead of single-tile-only preview
+- Updated:
+  - `scripts/isaac_sim/preview_stage1_tile.py`
+- Durable behavior:
+  - default launch now loads the current `20 x 10` stage1 course map as:
+    - `200` standalone tile meshes
+    - each tile imported separately under `/World/terrain/tile_rXX_cYY_<terrain_name>`
+    - tiles laid out with configurable spacing so they do not stitch into one continuous heightfield
+  - the script still supports:
+    - `--single-tile --row/--col` for the old single-tile inspection mode
+    - `--terrain-name <name>` for generating one explicit terrain class as a standalone tile
+  - origin markers are no longer tied to `TerrainImporter.configure_env_origins()`
+  - instead, the script now places one explicit frame marker at each standalone tile origin
+- Verified locally with:
+  - `python3 -m py_compile scripts/isaac_sim/preview_stage1_tile.py`
+  - `python scripts/isaac_sim/preview_stage1_tile.py --help`
+  - `python scripts/isaac_sim/preview_stage1_tile.py --list-terrains`
+  - `timeout 120s python -u scripts/isaac_sim/preview_stage1_tile.py --headless --device cpu --frames 1`
+  - `timeout 90s python -u scripts/isaac_sim/preview_stage1_tile.py --headless --device cpu --frames 1 --single-tile --row 0 --col 0`
+- Impact:
+  - future sessions should treat `preview_stage1_tile.py` as the default entry for visually checking all individual stage1 tiles at once
+  - use `preview_stage1_terrain.py` only when the goal is to inspect the fully stitched large terrain map
+
+### A dedicated Isaac Sim single-tile preview entry now exists for stage1 terrains
+- Added:
+  - `scripts/isaac_sim/preview_stage1_tile.py`
+- Durable behavior:
+  - previews exactly one `stage1` terrain tile instead of the full `20 x 10` course map
+  - supports two selection modes:
+    - derive the tile from the current course map via `--row/--col`
+    - explicitly choose a terrain class via `--terrain-name`
+  - loads `stage1_terrain.py` directly from file path instead of importing the full task package tree, so:
+    - `--list-terrains` works without booting Isaac Sim
+    - the script avoids the earlier `pxr` import problem triggered by pre-app package imports
+  - removes the auto-created default plane before importing the custom tile mesh
+  - centers the tile at world origin by default
+  - only spawns the robot when `--spawn-car` is explicitly requested
+- Verified locally with:
+  - `python3 -m py_compile scripts/isaac_sim/preview_stage1_tile.py`
+  - `python scripts/isaac_sim/preview_stage1_tile.py --list-terrains`
+  - `timeout 60s python -u scripts/isaac_sim/preview_stage1_tile.py --headless --device cpu --frames 1 --row 0 --col 0`
+- Impact:
+  - future sessions that need to inspect terrain geometry should use the single-tile preview first, instead of reopening the full-map preview path
+  - if a user asks "what does one tile really look like", this script is now the default inspection entry
+
+### complete_car.usd has now been inspected directly and still carries a top-level /physicsScene
+- Generated a direct prim-tree dump of:
+  - `USD/complete_car.usd`
+  into:
+  - `results/complete_car_usd_tree.txt`
+- Durable structure summary:
+  - robot root is under `/World/complete_car_alternative`
+  - most rigid bodies follow a repeated pattern:
+    - `visuals`
+    - `collisions`
+    - mesh/material children under those subtrees
+  - wheel and equivalent spherical-joint articulation connections are stored under:
+    - `/World/complete_car_alternative/joints`
+  - onboard sensors currently present in the asset include:
+    - `Imu_Sensor`
+    - `Stereo_Vision_Camera/Camera_left`
+    - `Stereo_Vision_Camera/Camera_right`
+    - `Example_Rotary` lidar
+  - the USD file still contains a top-level:
+    - `/physicsScene :: PhysicsScene`
+- Impact:
+  - future sessions should remember that `complete_car.usd` is not a pure robot-only asset yet
+  - when referenced into a larger scene, the embedded `/physicsScene` remains a cleanup target and should not be forgotten during later stage debugging
+
+### preview_stage1_terrain.py --save-usd is not currently producing an exported USD file in this headless CPU environment
+- Re-ran:
+  - `python scripts/isaac_sim/preview_stage1_terrain.py --headless --device cpu --frames 1 --save-usd ...`
+- Durable observation:
+  - the script starts Isaac Sim headless and logs normal no-GPU / no-driver warnings for this workstation
+  - however, no `stage1_preview.usd/usda` file is actually written to the repository
+  - the current reproducible log capture is:
+    - `results/preview_save_unbuffered.log`
+- Important scope note:
+  - this does **not** invalidate the earlier scene-placement diagnosis
+  - it only means that in the present execution environment, the preview stage could not be inspected via an exported USD layer
+- Impact:
+  - future sessions should not assume `--save-usd` is currently reliable on this machine
+  - if exact live-stage inspection is needed again, prefer either:
+    - a GUI-capable Isaac Sim session, or
+    - a purpose-built script that dumps stage prim paths directly instead of relying on `save_stage()`
+
+### stage1 mesh must also be shifted by -border_size in x/y to line up with MGDP env_origins
+- After the default-plane issue was already fixed, the user still reported that in Isaac Sim:
+  - the terrain looked like two large maps stacked together
+  - tile axes seemed to start from the right side of the map
+  - the leftmost part of the map had no terrain-origin markers
+- Durable diagnosis:
+  - `preview_stage1_terrain.py` and `stage1_terrain.py` were already using the same terrain-generation source
+  - the remaining mismatch was spatial placement, not generation parameters
+  - MGDP places the full terrain mesh with an extra transform:
+    - `x -= border_size`
+    - `y -= border_size`
+  - without this shift, the imported mesh still includes the `25 m` border in world coordinates, while `env_origins` are computed as if tile `(0, 0)` already starts at world `(0, 0)`
+  - this makes the origin markers appear shifted right/up by about `border_size / terrain_size = 25 / 8 ~= 3.125` tiles
+- Durable fix:
+  - keep deleting the auto-created default plane
+  - also shift the imported stage1 mesh by `(-border_size, -border_size, 0)` before calling `import_mesh(...)`
+  - apply the same rule in both:
+    - `scripts/isaac_sim/preview_stage1_terrain.py`
+    - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_stage1_env.py`
+- Impact:
+  - future sessions should treat "left-side tiles missing origin markers" as a border-frame alignment bug first
+  - do not reopen terrain-function debugging unless the mesh and env-origin frames are already confirmed aligned
+
+### Stage1 preview and stage1 RL env were both stacking a default plane under the imported stage1 mesh
+- Reproduced the user's report that in Isaac Sim the stage1 terrain looked overlapped and an extra grid-like ground still existed.
+- Root cause was scene-side, not the MGDP heightfield conversion itself:
+  - both
+    - `scripts/isaac_sim/preview_stage1_terrain.py`
+    - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_stage1_env.py`
+    initialized `TerrainImporterCfg` with `terrain_type="plane"`
+  - Isaac Lab therefore auto-created `/World/terrain/terrain`
+  - both paths then additionally called `import_mesh("stage1", ...)`
+  - result: the default plane and the custom stage1 mesh coexisted in the same scene
+- Durable fix:
+  - after the scene terrain importer is created, explicitly delete the auto-created plane prim and remove it from `terrain_prim_paths`
+  - only then import the custom stage1 mesh and configure terrain origins
+- Verified locally with:
+  - `python3 -m py_compile scripts/isaac_sim/preview_stage1_terrain.py`
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_stage1_env.py`
+  - `python scripts/isaac_sim/preview_stage1_terrain.py --headless --frames 1`
+- Impact:
+  - future sessions should not misdiagnose the extra ground plane as an MGDP terrain-generation bug
+  - any future custom-mesh terrain path that reuses `TerrainImporterCfg(terrain_type="plane")` must remove the auto-created plane before importing its own mesh
+
+### stage1_terrain.py has now been pulled much closer to MGDP's stage1 geometry semantics
+- Rechecked the local terrain generator against:
+  - `/home/ubuntu/MGDP/legged_gym/models/MGDP/stage1/001/random_dog_config_stage1.py`
+  - `/home/ubuntu/MGDP/legged_gym/legged_gym/utils/terrain.py`
+  - `/home/ubuntu/MGDP/legged_gym/legged_gym/utils/new_terrains/add_mix_terrain.py`
+  - `/home/ubuntu/MGDP/isaacgym/python/isaacgym/terrain_utils.py`
+- Durable implementation update:
+  - local `stage1_terrain.py` now uses MGDP-style generation semantics for:
+    - `slope down`
+    - `pyramid`
+    - `stairs down`
+    - `stairs up`
+    - `discrete obstacles`
+    - `hurdle`
+    - `gap`
+    - `ramp`
+    - `beam`
+    - `new stairs down`
+    - `pit`
+  - `env_origin` is now computed with the same center `2m x 2m` patch rule MGDP uses for `mix`, instead of the previous local special-case offsets for `gap/pit/hurdle/beam`
+  - `preview_stage1_terrain.py` and `stage1_terrain.py` are consistent at the mesh-generation level because preview directly calls `Stage1TerrainCfg` and `build_stage1_terrain_data()`
+- Important inherited caveat:
+  - even with aligned generation logic, the default `terrain_dict` weights and `choice = col / num_cols + 0.001` still mean that with `num_cols = 10`, only the first five terrain classes appear in the curriculum map
+  - this is a consequence of the current MGDP weight table combined with the chosen column count, not a mismatch between preview and generator code
+- Verification:
+  - `python3 -m py_compile .../stage1_terrain.py`
+  - direct file-level import and `build_stage1_terrain_data()` succeeded locally
+  - `python scripts/isaac_sim/preview_stage1_terrain.py --headless --frames 1` exited successfully on this workstation
+
+### preview_stage1_terrain.py must not define --headless manually when using AppLauncher
+- Reproduced a startup failure from:
+  - `python scripts/isaac_sim/preview_stage1_terrain.py`
+- Root cause:
+  - the script manually added `--headless` to `argparse`
+  - `isaaclab.app.AppLauncher.add_app_launcher_args()` also injects `--headless`
+  - Isaac Lab therefore raised a duplicate-argument `ValueError` before app launch
+- Durable fix:
+  - remove the manual `parser.add_argument("--headless", ...)`
+  - rely on `AppLauncher` to provide `--headless`
+- Verified locally with:
+  - `python3 -m py_compile scripts/isaac_sim/preview_stage1_terrain.py`
+  - `python scripts/isaac_sim/preview_stage1_terrain.py --help`
 
 ### stage1_terrain.py has been expanded to a full MGDP-stage1 terrain-generation layer, but RL integration is still pending
 - The teaching-mode implementation in:
@@ -986,3 +1257,79 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - Stage 1 should continue to prioritize a minimal trainable baseline with proprioception and goal-related inputs
   - richer exteroception, hierarchical control, privileged learning, and stronger sim-to-real machinery belong to later stages after the baseline stabilizes
 - Status: first-pass note completed from the source PDF; suitable as a reusable survey reference for future environment-design discussions.
+
+## 2026-04-03
+
+### Training-stage multiple-map diagnosis and complete_car asset cleanup
+- Added `src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py` to instantiate the real training task `Complete-Car-Rl-Training-v0`, save the assembled stage to `.usd/.usda`, and dump the full prim tree plus `/World/terrain` subtree.
+- Durable inspection conclusion from exported training stage:
+  - the real training terrain appears only once as `/World/terrain/stage1`
+  - the "multiple maps" seen in Isaac Sim were not caused by repeated terrain import in the training env
+  - the repeated fake maps came from `/World/terrain_preview` embedded in `USD/complete_car.usd`, which was then cloned under every `env_i/Robot`
+- Durable engineering conclusion:
+  - `complete_car_stage1_env.py` still imports the training terrain only once
+  - if the stage visually shows many terrain copies in future, first inspect whether the robot asset itself contains preview geometry before modifying terrain-generation logic
+- Removed `/World/terrain_preview` from `USD/complete_car.usd` and created backup `USD/complete_car.usd.terrain_preview_cleanup.bak`.
+- Verification result after cleanup:
+  - reopening `USD/complete_car.usd` confirms `/World/terrain_preview` is invalid
+  - top-level prims remain `/World`, `/Render`, `/physicsScene`
+- Status: inherited default for future sessions is that `complete_car.usd` should remain a robot-only asset and must not carry terrain preview content.
+
+### Stage1 terrain dictionary now includes flat as the first entry
+- Implemented the user's requested minimal change in `stage1_terrain.py`:
+  - inserted `"flat": 0.2` as the first item in `terrain_dict`
+  - added the corresponding `make_tile_by_name("flat") -> make_flat_tile(...)` dispatch
+  - adjusted the `slope down` midpoint calculation so the old descending/ascending split still points to the `slope down` interval after `flat` was inserted ahead of it
+- Durable consequence under the current unchanged `choice = col / num_cols + 0.001` logic and default `num_cols = 10`:
+  - the first 10 columns now map to `flat x2 -> slope down x2 -> pyramid x2 -> stairs down x2 -> stairs up x2`
+- Status: this is a deliberate implementation change to the current local Stage1 curriculum, while still preserving the existing `choice`-based column selection framework.
+
+### Stage1 first-ten-column mapping changed to explicit single-type thresholds
+- Updated `stage1_terrain.py` so the first part of `terrain_dict` now encodes an explicit per-column mapping under the existing `choice = col / num_cols + 0.001` rule.
+- Durable current mapping for default `num_cols = 10`:
+  - col 1: `flat`
+  - col 2: `slope down`
+  - col 3: `slope up`
+  - col 4-5: `uneven rough`
+  - col 6-7: `stairs down`
+  - col 8-9: `stairs up`
+  - col 10: `discrete obstacles`
+- Implementation details:
+  - added an explicit `slope up` terrain name
+  - `slope down` is now always generated with `descending=True`
+  - `slope up` is now always generated with `descending=False`
+  - the former public terrain name `pyramid` has been renamed to `uneven rough` because the generated shape is better described as uneven / undulating rough terrain rather than a tower-like pyramid
+- Status: this change preserves the existing threshold-based column-selection mechanism, but the first-ten-column curriculum is now intentionally hand-shaped to match the user's requested visual order.
+
+### Independent preview path for the last six stage1 terrain types
+- Added `scripts/isaac_sim/preview_stage1_last_six.py` as a separate Isaac Sim preview entry that does not modify `stage1_terrain.py`.
+- Durable behavior:
+  - default mode loads `terrain_names[-6:]` as a one-row gallery
+  - the current selected set is `hurdle`, `gap`, `ramp`, `beam`, `new stairs down`, `pit`
+  - each selected terrain is generated by `make_tile_by_name(...)` and imported as an independent mesh, following the same standalone-preview style used by `preview_stage1_tile.py`
+- Project implication:
+  - future visual inspection of the tail terrain set should use this dedicated script instead of temporarily reordering `terrain_dict` in the training generator.
+
+### preview_stage1_tile.py restored and preview_stage1_last_six.py upgraded to 20x10 gallery mode
+- Restored `scripts/isaac_sim/preview_stage1_tile.py` to its original responsibility:
+  - default mode again shows the full `20 x 10` stage1 tile gallery
+  - `--list-terrains` again reports the complete stage1 terrain set
+- Updated `scripts/isaac_sim/preview_stage1_last_six.py` so it now follows the same gallery semantics as `preview_stage1_tile.py`, but only uses `terrain_names[-6:]`.
+- Durable behavior from now on:
+  - `preview_stage1_tile.py` remains the full stage1 gallery entry
+  - `preview_stage1_last_six.py` is the dedicated `20 x 10` gallery entry for `hurdle`, `gap`, `ramp`, `beam`, `new stairs down`, `pit`
+  - in `preview_stage1_last_six.py`, gallery tiles are assigned explicitly from the last-six terrain list by column cycling, rather than by the original full-curriculum column-selection logic
+
+### control_keyboard.py stage1 now uses the real training terrain path
+- Updated `scripts/isaac_sim/control_keyboard.py` so `--terrain stage1` no longer loads the old preview gallery terrain.
+- Durable current behavior:
+  - `--terrain stage1` directly calls the same local `build_stage1_terrain_data()` path used by training
+  - the full terrain mesh is shifted by `-border_size` in `x/y`, matching `CompleteCarStage1Env`
+  - the mesh is imported under `/World/terrain/stage1/mesh`
+  - the robot is moved to the first training env origin `[4.0, 4.0, 0.3]`
+- Durable scope boundary:
+  - `--terrain stage2|both` still use the older MGDP gallery preview path
+  - only the `stage1` teleop terrain path has been aligned to the real training terrain
+- Verification result:
+  - `timeout 90s python -u scripts/isaac_sim/control_keyboard.py --terrain stage1 --headless --frames 1` completed successfully in the current environment
+  - runtime logs confirmed the new terrain import path, terrain friction binding target `/World/terrain/stage1/mesh`, robot spawn reposition, and completion of the smoke run

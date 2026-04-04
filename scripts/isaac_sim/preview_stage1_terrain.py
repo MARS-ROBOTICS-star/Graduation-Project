@@ -16,12 +16,12 @@ if str(RL_PROJECT_ROOT) not in sys.path:
 
 
 parser = argparse.ArgumentParser(description="Preview the locally generated MGDP stage1 terrain in Isaac Sim.")
-parser.add_argument("--headless", action="store_true", default=False, help="Run Isaac Sim headless.")
 parser.add_argument("--frames", type=int, default=0, help="If > 0, stop after this many simulation steps.")
 parser.add_argument("--row", type=int, default=0, help="Focused tile row for camera and optional car spawn.")
 parser.add_argument("--col", type=int, default=0, help="Focused tile col for camera and optional car spawn.")
 parser.add_argument("--show-origins", action="store_true", default=True, help="Show terrain origin markers.")
 parser.add_argument("--spawn-car", action="store_true", default=False, help="Spawn the complete car on the selected tile.")
+parser.add_argument("--save-usd", type=str, default="", help="Optional path to save the assembled preview stage as USD.")
 parser.add_argument(
     "--car-height-offset",
     type=float,
@@ -51,6 +51,22 @@ from complete_car_rl_training.tasks.manager_based.complete_car_rl_training.stage
     build_stage1_terrain_data,
     get_terrain_name_from_idx,
 )
+
+
+def remove_default_plane(terrain_importer) -> None:
+    """Remove the auto-created ground plane before importing the custom stage1 mesh."""
+    plane_path = f"{terrain_importer.cfg.prim_path}/terrain"
+    if plane_path in terrain_importer.terrain_prim_paths:
+        sim_utils.delete_prim(plane_path)
+        terrain_importer.terrain_prim_paths = [path for path in terrain_importer.terrain_prim_paths if path != plane_path]
+
+
+def offset_mesh_to_mgdp_frame(terrain_cfg: Stage1TerrainCfg, terrain_mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Match MGDP's triangle-mesh placement, which shifts the full map by -border_size in x/y."""
+    terrain_mesh = terrain_mesh.copy()
+    terrain_mesh.vertices[:, 0] -= terrain_cfg.border_size
+    terrain_mesh.vertices[:, 1] -= terrain_cfg.border_size
+    return terrain_mesh
 
 
 @configclass
@@ -88,10 +104,12 @@ def main() -> None:
         raise ValueError(f"--col must be in [0, {terrain_cfg.num_cols - 1}]")
 
     terrain_mesh = trimesh.Trimesh(vertices=terrain_data.vertices, faces=terrain_data.faces)
+    terrain_mesh = offset_mesh_to_mgdp_frame(terrain_cfg, terrain_mesh)
 
     sim = SimulationContext(sim_utils.SimulationCfg(dt=1 / 120))
     scene = InteractiveScene(Stage1PreviewSceneCfg(num_envs=1, env_spacing=1.0))
 
+    remove_default_plane(scene.terrain)
     scene.terrain.import_mesh("stage1", terrain_mesh)
     scene.terrain.configure_env_origins(terrain_data.env_origins)
     if args_cli.show_origins:
@@ -124,6 +142,12 @@ def main() -> None:
     print(f"  focus_tile: row={args_cli.row}, col={args_cli.col}, terrain_idx={focus_idx}, terrain_name={focus_name}")
     print(f"  focus_origin: {focus_origin.tolist()}")
     print(f"  spawn_car: {args_cli.spawn_car}")
+
+    if args_cli.save_usd:
+        save_path = str(Path(args_cli.save_usd).expanduser().resolve())
+        ok = sim_utils.save_stage(save_path, save_and_reload_in_place=False)
+        print(f"  save_usd: {save_path}")
+        print(f"  save_ok: {ok}")
 
     frame_count = 0
     while simulation_app.is_running():

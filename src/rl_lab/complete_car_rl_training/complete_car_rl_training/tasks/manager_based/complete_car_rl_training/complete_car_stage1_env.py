@@ -2,9 +2,26 @@ from __future__ import annotations
 
 import trimesh
 import torch
+import isaaclab.sim as sim_utils
 from isaaclab.envs import ManagerBasedRLEnv
 
 from .stage1_terrain import Stage1TerrainCfg, build_stage1_terrain_data
+
+
+def _remove_default_plane(terrain_importer) -> None:
+    """Remove the auto-created ground plane before importing the custom stage1 mesh."""
+    plane_path = f"{terrain_importer.cfg.prim_path}/terrain"
+    if plane_path in terrain_importer.terrain_prim_paths:
+        sim_utils.delete_prim(plane_path)
+        terrain_importer.terrain_prim_paths = [path for path in terrain_importer.terrain_prim_paths if path != plane_path]
+
+
+def _offset_mesh_to_mgdp_frame(terrain_cfg: Stage1TerrainCfg, terrain_mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Match MGDP's mesh placement, which shifts the full map by -border_size in x/y."""
+    terrain_mesh = terrain_mesh.copy()
+    terrain_mesh.vertices[:, 0] -= terrain_cfg.border_size
+    terrain_mesh.vertices[:, 1] -= terrain_cfg.border_size
+    return terrain_mesh
 
 
 class CompleteCarStage1Env(ManagerBasedRLEnv):
@@ -17,7 +34,9 @@ class CompleteCarStage1Env(ManagerBasedRLEnv):
             vertices=terrain_data.vertices,
             faces=terrain_data.faces,
         )
+        terrain_mesh = _offset_mesh_to_mgdp_frame(self._terrain_cfg, terrain_mesh)
 
+        _remove_default_plane(self.scene.terrain)
         self.scene.terrain.import_mesh("stage1", terrain_mesh)
         self.scene.terrain.configure_env_origins(terrain_data.env_origins)
         self._terrain_levels = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)

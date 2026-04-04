@@ -1,6 +1,7 @@
 import argparse
 import ctypes
 import ctypes.util
+import importlib.util
 import os
 import subprocess
 import sys
@@ -8,6 +9,16 @@ from pathlib import Path
 
 _THIS_FILE = Path(__file__).resolve()
 PROJECT_ROOT = next(parent for parent in _THIS_FILE.parents if (parent / "AGENTS.md").exists())
+RL_PROJECT_ROOT = PROJECT_ROOT / "src" / "rl_lab" / "complete_car_rl_training"
+ISAACLAB_SOURCE_ROOT = Path("/home/ubuntu/IsaacLab/source/isaaclab")
+STAGE1_TERRAIN_PATH = (
+    RL_PROJECT_ROOT
+    / "complete_car_rl_training"
+    / "tasks"
+    / "manager_based"
+    / "complete_car_rl_training"
+    / "stage1_terrain.py"
+)
 DEFAULT_HEADLESS_FRAMES = 120
 ISAAC_SIM_ROOT = Path(os.environ.get("ISAAC_SIM_ROOT", "/home/ubuntu/isaacsim"))
 ISAAC_SIM_PYTHON = ISAAC_SIM_ROOT / "python.sh"
@@ -85,7 +96,7 @@ def parse_args() -> argparse.Namespace:
             "both",
         ],
         default="slope_ramp",
-        help="Optional terrain to build under the robot before teleop starts. Supports single tiles and full MGDP stage galleries.",
+        help="Optional terrain to build under the robot before teleop starts. 'stage1' loads the same full training terrain mesh used by RL; 'stage2' and 'both' keep using MGDP gallery previews.",
     )
     parser.add_argument(
         "--terrain-seed",
@@ -157,7 +168,6 @@ from isaacsim.core.api.world import World
 from isaacsim.core.prims import SingleArticulation
 from isaacsim.core.utils.stage import open_stage
 from isaacsim.core.utils.types import ArticulationAction
-from terrain_preview.terrain_builder import build_single_tile
 
 
 # =========================
@@ -166,6 +176,7 @@ from terrain_preview.terrain_builder import build_single_tile
 USD_PATH = str(PROJECT_ROOT / "USD" / "complete_car.usd")
 ROBOT_PRIM_PATH = "/World/complete_car_alternative"
 TERRAIN_ROOT_PATH = "/World/terrain_preview"
+TRAINING_TERRAIN_ROOT_PATH = "/World/terrain"
 TERRAIN_ORIGIN = (-1.0, 0.0, 0.0)
 GROUND_PRIM_PATH = "/World/defaultGroundPlane"
 GROUND_COLLISION_PRIM_CANDIDATES = [
@@ -210,16 +221,30 @@ BALL_JOINT_NAMES = [
     "spm2_platform_joint_x",
 ]
 
-# 控制参数
-WHEEL_LINEAR_SPEED = 2.5
-WHEEL_TURN_SPEED = 1.0
-BALL_JOINT_DELTA = 0.005
-BALL_JOINT_LIMIT = 0.8
-WHEEL_VELOCITY_SMOOTHING = 0.10
-BALL_POSITION_SMOOTHING = 0.10
-STATIC_FRICTION = 0.5
-DYNAMIC_FRICTION = 0.5
-GROUND_SIZE = 50.0
+# 训练同构控制参数
+TRAINING_PHYSICS_DT = 1.0 / 120.0  # 物理仿真步长，对齐训练环境的 sim.dt
+TRAINING_RENDER_DT = 1.0 / 60.0  # 渲染刷新步长，交互窗口下约 60 Hz
+TRAINING_ACTION_DECIMATION = 2  # 每 2 个物理步更新 1 次控制目标，对齐训练 decimation
+TRAINING_POLICY_DT = TRAINING_PHYSICS_DT * TRAINING_ACTION_DECIMATION  # 等效策略控制周期
+
+TRAINING_BALL_ACTION_SCALE = 0.25  # 球铰 raw action 到位置目标的缩放系数，单位 rad
+TRAINING_WHEEL_ACTION_SCALE = 8.0  # 轮子 raw action 到速度目标的缩放系数，单位 rad/s
+
+TRAINING_BALL_STIFFNESS = 80.0  # 球铰位置控制刚度，对齐训练中的 implicit actuator stiffness
+TRAINING_BALL_DAMPING = 8.0  # 球铰位置控制阻尼，对齐训练中的 implicit actuator damping
+TRAINING_BALL_EFFORT_LIMIT = 120.0  # 球铰关节最大驱动力/力矩限制
+TRAINING_BALL_VELOCITY_LIMIT = 6.0  # 球铰关节物理速度上限，单位 rad/s
+
+TRAINING_WHEEL_STIFFNESS = 0.0  # 轮子速度控制刚度；速度驱动模式下保持为 0
+TRAINING_WHEEL_DAMPING = 10.0  # 轮子速度控制阻尼，对齐训练中的 implicit actuator damping
+TRAINING_WHEEL_EFFORT_LIMIT = 80.0  # 轮子关节最大驱动力/力矩限制
+TRAINING_WHEEL_VELOCITY_LIMIT = 20.0  # 轮子关节物理速度上限，单位 rad/s
+
+BALL_JOINT_ACTION_DELTA = 0.08  # 每次按键对球铰 raw action 的增量步长
+WHEEL_ACTION_LIMIT = 1.0  # 轮子 raw action 的限幅范围，最终会映射到 [-8, 8] rad/s
+STATIC_FRICTION = 0.5  # 共享物理材质的静摩擦系数
+DYNAMIC_FRICTION = 0.5  # 共享物理材质的动摩擦系数
+GROUND_SIZE = 50.0  # 无地形模式下默认 ground plane 的尺寸，单位 m
 
 # 数字小键盘键位映射
 BALL_JOINT_KEY_BINDINGS = [
@@ -250,6 +275,7 @@ appwindow = None
 keyboard = None
 input_iface = None
 keyboard_sub = None
+terrain_spawn_position = None
 
 if not RUN_HEADLESS:
     appwindow = omni.appwindow.get_default_app_window()
@@ -278,6 +304,40 @@ if input_iface is not None and keyboard is not None:
     keyboard_sub = input_iface.subscribe_to_keyboard_events(keyboard, on_keyboard_event)
 
 
+def load_stage1_terrain_module():
+    """Load stage1_terrain.py directly to avoid importing the full task package tree."""
+    spec = importlib.util.spec_from_file_location("stage1_terrain_local", STAGE1_TERRAIN_PATH)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load stage1 terrain module from {STAGE1_TERRAIN_PATH}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault(spec.name, module)
+    spec.loader.exec_module(module)
+    return module
+
+
+def ensure_isaaclab_source_on_path() -> None:
+    if str(ISAACLAB_SOURCE_ROOT) not in sys.path:
+        sys.path.append(str(ISAACLAB_SOURCE_ROOT))
+
+
+def build_training_stage1_mesh():
+    ensure_isaaclab_source_on_path()
+    stage1_terrain_module = load_stage1_terrain_module()
+    import trimesh
+
+    terrain_cfg = stage1_terrain_module.Stage1TerrainCfg()
+    terrain_data = stage1_terrain_module.build_stage1_terrain_data(terrain_cfg)
+    terrain_mesh = trimesh.Trimesh(vertices=terrain_data.vertices, faces=terrain_data.faces)
+    terrain_mesh = terrain_mesh.copy()
+    terrain_mesh.vertices[:, 0] -= terrain_cfg.border_size
+    terrain_mesh.vertices[:, 1] -= terrain_cfg.border_size
+
+    spawn_position = terrain_data.env_origins[0, 0].astype(np.float64).copy()
+    spawn_position[2] += 0.30
+    return terrain_cfg, terrain_mesh, spawn_position
+
+
 def deactivate_default_ground(stage):
     disabled_paths = []
     for prim_path in GROUND_PRIM_CANDIDATES:
@@ -292,11 +352,44 @@ def deactivate_default_ground(stage):
 
 
 def maybe_build_terrain(stage):
+    global terrain_spawn_position
+
     if ARGS.terrain == "none":
         print("[INFO] Terrain preview disabled for control_keyboard.py")
-        return
+        terrain_spawn_position = None
+        return None
 
     deactivate_default_ground(stage)
+    terrain_spawn_position = None
+
+    if ARGS.terrain == "stage1":
+        ensure_isaaclab_source_on_path()
+        import isaaclab.sim as sim_utils
+        from isaaclab.terrains.utils import create_prim_from_mesh
+
+        terrain_cfg, terrain_mesh, terrain_spawn_position = build_training_stage1_mesh()
+        if stage.GetPrimAtPath(TRAINING_TERRAIN_ROOT_PATH).IsValid():
+            stage.RemovePrim(TRAINING_TERRAIN_ROOT_PATH)
+
+        create_prim_from_mesh(
+            f"{TRAINING_TERRAIN_ROOT_PATH}/stage1",
+            terrain_mesh,
+            physics_material=sim_utils.RigidBodyMaterialCfg(
+                friction_combine_mode="multiply",
+                restitution_combine_mode="multiply",
+                static_friction=1.0,
+                dynamic_friction=1.0,
+                restitution=0.0,
+            ),
+        )
+        print(
+            "[INFO] Built training stage1 terrain mesh:",
+            f"root={TRAINING_TERRAIN_ROOT_PATH}",
+            f"spawn_position={terrain_spawn_position.tolist()}",
+            f"terrain_size=({terrain_cfg.total_rows}, {terrain_cfg.total_cols})",
+        )
+        return f"{TRAINING_TERRAIN_ROOT_PATH}/stage1/mesh"
+
     if ARGS.terrain in FULL_GALLERY_ARG_CHOICES:
         from terrain_preview.mgdp_gallery_builder import build_mgdp_gallery
 
@@ -317,7 +410,11 @@ def maybe_build_terrain(stage):
             "[INFO] Robot origin aligned near gallery spawn hint:",
             summary.spawn_origin.tolist(),
         )
-        return
+        terrain_spawn_position = np.asarray(summary.spawn_origin, dtype=np.float64)
+        terrain_spawn_position[2] += 0.30
+        return TERRAIN_ROOT_PATH
+
+    from terrain_preview.terrain_builder import build_single_tile
 
     spec = build_single_tile(
         stage,
@@ -331,6 +428,7 @@ def maybe_build_terrain(stage):
         spec.name,
         f"(origin={TERRAIN_ORIGIN}, size=({spec.length:.2f}, {spec.width:.2f}))",
     )
+    return TERRAIN_ROOT_PATH
 
 
 def ensure_shared_physics_material(stage):
@@ -357,7 +455,7 @@ def bind_physics_material(stage, prim_path, material):
     return True
 
 
-def ensure_ground_and_friction(stage):
+def ensure_ground_and_friction(stage, terrain_bind_path: str | None):
     material = ensure_shared_physics_material(stage)
 
     if ARGS.terrain == "none":
@@ -383,10 +481,10 @@ def ensure_ground_and_friction(stage):
         if not ground_bound:
             print("[WARN] Ground plane was created but no collision prim was found for physics material binding.")
     else:
-        if bind_physics_material(stage, TERRAIN_ROOT_PATH, material):
-            print("[INFO] Applied shared terrain friction material:", TERRAIN_ROOT_PATH)
+        if terrain_bind_path is not None and bind_physics_material(stage, terrain_bind_path, material):
+            print("[INFO] Applied shared terrain friction material:", terrain_bind_path)
         else:
-            print("[WARN] Terrain root was not found for physics material binding:", TERRAIN_ROOT_PATH)
+            print("[WARN] Terrain root was not found for physics material binding:", terrain_bind_path)
 
     bound_wheels = []
     for prim_path in WHEEL_COLLISION_ROOTS:
@@ -412,13 +510,17 @@ if not ok:
     raise RuntimeError(f"Failed to open stage: {USD_PATH}")
 
 stage = omni.usd.get_context().get_stage()
-maybe_build_terrain(stage)
-ensure_ground_and_friction(stage)
+terrain_bind_path = maybe_build_terrain(stage)
+ensure_ground_and_friction(stage, terrain_bind_path)
 
 if World.instance():
     World.instance().clear_instance()
 
-world = World(stage_units_in_meters=1.0)
+world = World(
+    physics_dt=TRAINING_PHYSICS_DT,
+    rendering_dt=TRAINING_RENDER_DT,
+    stage_units_in_meters=1.0,
+)
 world.reset()
 
 # 检查 prim 是否存在
@@ -443,18 +545,57 @@ ball_indices = []
 # =========================
 # 5. 初始目标
 # =========================
-ball_targets = np.zeros(len(BALL_JOINT_NAMES), dtype=np.float64)
-ball_position_cmd = ball_targets.copy()
-wheel_velocity_cmd = np.zeros(len(wheel_indices), dtype=np.float64)
+ball_default_positions = np.zeros(len(BALL_JOINT_NAMES), dtype=np.float64)
+wheel_default_velocities = np.zeros(len(WHEEL_JOINT_NAMES), dtype=np.float64)
+ball_action_raw = np.zeros(len(BALL_JOINT_NAMES), dtype=np.float64)
+ball_position_cmd = np.zeros(len(BALL_JOINT_NAMES), dtype=np.float64)
+wheel_action_raw = np.zeros(len(WHEEL_JOINT_NAMES), dtype=np.float64)
+wheel_velocity_cmd = np.zeros(len(WHEEL_JOINT_NAMES), dtype=np.float64)
 
 
 def clear_all_keys():
     key_state.clear()
 
 
+def full_joint_value_array(joint_indices, value):
+    return np.full((1, len(joint_indices)), value, dtype=np.float32)
+
+
+def configure_training_drive_parameters() -> None:
+    articulation_view = robot._articulation_view
+
+    articulation_view.set_gains(
+        kps=full_joint_value_array(ball_indices, TRAINING_BALL_STIFFNESS),
+        kds=full_joint_value_array(ball_indices, TRAINING_BALL_DAMPING),
+        joint_indices=np.array(ball_indices, dtype=np.int32),
+    )
+    articulation_view.set_gains(
+        kps=full_joint_value_array(wheel_indices, TRAINING_WHEEL_STIFFNESS),
+        kds=full_joint_value_array(wheel_indices, TRAINING_WHEEL_DAMPING),
+        joint_indices=np.array(wheel_indices, dtype=np.int32),
+    )
+    articulation_view.set_max_efforts(
+        values=full_joint_value_array(ball_indices, TRAINING_BALL_EFFORT_LIMIT),
+        joint_indices=np.array(ball_indices, dtype=np.int32),
+    )
+    articulation_view.set_max_efforts(
+        values=full_joint_value_array(wheel_indices, TRAINING_WHEEL_EFFORT_LIMIT),
+        joint_indices=np.array(wheel_indices, dtype=np.int32),
+    )
+    articulation_view.set_max_joint_velocities(
+        values=full_joint_value_array(ball_indices, TRAINING_BALL_VELOCITY_LIMIT),
+        joint_indices=np.array(ball_indices, dtype=np.int32),
+    )
+    articulation_view.set_max_joint_velocities(
+        values=full_joint_value_array(wheel_indices, TRAINING_WHEEL_VELOCITY_LIMIT),
+        joint_indices=np.array(wheel_indices, dtype=np.int32),
+    )
+
+
 def initialize_robot_handles(*, reset_targets: bool, reason: str) -> None:
     global dof_names, joint_name_to_index, wheel_indices, ball_indices
-    global ball_targets, ball_position_cmd, wheel_velocity_cmd
+    global ball_default_positions, wheel_default_velocities
+    global ball_action_raw, ball_position_cmd, wheel_action_raw, wheel_velocity_cmd
 
     robot.initialize()
     dof_names = list(robot.dof_names)
@@ -474,13 +615,36 @@ def initialize_robot_handles(*, reset_targets: bool, reason: str) -> None:
     print("Wheel joint indices:", wheel_indices)
     print("Ball joint indices:", ball_indices)
 
+    configure_training_drive_parameters()
+
+    if terrain_spawn_position is not None:
+        robot.set_world_pose(position=np.asarray(terrain_spawn_position, dtype=np.float64))
+        print("[INFO] Moved robot to terrain spawn position:", terrain_spawn_position.tolist())
+
     if reset_targets:
-        current_positions = robot.get_joint_positions()
-        ball_targets = np.array([current_positions[i] for i in ball_indices], dtype=np.float64)
-        ball_position_cmd = ball_targets.copy()
-        wheel_velocity_cmd = np.zeros(len(wheel_indices), dtype=np.float64)
+        default_joint_state = robot.get_joints_default_state()
+        ball_default_positions = np.array(
+            [default_joint_state.positions[i] for i in ball_indices],
+            dtype=np.float64,
+        )
+        wheel_default_velocities = np.array(
+            [default_joint_state.velocities[i] for i in wheel_indices],
+            dtype=np.float64,
+        )
+        ball_action_raw = np.zeros(len(ball_indices), dtype=np.float64)
+        wheel_action_raw = np.zeros(len(wheel_indices), dtype=np.float64)
+        ball_position_cmd = ball_default_positions.copy()
+        wheel_velocity_cmd = wheel_default_velocities.copy()
         clear_all_keys()
-        print("[INFO] Control targets and key state were reset to match the current articulation state.")
+        print("[INFO] Control actions and key state were reset to the training default offsets.")
+        print(
+            "[INFO] Training-equivalent control profile applied:",
+            f"ball(pos): scale={TRAINING_BALL_ACTION_SCALE}, stiffness={TRAINING_BALL_STIFFNESS}, damping={TRAINING_BALL_DAMPING}, effort_limit={TRAINING_BALL_EFFORT_LIMIT}, velocity_limit={TRAINING_BALL_VELOCITY_LIMIT}",
+        )
+        print(
+            "[INFO] Training-equivalent control profile applied:",
+            f"wheel(vel): scale={TRAINING_WHEEL_ACTION_SCALE}, stiffness={TRAINING_WHEEL_STIFFNESS}, damping={TRAINING_WHEEL_DAMPING}, effort_limit={TRAINING_WHEEL_EFFORT_LIMIT}, velocity_limit={TRAINING_WHEEL_VELOCITY_LIMIT}",
+        )
 
 
 initialize_robot_handles(reset_targets=True, reason="initial startup")
@@ -488,10 +652,6 @@ initialize_robot_handles(reset_targets=True, reason="initial startup")
 
 def clamp(x, low, high):
     return max(low, min(high, x))
-
-
-def blend_command(current, target, alpha):
-    return current + alpha * (target - current)
 
 
 def signed_axis(positive_key, negative_key):
@@ -504,43 +664,44 @@ def signed_axis(positive_key, negative_key):
     return 0.0
 
 
-def update_ball_joint_targets():
-    global ball_targets
+def update_ball_joint_actions():
+    global ball_action_raw
 
     for i, (increase_key, decrease_key) in enumerate(BALL_JOINT_KEY_BINDINGS):
         if is_pressed(increase_key):
-            ball_targets[i] += BALL_JOINT_DELTA
+            ball_action_raw[i] += BALL_JOINT_ACTION_DELTA
         if is_pressed(decrease_key):
-            ball_targets[i] -= BALL_JOINT_DELTA
+            ball_action_raw[i] -= BALL_JOINT_ACTION_DELTA
 
-    for i in range(len(ball_targets)):
-        ball_targets[i] = clamp(ball_targets[i], -BALL_JOINT_LIMIT, BALL_JOINT_LIMIT)
+
+def compute_ball_position_targets():
+    return ball_default_positions + ball_action_raw * TRAINING_BALL_ACTION_SCALE
 
 
 def compute_wheel_velocity_targets():
     if is_pressed(carb.input.KeyboardInput.SPACE):
-        return np.zeros(len(wheel_indices), dtype=np.float64)
+        wheel_action_raw[:] = 0.0
+        return wheel_default_velocities.copy()
 
     linear_axis = signed_axis(carb.input.KeyboardInput.W, carb.input.KeyboardInput.S)
     turn_axis = signed_axis(carb.input.KeyboardInput.A, carb.input.KeyboardInput.D)
 
-    linear_velocity = WHEEL_LINEAR_SPEED * linear_axis
-    turn_velocity = WHEEL_TURN_SPEED * turn_axis
+    left_action = clamp(linear_axis - turn_axis, -WHEEL_ACTION_LIMIT, WHEEL_ACTION_LIMIT)
+    right_action = clamp(linear_axis + turn_axis, -WHEEL_ACTION_LIMIT, WHEEL_ACTION_LIMIT)
 
-    left_velocity = linear_velocity - turn_velocity
-    right_velocity = linear_velocity + turn_velocity
-
-    return np.array(
+    wheel_action_raw[:] = np.array(
         [
-            left_velocity,
-            right_velocity,
-            left_velocity,
-            right_velocity,
-            left_velocity,
-            right_velocity,
+            left_action,
+            right_action,
+            left_action,
+            right_action,
+            left_action,
+            right_action,
         ],
         dtype=np.float64,
     )
+
+    return wheel_default_velocities + wheel_action_raw * TRAINING_WHEEL_ACTION_SCALE
 
 
 print("\n==== Control Keys ====")
@@ -556,8 +717,13 @@ print("NUMPAD_3 / NUMPAD_SUBTRACT : SPM2 x +/-")
 print(f"Active terrain              : {ARGS.terrain}")
 print(f"Terrain seed                : {ARGS.terrain_seed}")
 print(f"Window mode                 : {'headless smoke run' if RUN_HEADLESS else 'interactive teleop'}")
-print(f"Wheel smoothing alpha       : {WHEEL_VELOCITY_SMOOTHING:.2f}")
-print(f"Ball smoothing alpha        : {BALL_POSITION_SMOOTHING:.2f}")
+print(f"Physics dt                  : {TRAINING_PHYSICS_DT:.6f} s")
+print(f"Render dt                   : {TRAINING_RENDER_DT:.6f} s")
+print(f"Action decimation           : {TRAINING_ACTION_DECIMATION}")
+print(f"Action update dt            : {TRAINING_POLICY_DT:.6f} s")
+print(f"Ball raw action range       : unbounded -> target offset = raw_action * {TRAINING_BALL_ACTION_SCALE:.2f} rad")
+print(f"Wheel raw action range      : [-{WHEEL_ACTION_LIMIT:.1f}, {WHEEL_ACTION_LIMIT:.1f}] -> target velocity [-{TRAINING_WHEEL_ACTION_SCALE:.1f}, {TRAINING_WHEEL_ACTION_SCALE:.1f}] rad/s")
+print(f"Wheel physx velocity limit  : {TRAINING_WHEEL_VELOCITY_LIMIT:.1f} rad/s")
 if RUN_HEADLESS:
     effective_frames = ARGS.frames if ARGS.frames > 0 else DEFAULT_HEADLESS_FRAMES
     print(f"Smoke frames                : {effective_frames}")
@@ -586,13 +752,20 @@ try:
     if RUN_HEADLESS:
         smoke_frames = ARGS.frames if ARGS.frames > 0 else DEFAULT_HEADLESS_FRAMES
         print(f"[INFO] Running headless smoke validation for {smoke_frames} frames.")
+        physics_step_counter = 0
         for _ in range(smoke_frames):
+            if physics_step_counter % TRAINING_ACTION_DECIMATION == 0:
+                update_ball_joint_actions()
+                ball_position_cmd = compute_ball_position_targets()
+                wheel_velocity_cmd = compute_wheel_velocity_targets()
             apply_current_command()
             world.step(render=False)
+            physics_step_counter += 1
         print("[INFO] Headless smoke validation finished successfully.")
     else:
         needs_reinitialize_after_stop = False
         last_playing_state = world.is_playing()
+        physics_step_counter = 0
         while simulation_app.is_running():
             if is_pressed(carb.input.KeyboardInput.ESCAPE):
                 break
@@ -615,16 +788,18 @@ try:
                 world.reset()
                 initialize_robot_handles(reset_targets=True, reason="timeline play/resume")
                 needs_reinitialize_after_stop = False
+                physics_step_counter = 0
 
             last_playing_state = True
 
-            update_ball_joint_targets()
-            ball_position_cmd = blend_command(ball_position_cmd, ball_targets, BALL_POSITION_SMOOTHING)
-            wheel_velocity_targets = compute_wheel_velocity_targets()
-            wheel_velocity_cmd = blend_command(wheel_velocity_cmd, wheel_velocity_targets, WHEEL_VELOCITY_SMOOTHING)
+            if physics_step_counter % TRAINING_ACTION_DECIMATION == 0:
+                update_ball_joint_actions()
+                ball_position_cmd = compute_ball_position_targets()
+                wheel_velocity_cmd = compute_wheel_velocity_targets()
 
             apply_current_command()
             world.step(render=True)
+            physics_step_counter += 1
 
 finally:
     if input_iface is not None and keyboard is not None and keyboard_sub is not None:

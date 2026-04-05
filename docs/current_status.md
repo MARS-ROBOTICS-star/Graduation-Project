@@ -47,6 +47,7 @@
 - 已将上述 `Ha 等 - 2025` 阅读笔记进一步改写为“摘录式整理”版本：重点围绕正文关键内容、概念定义、使用方式、作者引用的相关工作及其完整参考文献信息，不再夹带与当前课题绑定的迁移分析。
 - 已按用户给出的示例格式再次重写 `Ha 等 - 2025` 阅读笔记：结构严格对齐 `Paper Snapshot -> 全文结构 -> Mind Map -> 章节精读笔记 -> 关键知识点 -> 术语表 -> 重要参考文献 -> 可复用综述段落`，其中 `Observation` 章节改为“核心观点 / 本节作用 / 分段摘录整理 / 完整参考文献”风格。
 - 已优化根目录 `IK_iteration.mlx`：关键中间结果现可逐步打印到命令行窗口，并统一增加符号化简流程，便于核对逆运动学推导。
+- 已新增根目录 `FK_iteration.m`：按论文零位姿坐标系口径整理 Agile Eye 正运动学符号推导脚本，包含 `u_i`、`v_i`、`w_i`、`w_i^T v_i = 0` 三条约束、trivial / nontrivial 两类分支以及 `p_i`、`q_i` 消元关系；第二条约束同时保留原始点乘式和论文两边同乘 `-1` 后的式(9c)写法。
 - 已按“RL 训练策略相关”主题，从 `docs/literature/` 中单独整理出一份 PDF 集合到 `docs/literature/rl_training_strategy_pdfs_2026-03-23/`，便于集中查阅。
 - 当前工作区已整理完毕，并已同步到 GitHub `origin/main` 作为当前远端状态。
 - 已新增 `docs/project_file_map.md`，按“RL 主线 / 资产与仿真 / 文献 / 论文 / 推导与配图 / 结果输出”归纳整个仓库文件职责，并重写根 `README.md` 使其与当前主线一致。
@@ -170,6 +171,7 @@
 - `AGENTS.md`
 - `docs/current_status.md`
 - `docs/conversation_history.md`
+- `FK_iteration.m`
 - `scripts/isaac_sim/preview_stage1_tile.py`
 - `src/rl_lab/complete_car_rl_training/README.md`
 - `src/rl_lab/complete_car_rl_training/docs/tensorboard_reading_guide.md`

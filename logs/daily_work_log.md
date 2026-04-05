@@ -55,6 +55,27 @@
 - `src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py`
 - `scripts/isaac_sim/remove_complete_car_terrain_preview.py`
 - `USD/complete_car.usd`
+
+已完成：
+- 新建根目录 `FK_iteration.m`，按用户给出的 Agile Eye 论文口径整理正运动学符号推导脚本。
+- 在脚本中明确建立零位姿基座坐标系与平台坐标系，写入：
+  - `u1,u2,u3`
+  - `v1',v2',v3'`
+  - `R = Rz(phi) * Ry(theta) * Rx(psi)`
+  - `v_i` 展开式
+  - `w_i` 表达式
+  - `w_i^T v_i = 0` 三条标量约束
+- 在脚本中继续补齐 forward kinematics 的两个分支推导：
+  - `cos(theta)=0` 的 trivial branch
+  - `phi=theta3` 的 nontrivial branch
+  - `p1..p4`、行列式消元、`q1,q2`、`theta/psi` 主值解表达式
+- 修正并显式说明第二条支链约束的符号问题：保留 `w2^T v2` 原始展开式，同时保留论文把方程两边同乘 `-1` 后得到的式(9c)写法，避免后续误判为推导错误。
+- 用 `sympy` 对脚本对应的公式做了交叉核对，确认 `v_i` 展开、式(9b)(9c)(9d)、分支代回和式(17) 的等价关系都成立。
+- 更新 `docs/current_status.md`、`docs/conversation_history.md`、`logs/daily_work_log.md` 与根 `README.md`，把这次正运动学推导脚本和关键结论写入项目记忆。
+
+修改文件：
+- `FK_iteration.m`
+- `README.md`
 - `docs/current_status.md`
 - `docs/conversation_history.md`
 - `logs/daily_work_log.md`
@@ -73,6 +94,15 @@
 
 下一步：
 - 在可正常使用 `cuda:0` 的 Isaac Lab 环境中重新导出一次 `training_stage_num_envs10.usda`，确认每个 `env_i/Robot` 下已不再出现 `terrain_preview` 子树；若仍有异常，再继续排查 `PhysicsScene`、远端传感器引用和训练场景自身的多环境可视化。
+
+产出/结论：
+- 当前仓库已不再只有逆运动学推导工作区，根目录同时具备一份可直接查看的 Agile Eye 正运动学符号推导脚本。
+- 正运动学脚本当前已经覆盖论文中从坐标系建立、向量约束、分支切分到非平凡解消元的主干推导。
+- 第二条约束和论文式(9c)之间的差异仅是整体乘 `-1` 的等价变形，不属于模型或代码错误。
+- 本轮尝试用本机 `matlab -batch` 做命令行验证，但当前终端里即使最小 `disp('hi')` 也会空退出且返回码为 `1`；因此本轮有效验证依据是 `sympy` 的符号等价检查，而不是 MATLAB 命令行输出。
+
+下一步：
+- 若用户继续推进，可把 `FK_iteration.m` 中已经固化的符号结果同步整理进论文 `chapter03.tex` 的“正运动学模型”小节，或继续补 rotation matrix 形式的 trivial solutions 输出。
 
 ## 2026-04-02
 

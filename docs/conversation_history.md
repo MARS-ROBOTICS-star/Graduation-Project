@@ -100,6 +100,27 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - future training-stage exports should no longer show one extra `terrain_preview` subtree per `env_i/Robot`
   - if extra terrain-like geometry is still seen later, it should be debugged in the live stage itself rather than blamed on the robot asset preview residue
 
+### Added FK_iteration.m for Agile Eye forward-kinematics symbolic derivation
+- Created a new root-level symbolic derivation script:
+  - `FK_iteration.m`
+- Durable scope now captured in that script:
+  - zero-pose base axes are fixed as `u1=[1;0;0]`, `u2=[0;1;0]`, `u3=[0;0;1]`
+  - platform-side zero-pose axes are fixed as `v1'=[0;-1;0]`, `v2'=[0;0;-1]`, `v3'=[-1;0;0]`
+  - platform attitude is represented with the paper's `R = Rz(phi) * Ry(theta) * Rx(psi)`
+  - the forward-kinematics derivation is organized as:
+    - `v_i` expansion
+    - `w_i` definition
+    - three scalar constraints `w_i^T v_i = 0`
+    - trivial branch `cos(theta)=0`
+    - nontrivial branch `phi = theta3`
+    - determinant elimination with `p1..p4` and `q1,q2`
+- Important inherited note:
+  - the second-leg constraint from the raw dot product `w2^T v2` is the negative of the paper's displayed Eq. (9c)
+  - this is expected because the paper explicitly rewrites that equation after multiplying both sides by `-1`
+  - future sessions should not treat this sign flip as a bug
+- Verification result:
+  - symbolic cross-check confirmed zero residual for the `v_i` expansions, Eqs. `(9b)`, `(9c)` up to global sign, `(9d)`, the trivial-branch reductions, the nontrivial linearized system, and the determinant form of Eq. `(17)`
+
 ## 2026-04-02
 
 ### preview_stage1_tile.py now defaults to an all-tile separated gallery instead of single-tile-only preview

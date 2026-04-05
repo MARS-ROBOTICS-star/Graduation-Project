@@ -42,8 +42,8 @@ The current research stage is:
   - Thesis template, LaTeX sources, and compiled thesis artifacts.
 - `Drawing/`
   - CAD and illustration assets.
-- `IK_iteration.md`, `IK_iteration.mlx`
-  - Symbolic inverse-kinematics derivation workspace.
+- `FK_iteration.m`, `IK_iteration.md`, `IK_iteration.mlx`
+  - Symbolic forward/inverse-kinematics derivation workspace.
 
 ## Where To Work
 

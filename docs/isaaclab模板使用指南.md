@@ -25,13 +25,13 @@
 
 - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/__init__.py`
   - 包入口，只负责导入任务注册
-- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/__init__.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/__init__.py`
   - Gym 任务注册
-- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_rl_training_env_cfg.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
   - manager-based 环境配置
-- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/agents/rsl_rl_ppo_cfg.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/agents/rsl_rl_ppo_cfg.py`
   - PPO 配置
-- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/mdp/rewards.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/rewards.py`
   - 自定义奖励函数
 
 ## 3. 当前任务状态
@@ -48,7 +48,7 @@
 进入项目目录：
 
 ```bash
-cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
+cd /home/lbz/Graduation-Project/src/rl_lab/complete_car_rl_training
 ```
 
 在已激活的 `env_isaacLab` conda 环境中安装项目包：

@@ -1,15 +1,28 @@
 # 当前状态
 
 ## 当前总目标
-- 在 Isaac Lab 中构建可稳定训练、可控、可复现的三节完整车 RL 两阶段主线。
-- 第一阶段先完成“MGDP stage1 混合地形 + 本体感知 + 固定球铰 + 速度跟踪” baseline。
-- 第二阶段再完成“球铰纳入控制 + 底层 PID 与逆运动学映射 + 多样地形 + 外部感知与本体感知融合”的增强任务。
+- 在 Isaac Lab 中构建可稳定训练、可控、可复现的三节完整车 RL 主线。
+- 当前优先完成新的第一阶段 baseline：`flat-only` 场景下的本体感知联合控制速度跟踪任务。
 
 ## 当前阶段
 - 阶段 0 已完成：`reset -> step -> reward -> termination -> train` 闭环已实际跑通。
-- 阶段 1 进行中：已确认转向 `MGDP stage1` 混合地形、本体感知、固定球铰、速度跟踪 baseline，但上一轮直接落下去的代码已撤回，接下来改为按教学模式从空白实现。
+- 阶段 1 进行中：已按“6 个球铰关节 + 6 个车轮”的联合控制速度跟踪任务把 active task 的核心代码切到新方案；当前下一步转入实际训练与稳定性校验。
 
 ## 已完成
+- 已在 active task 中实现 `flat-only reset`：
+  - 保留现有 `stage1` 大地图与 terrain runtime 结构
+  - 默认只把所有 env 刷到 `flat` 对应列
+  - 未删除 mixed-terrain 所需的原有运行时路径，后续只需改配置即可恢复
+- 已将 terrain curriculum 做成明确开关：
+  - `Stage1RuntimeCfg.flat_only_reset=True`
+  - `Stage1RuntimeCfg.curriculum=False`
+  - 当前 `flat-only baseline` 下 terrain curriculum 默认不生效，但后续 mixed-terrain 阶段可直接重新打开
+- 已将阶段 1 的 observation / action / reward 真正写入 active task：
+  - observation 顺序已对齐为：基座线速度、基座角速度、重力投影、球铰位置、球铰速度、轮速、速度命令、上一时刻动作
+  - action 为：6 个球铰位置目标 + 6 个车轮速度目标
+  - reward 已切到：线速度跟踪、角速度跟踪、车体姿态稳定、`lin_vel_z`、`ang_vel_xy`、动作变化、球铰偏离/摆动、碰撞、终止
+  - 已开启底盘 contact sensor，并新增 chassis collision reward
+  - `ang_vel_z` 命令范围已从固定 `0` 改为可采样
 - `scripts/isaac_sim/preview_stage1_tile.py` 已恢复为原职责：默认显示 `stage1` 当前课程地图的 `20 x 10` 全部 tile 分离画廊，仍支持 `--single-tile --row/--col` 与 `--terrain-name <name>` 的单块查看。
 - `scripts/isaac_sim/preview_stage1_last_six.py` 现已改为与 `preview_stage1_tile.py` 相同的 `20 x 10` gallery 形式，但只使用当前 `terrain_names[-6:]` 生成 tile；当前后六种地形为 `hurdle / gap / ramp / beam / new stairs down / pit`。
 - 当前两份脚本都默认不加载整车，仅在 `--spawn-car` 时才实例化机器人；并已通过 `python3 -m py_compile scripts/isaac_sim/preview_stage1_tile.py scripts/isaac_sim/preview_stage1_last_six.py`、`python scripts/isaac_sim/preview_stage1_tile.py --list-terrains` 与 `python scripts/isaac_sim/preview_stage1_last_six.py --list-terrains` 校验。
@@ -51,15 +64,20 @@
 - 已按“RL 训练策略相关”主题，从 `docs/literature/` 中单独整理出一份 PDF 集合到 `docs/literature/rl_training_strategy_pdfs_2026-03-23/`，便于集中查阅。
 - 当前工作区已整理完毕，并已同步到 GitHub `origin/main` 作为当前远端状态。
 - 已新增 `docs/project_file_map.md`，按“RL 主线 / 资产与仿真 / 文献 / 论文 / 推导与配图 / 结果输出”归纳整个仓库文件职责，并重写根 `README.md` 使其与当前主线一致。
-- 已将 `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py` 改为当前版 Isaac Sim IK 静态一致性验证脚本：键盘直接摆动 6 个球铰关节，脚本每帧读取前后平台相对 base 的当前姿态，经 IK 反算得到预测关节角，再与 Isaac Sim 当前实际关节角直接对比。
+- 已按用户要求清理 `src/` 训练代码中的 `mgdp` 风格函数命名：`stage1_terrain.py` 内部 terrain helper 与 `complete_car_stage1_env.py` 的 mesh 偏移 helper 现已改为中性命名，并同步修正全部调用点；本轮仅改标识符，不改地形语义与训练逻辑。
+- 已按用户要求收缩 terrain runtime 环境职责并重命名文件：原 `complete_car_stage1_env.py` 已改为 `complete_car_stage1_terrain_env.py`，类名同步改为 `CompleteCarStage1TerrainEnv`；当前该文件只保留 stage1 地形导入、terrain runtime state 缓存、以及 reset 时对 `mdp.curriculums` / `mdp.events` 的调用。
+- 已将 terrain curriculum 更新规则移入 `mdp/curriculums.py:update_stage1_terrain_curriculum`，将地形类别 spawn 偏移逻辑移入 `mdp/events.py:apply_stage1_spawn_offsets`；训练任务注册入口也已同步切到新的 `complete_car_stage1_terrain_env:CompleteCarStage1TerrainEnv`。
+- 已进一步收干 terrain 接入方式：活跃任务的 `CompleteCarRlTrainingSceneCfg` 不再声明默认 `TerrainImporterCfg(terrain_type="plane")`；当前 `CompleteCarStage1TerrainEnv` 会在运行时直接调用 `isaaclab.terrains.utils.create_prim_from_mesh` 把 stage1 trimesh 导入 `/World/terrain/stage1`，并手动维护 `scene.env_origins`，不再依赖“先生成默认 plane 再删除”的补丁式流程。
+- 已整理 `stage1_terrain.py` 的代码结构：公共 `make_*_tile` 地形生成函数现集中成连续区块，并按 `terrain_dict` 中的顺序排布；同时补了 `make_slope_down_tile`、`make_slope_up_tile`、`make_new_stairs_down_tile` 这类顺序对齐用包装函数，原有核心生成函数名保持不变。
+- 已将 `src/rl_lab/complete_car_rl_training/tools/ik/test_ik_keyboard.py` 改为当前版 Isaac Sim IK 静态一致性验证脚本：键盘直接摆动 6 个球铰关节，脚本每帧读取前后平台相对 base 的当前姿态，经 IK 反算得到预测关节角，再与 Isaac Sim 当前实际关节角直接对比。
 - 上述 IK 验证脚本已增加 CSV 日志落盘，默认输出到 `results/ik_keyboard_logs/`，可同时记录当前平台姿态、手动关节命令、IK 预测关节角、Isaac Sim 实际关节角、残差以及 `ik_error`，便于后续直接读取和分析。
 - 已按 `USD/complete_car_equivlent.usd` 的机器人本体层级，清理 `USD/complete_car.usd` 中 `/World/complete_car_final` 下多余的 12 个 SPM 腿部刚体及 `joints/` 下对应 12 个 fixed joint，并保留独立备份 `USD/complete_car.usd.spm_leg_cleanup.bak`。
 - 已为 `complete_car.usd` 的 6 个轮子 collision 子树绑定共享 physics material：`staticFriction=1.0`、`dynamicFriction=1.0`、`frictionCombineMode=multiply`，并保留备份 `USD/complete_car.usd.wheel_friction.bak`。
 - 已对 `results/ik_keyboard_logs/ik_keyboard_2026-03-27_09-58-33.csv` 完成首轮诊断：160 条采样中 `ik_error` 全程为空、6 个 residual 全为 0，说明 IK 方程本身始终可解；但 `q_ik` 与 `q_sim` 长期存在几十度级系统偏差，而 `joint_cmd` 与 `q_sim` 误差整体仍较小，说明当前问题不在关节执行跟踪，而在 IK 比较链路的零位/分支/映射定义。
 - 已在 `USD/complete_car.usd` 中补入 `/World/complete_car_final/spm1_base/spm1_base_ref` 与 `/World/complete_car_final/spm2_base/spm2_base_ref`：二者固定挂在各自 `spm*_base` 下，局部姿态按当前零位 `spm*_spherical_virtual_z` 作者化；重新打开 stage 后验证 `base_ref -> platform` 的相对 `rpy` 已接近 `(0, 0, 0)`。
-- 已将 `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py` 的平台姿态读取基准切换为 `spm*_base_ref -> spm*_platform`，并按脚本同样的 ZYX 公式复核机械零位：前球铰 `rpy≈[5.493e-06, 6.94e-07, -2.571e-06] deg`，后球铰 `rpy≈[-1.4661e-05, -1.3655e-05, 4.951e-06] deg`，可视为零。
-- 已在 `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py` 中加入启动零偏标定：脚本启动后先以零轮速、零球铰目标静置并采样 `base_ref -> platform` 的原始 `rpy`，求均值作为前后平台 `rpy_bias`，后续统一用 `raw_rpy - rpy_bias` 作为送入 IK 和写入主日志的校正姿态；CSV 现同时记录 `raw / bias / corrected` 三组 `rpy`。
-- 已将 `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py` 重构为“姿态目标 -> IK -> joint target -> articulation controller 跟踪”验证脚本：键盘不再直接改球铰关节角，而是直接调整前后平台目标 `rpy`；脚本启动时同时标定平台 `rpy` 零偏和 Sim 关节零位，然后以校正后的姿态目标送入 IK，得到 joint target 后再经过一阶平滑发送给 articulation controller，并记录 joint 跟踪误差。
+- 已将 `src/rl_lab/complete_car_rl_training/tools/ik/test_ik_keyboard.py` 的平台姿态读取基准切换为 `spm*_base_ref -> spm*_platform`，并按脚本同样的 ZYX 公式复核机械零位：前球铰 `rpy≈[5.493e-06, 6.94e-07, -2.571e-06] deg`，后球铰 `rpy≈[-1.4661e-05, -1.3655e-05, 4.951e-06] deg`，可视为零。
+- 已在 `src/rl_lab/complete_car_rl_training/tools/ik/test_ik_keyboard.py` 中加入启动零偏标定：脚本启动后先以零轮速、零球铰目标静置并采样 `base_ref -> platform` 的原始 `rpy`，求均值作为前后平台 `rpy_bias`，后续统一用 `raw_rpy - rpy_bias` 作为送入 IK 和写入主日志的校正姿态；CSV 现同时记录 `raw / bias / corrected` 三组 `rpy`。
+- 已将 `src/rl_lab/complete_car_rl_training/tools/ik/test_ik_keyboard.py` 重构为“姿态目标 -> IK -> joint target -> articulation controller 跟踪”验证脚本：键盘不再直接改球铰关节角，而是直接调整前后平台目标 `rpy`；脚本启动时同时标定平台 `rpy` 零偏和 Sim 关节零位，然后以校正后的姿态目标送入 IK，得到 joint target 后再经过一阶平滑发送给 articulation controller，并记录 joint 跟踪误差。
 - 已分析 `results/ik_keyboard_logs/ik_keyboard_2026-03-27_18-53-34.csv`：新脚本下 `q_cmd -> q_sim` 跟踪已经较好，前球铰 3 轴平均绝对跟踪误差约 `[0.065, 0.049, 0.038] deg`，后球铰约 `[0.041, 0.021, 0.024] deg`，说明 articulation controller 可以平滑跟踪 joint target；但 `rpy_cmd -> rpy_meas` 明显不成立，前平台姿态平均绝对误差约 `[5.62, 4.69, 4.71] deg`，后平台约 `[2.42, 0.50, 2.20] deg`，且单轴命令会激发错误轴或相反方向，说明当前把 IK 电机角直接发给 USD 等效球铰关节这条链在语义上不成立。
 - 已分析 `results/ik_keyboard_logs/ik_keyboard_2026-03-27_17-20-44.csv`：启动零偏标定后，前平台 `raw_rpy` 均值约 `[-0.0755, 0.0809, -0.0005] deg`、后平台约 `[0.0401, -0.0129, 0.0009] deg`；对应 `corrected_rpy` 均值已压到前 `[0.0137, -0.0108, -0.0063] deg`、后 `[-0.0019, 0.0004, 0.0032] deg`，说明零偏标定已基本生效，但 `q_ik` 与 `q_sim` 仍存在明显系统误差。
 - 已按新稿整体替换 `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`：当前版本以“运动学模型”为题，内容覆盖位置/姿态/位姿、旋转矩阵、齐次变换矩阵以及 3-RRR 球面并联机构逆运动学解析求解；同时已在 `main.tex` 补入 `tikz` 与 `arrows.meta` 依赖，并通过两次 `xelatex` 编译验证。
@@ -95,18 +113,18 @@
   - `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --frames 1 --gallery stage2`
 - 已修正当前 `env_isaacLab` 中被污染的数值栈，使 Isaac Sim 窗口模式重新可启动；本机当前已验证可工作的关键版本为 `numpy==1.26.0`、`scipy==1.14.1`。
 - 当前仓库已确认 GitHub 推送阻塞来自 `Drawing/完整小车等效串联.SAT` 超过 100 MB；后续默认将 `.SAT` 文件加入 `.gitignore`，不再直接纳入普通 Git 提交。
-- 已确认本轮协作方式调整：后续围绕 `MGDP stage1` 的 RL 接入不再由 Codex 先写完整代码，而是先讲清方案，再按教学模式一步一步实现。
+- 已确认本轮协作方式调整：后续 RL 任务实现先由用户明确阶段目标与任务定义，再由 Codex 直接落地实现。
 
 ## 正在进行
-- 根据新的两阶段主线，收敛第 1 阶段 baseline 定义：`MGDP stage1` 混合地形、本体感知、固定球铰、速度跟踪，仅控制 6 个轮子速度。
+- 根据新的阶段规划，收敛第 1 阶段 baseline 定义：`flat-only`、本体感知、6 个球铰位置目标 + 6 个轮速目标、速度跟踪任务。
 - 按“整体掌握文章内容与逻辑为主，RL 环境设计提炼为辅”的目标继续精读 `Wiberg 等 - 2022`，为后续 env 设计吸收可迁移部分。
 - 清理 `USD/complete_car.usd` 中剩余的外部引用与不适合多环境复制的内容。
-- 准备从现有 `Complete-Car-Rl-Training-v0` 基线出发，按教学模式继续实现 `terrain importer` 接入、课程学习更新和训练任务切换。
+- 准备从现有 `Complete-Car-Rl-Training-v0` 基线出发，按新的阶段 1 定义继续实现 observation / action / reward / terrain 规划。
 - 当前教学实现已推进到 `stage1_terrain.py`：已完成配置类、空地图分配、完整 heightfield->mesh 转换、`env_origin` 记录，以及 `MGDP stage1` 全部地形名对应的 tile 生成与按名字分发。
 
 ## 当前阻塞点
 - 当前 `MGDP stage1` 的 RL 接入代码已按用户要求撤回，任务包里尚不存在可运行的 rough-terrain 训练入口。
-- 当前需要先把教学起点和最小实现顺序讲清楚，再开始逐步写代码；不能再直接把完整实现一次性落下去。
+- 当前需要把新的阶段 1 任务定义准确接回配置与环境脚本，尚未开始按这版规划修改 observation / action / reward。
 - 当前 `stage1_terrain.py` 虽已补齐 `MGDP stage1` 全部地形生成函数，但按 MGDP 原 `terrain_dict + choice=j/num_cols+0.001` 的列选择逻辑，当前 `20 x 10` 课程地图实际只会落到前 5 类索引；这属于原配置语义，不是当前移植 bug。
 - 当前 `stage1_terrain.py` 与 MGDP 原 `add_mix_terrain.py` 仍存在若干几何层差异，主要集中在 `gap / hurdle / pit / env_origin` 的实现语义，并非当前“ground 叠加”问题的直接来源；后续若要追求与 MGDP 更一致的地形形状，应优先对齐这些函数，而不是继续排查 scene 里是否还有第二张地面。
 - 当前仍需注意一个“参数一致但列分布受限”的事实：由于 `terrain_dict` 权重未归一化、列选择仍是 `choice = col / num_cols + 0.001`，在默认 `num_cols = 10` 下，课程地图实际仍只会落到前 5 类 terrain；这是继承自 MGDP 当前这组权重与列数的组合结果，不是本地 preview 脚本和 stage1 生成代码不一致。
@@ -121,6 +139,14 @@
 - 当前已明确新的默认抽象：USD 中 3 个等效球铰关节的坐标本身就是移动平台姿态坐标，RL 后续应直接控制这 3 个等效关节角；IK 仅作为“平台姿态 -> 真实机构电机角”的并行映射层，用于后续可能的实物阶段，不再作为当前仿真闭环的直接控制输入。
 
 ## 下一步优先事项
+- 先对新的阶段 1 active task 做一次实际训练冒烟，重点确认：
+  - `flat-only reset` 是否全部落在 `flat` 列
+  - chassis contact reward 是否工作正常
+  - `ang_vel_z` 命令放开后 episode 是否仍稳定
+- 若训练能启动，再根据首轮日志判断是否需要继续收紧：
+  - reset 初始扰动
+  - 终止阈值
+  - reward 权重
 - 若目标是检查 `MGDP stage1` 全部课程 tile 的几何和分布，优先使用 `python scripts/isaac_sim/preview_stage1_tile.py`。
 - 若目标是检查当前 stage1 后六种地形在 `20 x 10` 画廊下的几何外观，优先使用 `python scripts/isaac_sim/preview_stage1_last_six.py`；若只想看其中某一类，再追加 `--single-tile --terrain-name <name>`。
 - 若还要继续“看 live stage 而不是只看代码和资产树”，下一步应在有正常图形/驱动的 Isaac Sim 会话里重新执行 `preview_stage1_terrain.py --save-usd`，或者直接在脚本里额外导出一份 stage prim 树文本，绕开当前 headless 环境下 `save_stage` 不落盘的问题。
@@ -128,13 +154,9 @@
   - 是否只剩 1 张 stage1 大地图
   - 左侧 tile 是否重新拥有 origin marker
   - 视口里剩余的细线网格是否只是 viewport grid，而不是物理 ground plane
-- 下一步进入 Step 46 起的教学模式：先继续完善 `env_origin` 与特殊地形出生点策略，再准备接 `TerrainImporter` 和自定义 RL 环境类。
-- 下一步在 `stage1_terrain.py` 基础上补一个预览/自检脚本，验证每种 tile 和整张 stage1 课程地图的几何是否符合预期。
-- 下一步开始把当前已完成的 stage1 地形数据结构接入 Isaac Lab：mesh 导入、`scene.env_origins` 配置、terrain curriculum 更新。
 - 清理 `USD/complete_car.usd` 的远端依赖和 replicated 不兼容项。
 - 在已对齐的机器人本体树基础上，继续清理轮子 drive、损坏的 visual 引用、远端 `Example_Rotary` 引用与内嵌 `PhysicsScene`。
-- 基于后续 rough-terrain 新日志再调节终止阈值、初始姿态和奖励权重，把 episode 从“几乎必然早终止”修到可持续 rollout。
-- 阶段 1 默认仍保持固定球铰和 6 维轮速动作，不在这一轮重新把球铰高层控制并回动作空间。
+- 基于后续新日志再调节终止阈值、初始姿态和奖励权重，把 episode 从“几乎必然早终止”修到可持续 rollout。
 - 若需要继续使用 MGDP 地形预览脚本，当前默认入口应直接使用 `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --gallery <stage1|stage2|both>`，并在 `env_isaacLab` 中启动。
 - 若要精确检查训练环境里“是否真的导入了多张地图”，下一步应优先在有正常 GPU/驱动的 Isaac Lab 会话里运行 `python scripts/export_training_stage.py --task Complete-Car-Rl-Training-v0 --num_envs <N> --headless --device cuda:0 --save-usd <path>`，再直接读取导出的 USD 与 prim 树。
 - 若要继续做车体与地形联调，当前默认入口应直接使用 `python3 scripts/isaac_sim/control_keyboard.py --terrain <terrain_name|stage1|stage2|both>`，而不是分别手工开两个 Isaac Sim 进程。
@@ -142,24 +164,45 @@
   - 球铰位置目标按 `scale=0.25` 后是否出现明显振荡或过慢跟踪
   - 轮速 target 默认人工区间是否主要落在 `[-8, 8] rad/s`
   - 轮子是否频繁贴近 PhysX 上限 `20 rad/s`
-- 待第 1 阶段稳定后，再进入第 2 阶段，接入球铰高层控制、底层 PID + 逆运动学、多样地形与外部感知。
+- 待第 1 阶段稳定后，再讨论后续阶段是否加入更高难度地形、课程学习强化或外部感知。
 
 ## 当前默认方案
 - 训练路线默认遵循：
   - 阶段 0：先跑通可训练环境
-  - 阶段 1：`MGDP stage1` 混合地形 + 本体感知 + 固定球铰 + 速度跟踪
-  - 阶段 2：球铰纳入控制 + 底层 PID 与逆运动学映射 + 多样地形 + 外部感知与本体感知融合
+  - 阶段 1：`flat-only` + 本体感知 + 球铰与车轮联合控制 + 速度跟踪
 - 第 1 阶段默认采用：
-  - `MGDP stage1` 混合地形
-  - 本体状态输入
-  - 速度跟踪任务
-  - 固定球铰姿态
-  - 仅训练 6 个轮子速度控制
-- 第 2 阶段默认采用：
-  - RL 输出高层轮式推进与球铰目标
-  - 底层控制器负责 PID 跟踪与逆运动学映射
-  - 先从简单非平地开始，再逐步提高地形复杂度
-  - 外部感知先做降维编码，再与本体状态融合后送入策略
+  - terrain runtime：
+    - 继续复用现有 `stage1` 地图与 terrain runtime env
+    - 所有 env 默认只在 `flat` 列 reset
+    - terrain curriculum 默认关闭，但保留配置开关
+  - 观测：
+    - 基座线速度
+    - 基座角速度
+    - 重力投影
+    - 6 个球铰关节位置
+    - 6 个球铰关节速度
+    - 6 个轮速
+    - 速度命令
+    - 上一时刻动作
+  - 动作：
+    - 6 个球铰关节位置目标
+    - 6 个车轮速度目标
+    - 均通过现有 PD/驱动控制链施加
+  - 奖励：
+    - 线速度跟踪
+    - 角速度跟踪
+    - 车体姿态稳定
+    - `lin_vel_z` 惩罚
+    - `ang_vel_xy` 惩罚
+    - 动作变化惩罚
+    - 球铰偏离中位或过激摆动惩罚
+    - 碰撞惩罚
+    - 终止惩罚
+  - 地形：
+    - 当前阶段使用 `flat-only baseline`
+    - 训练默认只使用 `flat` 列 reset
+    - 现有 `stage1` terrain 保留为后续非平地阶段与对照实验入口
+  - 当前阶段不加入外部地形感知
 - 当前默认启动路径：
   - 当前机器新开 `bash` 交互 shell 默认已自动进入 `env_isaacLab`；若不在该环境中，先手动激活
   - `cd /home/lbz/Graduation-Project/src/rl_lab/complete_car_rl_training`
@@ -183,8 +226,10 @@
 - `docs/literature/mineru_output/Ha 等 - 2025 - Learning-based legged locomotion State of the art and future perspectives/auto/reading_notes.md`
 - `scripts/literature/mineru_batch_convert.sh`
 - `scripts/isaac_sim/control_keyboard.py`
-- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_rl_training_env_cfg.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1_terrain.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
 - `src/rl_lab/complete_car_rl_training/scripts/tensorboard_export.py`
-- `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py`
+- `src/rl_lab/complete_car_rl_training/tools/ik/test_ik_keyboard.py`
 - `src/rl_lab/complete_car_rl_training/skills/isaac-rl-run-diagnosis/SKILL.md`
 - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`

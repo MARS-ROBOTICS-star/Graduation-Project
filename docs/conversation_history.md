@@ -2,6 +2,243 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-06
+
+### Stage 1 active task is now implemented as flat-only reset on top of the existing stage1 terrain runtime
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/curriculums.py`
+- Durable implementation conclusion:
+  - the active Stage 1 task now keeps the existing `stage1` terrain map and runtime env, but adds a dedicated:
+    - `flat_only_reset`
+    switch in `Stage1RuntimeCfg`
+  - when `flat_only_reset=True`, all envs are assigned to the `flat` terrain column during reset while still reusing the same terrain mesh, origins table, and runtime-state machinery
+  - terrain curriculum is now explicitly switchable through:
+    - `Stage1RuntimeCfg.curriculum`
+  - for the current default Stage 1 baseline:
+    - `flat_only_reset=True`
+    - `curriculum=False`
+  - the terrain curriculum update function now early-returns when running the flat-only baseline, so the old mixed-terrain reset/curriculum path is preserved for later stages instead of being deleted
+- Reason:
+  - the user wanted a flat-ground baseline without forking a second flat-only terrain implementation or breaking the later mixed-terrain training path
+- Impact:
+  - future mixed-terrain work should reuse the same terrain runtime env and simply toggle these runtime settings instead of creating a parallel reset path
+- Status:
+  - completed and verified with `py_compile`
+
+### Stage 1 observation, action, and reward wiring now matches the new flat-only baseline definition
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/rewards.py`
+- Durable implementation conclusion:
+  - policy observation order in the active task is now aligned with the agreed Stage 1 baseline:
+    - base linear velocity
+    - base angular velocity
+    - projected gravity
+    - 6 spherical-joint positions
+    - 6 spherical-joint velocities
+    - 6 wheel velocities
+    - velocity commands
+    - previous action
+  - policy action space remains:
+    - 6 spherical-joint position targets
+    - 6 wheel velocity targets
+  - the command space now samples:
+    - `lin_vel_x`
+    - `ang_vel_z`
+    while keeping `lin_vel_y = 0`
+  - the reward set now matches the Stage 1 plan:
+    - linear-velocity tracking
+    - angular-velocity tracking
+    - body-orientation stability
+    - `lin_vel_z` penalty
+    - `ang_vel_xy` penalty
+    - action-rate penalty
+    - spherical-joint deviation penalty
+    - spherical-joint swing penalty
+    - chassis collision penalty
+    - termination penalty
+  - the previous `alive` reward was removed
+  - chassis collision is now implemented through explicit contact sensors on:
+    - `body_car_chassis`
+    - `head_car_chassis`
+    - `tail_car_chassis`
+- Reason:
+  - the user requested that the agreed Stage 1 flat-only baseline should stop living only in planning notes and be written into the active training task
+- Impact:
+  - future tuning should start from this observation/action/reward set rather than the older generic manager-based template terms
+  - later additions such as terrain perception should be treated as explicit Stage 2+ changes, not silently mixed into this Stage 1 baseline
+- Status:
+  - completed and verified with `py_compile`
+
+### src training helpers no longer use mgdp-prefixed function names
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1_terrain.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_env.py`
+- Durable implementation conclusion:
+  - helper function names inside the active training code under `src/` were normalized to remove `mgdp`-prefixed identifiers
+  - examples:
+    - `_mgdp_random_uniform_terrain -> _random_uniform_terrain`
+    - `_maybe_add_mgdp_roughness -> _maybe_add_roughness`
+    - `_offset_mesh_to_mgdp_frame -> _offset_mesh_to_stage1_frame`
+- Reason:
+  - the user requested that training-script function names should not be tied to `mgdp` naming
+- Impact:
+  - future additions in the active `src/` training path should follow neutral, task-local naming instead of reintroducing `mgdp` into helper identifiers
+  - this naming cleanup did not change terrain-generation semantics or the stage1 training logic
+- Status:
+  - completed and verified with `py_compile` plus a follow-up repository search showing no remaining `mgdp` helper names under `src/`
+
+### stage1_terrain.py terrain generator section is now ordered to match terrain_dict
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1_terrain.py`
+- Durable implementation conclusion:
+  - the public terrain-generator section is now grouped into one contiguous block and ordered to match the configured terrain order:
+    - `flat`
+    - `slope down`
+    - `slope up`
+    - `uneven rough`
+    - `stairs down`
+    - `stairs up`
+    - `discrete obstacles`
+    - `hurdle`
+    - `gap`
+    - `ramp`
+    - `beam`
+    - `new stairs down`
+    - `pit`
+  - lightweight wrapper functions were added for order/readability:
+    - `make_slope_down_tile`
+    - `make_slope_up_tile`
+    - `make_new_stairs_down_tile`
+  - existing core generator names such as `make_slope_tile`, `make_pyramid_tile`, and `make_stairs_tile` were preserved
+- Impact:
+  - future sessions should keep the terrain-generator block aligned with `Stage1TerrainCfg.terrain_dict` so the file reads in the same order as the configured curriculum terrain list
+  - this was a structure/readability cleanup only and did not change terrain-generation behavior
+- Status:
+  - completed and verified with `py_compile`
+
+### Stage 1 baseline plan was redefined around joint-wheel co-control on low-difficulty mixed terrain
+- Updated:
+  - `docs/current_status.md`
+  - `README.md`
+  - `src/rl_lab/complete_car_rl_training/docs/rl_training_route.md`
+- Durable research conclusion:
+  - the previously used Stage 1 definition based on “fixed spherical joints + wheel-only control” is no longer the active plan
+  - the new Stage 1 baseline is:
+    - low-difficulty mixed terrain using the current `stage1` terrain source
+    - first terrain column is `flat`
+    - remaining columns keep different terrain types but under the lowest difficulty setting so they stay close to flat
+    - policy observations:
+      - base linear velocity
+      - base angular velocity
+      - projected gravity
+      - 6 spherical-joint positions
+      - 6 spherical-joint velocities
+      - 6 wheel speeds
+      - velocity commands
+      - previous action
+    - policy actions:
+      - 6 spherical-joint position targets
+      - 6 wheel velocity targets
+    - control semantics:
+      - spherical joints use position-target control
+      - wheels use velocity-target control
+    - reward terms:
+      - linear-velocity tracking
+      - angular-velocity tracking
+      - body-posture stability
+      - `lin_vel_z` penalty
+      - `ang_vel_xy` penalty
+      - action-change penalty
+      - spherical-joint neutral-deviation / excessive-swing penalty
+      - collision penalty
+      - termination penalty
+    - external terrain perception is explicitly **not** part of the current Stage 1 plan
+- Reason:
+  - the user decided to replan Stage 1 from scratch and directly validate joint-wheel co-control instead of keeping the older fixed-joint baseline
+- Impact:
+  - future implementation work should wire the active Isaac Lab task to this new Stage 1 definition
+  - older “fixed spherical joints + wheel-only control” descriptions remain historical only and must not be treated as the current default
+- Status:
+  - planning updated; code implementation not yet switched to this new definition in the active task files
+
+### Stage 1 terrain scope was further narrowed to a flat-only baseline
+- Updated:
+  - `docs/current_status.md`
+  - `README.md`
+  - `src/rl_lab/complete_car_rl_training/docs/rl_training_route.md`
+- Durable research conclusion:
+  - although Stage 1 had briefly been reframed as a low-difficulty mixed-terrain baseline, the user then made the stricter decision that Stage 1 should use a `flat-only baseline`
+  - therefore the active Stage 1 terrain scope is now:
+    - training uses only `flat` terrain
+    - the existing `stage1` terrain set is retained for later non-flat stages or comparison experiments
+  - the rest of the Stage 1 task definition stays unchanged:
+    - proprioceptive observation
+    - 6 spherical-joint position targets
+    - 6 wheel velocity targets
+    - velocity-tracking reward structure
+    - no external terrain perception
+- Reason:
+  - the user explicitly decided that the first-stage “basic motion policy” should be a clean flat-ground baseline rather than a mixed-terrain baseline
+- Impact:
+  - future implementation of Stage 1 should not train on the non-flat columns of the current `stage1` terrain map by default
+  - mixed terrain should be treated as a later-stage extension or a controlled follow-up experiment
+- Status:
+  - planning updated; code implementation not yet switched to this narrowed terrain scope in the active task files
+
+### Terrain runtime env was renamed and reduced to terrain import plus runtime-state coordination
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/curriculums.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/events.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/__init__.py`
+- Durable implementation conclusion:
+  - the old runtime file name `complete_car_stage1_env.py` was replaced with:
+    - `complete_car_stage1_terrain_env.py`
+  - the registered env class is now:
+    - `CompleteCarStage1TerrainEnv`
+  - the runtime env file now keeps only:
+    - stage1 terrain mesh import
+    - terrain runtime tensors such as `terrain_origins / terrain_levels / terrain_types / terrain_class`
+    - env-origin synchronization based on those tensors
+    - reset-time orchestration that calls into `mdp.curriculums` and `mdp.events`
+  - the terrain curriculum update rule was moved into:
+    - `mdp/curriculums.py:update_stage1_terrain_curriculum`
+  - the terrain-class spawn offset rule was moved into:
+    - `mdp/events.py:apply_stage1_spawn_offsets`
+- Reason:
+  - the user judged that the previous `complete_car_stage1_env.py` mixed too many responsibilities and was hard to understand
+- Impact:
+  - future work should treat the renamed terrain env as a terrain runtime coordinator rather than as the place to hold all curriculum and reset logic directly
+  - new terrain curriculum rules should be added to `mdp/curriculums.py`
+  - new spawn/reset offset rules should be added to `mdp/events.py`
+- Status:
+  - completed and verified with `py_compile`
+
+### Active task no longer relies on a default plane-based TerrainImporter just to import stage1 mesh
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
+  - `src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py`
+- Durable implementation conclusion:
+  - the active manager-based training scene no longer declares a default:
+    - `TerrainImporterCfg(terrain_type="plane")`
+  - instead, the terrain runtime env now imports the generated stage1 mesh directly with:
+    - `isaaclab.terrains.utils.create_prim_from_mesh`
+    - target prim path: `/World/terrain/stage1`
+  - environment origins are no longer configured through `scene.terrain.configure_env_origins(...)`
+  - they are now synchronized directly by the terrain runtime env through `scene.env_origins`
+  - as a result, the previous “create default plane -> delete plane -> import stage1 mesh” workaround is no longer part of the active task path
+- Reason:
+  - the user explicitly asked to clean up terrain integration so the task does not define a default plane that is immediately removed
+- Impact:
+  - future work on the active task should treat stage1 terrain as a manually imported trimesh, not as a custom mesh piggybacking on a temporary plane-based terrain importer
+  - any code that inspects `scene.terrain` must now handle the possibility that it is `None`
+- Status:
+  - completed and verified with `py_compile`
+
 ## 2026-04-03
 
 ### control_keyboard.py now uses the same drive semantics and core control parameters as the RL training task

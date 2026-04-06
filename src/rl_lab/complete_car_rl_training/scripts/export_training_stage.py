@@ -110,7 +110,10 @@ def main() -> None:
         _log(f"  device: {env.unwrapped.device}")
         _log(f"  num_envs: {scene.num_envs}")
         _log(f"  env_origins_shape: {tuple(scene.env_origins.shape)}")
-        _log(f"  terrain_prim_paths: {terrain.terrain_prim_paths}")
+        if terrain is None:
+            _log("  terrain_prim_paths: <scene.terrain is None; terrain may be imported manually>")
+        else:
+            _log(f"  terrain_prim_paths: {terrain.terrain_prim_paths}")
 
         _log("[EXPORT_STAGE] saving stage")
         ok = sim_utils.save_stage(str(save_path), save_and_reload_in_place=False)

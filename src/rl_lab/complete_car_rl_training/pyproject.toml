@@ -105,7 +105,7 @@ docstring-code-format = true
 
 [tool.pyright]
 
-include = ["complete_car_rl_training", "scripts"]
+include = ["complete_car_rl_training", "scripts", "tools"]
 exclude = [
     "**/__pycache__",
     "**/_isaac_sim",

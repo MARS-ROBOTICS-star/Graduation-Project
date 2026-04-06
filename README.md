@@ -9,8 +9,8 @@ The current engineering mainline is the single Isaac Lab project under `src/rl_l
 The current research stage is:
 
 1. Stage 0 completed: prove `reset -> step -> reward -> termination -> train` works end to end.
-2. Stage 1 ongoing: `MGDP stage1` mixed terrain, proprioception, fixed spherical joints, velocity tracking, wheel control only.
-3. Stage 2 later: add spherical-joint control, lower-level PID plus IK mapping, diverse terrain, and perception fusion.
+2. Stage 1 ongoing: `flat-only` baseline with proprioception, 6 spherical-joint position targets plus 6 wheel-speed targets, and velocity tracking.
+3. Later stages: to be defined after the new Stage 1 baseline is stable.
 
 ## Repository Map
 

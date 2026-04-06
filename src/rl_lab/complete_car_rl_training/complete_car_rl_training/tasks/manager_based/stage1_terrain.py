@@ -3,6 +3,12 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 
+
+STAGE1_TERRAIN_CLASS_OTHER = 0
+STAGE1_TERRAIN_CLASS_STEP = 1
+STAGE1_TERRAIN_CLASS_GAP = 2
+
+
 @dataclass(frozen=True)
 class Stage1TerrainCfg:
     horizontal_scale: float = 0.1
@@ -63,11 +69,17 @@ class Stage1TerrainCfg:
     def terrain_names(self) -> list[str]:
         return list(self.terrain_dict.keys())
 
+    @property
+    def terrain_class_names(self) -> tuple[str, ...]:
+        return ("other", "step", "gap")
+
+
 @dataclass
 class Stage1TerrainData:
     height_field_raw: np.ndarray
     env_origins: np.ndarray
     terrain_type: np.ndarray
+    terrain_class: np.ndarray
     vertices: np.ndarray | None = None
     faces: np.ndarray | None = None
     x_edge_mask: np.ndarray | None = None
@@ -92,13 +104,7 @@ def create_empty_stage1_terrain_data(
         height_field_raw=np.zeros((cfg.total_rows, cfg.total_cols), dtype=np.int16),
         env_origins=np.zeros((cfg.num_rows, cfg.num_cols, 3), dtype=np.float32),
         terrain_type=np.zeros((cfg.num_rows, cfg.num_cols), dtype=np.int32),
-    )
-
-
-def make_flat_tile(cfg: Stage1TerrainCfg) -> np.ndarray:
-    return np.zeros(
-        (cfg.length_per_env_pixels, cfg.width_per_env_pixels),
-        dtype=np.int16,
+        terrain_class=np.zeros((cfg.num_rows, cfg.num_cols), dtype=np.int32),
     )
 
 
@@ -125,7 +131,16 @@ def _make_subterrain(cfg: Stage1TerrainCfg) -> _SubTerrain:
     )
 
 
-def _mgdp_random_uniform_terrain(
+def get_terrain_class_from_name(terrain_name: str) -> int:
+    """Group detailed terrain names into reset/curriculum classes."""
+    if terrain_name in {"stairs down", "stairs up", "new stairs down"}:
+        return STAGE1_TERRAIN_CLASS_STEP
+    if terrain_name in {"gap", "pit"}:
+        return STAGE1_TERRAIN_CLASS_GAP
+    return STAGE1_TERRAIN_CLASS_OTHER
+
+
+def _random_uniform_terrain(
     terrain: _SubTerrain,
     min_height: float,
     max_height: float,
@@ -159,7 +174,7 @@ def _mgdp_random_uniform_terrain(
     terrain.height_field_raw += z_upsampled
 
 
-def _mgdp_pyramid_sloped_terrain(terrain: _SubTerrain, slope: float = 1.0, platform_size: float = 1.0) -> None:
+def _pyramid_sloped_terrain(terrain: _SubTerrain, slope: float = 1.0, platform_size: float = 1.0) -> None:
     x = np.arange(0, terrain.width)
     y = np.arange(0, terrain.length)
     center_x = int(terrain.width / 2)
@@ -182,7 +197,7 @@ def _mgdp_pyramid_sloped_terrain(terrain: _SubTerrain, slope: float = 1.0, platf
     terrain.height_field_raw = np.clip(terrain.height_field_raw, min_h, max_h).astype(np.int16)
 
 
-def _mgdp_pyramid_stairs_terrain(
+def _pyramid_stairs_terrain(
     terrain: _SubTerrain,
     step_width: float,
     step_height: float,
@@ -206,7 +221,7 @@ def _mgdp_pyramid_stairs_terrain(
         terrain.height_field_raw[start_x:stop_x, start_y:stop_y] = height
 
 
-def _mgdp_discrete_obstacles_terrain(
+def _discrete_obstacles_terrain(
     terrain: _SubTerrain,
     max_height: float,
     min_size: float,
@@ -242,7 +257,7 @@ def _mgdp_discrete_obstacles_terrain(
     terrain.height_field_raw[x1:x2, y1:y2] = 0
 
 
-def _mgdp_parkour_step_terrain(
+def _parkour_step_terrain(
     terrain: _SubTerrain,
     difficulty: float,
     x_range: tuple[float, float] = (1.6, 2.0),
@@ -279,7 +294,7 @@ def _mgdp_parkour_step_terrain(
     terrain.height_field_raw[start_x:end_x, start_y:end_y] = new_stair_height
 
 
-def _mgdp_parkour_step_gap_terrain(
+def _parkour_step_gap_terrain(
     terrain: _SubTerrain,
     gap_size: float,
     depth: float,
@@ -298,7 +313,7 @@ def _mgdp_parkour_step_gap_terrain(
     terrain.height_field_raw[start_x + gap_size_px:center_x - gap_size_px, start_y + gap_size_px:end_y - gap_size_px] = 0
 
 
-def _mgdp_half_sloped_terrain(terrain: _SubTerrain, level_index: float, platform_size: float = 2.0) -> None:
+def _half_sloped_terrain(terrain: _SubTerrain, level_index: float, platform_size: float = 2.0) -> None:
     terrain_length = terrain.length
     slope_start = 5
     platform_size_px = int(platform_size / terrain.horizontal_scale)
@@ -324,7 +339,7 @@ def _mgdp_half_sloped_terrain(terrain: _SubTerrain, level_index: float, platform
         reversed_index -= 1
 
 
-def _mgdp_stepping_beams_terrain(
+def _stepping_beams_terrain(
     terrain: _SubTerrain,
     stone_size: float,
     stone_distance: float,
@@ -371,7 +386,7 @@ def _mgdp_stepping_beams_terrain(
     terrain.height_field_raw[x1:x2, platform_y:platform_y + platform_size_px] = 0
 
 
-def _mgdp_pit_terrain(terrain: _SubTerrain, depth: float, platform_size: float = 4.0) -> None:
+def _pit_terrain(terrain: _SubTerrain, depth: float, platform_size: float = 4.0) -> None:
     depth_u = int(depth / terrain.vertical_scale)
     platform_size_px = int(platform_size / terrain.horizontal_scale / 2)
     x1 = terrain.length // 2 - platform_size_px
@@ -381,7 +396,7 @@ def _mgdp_pit_terrain(terrain: _SubTerrain, depth: float, platform_size: float =
     terrain.height_field_raw[x1:x2, y1:y2] = -depth_u
 
 
-def _maybe_add_mgdp_roughness(
+def _maybe_add_roughness(
     terrain: _SubTerrain,
     cfg: Stage1TerrainCfg,
     difficulty: float,
@@ -392,13 +407,21 @@ def _maybe_add_mgdp_roughness(
     min_height, max_height = cfg.roughness_height_range
     max_height = (max_height - min_height) * difficulty + min_height
     sampled_height = float(rng.uniform(min_height, max_height))
-    _mgdp_random_uniform_terrain(
+    _random_uniform_terrain(
         terrain,
         min_height=-sampled_height,
         max_height=sampled_height,
         step=0.005,
         downsampled_scale=cfg.roughness_downsampled_scale,
         rng=rng,
+    )
+
+
+# Terrain generators. Keep this section ordered exactly like Stage1TerrainCfg.terrain_dict.
+def make_flat_tile(cfg: Stage1TerrainCfg) -> np.ndarray:
+    return np.zeros(
+        (cfg.length_per_env_pixels, cfg.width_per_env_pixels),
+        dtype=np.int16,
     )
 
 
@@ -411,8 +434,22 @@ def make_slope_tile(
     slope = difficulty * 0.4
     if descending:
         slope *= -1
-    _mgdp_pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.0)
+    _pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.0)
     return terrain.height_field_raw.copy()
+
+
+def make_slope_down_tile(
+    cfg: Stage1TerrainCfg,
+    difficulty: float,
+) -> np.ndarray:
+    return make_slope_tile(cfg, difficulty, descending=True)
+
+
+def make_slope_up_tile(
+    cfg: Stage1TerrainCfg,
+    difficulty: float,
+) -> np.ndarray:
+    return make_slope_tile(cfg, difficulty, descending=False)
 
 
 def make_pyramid_tile(
@@ -422,8 +459,8 @@ def make_pyramid_tile(
 ) -> np.ndarray:
     terrain = _make_subterrain(cfg)
     rng = np.random.default_rng(seed)
-    _mgdp_pyramid_sloped_terrain(terrain, slope=difficulty * 0.4, platform_size=3.0)
-    _mgdp_random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2, rng=rng)
+    _pyramid_sloped_terrain(terrain, slope=difficulty * 0.4, platform_size=3.0)
+    _random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2, rng=rng)
     return terrain.height_field_raw.copy()
 
 
@@ -438,7 +475,7 @@ def make_stairs_tile(
     step_height = 0.05 + 0.18 * difficulty + extra_step_height_m
     if descending:
         step_height *= -1
-    _mgdp_pyramid_stairs_terrain(terrain, step_width=step_width_m, step_height=step_height, platform_size=3.0)
+    _pyramid_stairs_terrain(terrain, step_width=step_width_m, step_height=step_height, platform_size=3.0)
     return terrain.height_field_raw.copy()
 
 
@@ -449,7 +486,7 @@ def make_discrete_obstacles_tile(
 ) -> np.ndarray:
     terrain = _make_subterrain(cfg)
     rng = np.random.default_rng(seed)
-    _mgdp_discrete_obstacles_terrain(
+    _discrete_obstacles_terrain(
         terrain,
         max_height=0.05 + difficulty * 0.2,
         min_size=1.0,
@@ -468,8 +505,8 @@ def make_hurdle_tile(
 ) -> np.ndarray:
     terrain = _make_subterrain(cfg)
     rng = np.random.default_rng(seed)
-    _mgdp_parkour_step_terrain(terrain, difficulty=difficulty, x_range=(1.6, 2.0), rng=rng)
-    _maybe_add_mgdp_roughness(terrain, cfg, difficulty, rng)
+    _parkour_step_terrain(terrain, difficulty=difficulty, x_range=(1.6, 2.0), rng=rng)
+    _maybe_add_roughness(terrain, cfg, difficulty, rng)
     return terrain.height_field_raw.copy()
 
 
@@ -481,8 +518,8 @@ def make_gap_tile(
     terrain = _make_subterrain(cfg)
     rng = np.random.default_rng(seed)
     gap_size = 0.5 * difficulty if difficulty < 0.1 else 0.1 + difficulty / terrain.horizontal_scale
-    _mgdp_parkour_step_gap_terrain(terrain, gap_size=gap_size, depth=0.5, platform_size=2.0)
-    _maybe_add_mgdp_roughness(terrain, cfg, difficulty, rng)
+    _parkour_step_gap_terrain(terrain, gap_size=gap_size, depth=0.5, platform_size=2.0)
+    _maybe_add_roughness(terrain, cfg, difficulty, rng)
     return terrain.height_field_raw.copy()
 
 
@@ -493,8 +530,8 @@ def make_ramp_tile(
 ) -> np.ndarray:
     terrain = _make_subterrain(cfg)
     rng = np.random.default_rng(seed)
-    _mgdp_half_sloped_terrain(terrain, level_index=difficulty * 7, platform_size=2.0)
-    _maybe_add_mgdp_roughness(terrain, cfg, difficulty, rng)
+    _half_sloped_terrain(terrain, level_index=difficulty * 7, platform_size=2.0)
+    _maybe_add_roughness(terrain, cfg, difficulty, rng)
     return terrain.height_field_raw.copy()
 
 
@@ -508,7 +545,7 @@ def make_beam_tile(
     beam_length = 1.0 if difficulty < 0.2 else -0.4 * difficulty + 0.9
     stone_distance = 0.1 if difficulty < 0.2 else 0.4 * int(10 * difficulty) / 10
     step_height = 0.05 + 0.18 * difficulty
-    _mgdp_stepping_beams_terrain(
+    _stepping_beams_terrain(
         terrain,
         stone_size=beam_length,
         stone_distance=stone_distance,
@@ -517,8 +554,21 @@ def make_beam_tile(
         depth=0.5,
         rng=rng,
     )
-    _maybe_add_mgdp_roughness(terrain, cfg, difficulty, rng)
+    _maybe_add_roughness(terrain, cfg, difficulty, rng)
     return terrain.height_field_raw.copy()
+
+
+def make_new_stairs_down_tile(
+    cfg: Stage1TerrainCfg,
+    difficulty: float,
+) -> np.ndarray:
+    return make_stairs_tile(
+        cfg,
+        difficulty,
+        descending=True,
+        step_width_m=0.5,
+        extra_step_height_m=0.2,
+    )
 
 
 def make_pit_tile(
@@ -526,7 +576,7 @@ def make_pit_tile(
     difficulty: float,
 ) -> np.ndarray:
     terrain = _make_subterrain(cfg)
-    _mgdp_pit_terrain(terrain, depth=1.0 * difficulty, platform_size=4.0)
+    _pit_terrain(terrain, depth=1.0 * difficulty, platform_size=4.0)
     return terrain.height_field_raw.copy()
 
 
@@ -553,10 +603,10 @@ def make_tile_by_name(
         return make_flat_tile(cfg)
 
     if terrain_name == "slope down":
-        return make_slope_tile(cfg, difficulty, descending=True)
+        return make_slope_down_tile(cfg, difficulty)
 
     if terrain_name == "slope up":
-        return make_slope_tile(cfg, difficulty, descending=False)
+        return make_slope_up_tile(cfg, difficulty)
 
     if terrain_name == "uneven rough":
         return make_pyramid_tile(cfg, difficulty, seed=seed)
@@ -583,13 +633,7 @@ def make_tile_by_name(
         return make_beam_tile(cfg, difficulty, seed)
 
     if terrain_name == "new stairs down":
-        return make_stairs_tile(
-            cfg,
-            difficulty,
-            descending=True,
-            step_width_m=0.5,
-            extra_step_height_m=0.2,
-        )
+        return make_new_stairs_down_tile(cfg, difficulty)
 
     if terrain_name == "pit":
         return make_pit_tile(cfg, difficulty)
@@ -610,19 +654,22 @@ def make_tile_by_col(
     tile = make_tile_by_name(cfg, terrain_name, difficulty, choice, seed)
     return tile, terrain_idx
 
+
 def get_origin_patch_center(
     cfg: Stage1TerrainCfg,
     terrain_name: str,
-) -> tuple[int,int]:
+) -> tuple[int, int]:
     return cfg.length_per_env_pixels // 2, cfg.width_per_env_pixels // 2
 
+
 def get_origin_patch_radius(
-      cfg: Stage1TerrainCfg,
-      terrain_name: str,
-  ) -> tuple[int, int]:
-      half_patch_x = int(1.0 / cfg.horizontal_scale)
-      half_patch_y = int(1.0 / cfg.horizontal_scale)
-      return half_patch_x, half_patch_y
+    cfg: Stage1TerrainCfg,
+    terrain_name: str,
+) -> tuple[int, int]:
+    half_patch_x = int(1.0 / cfg.horizontal_scale)
+    half_patch_y = int(1.0 / cfg.horizontal_scale)
+    return half_patch_x, half_patch_y
+
 
 def write_tile_to_map(
     data: Stage1TerrainData,
@@ -646,7 +693,7 @@ def set_tile_origin(
     data: Stage1TerrainData,
     row: int,
     col: int,
-    terrain_name:str,
+    terrain_name: str,
     cfg: Stage1TerrainCfg,
 ) -> None:
     center_x, center_y = get_origin_patch_center(cfg, terrain_name)
@@ -672,9 +719,18 @@ def set_tile_origin(
         cfg.border_pixels + col * cfg.width_per_env_pixels + y1:
         cfg.border_pixels + col * cfg.width_per_env_pixels + y2,
     ]
-    origin_z = max(0.0,float(tile_center_patch.max()) * cfg.vertical_scale)
+    origin_z = max(0.0, float(tile_center_patch.max()) * cfg.vertical_scale)
 
     data.env_origins[row, col] = [origin_x, origin_y, origin_z]
+
+
+def set_tile_class(
+    data: Stage1TerrainData,
+    row: int,
+    col: int,
+    terrain_name: str,
+) -> None:
+    data.terrain_class[row, col] = get_terrain_class_from_name(terrain_name)
 
 
 def build_stage1_map(cfg: Stage1TerrainCfg | None = None) -> Stage1TerrainData:
@@ -686,33 +742,35 @@ def build_stage1_map(cfg: Stage1TerrainCfg | None = None) -> Stage1TerrainData:
     for row in range(cfg.num_rows):
         for col in range(cfg.num_cols):
             tile, terrain_idx = make_tile_by_col(cfg, row, col)
-            terrain_name = get_terrain_name_from_idx(cfg,terrain_idx)
+            terrain_name = get_terrain_name_from_idx(cfg, terrain_idx)
             write_tile_to_map(data, tile, row=row, col=col, terrain_idx=terrain_idx, cfg=cfg)
-            set_tile_origin(data, row=row, col=col, terrain_name=terrain_name,cfg=cfg)
+            set_tile_origin(data, row=row, col=col, terrain_name=terrain_name, cfg=cfg)
+            set_tile_class(data, row=row, col=col, terrain_name=terrain_name)
     # Mesh data will be filled in a later step after heightfield generation is complete.
     return data
 
-##二维高度数据”转换为“三维三角形网格模型”
+
+# Convert the 2D heightfield into a 3D triangle mesh.
 def convert_heightfield_to_trimesh(
-    height_field_raw:np.ndarray,
-    horizontal_scale:float,
-    vertical_scale:float,
-    slope_threshold: float | None =None,
-) ->tuple[np.ndarray,np.ndarray,np.ndarray]:
+    height_field_raw: np.ndarray,
+    horizontal_scale: float,
+    vertical_scale: float,
+    slope_threshold: float | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     hf = height_field_raw
     num_rows = hf.shape[0]
     num_cols = hf.shape[1]
 
-    y= np.linspace(0,(num_cols -1)*horizontal_scale,num_cols)
-    x= np.linspace(0,(num_rows -1)* horizontal_scale,num_rows)
-    yy,xx = np.meshgrid(y,x)
+    y = np.linspace(0, (num_cols - 1) * horizontal_scale, num_cols)
+    x = np.linspace(0, (num_rows - 1) * horizontal_scale, num_rows)
+    yy, xx = np.meshgrid(y, x)
 
     if slope_threshold is not None:
-        slope_threshold *= horizontal_scale /vertical_scale
+        slope_threshold *= horizontal_scale / vertical_scale
 
-        move_x = np.zeros((num_rows,num_cols))
-        move_y = np.zeros((num_rows,num_cols))
-        move_corners = np.zeros((num_rows,num_cols))
+        move_x = np.zeros((num_rows, num_cols))
+        move_y = np.zeros((num_rows, num_cols))
+        move_corners = np.zeros((num_rows, num_cols))
 
         move_x[: num_rows - 1, :] += (
             hf[1:num_rows, :] - hf[: num_rows - 1, :] > slope_threshold
@@ -729,10 +787,10 @@ def convert_heightfield_to_trimesh(
         )
 
         move_corners[: num_rows - 1, : num_cols - 1] += (
-            hf[1:num_rows, 1:num_cols] - hf[: num_rows - 1, : num_cols - 1] >slope_threshold
+            hf[1:num_rows, 1:num_cols] - hf[: num_rows - 1, : num_cols - 1] > slope_threshold
         )
         move_corners[1:num_rows, 1:num_cols] -= (
-            hf[: num_rows - 1, : num_cols - 1] - hf[1:num_rows, 1:num_cols] >slope_threshold
+            hf[: num_rows - 1, : num_cols - 1] - hf[1:num_rows, 1:num_cols] > slope_threshold
         )
 
         xx += (move_x + move_corners * (move_x == 0)) * horizontal_scale
@@ -747,8 +805,8 @@ def convert_heightfield_to_trimesh(
 
     triangles = -np.ones(
         (2 * (num_rows - 1) * (num_cols - 1), 3),
-          dtype=np.uint32,
-      )
+        dtype=np.uint32,
+    )
 
     for i in range(num_rows - 1):
         ind0 = np.arange(0, num_cols - 1) + i * num_cols
@@ -767,7 +825,7 @@ def convert_heightfield_to_trimesh(
         triangles[start + 1:stop:2, 1] = ind2
         triangles[start + 1:stop:2, 2] = ind3
 
-    return vertices, triangles, move_x != 0    
+    return vertices, triangles, move_x != 0
 
 def convert_heightfield_to_mesh(
     data: Stage1TerrainData,
@@ -784,8 +842,6 @@ def convert_heightfield_to_mesh(
     data.faces = faces
     data.x_edge_mask = x_edge_mask
     return data
-
-
 
 def build_stage1_terrain_data(
     cfg: Stage1TerrainCfg | None = None,

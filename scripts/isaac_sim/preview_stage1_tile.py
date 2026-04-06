@@ -149,7 +149,7 @@ from isaaclab.sim import SimulationContext
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 
-from complete_car_rl_training.tasks.manager_based.complete_car_rl_training.complete_car_rl_training_env_cfg import (
+from complete_car_rl_training.tasks.manager_based.complete_car_env_cfg import (
     COMPLETE_CAR_CFG,
 )
 

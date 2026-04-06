@@ -1,5 +1,73 @@
 # 每日工作日志
 
+## 2026-04-06
+
+已完成：
+- 按用户要求清理 `src/` 训练脚本中的 `mgdp` 风格函数命名，重点处理：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1_terrain.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_env.py`
+- 将地形 helper 和 mesh 偏移 helper 改为中性命名，并同步修正全部本地调用关系，例如：
+  - `_mgdp_random_uniform_terrain -> _random_uniform_terrain`
+  - `_maybe_add_mgdp_roughness -> _maybe_add_roughness`
+  - `_offset_mesh_to_mgdp_frame -> _offset_mesh_to_stage1_frame`
+- 本轮只改函数标识符，不改 terrain 生成逻辑、参数、课程分配或训练行为。
+- 实际执行校验：
+  - `rg -n "def .*mgdp|class .*mgdp|_mgdp|mgdp_" src`
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1_terrain.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_env.py`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1_terrain.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_env.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `src/` 活跃训练代码路径下，函数命名已去掉 `mgdp` 关联前缀。
+- 本轮属于命名清理，不涉及行为变更；静态编译通过，且再次搜索未发现 `src/` 中残留的 `mgdp` 风格函数名。
+
+下一步：
+- 若还要继续统一命名风格，可再单独清理 `src/` 之外脚本目录中的 `mgdp` 文件名或注释，但这不属于本轮已执行范围。
+
+已完成：
+- 按用户要求整理 `stage1_terrain.py` 的代码结构，把公共 `make_*_tile` 地形生成函数整理成连续区块，并按 `terrain_dict` 中的地形顺序重新排列：
+  - `flat`
+  - `slope down`
+  - `slope up`
+  - `uneven rough`
+  - `stairs down`
+  - `stairs up`
+  - `discrete obstacles`
+  - `hurdle`
+  - `gap`
+  - `ramp`
+  - `beam`
+  - `new stairs down`
+  - `pit`
+- 为了让代码顺序和地形顺序一一对应，补了几个轻量包装函数：
+  - `make_slope_down_tile`
+  - `make_slope_up_tile`
+  - `make_new_stairs_down_tile`
+- 保持已有核心函数名不变，例如：
+  - `make_pyramid_tile` 仍对应 `uneven rough`
+  - `make_stairs_tile` 仍作为 `stairs down / stairs up / new stairs down` 的共享实现
+- 顺手清理了同文件里几处格式不整齐的问题，但未改地形生成语义。
+- 实际执行校验：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1_terrain.py`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1_terrain.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `stage1_terrain.py` 的公共地形生成函数阅读顺序已和配置顺序一致，后续查阅和维护会更直接。
+- 本轮只做结构整理与可读性优化，不涉及课程分配、地形权重或 mesh 生成逻辑变化。
+
+下一步：
+- 若还要继续收敛结构，可再把 `make_tile_by_name` 改成显式的生成器注册表，但这属于后续重构，不是本轮已执行内容。
+
 ## 2026-04-03
 
 已完成：
@@ -1955,3 +2023,176 @@
 
 下一步：
 - 若用户后续明确要求训练时也取消球铰范围限制，再单独修改 `complete_car_rl_training_env_cfg.py` 中的越界终止项。
+
+## 2026-04-06
+
+已完成：
+- 按用户要求重新规划当前 RL 第一阶段任务定义，不再沿用此前“固定球铰、仅训练轮速”的阶段划分。
+- 将新的第一阶段方案同步写入项目规划相关文件，使后续讨论与实现都以这版为默认：
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `README.md`
+  - `src/rl_lab/complete_car_rl_training/docs/rl_training_route.md`
+- 当前新的第一阶段定义已明确为：
+  - 观测：基座线速度、基座角速度、重力投影、6 个球铰关节位置、6 个球铰关节速度、6 个轮速、速度命令、上一时刻动作
+  - 动作：6 个球铰关节位置目标 + 6 个车轮速度目标
+  - 控制语义：球铰走位置目标、车轮走速度目标，沿用现有关节驱动 / `PD` 控制链
+  - 奖励：线速度跟踪、角速度跟踪、车体姿态稳定、`lin_vel_z` 惩罚、`ang_vel_xy` 惩罚、动作变化惩罚、球铰偏离中位或过激摆动惩罚、碰撞惩罚、终止惩罚
+  - 地形：继续使用当前 `stage1` terrain，第 1 列为 `flat`，其余列保留不同地形类型，但训练默认使用最低难度，使其接近平地
+  - 当前阶段不加入外部地形感知
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `README.md`
+- `src/rl_lab/complete_car_rl_training/docs/rl_training_route.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 项目当前默认阶段规划已经切换到“球铰与车轮联合控制的第一阶段 baseline”。
+- 旧的“固定球铰 + 轮速控制”阶段定义仅保留为历史讨论背景，不再作为当前默认实现目标。
+
+下一步：
+- 按这版阶段 1 规划，开始回写 `complete_car_env_cfg.py`、`mdp/observations.py`、`mdp/rewards.py` 和 `complete_car_stage1_env.py` 的任务定义与训练逻辑。
+
+## 2026-04-06
+
+已完成：
+- 用户进一步收紧第一阶段地形范围，明确当前阶段不再采用“低难度混合地形 baseline”，而改为 `flat-only baseline`。
+- 已将这一新决策同步写回：
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `README.md`
+  - `src/rl_lab/complete_car_rl_training/docs/rl_training_route.md`
+- 当前第一阶段新的地形约束已明确为：
+  - 训练默认只使用 `flat` 地形
+  - 现有 `stage1` terrain 保留，但仅作为后续非平地阶段或对照实验入口
+  - 其余 observation / action / reward 规划保持不变
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `README.md`
+- `src/rl_lab/complete_car_rl_training/docs/rl_training_route.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前项目里的阶段 1 已正式收敛为 `flat-only` 基础运动策略 baseline。
+- “低难度混合地形”不再是当前默认训练分布。
+
+下一步：
+- 按 `flat-only baseline` 去修改活跃任务代码里的 observation / action / reward / terrain 使用逻辑。
+
+## 2026-04-06
+
+已完成：
+- 按用户要求重构地形运行时职责分层，不再让旧 `complete_car_stage1_env.py` 同时混着持有 terrain runtime、课程学习更新和 spawn/reset 偏移逻辑。
+- 已将原文件重命名为：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
+- 类名同步改为：
+  - `CompleteCarStage1TerrainEnv`
+- 当前新的 terrain runtime env 只保留：
+  - stage1 地形 mesh 导入
+  - terrain runtime state 缓存
+  - env origin 同步
+  - reset 时对 `mdp.curriculums` 和 `mdp.events` 的调用
+- 已将 terrain curriculum 更新逻辑移到：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/curriculums.py`
+  - 新增 `update_stage1_terrain_curriculum(...)`
+- 已将 spawn/reset 偏移逻辑移到：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/events.py`
+  - 新增 `apply_stage1_spawn_offsets(...)`
+- 已同步修改任务注册入口：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/__init__.py`
+  - 当前 `Complete-Car-Rl-Training-v0` 已指向新的 `complete_car_stage1_terrain_env:CompleteCarStage1TerrainEnv`
+- 已执行静态校验：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/curriculums.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/events.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/__init__.py`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/curriculums.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/events.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/__init__.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 terrain runtime env 的职责已经明显收缩，后续阅读和扩展不需要再从一个大杂烩文件里同时找地形导入、课程学习和 spawn/reset 规则。
+- 课程学习规则与 spawn/reset 偏移规则现在已经各自有明确落点。
+
+下一步：
+- 继续处理 terrain 接入方式本身，尤其是默认 plane 与自定义 stage1 mesh 的结构关系，以及 `flat-only baseline` 下的实际训练场景切换。
+
+## 2026-04-06
+
+已完成：
+- 继续按用户要求收干 terrain 接入方式，不再让 active task 通过 `TerrainImporterCfg(terrain_type="plane")` 先创建默认 plane 再删除。
+- 已修改：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
+  - `src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py`
+- 当前 `CompleteCarRlTrainingSceneCfg` 已去掉默认 terrain 配置，scene 启动时不再自动生成 plane。
+- 当前 `CompleteCarStage1TerrainEnv` 会在运行时直接使用：
+  - `isaaclab.terrains.utils.create_prim_from_mesh`
+  将 stage1 生成的 trimesh 导入到：
+  - `/World/terrain/stage1`
+- 当前 `scene.env_origins` 由 terrain runtime env 直接维护，不再依赖 `scene.terrain.configure_env_origins(...)`。
+- 同步把 `export_training_stage.py` 改成兼容 `scene.terrain is None` 的情况，避免导出脚本再假定 scene 一定带 terrain importer。
+- 已执行静态校验：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
+- `src/rl_lab/complete_car_rl_training/scripts/export_training_stage.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 active task 的 terrain 接入已经不再依赖“默认 plane + 删除”的补丁式流程。
+- stage1 terrain 现在是直接导入的单个 trimesh，结构上更符合“场景里只有这一种地形”的要求。
+
+下一步：
+- 继续明确 `flat-only baseline` 是否直接复用该 terrain runtime env，还是单独做一个更薄的平地训练入口。
+
+## 2026-04-06
+
+已完成：
+- 按用户要求在 active task 中新增“只在 `flat` 列 reset”的功能，但未删除原有 mixed-terrain 所需的 terrain runtime 结构。
+- 已修改：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/curriculums.py`
+- 当前 `Stage1RuntimeCfg` 新增并默认启用：
+  - `flat_only_reset=True`
+- 当前 `CompleteCarStage1TerrainEnv` 在 `flat_only_reset=True` 时会把所有 env 的 `terrain_type` 固定到 `flat` 对应列，其余 terrain runtime 逻辑保持可复用。
+- 当前 terrain curriculum 保留为可开关功能，并默认关闭：
+  - `Stage1RuntimeCfg.curriculum=False`
+- 已把阶段 1 的 observation / action / reward 正式写回 active task：
+  - `complete_car_env_cfg.py` 中 observation 顺序已对齐为：基座线速度、基座角速度、重力投影、球铰位置、球铰速度、轮速、速度命令、上一时刻动作
+  - action 维持为：6 个球铰位置目标 + 6 个车轮速度目标
+  - reward 改为：线速度跟踪、角速度跟踪、姿态稳定、`lin_vel_z`、`ang_vel_xy`、动作变化、球铰偏离、球铰摆动、碰撞、终止
+- 已把 `ang_vel_z` 命令范围从固定 `0` 改为可采样，避免角速度跟踪奖励失效。
+- 已在 scene 中增加 3 个 chassis contact sensor，并在：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/rewards.py`
+  中新增 `chassis_collision(...)` 奖励函数。
+- 已执行静态校验：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/curriculums.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/rewards.py`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/curriculums.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/rewards.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前阶段 1 的默认 active task 已不再只是规划，而是已经真正切到 `flat-only baseline` 的 reset / command / reward / collision 逻辑。
+- mixed-terrain 训练路径没有被删除，后续恢复时只需调整 runtime 配置开关。
+
+下一步：
+- 用新的阶段 1 配置做一次实际训练冒烟，确认 `flat-only reset`、contact reward 和 `ang_vel_z` 命令生效情况。

@@ -1,29 +1,33 @@
 # Complete Car RL Training
 
 This directory is the single retained Isaac Lab training project for the articulated complete-car robot.
-The project has been cleaned up from the original template into one project root with one Python package.
+The project keeps Isaac Lab's normal extension root plus Python package split, and removes the extra task-name nesting
+inside the task package so the layout stays shallow enough to maintain.
 
 ## Layout
 
 - `complete_car_rl_training/`
   - Python package containing task registration and environment code.
 - `docs/`
-  - Local project notes such as the TensorBoard reading and diagnosis guide.
+  - Local project notes such as the TensorBoard reading guide and the RL migration route.
 - `scripts/`
   - Utility scripts for listing environments, smoke-testing with dummy agents, training, and playback.
+- `tools/ik/`
+  - Standalone inverse-kinematics utilities and keyboard test scripts.
 - `skills/`
   - Repository-local skill definitions before installation into `~/.codex/skills/`.
 - `config/extension.toml`
   - Isaac Lab extension metadata.
 - `setup.py`, `pyproject.toml`
-  - Editable install and local tooling configuration.
+  - Editable install and local tooling configuration. These stay at the project root because Isaac Lab resolves the
+    extension from this directory.
 
 ## Install
 
 Run from this directory:
 
 ```bash
-cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
+cd /home/lbz/Graduation-Project/src/rl_lab/complete_car_rl_training
 python -m pip install -e . --no-build-isolation
 ```
 
@@ -93,6 +97,12 @@ The project-level reading guide for TensorBoard and offline diagnosis is:
 docs/tensorboard_reading_guide.md
 ```
 
+The staged RL migration note is:
+
+```bash
+docs/rl_training_route.md
+```
+
 ## Play
 
 Replay the latest checkpoint:
@@ -101,8 +111,19 @@ Replay the latest checkpoint:
 python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0 --device cpu
 ```
 
+## IK Tools
+
+Keyboard IK debugging now lives under:
+
+```bash
+tools/ik/test_ik_keyboard.py
+```
+
 ## Key Files
 
-- `complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_rl_training_env_cfg.py`
-- `complete_car_rl_training/tasks/manager_based/complete_car_rl_training/agents/rsl_rl_ppo_cfg.py`
-- `complete_car_rl_training/tasks/manager_based/complete_car_rl_training/mdp/rewards.py`
+- `complete_car_rl_training/tasks/manager_based/__init__.py`
+- `complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- `complete_car_rl_training/tasks/manager_based/complete_car_stage1_env.py`
+- `complete_car_rl_training/tasks/manager_based/agents/rsl_rl_ppo_cfg.py`
+- `complete_car_rl_training/tasks/manager_based/mdp/rewards.py`
+- `tools/ik/test_ik_keyboard.py`

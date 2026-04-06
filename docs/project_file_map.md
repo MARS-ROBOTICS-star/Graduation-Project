@@ -235,13 +235,13 @@
 - 长期继承结论
   - `docs/conversation_history.md`
 - RL 环境主配置
-  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_rl_training/complete_car_rl_training_env_cfg.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
 - RL 训练脚本
   - `src/rl_lab/complete_car_rl_training/scripts/rsl_rl/train.py`
 - 旧版键盘控车脚本
   - `scripts/isaac_sim/control_keyboard.py`
 - 当前 IK 键盘验证脚本
-  - `src/rl_lab/complete_car_rl_training/test_ik_keyboard.py`
+  - `src/rl_lab/complete_car_rl_training/tools/ik/test_ik_keyboard.py`
 - 论文逆运动学章节
   - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
 

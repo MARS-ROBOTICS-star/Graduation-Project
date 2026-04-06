@@ -17,8 +17,8 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.sensors import ContactSensorCfg
 from isaaclab.utils import configclass
-from isaaclab.terrains import TerrainImporterCfg
 from . import mdp
 
 ##
@@ -52,7 +52,7 @@ CONTROLLED_JOINT_NAMES = BALL_JOINT_NAMES + WHEEL_JOINT_NAMES
 COMPLETE_CAR_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
         usd_path=str(_COMPLETE_CAR_USD),
-        activate_contact_sensors=False,
+        activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             rigid_body_enabled=True,
             disable_gravity=False,
@@ -101,19 +101,6 @@ COMPLETE_CAR_CFG = ArticulationCfg(
 @configclass
 class CompleteCarRlTrainingSceneCfg(InteractiveSceneCfg):
     """Configuration for the articulated complete-car scene."""
-    terrain = TerrainImporterCfg(
-        prim_path="/World/terrain",
-        terrain_type="plane",
-        collision_group=-1,
-        physics_material=sim_utils.RigidBodyMaterialCfg(
-            friction_combine_mode="multiply",
-            restitution_combine_mode="multiply",
-            static_friction = 1.0,
-            dynamic_friction = 1.0,
-            restitution = 0.0,
-        ),
-    )
-
     dome_light = AssetBaseCfg(
         prim_path="/World/skyLight",
         spawn=sim_utils.DomeLightCfg(
@@ -123,31 +110,62 @@ class CompleteCarRlTrainingSceneCfg(InteractiveSceneCfg):
     )
 
     robot: ArticulationCfg = COMPLETE_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    body_chassis_contact = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis",
+        update_period=0.0,
+        history_length=2,
+        debug_vis=False,
+    )
+    head_chassis_contact = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis",
+        update_period=0.0,
+        history_length=2,
+        debug_vis=False,
+    )
+    tail_chassis_contact = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/complete_car_alternative/tail_car_chassis",
+        update_period=0.0,
+        history_length=2,
+        debug_vis=False,
+    )
 
 
 ##
 # MDP settings
 ##
-
-
 @configclass
-class CommandsCfg:
-    """Command specifications for the MDP."""
+class ObservationsCfg:
+    """Observation specifications for the MDP."""
 
-    base_velocity = mdp.UniformVelocityCommandCfg(
-        asset_name="robot",
-        resampling_time_range=(4.0, 4.0),
-        rel_standing_envs=0.0,
-        rel_heading_envs=0.0,
-        heading_command=False,
-        debug_vis=False,
-        ranges=mdp.UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(-1.0, 1.0),
-            lin_vel_y=(0.0, 0.0),
-            ang_vel_z=(0.0, 0.0),
-        ),
-    )
+    @configclass
+    class PolicyCfg(ObsGroup):
+        """Observations for the policy."""
 
+        base_lin_vel = ObsTerm(func=mdp.observations.base_lin_vel)
+        base_ang_vel = ObsTerm(func=mdp.observations.base_ang_vel)
+        projected_gravity = ObsTerm(func=mdp.observations.projected_gravity)
+        ball_joint_pos_rel = ObsTerm(
+            func=mdp.observations.joint_pos_rel,
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES)},
+        )
+        ball_joint_vel_rel = ObsTerm(
+            func=mdp.observations.joint_vel_rel,
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES)},
+        )
+        wheel_joint_vel_rel = ObsTerm(
+            func=mdp.observations.joint_vel_rel,
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=WHEEL_JOINT_NAMES)},
+        )
+        velocity_commands = ObsTerm(
+            func=mdp.observations.generated_commands, params={"command_name": "base_velocity"}
+        )
+        last_action = ObsTerm(func=mdp.observations.last_action)
+
+        def __post_init__(self) -> None:
+            self.enable_corruption = False
+            self.concatenate_terms = True
+
+    policy: PolicyCfg = PolicyCfg()
 
 @configclass
 class ActionsCfg:
@@ -170,44 +188,95 @@ class ActionsCfg:
 
 
 @configclass
-class ObservationsCfg:
-    """Observation specifications for the MDP."""
+class CommandsCfg:
+    """Command specifications for the MDP."""
 
-    @configclass
-    class PolicyCfg(ObsGroup):
-        """Observations for the policy."""
+    base_velocity = mdp.UniformVelocityCommandCfg(
+        asset_name="robot",
+        resampling_time_range=(4.0, 4.0),
+        rel_standing_envs=0.0,
+        rel_heading_envs=0.0,
+        heading_command=False,
+        debug_vis=False,
+        ranges=mdp.UniformVelocityCommandCfg.Ranges(
+            lin_vel_x=(-1.0, 1.0),
+            lin_vel_y=(0.0, 0.0),
+            ang_vel_z=(-1.0, 1.0),
+        ),
+    )
 
-        base_lin_vel = ObsTerm(func=mdp.base_lin_vel)
-        base_ang_vel = ObsTerm(func=mdp.base_ang_vel)
-        projected_gravity = ObsTerm(func=mdp.projected_gravity)
-        velocity_commands = ObsTerm(func=mdp.generated_commands, params={"command_name": "base_velocity"})
-        ball_joint_pos_rel = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES)},
-        )
-        ball_joint_vel_rel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES)},
-        )
-        wheel_joint_vel_rel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=WHEEL_JOINT_NAMES)},
-        )
-        actions = ObsTerm(func=mdp.last_action)
+@configclass
+class RewardsCfg:
+    """Reward terms for the articulated car."""
 
-        def __post_init__(self) -> None:
-            self.enable_corruption = False
-            self.concatenate_terms = True
+    track_lin_vel_xy = RewTerm(
+        func=mdp.rewards.track_lin_vel_xy_exp,
+        weight=2.0,
+        params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
+    )
+    track_ang_vel_z = RewTerm(
+        func=mdp.rewards.track_ang_vel_z_exp,
+        weight=0.5,
+        params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
+    )
+    body_orientation = RewTerm(func=mdp.rewards.flat_orientation_l2, weight=-1.0)
+    lin_vel_z = RewTerm(func=mdp.rewards.lin_vel_z_l2, weight=-0.5)
+    ang_vel_xy = RewTerm(func=mdp.rewards.ang_vel_xy_l2, weight=-0.05)
+    ball_joint_deviation = RewTerm(
+        func=mdp.rewards.joint_deviation_l1,
+        weight=-0.05,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES)},
+    )
+    ball_joint_swing = RewTerm(
+        func=mdp.rewards.joint_vel_l1,
+        weight=-0.01,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES)},
+    )
+    action_rate = RewTerm(func=mdp.rewards.action_rate_l2, weight=-0.01)
+    chassis_collision = RewTerm(
+        func=mdp.rewards.chassis_collision,
+        weight=-1.0,
+        params={
+            "sensor_names": (
+                "body_chassis_contact",
+                "head_chassis_contact",
+                "tail_chassis_contact",
+            ),
+            "threshold": 5.0,
+        },
+    )
+    termination = RewTerm(func=mdp.rewards.is_terminated, weight=-2.0)
 
-    policy: PolicyCfg = PolicyCfg()
+@configclass
+class CurriculumCfg:
+    """Manager-based curriculum terms.
 
+    Note:
+        Terrain-level curriculum rules are implemented in ``mdp/curriculums.py`` but invoked by the terrain runtime
+        env because they depend on runtime terrain state tensors such as ``terrain_levels`` and ``terrain_origins``.
+    """
+
+    pass
+
+@configclass
+class Stage1RuntimeCfg:
+    """Runtime settings for Stage1 terrain assignment and curriculum."""
+
+    flat_only_reset: bool = True
+    curriculum: bool = False
+    max_init_terrain_level: int = 0
+    move_up_distance_ratio: float = 0.5
+    move_down_command_ratio: float = 0.5
+    step_spawn_back_range: tuple[float, float] = (2.0, 3.0)
+    gap_spawn_back_range: tuple[float, float] = (0.0, 0.4)
+    other_spawn_xy_range: tuple[float, float] = (-0.5, 0.5)
 
 @configclass
 class EventCfg:
     """Configuration for reset events."""
 
     reset_base = EventTerm(
-        func=mdp.reset_root_state_uniform,
+        func=mdp.events.reset_root_state_uniform,
         mode="reset",
         params={
             "pose_range": {
@@ -227,7 +296,7 @@ class EventCfg:
     )
 
     reset_ball_joints = EventTerm(
-        func=mdp.reset_joints_by_offset,
+        func=mdp.events.reset_joints_by_offset,
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES),
@@ -237,7 +306,7 @@ class EventCfg:
     )
 
     reset_wheel_joints = EventTerm(
-        func=mdp.reset_joints_by_offset,
+        func=mdp.events.reset_joints_by_offset,
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=WHEEL_JOINT_NAMES),
@@ -248,64 +317,34 @@ class EventCfg:
 
 
 @configclass
-class RewardsCfg:
-    """Reward terms for the articulated car."""
-
-    alive = RewTerm(func=mdp.is_alive, weight=0.5)
-    terminating = RewTerm(func=mdp.is_terminated, weight=-2.0)
-    track_lin_vel_xy_exp = RewTerm(
-        func=mdp.track_lin_vel_xy_exp,
-        weight=2.0,
-        params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
-    )
-    track_ang_vel_z_exp = RewTerm(
-        func=mdp.track_ang_vel_z_exp,
-        weight=0.5,
-        params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
-    )
-    flat_orientation = RewTerm(func=mdp.flat_orientation_l2, weight=-1.0)
-    lin_vel_z = RewTerm(func=mdp.lin_vel_z_l2, weight=-0.5)
-    ang_vel_xy = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.05)
-    ball_joint_deviation = RewTerm(
-        func=mdp.joint_deviation_l1,
-        weight=-0.05,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES)},
-    )
-    ball_joint_vel = RewTerm(
-        func=mdp.joint_vel_l1,
-        weight=-0.01,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES)},
-    )
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.005)
-
-
-@configclass
 class TerminationsCfg:
     """Termination terms for the articulated car."""
 
-    time_out = DoneTerm(func=mdp.time_out, time_out=True)
-    bad_orientation = DoneTerm(func=mdp.bad_orientation, params={"limit_angle": math.radians(60.0)})
-    root_too_low = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": 0.10})
+    time_out = DoneTerm(func=mdp.terminations.time_out, time_out=True)
+    bad_orientation = DoneTerm(func=mdp.terminations.bad_orientation, params={"limit_angle": math.radians(60.0)})
+    root_too_low = DoneTerm(
+        func=mdp.terminations.root_height_below_minimum, params={"minimum_height": 0.10}
+    )
     ball_joint_out_of_bounds = DoneTerm(
-        func=mdp.joint_pos_out_of_manual_limit,
+        func=mdp.terminations.joint_pos_out_of_manual_limit,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES), "bounds": (-0.8, 0.8)},
     )
-
 
 ##
 # Environment configuration
 ##
 
-
 @configclass
 class CompleteCarRlTrainingEnvCfg(ManagerBasedRLEnvCfg):
     scene: CompleteCarRlTrainingSceneCfg = CompleteCarRlTrainingSceneCfg(num_envs=4096, env_spacing=4.0)
+    stage1: Stage1RuntimeCfg = Stage1RuntimeCfg()
     commands: CommandsCfg = CommandsCfg()
-    observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
+    observations: ObservationsCfg = ObservationsCfg()
     events: EventCfg = EventCfg()
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
+    curriculum: CurriculumCfg = CurriculumCfg()
 
     def __post_init__(self) -> None:
         """Post initialization."""

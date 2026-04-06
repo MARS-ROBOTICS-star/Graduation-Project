@@ -3,7 +3,6 @@ from isaacsim import SimulationApp
 # Start Isaac Sim before importing other Isaac Sim modules.
 simulation_app = SimulationApp({"headless": False})
 
-from pathlib import Path
 from datetime import datetime
 import csv
 import math
@@ -19,21 +18,20 @@ from isaacsim.core.prims import SingleArticulation
 from isaacsim.core.utils.stage import open_stage
 from isaacsim.core.utils.types import ArticulationAction
 
+from complete_car_rl_training.paths import COMPLETE_CAR_USD, RESULTS_DIR
 from IK_model import IK_3RRR_Spherical
 
 
 # =========================
 # 1. Basic configuration
 # =========================
-_THIS_FILE = Path(__file__).resolve()
-PROJECT_ROOT = next(parent for parent in _THIS_FILE.parents if (parent / "AGENTS.md").exists())
-USD_PATH = str(PROJECT_ROOT / "USD" / "complete_car.usd")
+USD_PATH = str(COMPLETE_CAR_USD)
 ROBOT_PRIM_PATH = "/World/complete_car_final"
 FRONT_BASE_REF_PRIM_PATH = f"{ROBOT_PRIM_PATH}/spm1_base/spm1_base_ref"
 FRONT_PLATFORM_PRIM_PATH = f"{ROBOT_PRIM_PATH}/spm1_platform"
 REAR_BASE_REF_PRIM_PATH = f"{ROBOT_PRIM_PATH}/spm2_base/spm2_base_ref"
 REAR_PLATFORM_PRIM_PATH = f"{ROBOT_PRIM_PATH}/spm2_platform"
-LOG_DIR = PROJECT_ROOT / "results" / "ik_keyboard_logs"
+LOG_DIR = RESULTS_DIR / "ik_keyboard_logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_PATH = LOG_DIR / f"ik_keyboard_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
 

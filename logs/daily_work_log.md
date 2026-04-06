@@ -3,6 +3,136 @@
 ## 2026-04-06
 
 已完成：
+- 按用户要求将完整车训练项目中的仓库路径逻辑收敛为统一入口。
+- 实际修改：
+  - 新增 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/paths.py`
+    - 统一提供 `PROJECT_ROOT`、`USD_DIR`、`RESULTS_DIR`、`COMPLETE_CAR_USD`
+  - 修改 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+    - 不再本地拼接 `_THIS_FILE / _PROJECT_ROOT / _COMPLETE_CAR_USD`
+    - 改为直接导入 `COMPLETE_CAR_USD`
+  - 修改 `src/rl_lab/complete_car_rl_training/tools/ik/test_ik_keyboard.py`
+    - 不再单独向上查找 `AGENTS.md`
+    - 改为复用统一的 `COMPLETE_CAR_USD` 与 `RESULTS_DIR`
+- 实际执行校验：
+  - `rg -n "_THIS_FILE|PROJECT_ROOT = next\\(|AGENTS.md\\)\\.exists\\(" src/rl_lab/complete_car_rl_training -S`
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/paths.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py src/rl_lab/complete_car_rl_training/tools/ik/test_ik_keyboard.py`
+- 结果：
+  - 当前活跃训练项目中的路径逻辑已集中到一个模块维护
+  - `complete_car_env_cfg.py` 与 IK 工具脚本不再重复各自写仓库根目录探测
+  - 静态编译通过
+  - 上述 `rg` 返回空结果，说明当前 `src/rl_lab/complete_car_rl_training/` 下已没有遗留的分散根目录探测写法
+
+已完成：
+- 按用户要求将训练环境 `stage1` 地形颜色进一步改为纯黑色。
+- 实际修改：
+  - `complete_car_stage1_terrain_env.py`
+    - `STAGE1_TERRAIN_DIFFUSE_COLOR: (0.10, 0.10, 0.10) -> (0.0, 0.0, 0.0)`
+- 保持不变：
+  - 地形 mesh 几何
+  - physics material
+  - reset / curriculum / reward / observation / action 逻辑
+- 实际执行校验：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
+
+已完成：
+- 按用户要求更新仓库级代码讲解规则，修改：
+  - `AGENTS.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 已固化的新规则：
+  - 以后讲解代码时默认不写完整绝对路径
+  - 优先先讲脚本整体结构
+  - 再按 import / 常量 / 类 / 函数 / 引用关系逐段、逐行分析
+  - 默认按“用户 Python 基础较弱”的教学口径解释配置对象、函数引用与数据流
+- 结果：
+  - 后续会话中的代码教学风格已统一，不再重复口头约定
+
+已完成：
+- 按用户要求继续将训练环境 `stage1` 地形颜色调深，改为更偏黑的黑灰色，以提高和周围环境的对比度。
+- 实际修改：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
+    - `STAGE1_TERRAIN_DIFFUSE_COLOR: (0.18, 0.18, 0.18) -> (0.10, 0.10, 0.10)`
+- 保持不变：
+  - 地形 mesh 几何
+  - physics material
+  - reset / curriculum / reward / observation / action 逻辑
+- 实际执行校验：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
+
+已完成：
+- 按用户要求将训练脚本与键盘控制脚本的默认运行语义统一到 GPU。
+- 实际修改：
+  - `src/rl_lab/complete_car_rl_training/scripts/rsl_rl/train.py`
+    - 未显式传 `--device` 时默认改为 `cuda:0`
+  - `scripts/isaac_sim/control_keyboard.py`
+    - `--help` 说明中明确写成默认走 Isaac Sim 的 GPU 路径
+  - `src/rl_lab/complete_car_rl_training/docs/training_workflow_and_tensorboard_guide.md`
+    - 默认训练命令、冒烟命令、回放命令统一改为 GPU 版
+    - 键盘控制章节补充“默认走 GPU，不提供单独 CPU 模式”
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+- 实际执行校验：
+  - `python src/rl_lab/complete_car_rl_training/scripts/rsl_rl/train.py --help`
+  - `python scripts/isaac_sim/control_keyboard.py --help`
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/scripts/rsl_rl/train.py`
+  - `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`
+- 结果：
+  - 当前仓库默认训练入口已切到 `cuda:0`
+  - `control_keyboard.py` 的帮助信息已与 GPU 默认语义保持一致
+- 额外说明：
+  - 这次修改统一的是仓库默认行为，不代表当前机器的 NVIDIA driver / CUDA 环境已经恢复；本机若无可用 GPU，实际运行仍会受环境阻塞
+
+已完成：
+- 按用户要求修复 `scripts/isaac_sim/control_keyboard.py` 当前“无法打开”的仓库级问题。
+- 排查结论：
+  - `--terrain stage1` 使用的 `stage1_terrain.py` 本地路径写错，导致脚本走到对应分支时无法加载训练同源地形模块。
+  - 脚本里同时还暴露了 `gap / stage2 / both` 等旧地形选项，但这些路径依赖的 `scripts/isaac_sim/terrain_preview/` 源码当前不在工作区中，已不属于可靠入口。
+- 实际修改：
+  - 修正 `scripts/isaac_sim/control_keyboard.py` 中 `STAGE1_TERRAIN_PATH`
+  - 将 `--terrain` 选项收窄为 `none / stage1`
+  - 默认地形改为 `none`
+  - 删除对缺失 `terrain_preview` 模块的旧分支依赖
+  - 同步更新 `src/rl_lab/complete_car_rl_training/docs/training_workflow_and_tensorboard_guide.md`、`docs/current_status.md`、`docs/conversation_history.md`
+- 实际执行校验：
+  - `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`
+  - `python scripts/isaac_sim/control_keyboard.py --help`
+  - `timeout 90s python -u scripts/isaac_sim/control_keyboard.py --terrain stage1 --headless --frames 1`
+- 结果：
+  - 脚本级过期路径和缺失模块问题已修复，当前文档与项目记忆也已统一到 `none / stage1` 这组真实支持范围。
+  - 本机 headless smoke run 已能完成到 `Headless smoke validation finished successfully.`，说明 `stage1` 导入、机器人初始化、共享摩擦材质绑定与训练同构控制参数应用都能走通。
+- 额外说明：
+  - 当前这台机器仍无可用 NVIDIA driver / GPU，因此 Isaac Sim 交互窗口是否能真正弹出仍受运行环境限制；这部分不再属于本轮脚本代码错误。
+
+已完成：
+- 按用户要求新增训练操作说明文档：
+  - `src/rl_lab/complete_car_rl_training/docs/training_workflow_and_tensorboard_guide.md`
+- 文档已覆盖：
+  - 训练脚本启动指令
+  - TensorBoard 查看指令
+  - 策略回放指令
+  - 键盘控制脚本指令
+  - 地形查看脚本指令
+  - 本地结果保存位置
+  - 核心 TensorBoard 图表的横纵轴、含义与好坏判断
+- 已核对 `train.py --help`、`play.py --help`、`control_keyboard.py --help`，并修复 `preview_stage1_tile.py` 与 `preview_stage1_last_six.py` 中过期的 `stage1_terrain.py` 路径，使文档中的地形查看命令恢复可用。
+- 修复 `env_isaacLab` 中 `tensorboard` 无法启动的问题。
+- 现象：
+  - 执行 `tensorboard --logdir ...` 时在 `tensorboard/default.py` 导入 `pkg_resources` 处报错
+  - 当前环境中 `setuptools==82.0.1` 可导入 `setuptools`，但已无 `pkg_resources`
+- 排查后确认：
+  - 本机 conda 缓存已存在 `setuptools-80.10.2-py311h06a4308_0.conda`
+  - 离线回退后 `pkg_resources` 恢复，`tensorboard --version` 可正常输出 `2.20.0`
+- 实际执行：
+  - `conda install -n env_isaacLab --offline -y /home/ubuntu/miniconda3/pkgs/setuptools-80.10.2-py311h06a4308_0.conda`
+  - `tensorboard --version`
+- 按用户要求将训练环境 `stage1` 地形显示颜色调整为黑灰色。
+- 修改 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`：
+  - 为 `create_prim_from_mesh("/World/terrain/stage1", ...)` 增加显式视觉材质
+  - 使用 `sim_utils.PreviewSurfaceCfg(diffuse_color=(0.18, 0.18, 0.18))`
+- 保持原有 physics material、地形 mesh 几何、reset 和 curriculum 逻辑不变。
+- 实际执行校验：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
 - 按用户要求清理 `src/` 训练脚本中的 `mgdp` 风格函数命名，重点处理：
   - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1_terrain.py`
   - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_env.py`
@@ -16,6 +146,10 @@
   - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1_terrain.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_env.py`
 
 修改文件：
+- `src/rl_lab/complete_car_rl_training/docs/training_workflow_and_tensorboard_guide.md`
+- `scripts/isaac_sim/preview_stage1_tile.py`
+- `scripts/isaac_sim/preview_stage1_last_six.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
 - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1_terrain.py`
 - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_env.py`
 - `docs/current_status.md`

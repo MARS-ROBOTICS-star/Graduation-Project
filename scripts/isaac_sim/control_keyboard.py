@@ -16,14 +16,14 @@ STAGE1_TERRAIN_PATH = (
     / "complete_car_rl_training"
     / "tasks"
     / "manager_based"
-    / "complete_car_rl_training"
     / "stage1_terrain.py"
 )
 DEFAULT_HEADLESS_FRAMES = 120
 ISAAC_SIM_ROOT = Path(os.environ.get("ISAAC_SIM_ROOT", "/home/ubuntu/isaacsim"))
 ISAAC_SIM_PYTHON = ISAAC_SIM_ROOT / "python.sh"
 REEXEC_ENV_FLAG = "CONTROL_KEYBOARD_ISAACSIM_REEXEC"
-FULL_GALLERY_ARG_CHOICES = {"stage1", "stage2", "both"}
+AVAILABLE_TERRAIN_CHOICES = ("none", "stage1")
+FULL_GALLERY_ARG_CHOICES = {"stage1"}
 
 
 def requested_full_gallery(argv: list[str]) -> bool:
@@ -65,7 +65,7 @@ from isaacsim import SimulationApp
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Keyboard teleop for the complete car with optional terrain preview."
+        description="Keyboard teleop for the complete car with optional terrain preview. Runs on Isaac Sim's default GPU path."
     )
     parser.add_argument(
         "--headless",
@@ -80,23 +80,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--terrain",
-        choices=[
-            "none",
-            "slope_ramp",
-            "stairs_up",
-            "discrete_obstacles",
-            "gap",
-            "single_gap",
-            "stepping_stones",
-            "single_bridge",
-            "air_beams",
-            "corridor",
-            "stage1",
-            "stage2",
-            "both",
-        ],
-        default="slope_ramp",
-        help="Optional terrain to build under the robot before teleop starts. 'stage1' loads the same full training terrain mesh used by RL; 'stage2' and 'both' keep using MGDP gallery previews.",
+        choices=AVAILABLE_TERRAIN_CHOICES,
+        default="none",
+        help="Optional terrain to build under the robot before teleop starts. Currently supported values are 'none' and 'stage1'.",
     )
     parser.add_argument(
         "--terrain-seed",
@@ -390,45 +376,7 @@ def maybe_build_terrain(stage):
         )
         return f"{TRAINING_TERRAIN_ROOT_PATH}/stage1/mesh"
 
-    if ARGS.terrain in FULL_GALLERY_ARG_CHOICES:
-        from terrain_preview.mgdp_gallery_builder import build_mgdp_gallery
-
-        summary = build_mgdp_gallery(
-            stage=stage,
-            gallery=ARGS.terrain,
-            root_path=TERRAIN_ROOT_PATH,
-            seed=ARGS.terrain_seed,
-            curriculum_envs=64,
-            include_markers=False,
-        )
-        print(
-            "[INFO] Built MGDP terrain gallery:",
-            summary.gallery,
-            f"(bounds_min={summary.min_corner.tolist()}, bounds_max={summary.max_corner.tolist()})",
-        )
-        print(
-            "[INFO] Robot origin aligned near gallery spawn hint:",
-            summary.spawn_origin.tolist(),
-        )
-        terrain_spawn_position = np.asarray(summary.spawn_origin, dtype=np.float64)
-        terrain_spawn_position[2] += 0.30
-        return TERRAIN_ROOT_PATH
-
-    from terrain_preview.terrain_builder import build_single_tile
-
-    spec = build_single_tile(
-        stage,
-        terrain_name=ARGS.terrain,
-        origin=TERRAIN_ORIGIN,
-        seed=ARGS.terrain_seed,
-        root_path=TERRAIN_ROOT_PATH,
-    )
-    print(
-        "[INFO] Built terrain tile:",
-        spec.name,
-        f"(origin={TERRAIN_ORIGIN}, size=({spec.length:.2f}, {spec.width:.2f}))",
-    )
-    return TERRAIN_ROOT_PATH
+    raise ValueError(f"Unsupported terrain option for the current repository state: {ARGS.terrain}")
 
 
 def ensure_shared_physics_material(stage):

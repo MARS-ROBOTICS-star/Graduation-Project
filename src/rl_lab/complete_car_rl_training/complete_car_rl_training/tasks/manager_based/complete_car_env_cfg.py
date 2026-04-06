@@ -4,7 +4,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import math
-from pathlib import Path
 
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
@@ -19,15 +18,13 @@ from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg
 from isaaclab.utils import configclass
+from complete_car_rl_training.paths import COMPLETE_CAR_USD
+
 from . import mdp
 
 ##
 # Asset configuration
 ##
-
-_THIS_FILE = Path(__file__).resolve()
-_PROJECT_ROOT = next(parent for parent in _THIS_FILE.parents if (parent / "AGENTS.md").exists())
-_COMPLETE_CAR_USD = _PROJECT_ROOT / "USD" / "complete_car.usd"
 
 BALL_JOINT_NAMES = [
     "spm1_platform_joint_z",
@@ -51,7 +48,7 @@ CONTROLLED_JOINT_NAMES = BALL_JOINT_NAMES + WHEEL_JOINT_NAMES
 
 COMPLETE_CAR_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=str(_COMPLETE_CAR_USD),
+        usd_path=str(COMPLETE_CAR_USD),
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             rigid_body_enabled=True,
@@ -74,20 +71,21 @@ COMPLETE_CAR_CFG = ArticulationCfg(
         joint_pos={name: 0.0 for name in CONTROLLED_JOINT_NAMES},
         joint_vel={name: 0.0 for name in CONTROLLED_JOINT_NAMES},
     ),
+    ##参数调整需要实验确认
     actuators={
         "ball_joints": ImplicitActuatorCfg(
             joint_names_expr=BALL_JOINT_NAMES,
-            effort_limit_sim=120.0,
+            effort_limit_sim=120.0,#旋转力矩上限
             velocity_limit_sim=6.0,
-            stiffness=80.0,
-            damping=8.0,
+            stiffness=100.0,
+            damping=10.0,
         ),
         "wheel_joints": ImplicitActuatorCfg(
             joint_names_expr=WHEEL_JOINT_NAMES,
             effort_limit_sim=80.0,
             velocity_limit_sim=20.0,
             stiffness=0.0,
-            damping=10.0,
+            damping=1e4,
         ),
     },
 )
@@ -110,6 +108,8 @@ class CompleteCarRlTrainingSceneCfg(InteractiveSceneCfg):
     )
 
     robot: ArticulationCfg = COMPLETE_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+    ##没有接触传感器，这里需要修改，之后加入cammer,激光雷达，IMU
     body_chassis_contact = ContactSensorCfg(
         prim_path="{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis",
         update_period=0.0,

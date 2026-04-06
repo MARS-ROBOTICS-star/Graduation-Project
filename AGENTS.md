@@ -453,6 +453,16 @@ When asked to help:
 7. when debugging, prioritize environment boot, articulation correctness, observation-action loop, and training launch success
 8. after a decision is made, implement it completely and explicitly
 
+### 8.1 Code explanation style rule
+When the user asks for code explanation or teaching:
+
+- do not use full absolute script paths in the narrative by default
+- prefer short local names such as `complete_car_env_cfg.py`, `mdp/rewards.py`
+- first explain the script's high-level structure
+- then explain imports, top-level constants, classes, and functions in dependency order
+- when the user asks for detailed teaching, proceed line by line or block by block instead of jumping directly to a summary
+- assume the user may have weak Python background, so explain what each config object, function reference, and data flow connection is doing in plain language
+
 When generating outputs, prefer:
 
 - executable complete code over fragments

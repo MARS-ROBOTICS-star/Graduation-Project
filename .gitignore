@@ -7,3 +7,4 @@ __pycache__/
 *.bak
 .obsidian/
 .codex
+results/training_stage_num_envs10.usda

@@ -14,6 +14,7 @@ from .stage1_terrain import (
 
 
 STAGE1_TERRAIN_PRIM_PATH = "/World/terrain/stage1"
+STAGE1_TERRAIN_DIFFUSE_COLOR = (0.0, 0.0, 0.0)
 
 
 def _offset_mesh_to_stage1_frame(terrain_cfg: Stage1TerrainCfg, terrain_mesh: trimesh.Trimesh) -> trimesh.Trimesh:
@@ -43,6 +44,7 @@ class CompleteCarStage1TerrainEnv(ManagerBasedRLEnv):
         create_prim_from_mesh(
             STAGE1_TERRAIN_PRIM_PATH,
             terrain_mesh,
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=STAGE1_TERRAIN_DIFFUSE_COLOR),
             physics_material=sim_utils.RigidBodyMaterialCfg(
                 friction_combine_mode="multiply",
                 restitution_combine_mode="multiply",

@@ -10,6 +10,27 @@
 - 阶段 1 进行中：已按“6 个球铰关节 + 6 个车轮”的联合控制速度跟踪任务把 active task 的核心代码切到新方案；当前下一步转入实际训练与稳定性校验。
 
 ## 已完成
+- 已将完整车训练项目的仓库路径收敛为统一入口：
+  - 新增 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/paths.py`
+  - 当前 `complete_car_env_cfg.py` 与 `tools/ik/test_ik_keyboard.py` 已统一从该模块读取 `PROJECT_ROOT / RESULTS_DIR / COMPLETE_CAR_USD`
+  - active task 与 IK 工具脚本中不再各自重复写 `Path(__file__)` 向上查找根目录的逻辑
+- 已在 `AGENTS.md` 固化新的代码讲解规则：
+  - 以后讲解仓库代码时，默认不再书写完整绝对路径
+  - 优先使用短文件名或局部相对名，如 `complete_car_env_cfg.py`、`mdp/rewards.py`
+  - 默认先讲脚本整体结构，再按 import / 常量 / 类 / 函数 / 引用关系逐段、逐行分析
+  - 讲解时默认按“用户 Python 基础较弱”的口径解释配置对象、函数引用与数据流
+- 已将训练环境 `stage1` 地形的视觉材质固定为黑色：`CompleteCarStage1TerrainEnv` 现为 `/World/terrain/stage1` 显式绑定 `PreviewSurface(diffuse_color=(0.0, 0.0, 0.0))`，与周围环境的对比度更高，训练时不再沿用默认地形显示色。
+- 已修复当前 `env_isaacLab` 中 `tensorboard` 启动失败问题：将 `setuptools` 从 `82.0.1` 离线回退到本机缓存的 `80.10.2` 后，`pkg_resources` 已恢复，当前 `tensorboard 2.20.0` 可正常启动。
+- 已新增训练操作说明文档 `src/rl_lab/complete_car_rl_training/docs/training_workflow_and_tensorboard_guide.md`，当前已将训练启动、TensorBoard 查看、策略回放、键盘控制、地形查看、本地结果目录与核心图表读法整合到一份中文说明中。
+- 已修复 `scripts/isaac_sim/control_keyboard.py` 的当前仓库级启动问题：
+  - `--terrain stage1` 现已改为直接加载训练同源的 `stage1_terrain.py`
+  - 旧的 `stage1_terrain.py` 路径已修正
+  - 当前脚本的 `--terrain` 选项已收窄为 `none / stage1`
+  - 之前暴露的 `gap / stage2 / both` 等选项依赖旧 `terrain_preview` 源码，但这些源码当前不在工作区中，因此不再保留为默认可用入口
+- 已将训练脚本默认运行设备统一切到 GPU：
+  - `src/rl_lab/complete_car_rl_training/scripts/rsl_rl/train.py` 现会在未显式传 `--device` 时默认使用 `cuda:0`
+  - 训练说明文档与当前默认启动命令已同步改为 GPU 版
+  - `control_keyboard.py` 继续沿用 Isaac Sim 的 GPU 运行路径，本身不提供单独的 CPU 模式
 - 已在 active task 中实现 `flat-only reset`：
   - 保留现有 `stage1` 大地图与 terrain runtime 结构
   - 默认只把所有 env 刷到 `flat` 对应列
@@ -82,14 +103,13 @@
 - 已分析 `results/ik_keyboard_logs/ik_keyboard_2026-03-27_18-53-34.csv`：新脚本下 `q_cmd -> q_sim` 跟踪已经较好，前球铰 3 轴平均绝对跟踪误差约 `[0.065, 0.049, 0.038] deg`，后球铰约 `[0.041, 0.021, 0.024] deg`，说明 articulation controller 可以平滑跟踪 joint target；但 `rpy_cmd -> rpy_meas` 明显不成立，前平台姿态平均绝对误差约 `[5.62, 4.69, 4.71] deg`，后平台约 `[2.42, 0.50, 2.20] deg`，且单轴命令会激发错误轴或相反方向，说明当前把 IK 电机角直接发给 USD 等效球铰关节这条链在语义上不成立。
 - 已分析 `results/ik_keyboard_logs/ik_keyboard_2026-03-27_17-20-44.csv`：启动零偏标定后，前平台 `raw_rpy` 均值约 `[-0.0755, 0.0809, -0.0005] deg`、后平台约 `[0.0401, -0.0129, 0.0009] deg`；对应 `corrected_rpy` 均值已压到前 `[0.0137, -0.0108, -0.0063] deg`、后 `[-0.0019, 0.0004, 0.0032] deg`，说明零偏标定已基本生效，但 `q_ik` 与 `q_sim` 仍存在明显系统误差。
 - 已按新稿整体替换 `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`：当前版本以“运动学模型”为题，内容覆盖位置/姿态/位姿、旋转矩阵、齐次变换矩阵以及 3-RRR 球面并联机构逆运动学解析求解；同时已在 `main.tex` 补入 `tikz` 与 `arrows.meta` 依赖，并通过两次 `xelatex` 编译验证。
-- 已修复 `scripts/isaac_sim/control_keyboard.py` 的当前启动链路：机器人根 prim 改回 `USD/complete_car.usd` 中真实存在的 `/World/complete_car_alternative`；脚本默认仍可在 conda shell 下自动重启到宿主 `/home/ubuntu/isaacsim/python.sh`；但当 `--terrain` 选择完整 `stage1` / `stage2` / `both` 时，会保留在 `env_isaacLab` Python 中运行，以复用 `terrain_preview` 所需的 `pydelatin` 等依赖；无显示环境下可自动转入 headless smoke 验证。
-- 已将用户新增的地形预览脚本整理到 `scripts/isaac_sim/terrain_preview/`，当前包含 `mgdp_terrain_preview.py`、`run_terrain_preview.sh` 与说明文档 `README.md`；同时修正了其中仓库根路径解析与 README 中的旧启动路径。
-- 已完成地形预览脚本的基础校验：`python3 -m py_compile scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py` 与 `bash -n scripts/isaac_sim/terrain_preview/run_terrain_preview.sh` 均通过。
-- 已将地形生成逻辑抽到 `scripts/isaac_sim/terrain_preview/terrain_builder.py`，并让 `scripts/isaac_sim/control_keyboard.py` 支持启动时同步注入单块地形；当前默认地形为 `slope_ramp`，也可通过 `--terrain` 切换为 `stairs_up`、`gap`、`corridor` 等。
-- 已新增 `scripts/isaac_sim/terrain_preview/mgdp_gallery_builder.py` 共享模块；当前 `scripts/isaac_sim/control_keyboard.py` 对 `--terrain stage2|both` 仍走 MGDP gallery preview，而 `--terrain stage1` 已改为直接接入训练时使用的整张 `stage1` mesh，不再走旧的 gallery preview 入口。
+- 已修复 `scripts/isaac_sim/control_keyboard.py` 的当前有效启动链路：
+  - 机器人根 prim 仍使用 `USD/complete_car.usd` 中真实存在的 `/World/complete_car_alternative`
+  - `--terrain stage1` 直接接入训练使用的整张 `stage1` mesh，并把机器人初始位姿对齐到训练首个 env origin `[4.0, 4.0, 0.3]`
+  - 当前脚本仅保留 `--terrain none / stage1`
+  - 旧 `terrain_preview` 相关入口不再作为当前仓库默认可用路径
 - 已实际完成 `timeout 90s python -u scripts/isaac_sim/control_keyboard.py --terrain stage1 --headless --frames 1` 冒烟验证；当前脚本会导入训练大地图 `/World/terrain/stage1/mesh`，并把机器人初始位姿对齐到训练首个 env origin `[4.0, 4.0, 0.3]` 后正常结束 smoke run。
 - 已修复 `scripts/isaac_sim/control_keyboard.py` 的 stop/play 交互问题：脚本现在会在 timeline 停回第 0 帧后再次进入 Play 时执行 `world.reset()`、重新 `initialize()` articulation 句柄，并重置键盘状态与控制目标，避免用户在 Isaac Sim 工具栏点击 `Stop -> Play` 后小车失去键盘控制。
-- 已修复完整 MGDP 画廊地形的一个 USD 构建回归：`scripts/isaac_sim/terrain_preview/terrain_builder.py` 中 `create_box()` 现会复用已有 `translate/scale` xform op，而不是在同一路径 prim 上重复 `AddTranslateOp()`，避免再次启动 `control_keyboard.py --terrain stage1|stage2` 时触发 `xformOp:translate already exists`。
 - 当前 `control_keyboard.py` 在注入地形时会优先尝试关闭常见默认地面 prim，避免原始 ground 把 `gap` 类地形“垫平”。
 - 已补全 `scripts/isaac_sim/control_keyboard.py` 在 `--terrain none` 下的接触链路：脚本现在会主动创建 `ground plane`，并给地面与六个轮子碰撞体统一绑定 `static_friction=0.5`、`dynamic_friction=0.5` 的共享物理材质。
 - 已将 `scripts/isaac_sim/control_keyboard.py` 的键盘控制链路改成与训练同构：
@@ -99,11 +119,6 @@
     - 球铰：`80 / 8 / 120 / 6`
     - 轮子：`0 / 10 / 80 / 20`
 - 已把 `control_keyboard.py` 的时间步与训练对齐为：`physics_dt = 1/120`、`action decimation = 2`，即键盘 action 按 `60 Hz` 更新、在两个物理子步之间保持不变。
-- 已将 `scripts/isaac_sim/terrain_preview/run_terrain_preview.sh` 的默认 `ISAAC_SIM_ROOT` 修正为本机真实路径 `/home/ubuntu/isaacsim`，并恢复脚本执行权限，后续可直接使用 `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh ...` 启动。
-- 已修复地形预览脚本在当前 `env_isaacLab` conda 环境下的真实启动链路：`run_terrain_preview.sh` 现会自动剥离 `CONDA_*` 变量，`mgdp_terrain_preview.py` 改为先初始化 `SimulationApp` 再导入 `omni.*`；当前已在本机通过 `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --headless --frames 1 --gallery stage1` 实际跑通，并生成 `outputs/isaacsim/mgdp_terrain_stage1.usd`。
-- 已将 MGDP 中与地形生成和 terrain curriculum 相关的脚本复制到 `scripts/isaac_sim/terrain_preview/mgdp_port/`，并改为本仓库内的相对导入，不再依赖 `isaacgym` 或 `legged_gym` 包路径。
-- 已新增 `scripts/isaac_sim/terrain_preview/mgdp_port/configs.py` 与 `curriculum.py`，将 MGDP 的 stage1 / stage2 地形参数和课程学习地形分配逻辑独立迁移到 Isaac Sim 预览路径。
-- 已将 `scripts/isaac_sim/terrain_preview/mgdp_terrain_preview.py` 改为基于 `isaaclab.app.AppLauncher` 的入口，现可直接在 `conda activate env_isaacLab` 后通过 `python` 启动 Isaac Sim 地形查看。
 - 已修复 `scripts/isaac_sim/preview_stage1_terrain.py` 的启动参数冲突：脚本不再重复声明 `--headless`，改为直接复用 `AppLauncher.add_app_launcher_args()` 注入的同名参数；当前已通过 `python ... --help` 验证参数解析正常。
 - 已确认 `preview_stage1_terrain.py` 与 `CompleteCarStage1Env` 中的“地形交叠 + 额外 grid/ground”直接根因：`TerrainImporterCfg(terrain_type="plane")` 会先自动创建 `/World/terrain/terrain` ground plane，脚本随后又 `import_mesh("stage1", ...)`，导致 plane 与 stage1 mesh 同时存在。当前已在两处入口里先删除默认 plane，再导入 stage1 mesh；`python scripts/isaac_sim/preview_stage1_terrain.py --headless --frames 1` 已在本机正常退出。
 - 已按 MGDP 原 `add_mix_terrain.py + terrain.py + terrain_utils.py` 收敛 `stage1_terrain.py` 的核心生成逻辑：`slope / pyramid / stairs / discrete_obstacles / hurdle / gap / ramp / beam / pit` 现均按 MGDP 对应函数语义生成；同时将 `env_origin` 计算改回 MGDP 的中心 `2m x 2m` patch 规则，不再对 `gap/pit/hurdle/beam` 额外特判偏移。当前 `preview_stage1_terrain.py` 与 `stage1_terrain.py` 在“地形网格生成参数”层已保持一致，二者都直接使用同一个 `Stage1TerrainCfg + build_stage1_terrain_data()`。
@@ -132,7 +147,7 @@
 - 当前训练中 `Episode_Termination/root_too_low` 长时间为 `1.0` 的旧问题仍存在于现有基线，后续迁移到 rough terrain 前后都需要重新标定。
 - `complete_car.usd` 仍存在离线不可解析或不利于 replicated RL 的残留内容，例如外部引用和内嵌 `PhysicsScene` 风险。
 - 虽然 `complete_car.usd` 的机器人本体树已收敛到 equivalent 主链，但轮子零速 drive、球铰高刚度 drive、损坏的 visual 引用和远端 `Example_Rotary` 引用仍可能导致 `Play` 后数值发散。
-- 当前终端会话下 CUDA / NVIDIA driver 不可用，GPU 训练暂不能作为默认路径。
+- 当前仓库默认入口虽已统一为 GPU，但这台机器的终端会话下 CUDA / NVIDIA driver 仍不可用；若直接按新默认路径运行，是否能真正启动仍取决于驱动环境是否恢复。
 - 当前在这台无可用 NVIDIA driver 的机器上，`export_training_stage.py` 可推进到 `gym.make(...)` 内部的 scene creation 完成，但进程会在返回到脚本自己的 `env.reset()/save_stage()` 之前退出，因此暂不能在本机可靠导出“真实训练环境 stage USD”。
 - 当前 `env_isaacLab` 虽已恢复到可启动 Isaac Sim 地形预览窗口的状态，但环境内仍残留不少偏离 Isaac Sim 5.1 官方锁定版本的第三方包，后续若再次出现扩展加载异常，应优先检查 `numpy` 与 Isaac Sim 核心依赖是否又被覆盖。
 - 当前终端会话下 `control_keyboard.py` 的 headless 冒烟验证可完成，但 Isaac Sim 在无 GPU / 无远端资源环境里启动较慢，且 `USD/complete_car.usd` 中远端 `Example_Rotary` 引用仍会产生警告；这些日志不应被误判为本轮 ground / 摩擦 / 轮速控制修复失败。
@@ -158,9 +173,12 @@
 - 清理 `USD/complete_car.usd` 的远端依赖和 replicated 不兼容项。
 - 在已对齐的机器人本体树基础上，继续清理轮子 drive、损坏的 visual 引用、远端 `Example_Rotary` 引用与内嵌 `PhysicsScene`。
 - 基于后续新日志再调节终止阈值、初始姿态和奖励权重，把 episode 从“几乎必然早终止”修到可持续 rollout。
-- 若需要继续使用 MGDP 地形预览脚本，当前默认入口应直接使用 `./scripts/isaac_sim/terrain_preview/run_terrain_preview.sh --gallery <stage1|stage2|both>`，并在 `env_isaacLab` 中启动。
+- 若需要继续检查地形几何，当前默认入口应优先使用：
+  - `python scripts/isaac_sim/preview_stage1_terrain.py`
+  - `python scripts/isaac_sim/preview_stage1_tile.py`
+  - `python scripts/isaac_sim/preview_stage1_last_six.py`
 - 若要精确检查训练环境里“是否真的导入了多张地图”，下一步应优先在有正常 GPU/驱动的 Isaac Lab 会话里运行 `python scripts/export_training_stage.py --task Complete-Car-Rl-Training-v0 --num_envs <N> --headless --device cuda:0 --save-usd <path>`，再直接读取导出的 USD 与 prim 树。
-- 若要继续做车体与地形联调，当前默认入口应直接使用 `python3 scripts/isaac_sim/control_keyboard.py --terrain <terrain_name|stage1|stage2|both>`，而不是分别手工开两个 Isaac Sim 进程。
+- 若要继续做车体与地形联调，当前默认入口应直接使用 `python3 scripts/isaac_sim/control_keyboard.py --terrain stage1`；若只想检查地形几何，则改用 `preview_stage1_terrain.py`、`preview_stage1_tile.py` 或 `preview_stage1_last_six.py`。
 - 若要人工确认训练中的 `stiffness / damping` 和轮速 target 区间是否合理，当前默认入口应优先使用 `python3 scripts/isaac_sim/control_keyboard.py --terrain stage1`；重点观察：
   - 球铰位置目标按 `scale=0.25` 后是否出现明显振荡或过慢跟踪
   - 轮速 target 默认人工区间是否主要落在 `[-8, 8] rad/s`
@@ -206,9 +224,9 @@
   - 当前阶段不加入外部地形感知
 - 当前默认启动路径：
   - 当前机器新开 `bash` 交互 shell 默认已自动进入 `env_isaacLab`；若不在该环境中，先手动激活
-  - `cd /home/lbz/Graduation-Project/src/rl_lab/complete_car_rl_training`
+  - `cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training`
   - 必要时设置 `OMNI_KIT_ACCEPT_EULA=YES`
-  - `python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --device cpu`
+  - `python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --device cuda:0`
   - 训练完成后优先查看对应 run 目录下的 `tensorboard_export/summary.json`、`latest_values.csv` 和 `scalars/*.csv`
 
 ## 关键文件
@@ -218,6 +236,7 @@
 - `FK_iteration.m`
 - `scripts/isaac_sim/preview_stage1_tile.py`
 - `src/rl_lab/complete_car_rl_training/README.md`
+- `src/rl_lab/complete_car_rl_training/docs/training_workflow_and_tensorboard_guide.md`
 - `src/rl_lab/complete_car_rl_training/docs/tensorboard_reading_guide.md`
 - `docs/literature/README.md`
 - `docs/project_file_map.md`

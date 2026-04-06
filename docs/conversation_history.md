@@ -4,6 +4,137 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-06
 
+### Project paths are now centralized in complete_car_rl_training.paths
+- Added:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/paths.py`
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+  - `src/rl_lab/complete_car_rl_training/tools/ik/test_ik_keyboard.py`
+- Durable implementation conclusion:
+  - repository-level paths for the active training project are now centralized in:
+    - `complete_car_rl_training.paths`
+  - current shared constants include:
+    - `PROJECT_ROOT`
+    - `USD_DIR`
+    - `RESULTS_DIR`
+    - `COMPLETE_CAR_USD`
+  - business files should import these shared paths instead of re-implementing local `Path(__file__)` plus upward root-discovery logic
+- Reason:
+  - the user requested that root-path handling should be unified instead of being duplicated in task code and helper scripts
+- Impact:
+  - future path changes for the active training project should be made in one place first
+  - future sessions should avoid adding new per-file root-discovery snippets under `src/rl_lab/complete_car_rl_training/`
+- Status:
+  - completed and verified with `py_compile`
+
+### Code explanation style is now standardized in AGENTS.md
+- Updated:
+  - `AGENTS.md`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable collaboration conclusion:
+  - future code walkthroughs should default to short local file names rather than full absolute paths
+  - explanation order should be:
+    - script structure first
+    - then imports / constants / classes / functions in dependency order
+    - then line-by-line or block-by-block teaching when requested
+  - explanations should assume weak Python background and explicitly explain config objects, function references, and data flow
+- Reason:
+  - the user requested a more teaching-oriented and less path-heavy code explanation style
+- Impact:
+  - future teaching sessions should follow this explanation order by default instead of jumping straight to summaries
+- Status:
+  - completed
+
+### Training default device is now unified to GPU and teleop remains on the Isaac Sim GPU path
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/scripts/rsl_rl/train.py`
+  - `scripts/isaac_sim/control_keyboard.py`
+  - `src/rl_lab/complete_car_rl_training/docs/training_workflow_and_tensorboard_guide.md`
+  - `docs/current_status.md`
+- Durable implementation conclusion:
+  - `train.py` now defaults to:
+    - `cuda:0`
+    when the user does not explicitly pass `--device`
+  - the active training guide and current default launch command were updated from CPU to GPU
+  - `control_keyboard.py` continues to run on Isaac Sim's default GPU path and does not provide a separate CPU execution mode
+- Reason:
+  - the user requested that the training script and keyboard teleop path should be unified to GPU operation
+- Impact:
+  - future sessions should treat GPU as the repository default for training and teleop
+  - if a machine lacks a usable NVIDIA driver or CUDA device, that is now an environment blocker rather than the repository default behavior
+- Status:
+  - completed and verified with `train.py --help`, `control_keyboard.py --help`, and `py_compile`
+
+### control_keyboard.py is currently narrowed to the real repository-supported terrain scope
+- Updated:
+  - `scripts/isaac_sim/control_keyboard.py`
+  - `src/rl_lab/complete_car_rl_training/docs/training_workflow_and_tensorboard_guide.md`
+- Durable implementation conclusion:
+  - the teleop script now fixes the stale local path for the training terrain source:
+    - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1_terrain.py`
+  - current supported `--terrain` values are intentionally narrowed to:
+    - `none`
+    - `stage1`
+  - `--terrain stage1` loads the real training terrain path
+  - older options such as:
+    - `gap`
+    - `stage2`
+    - `both`
+    are no longer exposed because they depended on `scripts/isaac_sim/terrain_preview/` source modules that are absent in the current repository state
+- Reason:
+  - the user reported that `control_keyboard.py` could no longer open, and the immediate repo-level cause was a broken stage1 terrain path plus outdated terrain options pointing at missing modules
+- Impact:
+  - future sessions should treat `control_keyboard.py` as a teleop entry only for:
+    - flat ground via `--terrain none`
+    - the real training `stage1` terrain via `--terrain stage1`
+  - if terrain geometry inspection is needed beyond that scope, use:
+    - `preview_stage1_terrain.py`
+    - `preview_stage1_tile.py`
+    - `preview_stage1_last_six.py`
+- Status:
+  - completed and verified with `py_compile` plus `--help`
+
+### A consolidated training operations guide now exists under the active RL docs
+- Added:
+  - `src/rl_lab/complete_car_rl_training/docs/training_workflow_and_tensorboard_guide.md`
+- Durable documentation conclusion:
+  - the active RL project now has one Chinese guide that consolidates:
+    - train command
+    - TensorBoard launch command
+    - policy playback command
+    - keyboard teleop command
+    - terrain preview commands
+    - local output locations
+    - how to read the core TensorBoard figures
+  - future sessions that need to explain the RL workflow should start from this guide instead of reconstructing the same commands and reading rules each time
+- Status:
+  - completed
+
+### TensorBoard in env_isaacLab currently requires setuptools pinned below 81
+- Updated:
+  - local conda environment `env_isaacLab`
+- Durable environment conclusion:
+  - with `tensorboard==2.20.0`, `setuptools==82.0.1` in `env_isaacLab` does not provide `pkg_resources`, so the `tensorboard` CLI crashes at startup
+  - downgrading to the locally cached `setuptools==80.10.2` restores `pkg_resources` and makes `tensorboard --version` / `tensorboard --logdir ...` work again
+- Impact:
+  - future package updates in `env_isaacLab` should avoid upgrading `setuptools` to `>=81` unless TensorBoard is updated to a version that no longer imports `pkg_resources`
+- Status:
+  - completed and verified locally
+
+### Training stage1 terrain now uses an explicit black visual material
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_stage1_terrain_env.py`
+- Durable implementation conclusion:
+  - the live RL terrain mesh at `/World/terrain/stage1` is now created with:
+    - `PreviewSurfaceCfg(diffuse_color=(0.0, 0.0, 0.0))`
+  - the change affects training-time viewport appearance only
+  - physics material, terrain geometry, reset logic, and curriculum logic are unchanged
+- Impact:
+  - future appearance changes for the training terrain should be made in the runtime terrain env, not in `stage1_terrain.py`
+- Status:
+  - completed and verified with `py_compile`
+
 ### Stage 1 active task is now implemented as flat-only reset on top of the existing stage1 terrain runtime
 - Updated:
   - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`

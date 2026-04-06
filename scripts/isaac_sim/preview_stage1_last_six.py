@@ -21,7 +21,6 @@ STAGE1_TERRAIN_PATH = (
     / "complete_car_rl_training"
     / "tasks"
     / "manager_based"
-    / "complete_car_rl_training"
     / "stage1_terrain.py"
 )
 

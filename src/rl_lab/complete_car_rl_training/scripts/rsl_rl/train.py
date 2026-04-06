@@ -41,6 +41,10 @@ cli_args.add_rsl_rl_args(parser)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
 
+# Default to the first CUDA device unless the user explicitly overrides it.
+if args_cli.device is None:
+    args_cli.device = "cuda:0"
+
 # always enable cameras to record video
 if args_cli.video:
     args_cli.enable_cameras = True

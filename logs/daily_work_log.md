@@ -2196,3 +2196,30 @@
 
 下一步：
 - 用新的阶段 1 配置做一次实际训练冒烟，确认 `flat-only reset`、contact reward 和 `ang_vel_z` 命令生效情况。
+
+## 2026-04-06
+
+已完成：
+- 按用户要求将当前整个项目工作区上传到 GitHub。
+- 已先把以下内容加入 `.gitignore`，未纳入本次提交：
+  - `.obsidian/`
+  - `.codex`
+- 已对整个当前工作区执行：
+  - `git add -A`
+  - `git commit -m "upload current project state"`
+  - `git push origin main`
+- 推送结果：
+  - 本地 `main` 已成功推送到 `origin/main`
+  - 最新提交为：`2a9cfeb upload current project state`
+
+修改文件：
+- `.gitignore`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前本地代码与 GitHub 远程主分支已同步。
+- `.obsidian` 与 `.codex` 已从版本管理范围排除，后续不会再被误提交。
+
+下一步：
+- 若继续推进训练主线，直接基于当前 `origin/main` 的 `2a9cfeb` 开始即可。

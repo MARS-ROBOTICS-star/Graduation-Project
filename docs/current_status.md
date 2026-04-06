@@ -3,6 +3,7 @@
 ## 当前总目标
 - 在 Isaac Lab 中构建可稳定训练、可控、可复现的三节完整车 RL 主线。
 - 当前优先完成新的第一阶段 baseline：`flat-only` 场景下的本体感知联合控制速度跟踪任务。
+- 当前本地仓库最新代码已同步推送到 GitHub `origin/main`，最新提交为 `2a9cfeb`。
 
 ## 当前阶段
 - 阶段 0 已完成：`reset -> step -> reward -> termination -> train` 闭环已实际跑通。

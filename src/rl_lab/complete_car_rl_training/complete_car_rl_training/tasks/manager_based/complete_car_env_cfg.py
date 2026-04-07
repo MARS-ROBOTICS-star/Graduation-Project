@@ -16,7 +16,6 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import ContactSensorCfg
 from isaaclab.utils import configclass
 from complete_car_rl_training.paths import COMPLETE_CAR_USD
 
@@ -49,7 +48,7 @@ CONTROLLED_JOINT_NAMES = BALL_JOINT_NAMES + WHEEL_JOINT_NAMES
 COMPLETE_CAR_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
         usd_path=str(COMPLETE_CAR_USD),
-        activate_contact_sensors=True,
+        activate_contact_sensors=False,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             rigid_body_enabled=True,
             disable_gravity=False,
@@ -85,7 +84,7 @@ COMPLETE_CAR_CFG = ArticulationCfg(
             effort_limit_sim=80.0,
             velocity_limit_sim=20.0,
             stiffness=0.0,
-            damping=1e4,
+            damping=1e3,
         ),
     },
 )
@@ -109,26 +108,6 @@ class CompleteCarRlTrainingSceneCfg(InteractiveSceneCfg):
 
     robot: ArticulationCfg = COMPLETE_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
-    ##没有接触传感器，这里需要修改，之后加入cammer,激光雷达，IMU
-    body_chassis_contact = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis",
-        update_period=0.0,
-        history_length=2,
-        debug_vis=False,
-    )
-    head_chassis_contact = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis",
-        update_period=0.0,
-        history_length=2,
-        debug_vis=False,
-    )
-    tail_chassis_contact = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/complete_car_alternative/tail_car_chassis",
-        update_period=0.0,
-        history_length=2,
-        debug_vis=False,
-    )
-
 
 ##
 # MDP settings
@@ -138,7 +117,7 @@ class ObservationsCfg:
     """Observation specifications for the MDP."""
 
     @configclass
-    class PolicyCfg(ObsGroup):
+    class FlatBaselineCfg(ObsGroup):
         """Observations for the policy."""
 
         base_lin_vel = ObsTerm(func=mdp.observations.base_lin_vel)
@@ -165,7 +144,7 @@ class ObservationsCfg:
             self.enable_corruption = False
             self.concatenate_terms = True
 
-    policy: PolicyCfg = PolicyCfg()
+    FlatBaseline: FlatBaselineCfg = FlatBaselineCfg()
 
 @configclass
 class ActionsCfg:
@@ -174,14 +153,14 @@ class ActionsCfg:
     ball_joint_pos = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=BALL_JOINT_NAMES,
-        scale=0.25,
+        scale=0.25,#q_target ≈ 0.25 * a_raw
         use_default_offset=True,
         preserve_order=True,
     )
     wheel_joint_vel = mdp.JointVelocityActionCfg(
         asset_name="robot",
         joint_names=WHEEL_JOINT_NAMES,
-        scale=8.0,
+        scale=8.0,#dq_target ≈ 8.0 * a_raw
         use_default_offset=True,
         preserve_order=True,
     )
@@ -198,8 +177,11 @@ class CommandsCfg:
         rel_heading_envs=0.0,
         heading_command=False,
         debug_vis=False,
+        # Keep roughly the old |wz| <= 1.0 command scale when |vx| <= 2.0.
+        curvature_range=(-0.5, 0.5),
+        turn_lin_vel_threshold=0.1,
         ranges=mdp.UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(-1.0, 1.0),
+            lin_vel_x=(-2.0, 2.0),
             lin_vel_y=(0.0, 0.0),
             ang_vel_z=(-1.0, 1.0),
         ),
@@ -212,39 +194,28 @@ class RewardsCfg:
     track_lin_vel_xy = RewTerm(
         func=mdp.rewards.track_lin_vel_xy_exp,
         weight=2.0,
-        params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
+        params={"command_name": "base_velocity", "std": math.sqrt(0.5)},
     )
     track_ang_vel_z = RewTerm(
         func=mdp.rewards.track_ang_vel_z_exp,
-        weight=0.5,
+        weight=2.0,
         params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
     )
-    body_orientation = RewTerm(func=mdp.rewards.flat_orientation_l2, weight=-1.0)
-    lin_vel_z = RewTerm(func=mdp.rewards.lin_vel_z_l2, weight=-0.5)
-    ang_vel_xy = RewTerm(func=mdp.rewards.ang_vel_xy_l2, weight=-0.05)
-    ball_joint_deviation = RewTerm(
-        func=mdp.rewards.joint_deviation_l1,
-        weight=-0.05,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES)},
-    )
+    body_orientation = RewTerm(func=mdp.rewards.flat_orientation_l2, weight=-5.0)
+    lin_vel_z = RewTerm(func=mdp.rewards.lin_vel_z_l2, weight=-2.0)
+    ang_vel_xy = RewTerm(func=mdp.rewards.ang_vel_xy_l2, weight=-1.0)
+
+    # ball_joint_deviation = RewTerm(
+    #     func=mdp.rewards.joint_deviation_l1,
+    #     weight=-0.5,
+    #     params={"asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES)},
+    # )
     ball_joint_swing = RewTerm(
         func=mdp.rewards.joint_vel_l1,
-        weight=-0.01,
+        weight=-0.1,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES)},
     )
     action_rate = RewTerm(func=mdp.rewards.action_rate_l2, weight=-0.01)
-    chassis_collision = RewTerm(
-        func=mdp.rewards.chassis_collision,
-        weight=-1.0,
-        params={
-            "sensor_names": (
-                "body_chassis_contact",
-                "head_chassis_contact",
-                "tail_chassis_contact",
-            ),
-            "threshold": 5.0,
-        },
-    )
     termination = RewTerm(func=mdp.rewards.is_terminated, weight=-2.0)
 
 @configclass
@@ -285,12 +256,12 @@ class EventCfg:
                 "yaw": (-0.25 * math.pi, 0.25 * math.pi),
             },
             "velocity_range": {
-                "x": (-0.2, 0.2),
-                "y": (-0.2, 0.2),
-                "z": (-0.1, 0.1),
-                "roll": (-0.1, 0.1),
-                "pitch": (-0.1, 0.1),
-                "yaw": (-0.2, 0.2),
+                "x": (0, 0),
+                "y": (0, 0),
+                "z": (0, 0),
+                "roll": (0, 0),
+                "pitch": (0, 0),
+                "yaw": (0, 0),
             },
         },
     )
@@ -300,8 +271,8 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES),
-            "position_range": (-0.15, 0.15),
-            "velocity_range": (-0.1, 0.1),
+            "position_range": (0.0, 0.0),
+            "velocity_range": (0.0, 0.0),
         },
     )
 
@@ -321,10 +292,8 @@ class TerminationsCfg:
     """Termination terms for the articulated car."""
 
     time_out = DoneTerm(func=mdp.terminations.time_out, time_out=True)
-    bad_orientation = DoneTerm(func=mdp.terminations.bad_orientation, params={"limit_angle": math.radians(60.0)})
-    root_too_low = DoneTerm(
-        func=mdp.terminations.root_height_below_minimum, params={"minimum_height": 0.10}
-    )
+    bad_orientation = DoneTerm(func=mdp.terminations.bad_orientation, params={"limit_angle": math.radians(45.0)})
+    #此处限制的是球铰任一自由度方向在[-0.8,0.8]rad,=[-45.8,45.8]度
     ball_joint_out_of_bounds = DoneTerm(
         func=mdp.terminations.joint_pos_out_of_manual_limit,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=BALL_JOINT_NAMES), "bounds": (-0.8, 0.8)},
@@ -336,7 +305,7 @@ class TerminationsCfg:
 
 @configclass
 class CompleteCarRlTrainingEnvCfg(ManagerBasedRLEnvCfg):
-    scene: CompleteCarRlTrainingSceneCfg = CompleteCarRlTrainingSceneCfg(num_envs=4096, env_spacing=4.0)
+    scene: CompleteCarRlTrainingSceneCfg = CompleteCarRlTrainingSceneCfg(num_envs=512, env_spacing=4.0)
     stage1: Stage1RuntimeCfg = Stage1RuntimeCfg()
     commands: CommandsCfg = CommandsCfg()
     actions: ActionsCfg = ActionsCfg()
@@ -349,7 +318,8 @@ class CompleteCarRlTrainingEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self) -> None:
         """Post initialization."""
         self.decimation = 2
-        self.episode_length_s = 8.0
-        self.viewer.eye = (8.0, 0.0, 5.0)
+        self.episode_length_s = 16
+        self.viewer.eye = (-53.885, 43.696, 64.903)
+        self.viewer.lookat = (-53.054, 43.698, 64.346)
         self.sim.dt = 1 / 120
         self.sim.render_interval = self.decimation

@@ -47,7 +47,11 @@ python -m pip install -e . --no-build-isolation
 ### 2.1 最常用训练指令
 
 ```bash
-python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --device cuda:0
+cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
+python scripts/rsl_rl/train.py \
+  --task Complete-Car-Rl-Training-v0 \
+  --num_envs 100 \
+  --headless
 ```
 
 含义：

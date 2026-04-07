@@ -10,16 +10,20 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, R
 
 @configclass
 class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    num_steps_per_env = 16
-    max_iterations = 150
-    save_interval = 50
+    num_steps_per_env = 24
+    max_iterations = 500
+    save_interval = 100
     experiment_name = "complete_car_rl_training"
+    obs_groups = {
+        "actor": ["FlatBaseline"],
+        "critic": ["FlatBaseline"],
+    }
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
-        actor_obs_normalization=False,
-        critic_obs_normalization=False,
-        actor_hidden_dims=[32, 32],
-        critic_hidden_dims=[32, 32],
+        actor_obs_normalization=True,
+        critic_obs_normalization=True,
+        actor_hidden_dims=[256,128,64],
+        critic_hidden_dims=[256,128,64],
         activation="elu",
     )
     algorithm = RslRlPpoAlgorithmCfg(
@@ -29,7 +33,7 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         entropy_coef=0.005,
         num_learning_epochs=5,
         num_mini_batches=4,
-        learning_rate=1.0e-3,
+        learning_rate=3.0e-3,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,

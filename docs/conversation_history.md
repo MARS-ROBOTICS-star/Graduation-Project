@@ -2,6 +2,89 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-07
+
+### Stage1 wheel action remains six independent wheel velocities
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/__init__.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+  - `README.md`
+- Durable implementation conclusion:
+  - after a brief local experiment with axle-coupled wheel actions, the user decided to restore the Stage1 wheel action to:
+    - six independent wheel-velocity targets
+  - the current policy action dimension is therefore back to:
+    - `12 = 6 ball + 6 wheel`
+- Reason:
+  - the user explicitly requested reverting the wheel action space back to six independently controlled wheels
+- Impact:
+  - future Stage1 training and result interpretation should continue to use the original six-wheel action semantics unless the user explicitly changes the task definition again
+- Status:
+  - reverted and verified with `py_compile`
+
+### Stage1 velocity command now samples linear speed plus curvature instead of sampling yaw rate independently
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/commands.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- Durable implementation conclusion:
+  - the Stage1 `base_velocity` command no longer samples `ang_vel_z` independently as the primary source
+  - it now samples:
+    - `v_x ~ U(v_min, v_max)`
+    - `kappa ~ U(-kappa_max, kappa_max)`
+  - and computes:
+    - `omega_z = v_x * kappa`
+  - additionally, when:
+    - `|v_x| < v_th`
+    the command generator forces:
+    - `omega_z = 0`
+- Current active default values:
+  - `v_x ∈ [-2.0, 2.0]`
+  - `kappa ∈ [-0.5, 0.5]`
+  - `v_th = 0.1`
+- Reason:
+  - the user requested a command design closer to vehicle curvature semantics, avoiding the previous mismatch where yaw-rate was sampled independently of forward speed
+- Impact:
+  - future Stage1 training analysis should interpret yaw commands as speed-coupled turning commands
+  - direct comparison with older runs that used independently sampled `ang_vel_z` should explicitly note this command-distribution change
+
+### Active task default viewer pose now matches the user-picked map-preview viewpoint
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- Durable implementation conclusion:
+  - the active task now sets:
+    - `viewer.eye = (-53.885, 43.696, 64.903)`
+    - `viewer.lookat = (-53.054, 43.698, 64.346)`
+  - the viewer pose was taken from the current Isaac Sim viewport camera after the user manually adjusted a suitable overview of the preview map
+- Impact:
+  - future GUI launches of the active task should open from this same default overview instead of the older local close-up view
+- Status:
+  - completed and verified with `py_compile`
+
+### Stage 1 baseline no longer uses chassis-collision reward or chassis contact sensors
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/rewards.py`
+- Durable implementation conclusion:
+  - the active Stage 1 baseline no longer includes:
+    - chassis collision penalty
+  - the three scene-level chassis contact sensors were removed together with that reward
+  - the remaining reward set is now:
+    - linear-velocity tracking
+    - angular-velocity tracking
+    - body-orientation stability
+    - `lin_vel_z` penalty
+    - `ang_vel_xy` penalty
+    - action-rate penalty
+    - spherical-joint deviation penalty
+    - spherical-joint swing penalty
+    - termination penalty
+- Reason:
+  - the user decided that the baseline should not depend on a simulator-only chassis-contact signal that is not part of the current real-robot default sensing route
+- Impact:
+  - future Stage 1 tuning should not assume any chassis-contact reward signal exists
+  - if body-ground interference needs to be handled later, it should be reintroduced only after the sensing and deployment meaning are explicitly defined
+- Status:
+  - completed and verified with `py_compile`
+
 ## 2026-04-06
 
 ### Project paths are now centralized in complete_car_rl_training.paths
@@ -43,6 +126,27 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - the user requested a more teaching-oriented and less path-heavy code explanation style
 - Impact:
   - future teaching sessions should follow this explanation order by default instead of jumping straight to summaries
+- Status:
+  - completed
+
+### Preferred teaching rhythm for code walkthroughs is now explicitly standardized
+- Updated:
+  - `AGENTS.md`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable collaboration conclusion:
+  - future code teaching should follow this rhythm by default:
+    - first explain the script's role in the larger system
+    - then explain the top-level structure
+    - then walk downward in source order block by block
+    - for each block, explain its purpose first and then explain the important lines
+    - explicitly distinguish between reference/registration and real executable logic
+    - after each major section, reconnect the explanation to the RL loop
+  - this rhythm was explicitly confirmed by the user as the preferred pacing, depth, and content balance
+- Reason:
+  - the user stated that this explanation rhythm, pacing, and content balance works well and requested that it become the default
+- Impact:
+  - future code walkthroughs should keep the same teaching cadence instead of switching to terse summaries or file-inventory style explanations
 - Status:
   - completed
 
@@ -188,13 +292,8 @@ This file stores durable conclusions from past Codex sessions so that future ses
     - action-rate penalty
     - spherical-joint deviation penalty
     - spherical-joint swing penalty
-    - chassis collision penalty
     - termination penalty
   - the previous `alive` reward was removed
-  - chassis collision is now implemented through explicit contact sensors on:
-    - `body_car_chassis`
-    - `head_car_chassis`
-    - `tail_car_chassis`
 - Reason:
   - the user requested that the agreed Stage 1 flat-only baseline should stop living only in planning notes and be written into the active training task
 - Impact:
@@ -1722,3 +1821,367 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Verification result:
   - `timeout 90s python -u scripts/isaac_sim/control_keyboard.py --terrain stage1 --headless --frames 1` completed successfully in the current environment
   - runtime logs confirmed the new terrain import path, terrain friction binding target `/World/terrain/stage1/mesh`, robot spawn reposition, and completion of the smoke run
+
+## 2026-04-07
+
+### RSL-RL observation group mapping fix for Stage1 training
+- Diagnosed the training launch failure after environment creation:
+  - scene creation, action manager, observation manager, reward manager, and termination manager all initialized successfully
+  - the actual failure happened when `OnPolicyRunner` constructed PPO and resolved observation sets
+- Durable root cause:
+  - the environment exports a single observation group named `FlatBaseline`
+  - the local PPO config did not define `obs_groups`
+  - with the current `rsl_rl` version, an empty `obs_groups` no longer auto-resolves to actor/critic unless the environment exposes groups named `actor`, `critic`, or `policy`
+  - therefore runner construction failed with:
+    - missing `actor` key in `obs_groups`
+    - no suitable observation group found in environment observations
+- Implemented fix:
+  - in `tasks/manager_based/agents/rsl_rl_ppo_cfg.py`, added
+    - `obs_groups = {"actor": ["FlatBaseline"], "critic": ["FlatBaseline"]}`
+- Impact:
+  - the current Stage1 baseline now explicitly tells `rsl_rl` to use the sole proprioceptive observation group for both actor and critic
+  - future sessions should treat `obs_groups` as a required part of local PPO config whenever observation group names are custom and not `policy`
+
+### Training comparison: 2026-04-07_12-25-02 vs 2026-04-06_21-59-12
+- Compared the two Stage1 runs after the user observed that the newer policy tends to spin in place during playback.
+- Durable conclusion:
+  - the degradation in `2026-04-07_12-25-02` cannot be attributed to removing `chassis_collision`
+  - in the older run, `Episode_Reward/chassis_collision` stayed at `0.0` through the end, so that term was not actively shaping behavior
+- Quantitative comparison:
+  - old run:
+    - `Train/mean_reward`: `0.449 -> 2.972`
+    - `Train/mean_episode_length`: `25 -> 397`
+    - `Metrics/base_velocity/error_vel_xy`: `0.0 -> 1.293`
+    - `Metrics/base_velocity/error_vel_yaw`: `0.0 -> 1.756`
+  - new run:
+    - `Train/mean_reward`: `0.354 -> 1.320`
+    - `Train/mean_episode_length`: `29 -> 741.56`
+    - `Metrics/base_velocity/error_vel_xy`: `0.0 -> 3.785`
+    - `Metrics/base_velocity/error_vel_yaw`: `0.0 -> 3.913`
+- Important interpretation constraint:
+  - `mean_episode_length` is not directly comparable in absolute value because `episode_length_s` changed from `8s` to `16s`
+  - normalized by max horizon, the new run is not better on survival
+  - both runs finish with `Episode_Termination/time_out = 1.0` and no `root_too_low / bad_orientation / ball_joint_out_of_bounds`, so the new policy is mainly learning to survive, not to track
+- Additional confounding changes between the two runs:
+  - `wheel_joints.damping: 10.0 -> 1e4`
+  - `ball_joints.stiffness/damping: 80/8 -> 100/10`
+  - `lin_vel_x` command range: `[-1, 1] -> [-2, 2]`
+  - `episode_length_s: 8 -> 16`
+- Durable diagnosis:
+  - the current “spin in place / weak locomotion” behavior is more consistent with a stable-but-unproductive local optimum caused by changed actuation and harder commands than with removal of the collision term
+  - without wheel-ground contact metrics, playback alone cannot prove that the wheels are airborne; current scalars only prove poor task execution, not the exact contact failure mode
+- Status:
+  - future comparisons that aim to isolate the effect of reward removal must revert to single-variable changes instead of bundling actuator, command, and horizon edits into the same run
+
+### Training diagnosis: 2026-04-07_13-13-46 with wheel damping 1e3, 512 envs, 400 iterations
+- Diagnosed run `2026-04-07_13-13-46` after the user changed:
+  - wheel damping to `1e3`
+  - `num_envs` to `512`
+  - `max_iterations` to `400`
+- Durable result:
+  - compared with `2026-04-07_12-53-43`, this run shows a genuine improvement in task performance, not just a reward-rescaling artifact
+- Key metrics at the end of training:
+  - `Train/mean_reward`: `26.43`
+  - `Train/mean_episode_length`: `880.97`
+  - `Metrics/base_velocity/error_vel_xy`: `0.713`
+  - `Metrics/base_velocity/error_vel_yaw`: `1.946`
+  - `Episode_Reward/track_lin_vel_xy`: `1.79`
+  - `Episode_Reward/track_ang_vel_z`: `0.23`
+- Comparison with `2026-04-07_12-53-43`:
+  - `mean_reward`: `5.90 -> 26.43`
+  - `mean_episode_length`: `741.56 -> 880.97`
+  - `error_vel_xy`: `3.52 -> 0.71`
+  - `error_vel_yaw`: `4.32 -> 1.95`
+- Interpretation:
+  - the baseline has moved out of the previous “survival-first, poor-tracking” regime
+  - linear velocity tracking is now meaningfully learned
+  - yaw tracking is improved but still materially weaker than xy tracking
+  - this run is a usable Stage1 baseline, but not yet a polished final baseline
+- Remaining issues at the end of the run:
+  - `Episode_Termination/time_out ≈ 0.754`
+  - `Episode_Termination/root_too_low ≈ 0.182`
+  - `Episode_Termination/ball_joint_out_of_bounds ≈ 0.064`
+  - thus a non-trivial fraction of episodes still end by failure rather than timeout
+- Durable recommendation:
+  - keep `wheel damping = 1e3`, `num_envs = 512`, and `max_iterations = 400` as the current default baseline training scale
+  - subsequent work should focus on small adjustments around yaw tracking and failure reduction rather than another large redefinition of the baseline
+
+### Training comparison: 2026-04-07_13-32-34 vs 2026-04-07_13-13-46 after raising yaw reward weight
+- Compared run `2026-04-07_13-32-34` against `2026-04-07_13-13-46`.
+- The only material config change was:
+  - `track_ang_vel_z.weight: 0.5 -> 2.0`
+- Durable outcome:
+  - raising yaw reward weight to match linear velocity weight materially improved yaw tracking
+  - but it slightly degraded linear velocity tracking and did not materially reduce failure terminations
+- Quantitative comparison at the end:
+  - `error_vel_yaw: 1.946 -> 0.880`
+  - `error_vel_xy: 0.713 -> 0.834`
+  - `time_out: 0.754 -> 0.757` (essentially unchanged)
+  - `root_too_low: 0.182 -> 0.176` (essentially unchanged)
+  - `ball_joint_out_of_bounds: 0.064 -> 0.066` (essentially unchanged)
+- Important interpretation rule:
+  - `Train/mean_reward` jumped from `26.43` to `41.21`, but this is not a fair apples-to-apples improvement signal because the yaw reward weight itself was multiplied by 4
+  - for this pair of runs, the correct primary comparison metrics are the velocity errors and termination distribution, not total reward
+- Durable diagnosis:
+  - the policy responded to the stronger yaw incentive exactly as expected: it spent more capacity improving yaw tracking
+  - however, this rebalancing traded away some xy tracking quality and did not improve survival
+  - therefore `track_ang_vel_z.weight = 2.0` is likely too aggressive for the intended simple Stage1 baseline
+- Recommended next direction:
+  - use an intermediate yaw weight, likely `1.0` or `1.5`, instead of either `0.5` or `2.0`
+  - keep `wheel damping = 1e3`, `num_envs = 512`, `max_iterations = 400`, and current reward std settings unchanged while testing that intermediate weight
+
+### Training comparison: 2026-04-07_13-41-53 vs 2026-04-07_13-32-34 after lowering yaw reward weight
+- Compared run `2026-04-07_13-41-53` against `2026-04-07_13-32-34`.
+- The only material config change was:
+  - `track_ang_vel_z.weight: 2.0 -> 1.5`
+- Durable outcome:
+  - lowering yaw weight slightly improved xy tracking but did not further improve yaw tracking
+  - it also worsened survival and failure-term distribution
+- Quantitative comparison at the end:
+  - `error_vel_xy: 0.834 -> 0.677` (improved)
+  - `error_vel_yaw: 0.880 -> 0.885` (essentially unchanged / slightly worse)
+  - `time_out: 0.757 -> 0.678` (worse)
+  - `root_too_low: 0.176 -> 0.207` (worse)
+  - `ball_joint_out_of_bounds: 0.066 -> 0.117` (worse)
+- Interpretation:
+  - reducing yaw reward from `2.0` to `1.5` gave some optimization capacity back to linear-velocity tracking
+  - however, the policy became less stable overall and did not gain a meaningful yaw benefit
+- Durable current judgment:
+  - among the two runs, `2026-04-07_13-32-34` remains the better Stage1 baseline candidate because it preserves much better survival while already delivering strong yaw improvement
+  - `1.5` is not clearly better than `2.0` for the current task definition
+
+### Direct follow-up tuning confirmed 2026-04-07_13-32-34 as today's default Stage1 baseline
+- After the earlier pairwise comparisons, three direct GPU follow-up runs were executed outside the sandbox using:
+  - `python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --num_envs 512 --max_iterations 400 --headless`
+- Baseline reference:
+  - `2026-04-07_13-32-34`
+  - final metrics:
+    - `mean_reward = 41.21`
+    - `mean_episode_length = 841.79`
+    - `error_vel_xy = 0.834`
+    - `error_vel_yaw = 0.880`
+    - `time_out = 0.757`
+    - `root_too_low = 0.176`
+    - `ball_joint_out_of_bounds = 0.066`
+- Follow-up run `2026-04-07_13-56-35`:
+  - config changes relative to `13-32-34`:
+    - tightened `reset_base` z/roll/pitch perturbations
+    - tightened `reset_ball_joints`
+    - reduced `ball_joint_pos` action scale from `0.25` to `0.20`
+  - outcome:
+    - `error_vel_xy = 0.756`
+    - `error_vel_yaw = 0.870`
+    - `time_out = 0.690`
+    - `root_too_low = 0.215`
+    - `ball_joint_out_of_bounds = 0.096`
+  - durable conclusion:
+    - tightening reset plus reducing ball-joint authority did not improve balance
+    - it mainly hurt survival and joint-bound behavior
+- Follow-up run `2026-04-07_14-02-02`:
+  - only material change relative to `13-32-34`:
+    - `ball_joint_deviation.weight: -0.05 -> -0.08`
+  - outcome:
+    - `mean_reward = 38.07`
+    - `mean_episode_length = 802.05`
+    - `error_vel_xy = 0.938`
+    - `error_vel_yaw = 1.063`
+    - `time_out = 0.652`
+    - `root_too_low = 0.202`
+    - `ball_joint_out_of_bounds = 0.146`
+  - durable conclusion:
+    - directly strengthening spherical-joint deviation regularization was harmful for this task
+    - it worsened both tracking and failure-term distribution
+- Follow-up run `2026-04-07_14-06-10`:
+  - only material change relative to `13-32-34`:
+    - `termination.weight: -2.0 -> -4.0`
+  - outcome:
+    - `mean_reward = 40.07`
+    - `mean_episode_length = 840.76`
+    - `error_vel_xy = 0.937`
+    - `error_vel_yaw = 1.006`
+    - `time_out = 0.714`
+    - `root_too_low = 0.176`
+    - `ball_joint_out_of_bounds = 0.110`
+  - durable conclusion:
+    - making termination penalty harsher did not improve overall balance
+    - it preserved episode length roughly, but worsened timeout share and joint-bound failures
+- Durable current judgment:
+  - among all runs tested today, `2026-04-07_13-32-34` remains the most balanced Stage1 flat-only baseline
+  - keep as default:
+    - `wheel_joints.damping = 1e3`
+    - `track_lin_vel_xy.std = 1.0`
+    - `track_ang_vel_z.weight = 2.0`
+    - `termination.weight = -2.0`
+    - original reset perturbations
+    - `ball_joint_pos.scale = 0.25`
+  - do not immediately retest these four directions without a new hypothesis:
+    - tighter reset perturbations
+    - lower spherical-joint action scale
+    - stronger `ball_joint_deviation`
+    - stronger termination penalty
+
+### Current user-tuned config snapshot and Stage1 no-ball-reset decision
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/agents/rsl_rl_ppo_cfg.py`
+- Durable implementation conclusion:
+  - the user manually changed the current working config away from the `13-32-34` baseline in two directions:
+    - environment/reward/termination became much stricter
+    - PPO model and rollout scale became larger
+  - key current environment-side changes include:
+    - `track_lin_vel_xy.std = sqrt(0.5)`
+    - `body_orientation = -5.0`
+    - `lin_vel_z = -2.0`
+    - `ang_vel_xy = -1.0`
+    - `ball_joint_deviation = -0.5`
+    - `ball_joint_swing = -0.1`
+    - `bad_orientation.limit_angle = 45 deg`
+    - `root_too_low.minimum_height = 0.15`
+  - key current PPO-side changes include:
+    - `num_steps_per_env = 24`
+    - `max_iterations = 1000`
+    - `save_interval = 200`
+    - observation normalization enabled for actor and critic
+    - hidden dims changed to `[256, 128, 64]`
+    - `learning_rate = 3e-3`
+- Durable Stage1 decision:
+  - spherical-joint reset perturbation is not needed for the current simple Stage1 baseline
+  - therefore `reset_ball_joints` has been changed to:
+    - `position_range = (0.0, 0.0)`
+    - `velocity_range = (0.0, 0.0)`
+- Reason:
+  - the user judged that ball-joint random reset is a robustness-oriented disturbance and should be postponed until later robustness testing, not mixed into the current baseline stage
+- Impact:
+  - future Stage1 baseline runs should not assume any spherical-joint initial randomization
+  - if robustness experiments are started later, ball-joint reset perturbation can be reintroduced explicitly as a new experiment variable rather than staying silently enabled
+
+### Root-height logging is now available in Stage1 training metrics
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/commands.py`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/__init__.py`
+- Durable implementation conclusion:
+  - the local velocity command config now uses a custom command-term subclass that extends the existing velocity-tracking metrics
+  - future training runs will additionally log:
+    - `Metrics/base_velocity/root_height_mean`
+    - `Metrics/base_velocity/root_height_min`
+- Reason:
+  - the user wants to determine whether the current `root_too_low.minimum_height` threshold is appropriate and needs direct height traces in TensorBoard/log exports instead of inferring only from termination rate
+- Durable semantic conclusion:
+  - in Isaac Lab articulation data:
+    - `root_pos_w == root_link_pos_w`
+  - therefore the current `root_too_low` termination is checking the articulation root link actor-frame height, not the root-link COM height
+  - COM state is tracked separately through:
+    - `root_com_state_w`
+- Impact:
+  - future diagnosis of the `root_too_low` termination should use the newly logged root-height metrics together with the semantic fact that this threshold is tied to the root link frame, not directly to the vehicle COM
+
+### Run `2026-04-07_15-29-34` failed mainly through `root_too_low`, not startup or PPO instability
+- Diagnosed run:
+  - `src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training/2026-04-07_15-29-34`
+- Durable diagnosis conclusion:
+  - the run completed and saved checkpoints through:
+    - `model_999.pt`
+  - therefore it was not a startup failure
+  - at the end of training:
+    - `Episode_Termination/root_too_low = 1.0`
+    - `Episode_Termination/time_out = 0.0`
+    - `Episode_Termination/bad_orientation = 0.0`
+    - `Episode_Termination/ball_joint_out_of_bounds = 0.0`
+    - `Train/mean_episode_length ≈ 10.57`
+    - `Metrics/base_velocity/root_height_mean ≈ 0.242`
+    - `Metrics/base_velocity/root_height_min ≈ 0.164`
+  - with `root_too_low.minimum_height = 0.15`, the active root-link height margin was only about `1.4 cm`
+  - because the termination uses instantaneous root-link height, this threshold is very likely too tight for the current root frame and is the direct dominant failure mode of this run
+- Important caution:
+  - this run also changed multiple other factors at the same time:
+    - much stronger stability penalties
+    - stricter `bad_orientation = 45 deg`
+    - larger PPO model
+    - `learning_rate = 3e-3`
+    - `num_steps_per_env = 24`
+    - `max_iterations = 1000`
+  - therefore the correct inherited conclusion is:
+    - `0.15` is strongly implicated as the immediate rollout-killing threshold
+    - but it was not the only variable changed in that experiment
+- Impact:
+  - future threshold validation should use single-variable comparison around:
+    - `root_too_low.minimum_height`
+  - the next fair test of the height threshold should avoid simultaneously retuning rewards and PPO hyperparameters
+
+### Stage1 baseline no longer uses `root_too_low` termination
+- Updated:
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- Durable Stage1 decision:
+  - the current simple Stage1 baseline has removed:
+    - `root_too_low`
+  - active termination terms are now:
+    - `time_out`
+    - `bad_orientation`
+    - `ball_joint_out_of_bounds`
+- Reason:
+  - the user decided that the current Stage1 baseline should not keep a hard height cutoff whose semantics are tied to the articulation root-link frame rather than vehicle COM or terrain-relative clearance
+  - the immediately previous run `2026-04-07_15-29-34` showed that `minimum_height = 0.15` likely dominated failure before the intended task could be learned
+- Impact:
+  - future Stage1 analysis should no longer interpret rollout failure through `Episode_Termination/root_too_low`
+  - the logged metrics
+    - `Metrics/base_velocity/root_height_mean`
+    - `Metrics/base_velocity/root_height_min`
+    remain useful for later redesign of a more physically meaningful height or clearance constraint
+
+### Run `2026-04-07_15-57-27` validates that removing `root_too_low` immediately restored healthy Stage1 rollouts
+- Diagnosed run:
+  - `src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training/2026-04-07_15-57-27`
+- Durable diagnosis conclusion:
+  - compared with `2026-04-07_15-29-34`, the dominant change was:
+    - `root_too_low` removed
+  - the resulting rollout statistics became:
+    - `Train/mean_episode_length = 960.0`
+    - `Episode_Termination/time_out = 1.0`
+    - `Episode_Termination/bad_orientation = 0.0`
+    - `Episode_Termination/ball_joint_out_of_bounds = 0.0`
+  - task metrics at the end were:
+    - `error_vel_xy ≈ 0.62`
+    - `error_vel_yaw ≈ 0.68`
+    - `track_lin_vel_xy ≈ 1.84`
+    - `track_ang_vel_z ≈ 1.72`
+  - this is strong inherited evidence that the previous run failure was indeed dominated by the `root_too_low` cutoff rather than PPO instability
+- Important caution:
+  - after removing the height termination, the logged root-frame height became very low:
+    - `root_height_mean` over the last 20 points was only about `0.132`
+    - `root_height_min` over the last 20 points averaged about `0.090`, with minima down to about `0.017`
+  - therefore the current Stage1 policy is now trainable and performs tracking, but it should not be interpreted as proving that the vehicle maintains a large or physically meaningful body-clearance margin
+- Impact:
+  - current Stage1 baseline can proceed without `root_too_low`
+  - if body clearance becomes a later research target, it should be reintroduced with a better-defined relative-height or clearance signal, not by restoring the old absolute root-link threshold unchanged
+
+### Run `2026-04-07_19-42-44` improved yaw tracking while keeping full rollout health
+- Diagnosed run:
+  - `src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training/2026-04-07_19-42-44`
+- Parameter changes relative to `2026-04-07_15-57-27`:
+  - `agent.max_iterations: 600 -> 500`
+  - `reset_base.velocity_range`:
+    - `x/y/z/roll/pitch/yaw` all changed from random perturbation ranges to `0`
+  - `base_velocity` command added curvature-coupled turning:
+    - `curvature_range = (-0.5, 0.5)`
+    - `turn_lin_vel_threshold = 0.1`
+- Durable diagnosis conclusion:
+  - rollout health stayed perfect:
+    - `Train/mean_episode_length = 960.0`
+    - `Episode_Termination/time_out = 1.0`
+    - `bad_orientation = 0.0`
+    - `ball_joint_out_of_bounds = 0.0`
+  - compared with `2026-04-07_15-57-27`, task metrics improved:
+    - `mean_reward: 48.14 -> 50.92`
+    - `error_vel_xy: 0.616 -> 0.613`
+    - `error_vel_yaw: 0.676 -> 0.542`
+    - `track_lin_vel_xy: 1.843 -> 1.859`
+    - `track_ang_vel_z: 1.716 -> 1.800`
+  - root-frame height also improved:
+    - `root_height_mean: 0.111 -> 0.139`
+    - `root_height_min: 0.051 -> 0.111`
+- Important interpretation:
+  - this run is inherited evidence that removing initial root-velocity perturbations and using the new speed-curvature command distribution did not destabilize training
+  - however, the policy still operates with a relatively low root frame, so this should not yet be interpreted as solving clearance or body-height quality
+- Impact:
+  - for the current simple Stage1 baseline, `2026-04-07_19-42-44` is a stronger reference run than `2026-04-07_15-57-27`
+  - future comparisons with older runs that used independently sampled `ang_vel_z` must explicitly note the command-distribution change

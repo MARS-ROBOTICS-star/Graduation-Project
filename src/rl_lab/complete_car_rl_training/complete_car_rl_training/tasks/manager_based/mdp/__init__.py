@@ -5,14 +5,16 @@
 
 """MDP term modules for the complete-car manager-based RL task."""
 
-from isaaclab.envs.mdp import JointPositionActionCfg, JointVelocityActionCfg, UniformVelocityCommandCfg
+from isaaclab.envs.mdp import JointPositionActionCfg, JointVelocityActionCfg
 
-from . import curriculums, events, observations, rewards, terminations
+from . import commands, curriculums, events, observations, rewards, terminations
+from .commands import UniformVelocityCommandCfg
 
 __all__ = [
     "JointPositionActionCfg",
     "JointVelocityActionCfg",
     "UniformVelocityCommandCfg",
+    "commands",
     "curriculums",
     "events",
     "observations",

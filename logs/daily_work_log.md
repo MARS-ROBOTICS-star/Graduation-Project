@@ -1,5 +1,293 @@
 # 每日工作日志
 
+## 2026-04-07
+
+已完成：
+- 诊断训练 run `2026-04-07_19-42-44`，并整理相对上一轮 `2026-04-07_15-57-27` 的参数变化。
+- 实际检查：
+  - `/tmp/isaaclab/logs/isaaclab_2026-04-07_19-42-44.log`
+  - `logs/rsl_rl/complete_car_rl_training/2026-04-07_19-42-44/params/env.yaml`
+  - `logs/rsl_rl/complete_car_rl_training/2026-04-07_19-42-44/params/agent.yaml`
+  - `logs/rsl_rl/complete_car_rl_training/2026-04-07_19-42-44/tensorboard_export/summary.json`
+  - 与 `2026-04-07_15-57-27` 的 `env.yaml / agent.yaml` 做 diff
+- 关键参数变化：
+  - `agent.max_iterations: 600 -> 500`
+  - `reset_base.velocity_range`
+    - `x/y/z/roll/pitch/yaw` 全部改为 `0`
+  - `base_velocity` 新增曲率耦合命令：
+    - `curvature_range = (-0.5, 0.5)`
+    - `turn_lin_vel_threshold = 0.1`
+- 关键结果：
+  - `Train/mean_episode_length = 960.0`
+  - `Episode_Termination/time_out = 1.0`
+  - `bad_orientation = 0.0`
+  - `ball_joint_out_of_bounds = 0.0`
+  - `mean_reward: 48.14 -> 50.92`
+  - `error_vel_xy: 0.616 -> 0.613`
+  - `error_vel_yaw: 0.676 -> 0.542`
+  - `root_height_mean: 0.111 -> 0.139`
+  - `root_height_min: 0.051 -> 0.111`
+- 结论：
+  - 这次 run 继续保持完全健康 rollout，并且 yaw tracking 明显优于 `15-57-27`。
+  - 取消初始 root velocity 扰动和引入速度-曲率耦合命令，没有把训练带坏，反而带来了更平衡的 tracking。
+  - 但 root frame 仍然偏低，只能说“比上一轮更好”，还不能说“车身高度问题已经解决”。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `2026-04-07_19-42-44` 目前是当日这条基线上的更优参考 run。
+
+下一步：
+- 如果继续调参，优先围绕“如何在不破坏当前 tracking 的前提下，进一步改善 root frame 过低”的问题展开。
+
+已完成：
+- 按用户要求将 Stage1 车轮动作空间从“3 个车桥轮速”改回“6 个车轮独立轮速”。
+- 实际修改：
+  - 删除本轮新增的 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/actions.py`
+  - 修改 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/__init__.py`
+    - 恢复导出 `JointVelocityActionCfg`
+  - 修改 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+    - `wheel_joint_vel` 改回 6 个轮关节独立 `JointVelocityActionCfg`
+  - 修改 `README.md`
+    - 恢复 Stage1 baseline 描述为 `6 球铰 + 6 轮速`
+- 实际执行校验：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/__init__.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- 结果：
+  - 当前动作空间已恢复到先前版本
+  - 总动作维度重新回到 `12`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/__init__.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `README.md`
+
+产出/结论：
+- 当前 Stage1 baseline 仍按“6 个球铰 + 6 个车轮独立速度”解释。
+
+下一步：
+- 若后续还要讨论左右轮是否应耦合，需把它作为新的任务定义变更重新评估，而不是保留两套动作语义并存。
+
+已完成：
+- 按用户要求修改 Stage1 `base_velocity` 命令采样逻辑，改为“线速度 + 曲率”生成 yaw 命令。
+- 实际修改：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/commands.py`
+    - 为本地 `CompleteCarUniformVelocityCommand` 增加曲率采样分支
+    - 当配置了 `curvature_range` 时：
+      - 先采样 `lin_vel_x`
+      - 再采样 `curvature`
+      - 令 `yaw_vel = lin_vel_x * curvature`
+      - 若 `|lin_vel_x| < turn_lin_vel_threshold`，则强制 `yaw_vel = 0`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+    - 当前默认设置为：
+      - `curvature_range = (-0.5, 0.5)`
+      - `turn_lin_vel_threshold = 0.1`
+- 实际执行校验：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/commands.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- 结果：
+  - 当前 yaw command 已不再独立于前进速度采样
+  - 当前命令语义更接近车辆“速度 + 曲率”的控制方式
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/commands.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 从当前版本开始，Stage1 训练结果中的 yaw tracking 需要按“速度耦合转向命令”解释，不能再直接与旧的独立 `ang_vel_z` 采样 run 混为一类。
+
+下一步：
+- 重新训练一轮，再比较新的 command 分布对线速度/yaw 跟踪平衡是否有改善。
+
+已完成：
+- 按用户要求修改 Stage1 动作空间，取消 6 个车轮完全独立的轮速控制，改为 3 个车桥轮速自由度。
+- 实际修改：
+  - 新增 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/actions.py`
+    - 实现 `CoupledWheelVelocityAction`
+    - 将每个车桥的 1 个动作映射到左右两个轮关节的相同速度目标
+  - 修改 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/__init__.py`
+    - 导出 `CoupledWheelVelocityActionCfg`
+  - 修改 `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+    - 用 `wheel_groups` 替代原 6 轮独立 `JointVelocityActionCfg`
+    - 当前轮速动作顺序为：
+      - body axle
+      - head axle
+      - tail axle
+  - 修改 `README.md`
+    - 同步 Stage1 baseline 描述为 `6 球铰 + 3 车桥轮速`
+- 实际执行校验：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/actions.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/__init__.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- 结果：
+  - 当前策略不再能给同一车桥左右轮下相反方向的速度命令
+  - 动作总维度从 `12` 变为 `9`
+  - 观测中的 `wheel_joint_vel_rel` 仍保留 6 维，便于继续观察左右轮实际执行差异
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/actions.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/__init__.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `README.md`
+
+产出/结论：
+- 当前 Stage1 baseline 的车轮控制语义已经变成“按车桥控制”，更符合车辆实际约束。
+
+下一步：
+- 用训练启动命令重新跑一次，确认新的 9 维动作空间下 rollout 是否稳定，以及 yaw/线速度 tracking 是否受明显影响。
+
+已完成：
+- 诊断训练 run `2026-04-07_15-57-27`，确认移除 `root_too_low` 后 rollout 已恢复为正常走满。
+- 实际检查：
+  - `/tmp/isaaclab/logs/isaaclab_2026-04-07_15-57-27.log`
+  - `logs/rsl_rl/complete_car_rl_training/2026-04-07_15-57-27/params/env.yaml`
+  - `logs/rsl_rl/complete_car_rl_training/2026-04-07_15-57-27/params/agent.yaml`
+  - `logs/rsl_rl/complete_car_rl_training/2026-04-07_15-57-27/tensorboard_export/summary.json`
+  - `logs/rsl_rl/complete_car_rl_training/2026-04-07_15-57-27/tensorboard_export/scalars/*.csv`
+- 关键结论：
+  - `Train/mean_episode_length = 960.0`
+  - `Episode_Termination/time_out = 1.0`
+  - `Episode_Termination/bad_orientation = 0.0`
+  - `Episode_Termination/ball_joint_out_of_bounds = 0.0`
+  - `error_vel_xy ≈ 0.62`
+  - `error_vel_yaw ≈ 0.68`
+  - 说明去掉 `root_too_low` 后，训练已从上一轮“几乎全部早死”的坏状态恢复到完整 episode 存活，并且速度跟踪已正常学起来。
+  - 同时根高度日志显示：
+    - `root_height_mean` 最近 20 点均值约 `0.132`
+    - `root_height_min` 最近 20 点均值约 `0.090`，最小下探到约 `0.017`
+  - 因而当前结论是：
+    - 上一轮 `2026-04-07_15-29-34` 的主因确实是 `root_too_low`
+    - 但移除高度终止后，当前策略会允许 root frame 处在很低的位置，后续若要约束离地间隙，应重新设计更物理的信号，而不是恢复原绝对阈值
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `2026-04-07_15-57-27` 是当前用户这组激进 reward/PPO 配置下第一轮恢复到健康 rollout 的 run。
+
+下一步：
+- 继续用回放确认：
+  - 小车是否真实稳定跟踪，而不是靠很低的 root frame 姿态“贴地生存”
+  - 若确实存在长期低车身姿态，后续应考虑改为更有物理意义的 clearance/relative-height 约束
+
+已完成：
+- 按用户决定从当前 Stage1 baseline 中移除 `root_too_low` termination。
+- 实际修改：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+    - 删除 `TerminationsCfg.root_too_low`
+- 保留不变：
+  - `root_height_mean / root_height_min` 两个训练日志指标继续输出
+  - 其余 termination 保留为：
+    - `time_out`
+    - `bad_orientation`
+    - `ball_joint_out_of_bounds`
+- 实际执行校验：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前简单 Stage1 baseline 已不再使用 `root_too_low` 作为硬终止条件，避免尚未标定清楚的 root link 高度阈值直接主导训练结果。
+
+下一步：
+- 用相同训练命令重新跑一轮，重点看：
+  - `time_out`
+  - `bad_orientation`
+  - `ball_joint_out_of_bounds`
+  - `root_height_mean / root_height_min`
+  是否出现更合理的 rollout 行为。
+
+已完成：
+- 诊断训练 run `2026-04-07_15-29-34` 的失败原因，并结合新加入的 root 高度日志确认本轮主问题不是启动或 PPO 数值崩溃，而是 `root_too_low` 终止几乎完全主导 rollout。
+- 实际检查：
+  - `/tmp/isaaclab/logs/isaaclab_2026-04-07_15-29-34.log`
+  - `logs/rsl_rl/complete_car_rl_training/2026-04-07_15-29-34/params/env.yaml`
+  - `logs/rsl_rl/complete_car_rl_training/2026-04-07_15-29-34/params/agent.yaml`
+  - `logs/rsl_rl/complete_car_rl_training/2026-04-07_15-29-34/tensorboard_export/summary.json`
+  - `logs/rsl_rl/complete_car_rl_training/2026-04-07_15-29-34/tensorboard_export/scalars/*.csv`
+- 关键结论：
+  - 本轮训练已正常完成到 `model_999.pt`，不是启动失败。
+  - 尾段指标显示：
+    - `Episode_Termination/root_too_low = 1.0`
+    - `Episode_Termination/time_out = 0.0`
+    - `Train/mean_episode_length ≈ 10.57`
+    - `Metrics/base_velocity/root_height_mean ≈ 0.242`
+    - `Metrics/base_velocity/root_height_min ≈ 0.164`
+  - 当前 `root_too_low.minimum_height = 0.15` 与 root link 实际高度工作带贴得过近，只剩约 `1.4 cm` 裕量；结合该终止项使用的是瞬时 root link 高度而非 COM，高度阈值 `0.15` 很可能就是本轮 rollout 被卡死的直接主因之一。
+  - 同时也确认这轮实验并非只改了高度阈值，还叠加了更强的姿态/速度/球铰惩罚、更严格的 `45°` 姿态终止以及更激进的 PPO 配置，因此后续若要验证高度阈值，需要做单变量对比。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前对 `2026-04-07_15-29-34` 的最稳妥判断是：该 run 的主导失败模式是 `root_too_low`，而 `minimum_height = 0.15` 对当前 root link frame 很可能过高。
+
+下一步：
+- 若要验证这一判断，应只改 `root_too_low.minimum_height` 一项，再做新一轮对比训练。
+
+已完成：
+- 按用户在 Isaac Sim 地图预览中手动调整得到的新视角，更新 active task 默认 viewer 相机位姿。
+- 已修改：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+    - `self.viewer.eye` 改为 `(-53.885, 43.696, 64.903)`
+    - 新增 `self.viewer.lookat = (-53.054, 43.698, 64.346)`
+- 已执行静态校验：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 active task 在 GUI 下默认会从用户挑选后的地图总览视角打开，不再沿用原先的近距离默认视角。
+
+下一步：
+- 若还要继续调视角，可重复读取 `/OmniverseKit_Persp` 的 `eye/lookat` 后直接覆盖当前配置。
+
+已完成：
+- 按用户要求移除阶段 1 active task 中的底盘碰撞奖励，原因是当前真实小车默认不具备与该仿真 reward 对应的底盘接触传感输入。
+- 已修改：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+    - 删除 `body_chassis_contact / head_chassis_contact / tail_chassis_contact` 三个 `ContactSensorCfg`
+    - 删除 `RewardsCfg.chassis_collision`
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/rewards.py`
+    - 删除本地 `chassis_collision(...)` helper 与对应导出项
+- 已执行静态校验：
+  - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/rewards.py`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/rewards.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前阶段 1 baseline 的 reward 集合已不再包含底盘碰撞项。
+- 先前的底盘碰撞逻辑本质上是在用仿真 contact sensor 检测三个 chassis 与地面或其他物体的接触力是否超过阈值，主要约束的是“底盘擦地/砸地/撞障碍”这类行为，而不是轮地正常接触。
+- 当前 active task 不再依赖这类仿真专用信号。
+
+下一步：
+- 重新做一次训练冒烟，重点观察移除底盘碰撞项后 episode 稳定性、姿态惩罚和终止项是否足够约束坏行为。
+
 ## 2026-04-06
 
 已完成：
@@ -47,6 +335,24 @@
   - 默认按“用户 Python 基础较弱”的教学口径解释配置对象、函数引用与数据流
 - 结果：
   - 后续会话中的代码教学风格已统一，不再重复口头约定
+
+已完成：
+- 按用户确认结果，进一步把“代码讲解的节奏、层次和内容把握方式”固化到仓库规则。
+- 实际修改：
+  - `AGENTS.md`
+    - 新增“Preferred teaching rhythm for code walkthroughs”
+    - 明确要求以后默认按以下顺序讲解：
+      - 先说明脚本在系统中的角色
+      - 再讲整体结构
+      - 再按源码顺序逐块展开
+      - 每块先讲作用，再讲关键代码行
+      - 明确区分“引用/注册”和“真正执行逻辑”
+      - 每个大块结束后重新接回 RL 主线
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 结果：
+  - 用户认可的这套教学节奏已经从临时口头反馈升级为仓库级默认讲解规范
 
 已完成：
 - 按用户要求继续将训练环境 `stage1` 地形颜色调深，改为更偏黑的黑灰色，以提高和周围环境的对比度。
@@ -2357,3 +2663,249 @@
 
 下一步：
 - 若继续推进训练主线，直接基于当前 `origin/main` 的 `2a9cfeb` 开始即可。
+
+## 2026-04-07
+
+已完成：
+- 根据训练控制台 traceback 查明本轮启动失败不是 GPU、不是场景构建、也不是机器人配置解析失败，而是 `rsl_rl` 在创建 `OnPolicyRunner` 时无法解析 observation group。
+- 已在：
+  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/agents/rsl_rl_ppo_cfg.py`
+  中补充：
+  - `obs_groups = {"actor": ["FlatBaseline"], "critic": ["FlatBaseline"]}`
+- 当前修正逻辑为：
+  - actor 使用环境唯一观测组 `FlatBaseline`
+  - critic 同样使用 `FlatBaseline`
+- 已同步更新：
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/agents/rsl_rl_ppo_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 本轮训练启动失败的直接原因已定位为 `obs_groups` 缺失，而非 active task 本身的 observation / reward / termination 配置错误。
+- 当前项目在使用自定义 observation group 名时，PPO 配置必须显式声明 `obs_groups`，不能再依赖旧版本的隐式推断。
+
+下一步：
+- 重新启动训练，确认是否已越过 `OnPolicyRunner` 初始化阶段，并继续观察首轮 rollout 是否稳定。
+
+## 2026-04-07
+
+已完成：
+- 对比分析训练 run：
+  - `2026-04-07_12-25-02`
+  - `2026-04-06_21-59-12`
+- 已补导出旧 run 的 TensorBoard 标量：
+  - `src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training/2026-04-06_21-59-12/tensorboard_export`
+- 已确认新 run 变差不能归因于移除 `chassis_collision`：
+  - 旧 run 的 `Episode_Reward/chassis_collision` 到结束都为 `0.0`
+- 已确认新 run 虽然绝对 episode length 更长，但这是在 `episode_length_s: 8 -> 16` 的前提下发生，不能直接视为更好
+- 已确认新 run 的核心跟踪能力明显下降：
+  - `Train/mean_reward`: `2.97 -> 1.32`（对比旧 run 末值）
+  - `error_vel_xy`: `1.29 -> 3.79`
+  - `error_vel_yaw`: `1.76 -> 3.91`
+- 已识别这两个 run 之间除 collision reward 外的其他关键变化：
+  - `wheel_joints.damping: 10.0 -> 1e4`
+  - `ball_joints.stiffness/damping: 80/8 -> 100/10`
+  - `lin_vel_x` 命令范围：`[-1, 1] -> [-2, 2]`
+  - `episode_length_s: 8 -> 16`
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前“原地打转、看起来轮胎不触地”的回放现象，与标量诊断一致地对应“存活优先、跟踪变差”的局部最优。
+- 仅凭当前标量不能证明轮胎真的离地；当前能确认的是策略没有学好速度跟踪。
+- 若要继续定位主因，后续训练不能再把 reward、actuator、命令范围、episode 时长一起改动。
+
+下一步：
+- 用单变量回归方式继续对比，优先先回退 `wheel_joints.damping`，再回退 `lin_vel_x` 命令范围，最后再恢复 `episode_length_s=8` 做公平对比。
+
+## 2026-04-07
+
+已完成：
+- 诊断训练 run：
+  - `2026-04-07_13-13-46`
+- 已确认本次实际使用配置为：
+  - `wheel_joints.damping = 1000.0`
+  - `num_envs = 512`
+  - `max_iterations = 400`
+  - `track_lin_vel_xy.std = 1.0`
+- 与上一轮 `2026-04-07_12-53-43` 相比，本次出现明显改进：
+  - `Train/mean_reward: 5.90 -> 26.43`
+  - `Train/mean_episode_length: 741.56 -> 880.97`
+  - `error_vel_xy: 3.52 -> 0.71`
+  - `error_vel_yaw: 4.32 -> 1.95`
+- 当前尾段状态：
+  - `time_out ≈ 0.754`
+  - `root_too_low ≈ 0.182`
+  - `ball_joint_out_of_bounds ≈ 0.064`
+- 结论：
+  - 当前 baseline 已经从“只会活着”的阶段，进入“线速度跟踪明显有效、yaw 跟踪仍偏弱”的阶段
+  - 该 run 已可作为当前阶段的默认 baseline 参考点
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `wheel damping = 1e3 + 512 envs + 400 iterations` 是当前更合适的 baseline 训练规模。
+- 下一步不应再大范围改 baseline 结构，而应围绕 yaw 跟踪和非 timeout 终止继续做小幅调整。
+
+下一步：
+- 在当前 baseline 附近只做小改，优先减小 `root_too_low` 和 `ball_joint_out_of_bounds`，并继续观察 yaw tracking 是否能进一步提升。
+
+## 2026-04-07
+
+已完成：
+- 对比分析训练 run：
+  - `2026-04-07_13-13-46`
+  - `2026-04-07_13-32-34`
+- 已确认这两次 run 的关键差异仅为：
+  - `track_ang_vel_z.weight: 0.5 -> 2.0`
+- 对比结果：
+  - yaw 跟踪显著改善：
+    - `error_vel_yaw: 1.95 -> 0.88`
+  - 线速度跟踪轻微变差：
+    - `error_vel_xy: 0.71 -> 0.83`
+  - 存活与失败分布几乎不变：
+    - `time_out` 基本持平
+    - `root_too_low` 基本持平
+    - `ball_joint_out_of_bounds` 基本持平
+- 已确认 `Train/mean_reward` 大幅上升不能直接当作“整体更好”的证据，因为这次直接把 yaw reward 权重提高到了原来的 4 倍。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- yaw 权重提到 `2.0` 的效果是“更会转向”，但代价是牺牲部分线速度跟踪，而且没有明显改善生存率。
+- 对当前简单 baseline 来说，`track_ang_vel_z.weight = 2.0` 偏强，不适合作为默认最终配置。
+
+下一步：
+- 在保持其余配置不变的前提下，优先试 `track_ang_vel_z.weight = 1.0` 或 `1.5`，找线速度与 yaw 的折中点。
+
+## 2026-04-07
+
+已完成：
+- 对比分析训练 run：
+  - `2026-04-07_13-32-34`
+  - `2026-04-07_13-41-53`
+- 已确认这两次 run 的关键差异仅为：
+  - `track_ang_vel_z.weight: 2.0 -> 1.5`
+- 对比结果：
+  - 线速度误差改善：
+    - `error_vel_xy: 0.83 -> 0.68`
+  - yaw 误差基本不变：
+    - `error_vel_yaw: 0.88 -> 0.89`
+  - 存活与失败分布变差：
+    - `time_out: 0.76 -> 0.68`
+    - `root_too_low` 变高
+    - `ball_joint_out_of_bounds` 变高
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- yaw 权重从 `2.0` 降到 `1.5` 后，并没有带来更平衡的 baseline。
+- 当前在这两次之间，`2026-04-07_13-32-34` 仍然是更好的 baseline 候选。
+
+下一步：
+- 若继续收敛 baseline，不应再优先调 yaw 权重；更应围绕 `root_too_low` 和 `ball_joint_out_of_bounds` 的失败模式做小幅调整。
+
+## 2026-04-07
+
+已完成：
+- 在用户授权下，首次以沙箱外 GPU 方式直接运行完整车 Stage1 baseline 训练，确认 `python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --num_envs 512 --max_iterations 400 --headless` 可稳定使用 `cuda:0`。
+- 基于 `2026-04-07_13-32-34` 连续完成 3 轮直接调参与实跑：
+  - `2026-04-07_13-56-35`
+  - `2026-04-07_14-02-02`
+  - `2026-04-07_14-06-10`
+- 已完成这 3 次 run 与 `2026-04-07_13-32-34` 的结果对比，并把当前默认 baseline 收敛回 `13-32-34`。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `2026-04-07_13-32-34` 仍是今天最均衡的阶段 1 baseline：
+  - `mean_reward = 41.21`
+  - `mean_episode_length = 841.79`
+  - `error_vel_xy = 0.834`
+  - `error_vel_yaw = 0.880`
+  - `time_out = 0.757`
+  - `root_too_low = 0.176`
+  - `ball_joint_out_of_bounds = 0.066`
+- 以下 3 个直接后续调参方向均未优于 `13-32-34`：
+  - 收紧 reset 扰动并减小球铰动作幅度
+  - 增大 `ball_joint_deviation`
+  - 增大 `termination`
+- 已确认此前 Codex 不能直接启用 GPU 的主因是沙箱权限，而不是这台机器本身不能运行 `cuda:0`。
+
+下一步：
+- 当前默认继续以 `13-32-34` 作为阶段 1 baseline。
+- 若后续继续调参，不再优先重复今天已验证失败的 4 个方向，应提出新的物理假设后再试。
+
+## 2026-04-07
+
+已完成：
+- 记录当前用户手动调参版本的关键参数变化，覆盖：
+  - `complete_car_env_cfg.py`
+  - `rsl_rl_ppo_cfg.py`
+- 按用户要求取消当前阶段的球铰 reset 扰动：
+  - `reset_ball_joints.position_range -> (0.0, 0.0)`
+  - `reset_ball_joints.velocity_range -> (0.0, 0.0)`
+- 已对当前 `complete_car_env_cfg.py` 与 `rsl_rl_ppo_cfg.py` 做 `py_compile` 静态校验，结果通过。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前用户手动调参版本相对先前 baseline 的关键变化包括：
+  - reward/termination 约束明显增强
+  - PPO rollout、网络规模和学习率明显增大
+- 当前阶段不再保留球铰初始随机扰动，后续若要测试鲁棒性再单独恢复。
+
+下一步：
+- 若继续用当前手动调参版本训练，应优先先做一轮新的 run，判断“更强稳定性约束 + 更大 PPO 配置”是否仍能保持速度跟踪主目标。
+
+## 2026-04-07
+
+已完成：
+- 新增训练过程中的 root 高度日志功能。
+- 在 `mdp/commands.py` 中为当前 `base_velocity` 命令项添加了两项额外 metric：
+  - `Metrics/base_velocity/root_height_mean`
+  - `Metrics/base_velocity/root_height_min`
+- 已确认当前 `root_too_low` 使用的 `root_pos_w` 语义是 articulation root link 的 actor frame 高度，而不是 COM 高度。
+
+修改文件：
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/commands.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/__init__.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 后续训练后可以直接通过 root 高度均值和最低值判断 `root_too_low.minimum_height = 0.15` 是否合适。
+- 当前 `root_too_low` 不是在看小车质心高度，而是在看 root link frame 的世界坐标 `z`。
+
+下一步：
+- 跑下一轮训练后，优先联动查看：
+  - `Metrics/base_velocity/root_height_mean`
+  - `Metrics/base_velocity/root_height_min`
+  - `Episode_Termination/root_too_low`

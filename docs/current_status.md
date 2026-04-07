@@ -7,7 +7,12 @@
 
 ## 当前阶段
 - 阶段 0 已完成：`reset -> step -> reward -> termination -> train` 闭环已实际跑通。
-- 阶段 1 进行中：已按“6 个球铰关节 + 6 个车轮”的联合控制速度跟踪任务把 active task 的核心代码切到新方案；当前下一步转入实际训练与稳定性校验。
+- 阶段 1 进行中：active task 当前使用“6 个球铰关节 + 6 个车轮轮速”的联合控制速度跟踪方案。
+- 当前 `base_velocity` 命令也已改为“线速度 + 曲率”采样语义：
+  - 先采样 `v_x`
+  - 再采样曲率 `kappa`
+  - 然后令 `omega_z = v_x * kappa`
+  - 当 `|v_x| < v_th` 时，强制 `omega_z = 0`
 
 ## 已完成
 - 已将完整车训练项目的仓库路径收敛为统一入口：
@@ -19,6 +24,13 @@
   - 优先使用短文件名或局部相对名，如 `complete_car_env_cfg.py`、`mdp/rewards.py`
   - 默认先讲脚本整体结构，再按 import / 常量 / 类 / 函数 / 引用关系逐段、逐行分析
   - 讲解时默认按“用户 Python 基础较弱”的口径解释配置对象、函数引用与数据流
+- 已进一步在 `AGENTS.md` 固化用户确认的代码教学节奏：
+  - 先说明脚本在系统中的角色
+  - 再讲脚本整体结构
+  - 再按源码顺序逐块下钻
+  - 每个代码块都先讲作用，再讲关键行
+  - 明确区分“这里只是引用/注册”与“这里才是真正执行逻辑”
+  - 每讲完一个大块，都重新接回 `reset / observation / action / reward / termination` 主线
 - 已将训练环境 `stage1` 地形的视觉材质固定为黑色：`CompleteCarStage1TerrainEnv` 现为 `/World/terrain/stage1` 显式绑定 `PreviewSurface(diffuse_color=(0.0, 0.0, 0.0))`，与周围环境的对比度更高，训练时不再沿用默认地形显示色。
 - 已修复当前 `env_isaacLab` 中 `tensorboard` 启动失败问题：将 `setuptools` 从 `82.0.1` 离线回退到本机缓存的 `80.10.2` 后，`pkg_resources` 已恢复，当前 `tensorboard 2.20.0` 可正常启动。
 - 已新增训练操作说明文档 `src/rl_lab/complete_car_rl_training/docs/training_workflow_and_tensorboard_guide.md`，当前已将训练启动、TensorBoard 查看、策略回放、键盘控制、地形查看、本地结果目录与核心图表读法整合到一份中文说明中。
@@ -42,9 +54,179 @@
 - 已将阶段 1 的 observation / action / reward 真正写入 active task：
   - observation 顺序已对齐为：基座线速度、基座角速度、重力投影、球铰位置、球铰速度、轮速、速度命令、上一时刻动作
   - action 为：6 个球铰位置目标 + 6 个车轮速度目标
-  - reward 已切到：线速度跟踪、角速度跟踪、车体姿态稳定、`lin_vel_z`、`ang_vel_xy`、动作变化、球铰偏离/摆动、碰撞、终止
-  - 已开启底盘 contact sensor，并新增 chassis collision reward
+  - reward 已切到：线速度跟踪、角速度跟踪、车体姿态稳定、`lin_vel_z`、`ang_vel_xy`、动作变化、球铰偏离/摆动、终止
   - `ang_vel_z` 命令范围已从固定 `0` 改为可采样
+- 已按用户要求移除 active task 中的 chassis collision reward 及其配套的 3 个底盘 contact sensor：
+  - 当前默认阶段 1 baseline 不再依赖仿真底盘接触传感器
+  - 删除原因是该信号不对应当前真实小车可直接获得的默认输入
+- 已按用户在地图预览中手动调整后的视角，更新 active task 默认 viewer 参数：
+  - `self.viewer.eye = (-53.885, 43.696, 64.903)`
+  - `self.viewer.lookat = (-53.054, 43.698, 64.346)`
+- 已修复 `rsl_rl` 新版观测组映射缺失导致的训练启动失败：
+  - 在 `tasks/manager_based/agents/rsl_rl_ppo_cfg.py` 中显式新增
+    - `obs_groups = {"actor": ["FlatBaseline"], "critic": ["FlatBaseline"]}`
+  - 原因是当前环境唯一导出的 observation group 名为 `FlatBaseline`，而新版 `rsl_rl` 不再能从空 `obs_groups` 中自动推断 `actor/critic`
+- 已完成 `2026-04-07_12-25-02` 与 `2026-04-06_21-59-12` 的训练对比诊断：
+  - 新 run 虽然绝对 episode length 更长，但这是在 `episode_length_s` 从 `8s` 提高到 `16s` 的前提下取得，按相对存活比例看并未优于昨天
+  - 新 run 的 `Train/mean_reward` 明显更低，`error_vel_xy` 与 `error_vel_yaw` 明显更高，属于“更会活着，但更不会跟踪”
+  - 昨天的 `chassis_collision` reward 全程为 `0.0`，因此本轮性能变差不能归因于“去掉 chassis collision”
+  - 这两个 run 之间还同时改动了：
+    - `wheel_joints.damping: 10.0 -> 1e4`
+    - `ball_joints.stiffness/damping: 80/8 -> 100/10`
+    - `lin_vel_x` 命令范围：`[-1, 1] -> [-2, 2]`
+    - `episode_length_s: 8 -> 16`
+  - 当前最可疑的主因不是 collision reward，而是“任务难度升高 + 轮速执行器行为变化”共同导致策略收敛到稳定但低效的原地打转/弱运动模式
+- 已完成 `2026-04-07_13-13-46` 训练诊断：
+  - 实际配置为：
+    - `wheel_joints.damping = 1e3`
+    - `num_envs = 512`
+    - `max_iterations = 400`
+    - `track_lin_vel_xy.std = 1.0`
+  - 当前结果相较 `2026-04-07_12-53-43` 出现明显改善：
+    - `Train/mean_reward: 5.90 -> 26.43`
+    - `error_vel_xy: 3.52 -> 0.71`
+    - `error_vel_yaw: 4.32 -> 1.95`
+    - `mean_episode_length: 741.56 -> 880.97`
+  - 当前训练已不再是“只会存活”的坏局部最优，而是进入“线速度跟踪明显改善、偏航跟踪仍偏弱”的可用 baseline 状态
+  - 当前尾段仍有明显非 timeout 终止：
+    - `root_too_low ≈ 0.18`
+    - `ball_joint_out_of_bounds ≈ 0.06`
+    - `time_out ≈ 0.75`
+  - 说明 baseline 已经能用，但还没有达到“几乎所有 episode 都稳定走满且 yaw 跟踪也扎实”的程度
+- 已完成 `2026-04-07_13-32-34` 与 `2026-04-07_13-13-46` 的对比诊断：
+  - 两次 run 唯一关键差异是将 `track_ang_vel_z.weight` 从 `0.5` 提到 `2.0`
+  - 结果表明：提高 yaw reward 权重后，yaw 跟踪明显改善，但线速度跟踪略有退步
+  - 具体表现为：
+    - `error_vel_yaw: 1.95 -> 0.88`，显著改善
+    - `error_vel_xy: 0.71 -> 0.83`，轻微变差
+    - `time_out` 基本持平，`root_too_low` 与 `ball_joint_out_of_bounds` 也未明显改善
+  - `Train/mean_reward` 大幅上升主要因为 yaw reward 权重本身变大，因此该指标在这两次之间不再是公平可比的主判断依据
+  - 当前更准确的结论是：`13-32-34` 把策略从“线速度更强、yaw 较弱”推向了“yaw 更均衡，但整体存活与失败模式没有同步改善”
+- 已完成基于 `13-32-34` 的两轮直接 GPU 调参实跑，并确认它们都没有优于原基线：
+  - `2026-04-07_13-56-35`
+    - 改动：收紧 `reset_base` 的 `z/roll/pitch` 扰动、收紧 `reset_ball_joints`、把球铰动作 `scale` 从 `0.25` 降到 `0.20`
+    - 结果：`error_vel_xy` 轻微变好到 `0.756`，但 `time_out: 0.757 -> 0.690`，`root_too_low: 0.176 -> 0.215`，`ball_joint_out_of_bounds: 0.066 -> 0.096`
+  - `2026-04-07_14-02-02`
+    - 改动：回到 `13-32-34` 基线，仅把 `ball_joint_deviation` 从 `-0.05` 提到 `-0.08`
+    - 结果：`time_out` 进一步降到 `0.652`，`ball_joint_out_of_bounds` 升到 `0.146`
+  - `2026-04-07_14-06-10`
+    - 改动：回到 `13-32-34` 基线，仅把 `termination` 从 `-2.0` 提到 `-4.0`
+    - 结果：`mean_episode_length` 接近持平为 `840.76`，但 `time_out` 只有 `0.714`，`ball_joint_out_of_bounds` 升到 `0.110`
+  - 当前结论：
+    - 今天所有直接后续调参里，`13-32-34` 仍然是最均衡的默认 baseline
+    - 当前默认保留：
+      - `wheel_joints.damping = 1e3`
+      - `track_lin_vel_xy.std = 1.0`
+      - `track_ang_vel_z.weight = 2.0`
+      - `termination = -2.0`
+      - 原始 reset 扰动与球铰动作 `scale = 0.25`
+- 已确认在当前机器上，Codex 之前无法直接使用 GPU 主要是沙箱权限限制，而不是仓库本身无法用 `cuda:0`：
+  - 通过用户授权后的沙箱外命令，`python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --num_envs 512 --max_iterations 400 --headless` 已连续多次正常跑通
+- 已记录当前用户手动调参版本的关键变化，并已按用户要求取消球铰 reset 扰动：
+  - `complete_car_env_cfg.py`
+    - `track_lin_vel_xy.std: sqrt(1) -> sqrt(0.5)`
+    - `body_orientation: -1.0 -> -5.0`
+    - `lin_vel_z: -0.5 -> -2.0`
+    - `ang_vel_xy: -0.05 -> -1.0`
+    - `ball_joint_deviation: -0.05 -> -0.5`
+    - `ball_joint_swing: -0.01 -> -0.1`
+    - `bad_orientation.limit_angle: 60° -> 45°`
+    - `root_too_low.minimum_height: 0.10 -> 0.15`
+    - `reset_ball_joints.position_range/velocity_range -> (0.0, 0.0)`
+  - `rsl_rl_ppo_cfg.py`
+    - `num_steps_per_env: 16 -> 24`
+    - `max_iterations: 150 -> 1000`
+    - `save_interval: 50 -> 200`
+    - `actor/critic obs_normalization: False -> True`
+    - `hidden_dims: [32, 32] -> [256, 128, 64]`
+    - `learning_rate: 1e-3 -> 3e-3`
+- 已为当前 `base_velocity` 命令项增加 root 高度日志：
+  - 新增 `mdp/commands.py`
+  - 当前训练日志会额外输出：
+    - `Metrics/base_velocity/root_height_mean`
+    - `Metrics/base_velocity/root_height_min`
+  - 用途：
+    - 直接检查当前 `root_too_low.minimum_height = 0.15` 是否过高或过低
+    - 区分“平均高度正常但最低点经常下探”与“整体车身高度本来就偏低”
+- 已确认 `root_pos_w` 在 Isaac Lab 中不是 COM 状态：
+  - `root_pos_w` 等价于 `root_link_pos_w`
+  - root COM 单独对应 `root_com_state_w`
+  - 因而当前 termination `root_too_low` 检查的是 articulation root link 的 actor frame 高度，不是整个小车质心高度
+- 已将当前 Stage1 的 `base_velocity` 采样逻辑改为曲率驱动：
+  - 在 `mdp/commands.py` 中扩展了本地 `UniformVelocityCommand`
+  - 当前 active task 默认参数为：
+    - `lin_vel_x ∈ [-2.0, 2.0]`
+    - `kappa ∈ [-0.5, 0.5]`
+    - `v_th = 0.1`
+    - `omega_z = v_x * kappa`
+  - 因而当前 `ranges.ang_vel_z` 不再是主要采样源；在 `heading_command=False` 的现设下，yaw 命令由 `v_x` 与 `kappa` 共同决定
+- 已完成 `2026-04-07_15-29-34` 训练诊断：
+  - 该 run 不是启动失败，也不是 PPO 数值爆炸；`model_999.pt` 已正常落盘
+  - 当前主导终止模式为：
+    - `Episode_Termination/root_too_low = 1.0`
+    - `Episode_Termination/time_out = 0.0`
+  - 尾段关键指标为：
+    - `Train/mean_episode_length ≈ 10.57`
+    - `Metrics/base_velocity/root_height_mean ≈ 0.242`
+    - `Metrics/base_velocity/root_height_min ≈ 0.164`
+  - 当前 `root_too_low.minimum_height = 0.15` 与实际 root link 高度工作区间贴得过近，只剩约 `1.4 cm` 裕量；考虑到终止判据使用的是瞬时 root link 高度，这一阈值极可能直接把 rollout 卡死
+  - 当前更合理的判断是：
+    - `0.15` 很可能就是本轮失败的直接主因之一
+    - 但该 run 同时还叠加了更强的稳定性惩罚、更严格的 `45°` 姿态终止以及更激进的 PPO 配置，因此不能把全部责任仅归于单一阈值
+- 已按用户决定从当前 Stage1 baseline 中移除 `root_too_low` termination：
+  - `complete_car_env_cfg.py` 当前仅保留：
+    - `time_out`
+    - `bad_orientation`
+    - `ball_joint_out_of_bounds`
+  - 原因：
+    - 现阶段 baseline 先不再使用一个尚未标定清楚、且语义对应 root link frame 而非 COM 的高度硬阈值
+  - 当前 root 高度日志仍然保留：
+    - `Metrics/base_velocity/root_height_mean`
+    - `Metrics/base_velocity/root_height_min`
+    便于后续若要重新引入相对地形/相对车体更合理的高度约束时继续参考
+- 已完成 `2026-04-07_15-57-27` 训练诊断：
+  - 该 run 在移除 `root_too_low` 后，rollout 存活性恢复正常：
+    - `Train/mean_episode_length = 960.0`
+    - `Episode_Termination/time_out = 1.0`
+    - `Episode_Termination/bad_orientation = 0.0`
+    - `Episode_Termination/ball_joint_out_of_bounds = 0.0`
+  - 任务学习结果也明显正常：
+    - `Train/mean_reward ≈ 48.14`
+    - `error_vel_xy ≈ 0.62`
+    - `error_vel_yaw ≈ 0.68`
+    - `track_lin_vel_xy ≈ 1.84`
+    - `track_ang_vel_z ≈ 1.72`
+  - 因而当前最直接的结论是：
+    - 上一轮 `2026-04-07_15-29-34` 的失败主因确实是 `root_too_low`
+  - 但新的代价也很明确：
+    - `root_height_mean ≈ 0.13`
+    - `root_height_min` 最近 20 点均值仅约 `0.09`，最低下探到约 `0.017`
+    - 说明去掉高度终止后，策略虽然能完整存活并完成 tracking，但 root link frame 实际已经允许长期处于很低位置
+- 已完成 `2026-04-07_19-42-44` 训练诊断：
+  - 该 run 继续保持健康 rollout：
+    - `Train/mean_episode_length = 960.0`
+    - `Episode_Termination/time_out = 1.0`
+    - `bad_orientation = 0.0`
+    - `ball_joint_out_of_bounds = 0.0`
+  - 相比 `2026-04-07_15-57-27`，tracking 继续小幅改善：
+    - `mean_reward: 48.14 -> 50.92`
+    - `error_vel_xy: 0.616 -> 0.613`
+    - `error_vel_yaw: 0.676 -> 0.542`
+    - `track_lin_vel_xy: 1.843 -> 1.859`
+    - `track_ang_vel_z: 1.716 -> 1.800`
+  - root 高度也更高一些：
+    - `root_height_mean: 0.111 -> 0.139`
+    - `root_height_min: 0.051 -> 0.111`
+  - 当前更合理的判断是：
+    - 这次参数改动没有破坏训练，反而让 yaw tracking 和 root frame 高度都出现了可见改进
+    - 但 `root_height_min` 最近 20 点均值仍只有约 `0.105`，说明“车体实际较低”这一问题还没有被根本解决
+- 已确认 `2026-04-07_19-42-44` 相对 `2026-04-07_15-57-27` 的关键参数变化为：
+  - `agent.max_iterations: 600 -> 500`
+  - `reset_base.velocity_range`
+    - `x/y/z/roll/pitch/yaw` 全部从原随机扰动改为 `0`
+  - `base_velocity` 命令新增曲率耦合采样：
+    - `curvature_range = (-0.5, 0.5)`
+    - `turn_lin_vel_threshold = 0.1`
 - `scripts/isaac_sim/preview_stage1_tile.py` 已恢复为原职责：默认显示 `stage1` 当前课程地图的 `20 x 10` 全部 tile 分离画廊，仍支持 `--single-tile --row/--col` 与 `--terrain-name <name>` 的单块查看。
 - `scripts/isaac_sim/preview_stage1_last_six.py` 现已改为与 `preview_stage1_tile.py` 相同的 `20 x 10` gallery 形式，但只使用当前 `terrain_names[-6:]` 生成 tile；当前后六种地形为 `hurdle / gap / ramp / beam / new stairs down / pit`。
 - 当前两份脚本都默认不加载整车，仅在 `--spawn-car` 时才实例化机器人；并已通过 `python3 -m py_compile scripts/isaac_sim/preview_stage1_tile.py scripts/isaac_sim/preview_stage1_last_six.py`、`python scripts/isaac_sim/preview_stage1_tile.py --list-terrains` 与 `python scripts/isaac_sim/preview_stage1_last_six.py --list-terrains` 校验。
@@ -147,7 +329,7 @@
 - 当前训练中 `Episode_Termination/root_too_low` 长时间为 `1.0` 的旧问题仍存在于现有基线，后续迁移到 rough terrain 前后都需要重新标定。
 - `complete_car.usd` 仍存在离线不可解析或不利于 replicated RL 的残留内容，例如外部引用和内嵌 `PhysicsScene` 风险。
 - 虽然 `complete_car.usd` 的机器人本体树已收敛到 equivalent 主链，但轮子零速 drive、球铰高刚度 drive、损坏的 visual 引用和远端 `Example_Rotary` 引用仍可能导致 `Play` 后数值发散。
-- 当前仓库默认入口虽已统一为 GPU，但这台机器的终端会话下 CUDA / NVIDIA driver 仍不可用；若直接按新默认路径运行，是否能真正启动仍取决于驱动环境是否恢复。
+- 当前仓库默认入口虽已统一为 GPU，但 Codex 若处于受限沙箱内仍不能直接访问 `cuda:0`；需要使用用户已授权的沙箱外训练命令。
 - 当前在这台无可用 NVIDIA driver 的机器上，`export_training_stage.py` 可推进到 `gym.make(...)` 内部的 scene creation 完成，但进程会在返回到脚本自己的 `env.reset()/save_stage()` 之前退出，因此暂不能在本机可靠导出“真实训练环境 stage USD”。
 - 当前 `env_isaacLab` 虽已恢复到可启动 Isaac Sim 地形预览窗口的状态，但环境内仍残留不少偏离 Isaac Sim 5.1 官方锁定版本的第三方包，后续若再次出现扩展加载异常，应优先检查 `numpy` 与 Isaac Sim 核心依赖是否又被覆盖。
 - 当前终端会话下 `control_keyboard.py` 的 headless 冒烟验证可完成，但 Isaac Sim 在无 GPU / 无远端资源环境里启动较慢，且 `USD/complete_car.usd` 中远端 `Example_Rotary` 引用仍会产生警告；这些日志不应被误判为本轮 ground / 摩擦 / 轮速控制修复失败。
@@ -157,12 +339,45 @@
 ## 下一步优先事项
 - 先对新的阶段 1 active task 做一次实际训练冒烟，重点确认：
   - `flat-only reset` 是否全部落在 `flat` 列
-  - chassis contact reward 是否工作正常
   - `ang_vel_z` 命令放开后 episode 是否仍稳定
+- 重点观察修正后的训练入口是否已越过 `OnPolicyRunner` 初始化阶段，不再报 `obs_groups` / `actor` key 缺失。
+- 若要继续定位“原地打转、疑似轮胎不触地”的主因，下一步不要再同时改多个变量；应优先做单变量回归对比：
+  - 保持去掉 `chassis_collision`
+  - 先把 `wheel_joints.damping` 回退到昨天值
+  - 再把 `lin_vel_x` 命令范围回退到昨天值
+  - episode 时长最后再恢复到 `8s` 做公平对比
+- 当前默认下一步不再建议大改 baseline 结构；优先在现有 `13-13-46` 配置附近做小幅收敛性调整：
+  - 优先围绕 yaw tracking、`root_too_low` 与 `ball_joint_out_of_bounds` 做小改
+  - 暂不建议再改大范围命令、episode 时长或并行规模
+  - 经今天三轮实跑后，当前默认继续使用 `13-32-34` 这组参数作为阶段 1 baseline，而不是 `1.0 ~ 1.5` 的 yaw 权重折中版本
+- 当前若使用“用户手动调参版本”继续实验，应先验证以下变化是否会把 baseline 从“速度跟踪”推向“强稳定性约束主导”：
+  - 更强的姿态/高度/球铰正则
+  - 更严格的 termination
+  - 更深网络与更大的学习率
+  - 已去掉球铰 reset 扰动，因此当前更接近“简单起步 baseline”，不再适合作为鲁棒性测试配置
+- 当前若要确认 `root_too_low = 0.15` 是否合理，下一轮训练后应优先读取：
+  - `Metrics/base_velocity/root_height_mean`
+  - `Metrics/base_velocity/root_height_min`
+  再与 `Episode_Termination/root_too_low` 一起判断阈值是否贴得过紧
+- 已完成 `2026-04-07_13-41-53` 与 `2026-04-07_13-32-34` 的对比诊断：
+  - 两次 run 唯一关键差异是将 `track_ang_vel_z.weight` 从 `2.0` 降到 `1.5`
+  - 结果表明：
+    - `error_vel_xy` 末值从 `0.83` 改善到 `0.68`
+    - `error_vel_yaw` 基本持平，约 `0.88`
+    - 但 `time_out` 从 `0.76` 降到 `0.68`
+    - `root_too_low` 与 `ball_joint_out_of_bounds` 均变差
+  - 当前说明 yaw 权重降低后，策略把一部分能力还给了线速度跟踪，但整体生存质量下降
+  - 因而在这两次之间，`13-32-34` 仍然是更好的阶段 1 baseline 候选
 - 若训练能启动，再根据首轮日志判断是否需要继续收紧：
   - reset 初始扰动
   - 终止阈值
   - reward 权重
+- 当前若继续推进阶段 1 baseline，下一轮不再优先试：
+  - 收紧 reset 扰动
+  - 降低球铰动作 `scale`
+  - 增大 `ball_joint_deviation`
+  - 增大 `termination`
+  因为这四个方向今天都已直接实跑验证过，未优于 `13-32-34`
 - 若目标是检查 `MGDP stage1` 全部课程 tile 的几何和分布，优先使用 `python scripts/isaac_sim/preview_stage1_tile.py`。
 - 若目标是检查当前 stage1 后六种地形在 `20 x 10` 画廊下的几何外观，优先使用 `python scripts/isaac_sim/preview_stage1_last_six.py`；若只想看其中某一类，再追加 `--single-tile --terrain-name <name>`。
 - 若还要继续“看 live stage 而不是只看代码和资产树”，下一步应在有正常图形/驱动的 Isaac Sim 会话里重新执行 `preview_stage1_terrain.py --save-usd`，或者直接在脚本里额外导出一份 stage prim 树文本，绕开当前 headless 环境下 `save_stage` 不落盘的问题。

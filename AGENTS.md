@@ -463,6 +463,40 @@ When the user asks for code explanation or teaching:
 - when the user asks for detailed teaching, proceed line by line or block by block instead of jumping directly to a summary
 - assume the user may have weak Python background, so explain what each config object, function reference, and data flow connection is doing in plain language
 
+### 8.2 Preferred teaching rhythm for code walkthroughs
+When the user confirms that a code-explanation rhythm is preferred, future walkthroughs should follow this rhythm by default:
+
+- start with a short reminder of what role the current script plays in the larger system
+- then give the script's top-level structure first, so the user sees the whole frame before details
+- then move downward section by section in source order, usually:
+  - imports
+  - path/constants/shared names
+  - config classes or top-level classes
+  - functions and their call relationships
+  - final assembly / registration / runtime flow
+- for each block, first explain its purpose in plain language, then explain key lines one by one
+- keep the pace steady: explain one concept cluster at a time, and only then move to the next cluster
+- when a config entry references another file or function, explicitly say whether it is:
+  - only a reference/registration
+  - or real executable logic implemented elsewhere
+- frequently summarize the local meaning of a block before continuing, so the user does not lose the main thread
+- prefer concrete operational meaning over abstract terminology; explain what the code will cause the environment to do at runtime
+- when values or parameters appear, explain both:
+  - what the variable stores
+  - what effect that value has on behavior
+- distinguish clearly between:
+  - configuration
+  - runtime execution
+  - reusable helper function
+  - task-specific custom logic
+- after finishing a major section, reconnect it to the full RL loop:
+  - reset
+  - observation
+  - action
+  - reward
+  - termination
+- default tone should remain teaching-oriented, patient, and low-jargon, without collapsing into a shallow summary
+
 When generating outputs, prefer:
 
 - executable complete code over fragments

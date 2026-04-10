@@ -1,5 +1,454 @@
 # 每日工作日志
 
+## 2026-04-10
+
+已完成：
+- 根据用户新的长期主线要求，将完整车 RL 项目从 Isaac Lab manager-based 架构彻底重构为 direct workflow。
+- 新增 direct task 主目录：
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/`
+- 实际新增文件包括：
+  - `complete_car_env.py`
+  - `complete_car_env_cfg.py`
+  - `stage0_flat_cfg.py`
+  - `stage1_terrain_cfg.py`
+  - `stage2_perception_cfg.py`
+  - `rewards.py`
+  - `observations.py`
+  - `commands.py`
+  - `terminations.py`
+  - `utils.py`
+  - `agents/ppo_cfg.py`
+  - `assets/robot_cfg.py`
+  - `terrain/terrain_generator.py`
+  - `terrain/terrain_runtime.py`
+  - `sensors/sensor_runtime.py`
+- 新 direct Gym task id 已改为：
+  - `Complete-Car-Stage0-Flat-Direct-v0`
+  - `Complete-Car-Stage1-Terrain-Direct-v0`
+  - `Complete-Car-Stage2-Perception-Direct-v0`
+- 已删除旧主线文件：
+  - `envs/base/complete_car_config.py`
+  - `envs/base/complete_car_env.py`
+  - `envs/base/manager_helpers.py`
+  - `envs/base/robot_cfg.py`
+  - `envs/baseline/complete_car_config_baseline.py`
+  - `envs/__init__.py`
+  - `utils/terrain.py`
+- 已同步修改根目录 Isaac Sim 预览/控车脚本，使其读取新的：
+  - `tasks/direct/complete_car/assets/robot_cfg.py`
+  - `tasks/direct/complete_car/terrain/terrain_generator.py`
+- 已同步更新：
+  - `README.md`
+  - `RL_Training/README.md`
+  - `RL_Training/docs/training_workflow_and_tensorboard_guide.md`
+  - `docs/project_file_map.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+
+修改文件：
+- `README.md`
+- `RL_Training/README.md`
+- `RL_Training/docs/training_workflow_and_tensorboard_guide.md`
+- `docs/project_file_map.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `RL_Training/complete_car_rl_training/__init__.py`
+- `RL_Training/complete_car_rl_training/tasks/__init__.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/__init__.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/__init__.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/stage0_flat_cfg.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/stage1_terrain_cfg.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/stage2_perception_cfg.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/rewards.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/observations.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/commands.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/terminations.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/utils.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/agents/__init__.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/agents/ppo_cfg.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/assets/__init__.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/assets/robot_cfg.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/terrain/__init__.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/terrain/terrain_generator.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/terrain/terrain_runtime.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/sensors/__init__.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/sensors/sensor_runtime.py`
+- `scripts/isaac_sim/preview_stage1_terrain.py`
+- `scripts/isaac_sim/preview_stage1_tile.py`
+- `scripts/isaac_sim/preview_stage1_last_six.py`
+- `scripts/isaac_sim/control_keyboard.py`
+
+产出/结论：
+- 当前 RL 工程主线已经从“manager term 组装任务”切换为“env 主类直接管理任务语义”的 direct workflow。
+- 结构上已经保留了“共享参数模板 + 分阶段继承配置”的思想，但不再保留 `CompleteCarObservationsCfg / CompleteCarActionsCfg / CompleteCarEventsCfg` 这类 manager-based 配置分组。
+- 当前机器没有 Isaac Lab 运行环境，因此本轮不做运行态冒烟，只完成代码重构和仓库记忆同步。
+
+下一步：
+- 在有 Isaac Lab 环境的机器上，优先执行：
+  - `python scripts/list_envs.py --keyword Complete-Car`
+  - `python scripts/rsl_rl/train.py --task Complete-Car-Stage0-Flat-Direct-v0 --headless --num_envs 100 --max_iterations 10`
+
+## 2026-04-10（GitHub 同步）
+
+已完成：
+- 检查当前仓库 Git 状态，确认当前分支为 `main`，远程 `origin` 指向 `git@github.com:MARS-ROBOTICS-star/Graduation-Project.git`。
+- 为避免误提交论文编译中间产物，在 `毕业论文/毕业论文模板/LaTeX/.gitignore` 中补充了 `*.xdv` 忽略规则。
+- 将当前工作区状态整理后提交，并准备推送到远程 GitHub 仓库。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/.gitignore`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前仓库的 GitHub 同步路径已经明确，后续只需继续在 `main` 分支提交并推送到现有 `origin`。
+- `main.xdv` 不再作为未跟踪文件干扰后续提交。
+
+下一步：
+- 将本地提交推送到 `origin/main`，完成本次上传。
+
+## 2026-04-09
+
+已完成：
+- 按用户新要求继续收敛 RL 训练文件结构，使 `base` 更像通用框架层，`baseline` 更像阶段参数覆写层。
+- 实际结构调整：
+  - 保留并重写：
+    - `RL_Training/complete_car_rl_training/envs/base/complete_car_config.py`
+  - 新增：
+    - `RL_Training/complete_car_rl_training/envs/baseline/complete_car_config_baseline.py`
+    - `RL_Training/complete_car_rl_training/utils/__init__.py`
+  - 将原：
+    - `envs/baseline/stage1_terrain.py`
+    移动并改为：
+    - `RL_Training/complete_car_rl_training/utils/terrain.py`
+  - 删除旧 baseline 子文件：
+    - `envs/baseline/__init__.py`
+    - `envs/baseline/stage1_env.py`
+    - `envs/baseline/stage1_env_cfg.py`
+    - `envs/baseline/agents/`
+    - `envs/baseline/mdp/`
+- 新的职责划分：
+  - `base/complete_car_config.py`
+    - 作为共享 RL 训练框架文件
+    - 当前明确包含：
+      - `env`
+      - `terrain`
+      - `perception`
+      - `control`
+      - `scene`
+      - `commands`
+      - `observations`
+      - `actions`
+      - `events`
+      - `rewards`
+      - `terminations`
+      - `curriculum`
+      - `CompleteCarRLEnv`
+      - `CompleteCarCfgPPO`
+  - `baseline/complete_car_config_baseline.py`
+    - 只负责 baseline 阶段 reward / terrain / perception / PPO 参数覆写与 Gym 注册
+  - `utils/terrain.py`
+    - 负责 terrain 生成和 terrain runtime helper
+- 同步修复：
+  - `envs/__init__.py`
+    - 改为直接导入 `baseline/complete_car_config_baseline.py`
+  - `scripts/isaac_sim/preview_stage1_terrain.py`
+  - `scripts/isaac_sim/preview_stage1_tile.py`
+  - `scripts/isaac_sim/preview_stage1_last_six.py`
+  - `scripts/isaac_sim/control_keyboard.py`
+    的 terrain 模块路径，统一指向 `utils/terrain.py`
+- 实际执行静态校验：
+  - 对 `RL_Training/complete_car_rl_training`、`RL_Training/scripts`、`scripts/isaac_sim` 执行了 `python3 -m py_compile`
+  - 语法检查通过
+
+修改文件：
+- `README.md`
+- `RL_Training/README.md`
+- `docs/current_status.md`
+- `docs/project_file_map.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `RL_Training/complete_car_rl_training/envs/__init__.py`
+- `RL_Training/complete_car_rl_training/envs/base/__init__.py`
+- `RL_Training/complete_car_rl_training/envs/base/complete_car_config.py`
+- `RL_Training/complete_car_rl_training/envs/baseline/complete_car_config_baseline.py`
+- `RL_Training/complete_car_rl_training/utils/__init__.py`
+- `RL_Training/complete_car_rl_training/utils/terrain.py`
+- `scripts/isaac_sim/preview_stage1_terrain.py`
+- `scripts/isaac_sim/preview_stage1_tile.py`
+- `scripts/isaac_sim/preview_stage1_last_six.py`
+- `scripts/isaac_sim/control_keyboard.py`
+
+产出/结论：
+- 当前 `base` 已经更接近“MGDP 风格的通用 config trunk”，但仍保持 Isaac Lab manager-based 的组织方式，没有回退到大而全的手写 `base_task` 模式。
+- 当前 `baseline` 目录已被压缩成单文件参数覆写层，后续更容易保留阶段配置而不是不断覆盖旧版本。
+- 当前 terrain 逻辑已经离开 baseline 目录，后续若拓展 Stage2 / Stage3，不必再复制一份 terrain 生成文件。
+
+下一步：
+- 在 `env_isaacLab` 中从 `RL_Training/` 目录执行：
+  - `python scripts/list_envs.py --keyword Complete-Car`
+  - `python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --num_envs 100 --max_iterations 10`
+ 继续做运行态冒烟。
+
+## 2026-04-09（论文编译修复）
+
+已完成：
+- 根据用户要求排查 `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex` 的编译失败问题。
+- 确认原 `chapter03.tex` 中混入了大量非法格式内容，包括：
+  - 伪 Markdown 分隔线
+  - `#` 标记
+  - 损坏的矩阵换行
+  - 错误的下标和行内数学写法
+- 将 `chapter03.tex` 正文重写为干净的 LaTeX 版本，保留章节结构、主要公式标签和整车运动学 / 速度雅可比推导主线。
+- 在 `毕业论文/毕业论文模板/LaTeX/` 下执行：
+  - `latexmk -xelatex -interaction=nonstopmode -file-line-error main.tex`
+  现已可成功生成 `main.pdf`。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `chapter03.tex` 的格式性编译错误已清除，整篇论文恢复可编译状态。
+- 当前剩余的编译输出里仍有 2 条非阻塞文献警告：
+  - `fang2015survey`
+  - `MATSUMURA2017566`
+  它们来自 `reference/ref.bib` 缺失条目，不影响 `main.pdf` 生成。
+
+下一步：
+- 若需要完全清空编译警告，可继续补齐 `reference/ref.bib` 中缺失的 2 条文献。
+
+## 2026-04-09（论文推导重写）
+
+已完成：
+- 根据用户要求，重写 `chapter03.tex` 中“前后模块线速度推导”部分。
+- 当前改写方式不再直接给出
+  - `${}^{2}\mathbf v_1={}^2\mathbf v_2+{}^2\boldsymbol\omega_2\times{}^2\mathbf p_1+{}^2\dot{\mathbf p}_1`
+  - `${}^{2}\mathbf v_3={}^2\mathbf v_2+{}^2\boldsymbol\omega_2\times{}^2\mathbf p_3+{}^2\dot{\mathbf p}_3`
+  而是先引入惯性坐标系 `${W}`，从模块参考点绝对位置关系出发，经乘积求导与旋转坐标系速度变换，自然推出牵连项与相对位置导数项。
+- 同步保留并复用原有主要公式标签，避免破坏后文引用链。
+- 再次执行：
+  - `latexmk -xelatex -interaction=nonstopmode -file-line-error main.tex`
+  编译通过，`main.pdf` 已更新。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 这一段推导现在更适合作为论文正文教学型叙述，能直接回答“为什么会多出 `${}^{2}\dot{\mathbf p}_1` / ${}^{2}\dot{\mathbf p}_3` 这一项”。
+- 当前仍只剩 2 条旧的文献缺失警告，不影响 PDF 生成。
+
+下一步：
+- 若还要继续打磨 chapter03，可再把这一节中的“牵连速度”“相对运动速度”术语与后文雅可比构造部分统一一下表述。
+
+## 2026-04-09（续）
+
+已完成：
+- 按用户要求，继续参照 `/MGDP/legged_gym/legged_gym/envs/base/legged_robot_config.py` 重写共享 trunk：
+  - `RL_Training/complete_car_rl_training/envs/base/complete_car_config.py`
+- 当前 trunk 现在明确收口为两个主类：
+  - `CompleteCarCfg`
+  - `CompleteCarPPoCfg`
+- `CompleteCarCfg` 已按更接近 MGDP 的方式补齐并重排根配置树，当前显式包含：
+  - `env`
+  - `env_init_info`
+  - `IMU`
+  - `camera`
+  - `Radar`
+  - `terrain`
+  - `commands`
+  - `init_state`
+  - `control`
+  - `asset`
+  - `domain_rand`
+  - `rewards`
+  - `evals`
+  - `normalization`
+  - `noise`
+  - `viewer`
+  - `sim`
+  - `randomization`
+  - `privInfo`
+- 同时仍保留 Isaac Lab manager-based 运行层：
+  - `scene`
+  - `observations`
+  - `actions`
+  - `events`
+  - `terminations`
+  - `curriculum`
+  - `CompleteCarRLEnv`
+- 本轮实际实现方式：
+  - `camera` 与 `IMU` 使用 Isaac Lab 原生 sensor cfg 风格
+  - `sim / sim.physx / viewer / observation scale / observation noise` 沿用 Isaac Lab 原生配置方式
+  - `Radar` 先作为标准保留配置槽位写入 trunk，默认关闭，未直接接入当前 scene manager
+  - `commands` 与 `rewards` 采用“用户参数树 + `__post_init__` 生成 manager 运行配置”的方式落地
+- 同步调整：
+  - `RL_Training/complete_car_rl_training/envs/base/__init__.py`
+    - 共享 PPO trunk 导出名改为：
+      - `CompleteCarPPoCfg`
+  - `RL_Training/complete_car_rl_training/envs/baseline/complete_car_config_baseline.py`
+    - 改为主要继承共享配置树并覆写 Stage1 baseline 参数
+- 实际执行静态校验：
+  - `python3 -m py_compile RL_Training/complete_car_rl_training/envs/base/complete_car_config.py`
+  - `python3 -m py_compile RL_Training/complete_car_rl_training/envs/base/__init__.py`
+  - `python3 -m py_compile RL_Training/complete_car_rl_training/envs/baseline/complete_car_config_baseline.py`
+  - `python3 -m py_compile RL_Training/complete_car_rl_training/envs/__init__.py`
+  - 语法检查通过
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `RL_Training/complete_car_rl_training/envs/base/__init__.py`
+- `RL_Training/complete_car_rl_training/envs/base/complete_car_config.py`
+- `RL_Training/complete_car_rl_training/envs/baseline/complete_car_config_baseline.py`
+
+产出/结论：
+- 当前共享 trunk 已不再只是“分块式 manager 配置集合”，而是已经变成“MGDP 风格参数树 + Isaac Lab manager-based 运行层”的统一配置入口。
+- 之后如果做 baseline、Stage2、传感器阶段或 privileged 信息阶段，优先继承 `CompleteCarCfg` 并覆写嵌套参数，不应再重新拆一份新的共享骨架。
+- 当前共享 PPO 主类名称已经固定为：
+  - `CompleteCarPPoCfg`
+
+下一步：
+- 在 `env_isaacLab` 中从 `RL_Training/` 目录执行：
+  - `python scripts/list_envs.py --keyword Complete-Car`
+  - 或 `python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --num_envs 100 --max_iterations 10`
+  继续做运行态冒烟，确认新 trunk 在真实 Isaac Lab 环境里可正常注册和启动。
+
+## 2026-04-09（再续）
+
+已完成：
+- 根据用户进一步澄清的文件职责边界，继续收口 `envs/base/`：
+  - `complete_car_config.py` 现在只保留两个顶层主类：
+    - `CompleteCarCfg`
+    - `CompleteCarPPoCfg`
+- 将运行环境类移出到：
+  - `RL_Training/complete_car_rl_training/envs/base/complete_car_env.py`
+  当前包含：
+  - `CompleteCarRLEnv`
+- 将 command / reward helper 与 Isaac Lab manager 辅助配置移出到：
+  - `RL_Training/complete_car_rl_training/envs/base/manager_helpers.py`
+  当前包含：
+  - `CompleteCarUniformVelocityCommand`
+  - `UniformVelocityCommandCfg`
+  - `joint_pos_target_l2`
+  - `CompleteCarSceneCfg`
+  - `CompleteCarObservationsCfg`
+  - `CompleteCarActionsCfg`
+  - `CompleteCarEventsCfg`
+  - `CompleteCarTerminationsCfg`
+  - `CompleteCarCurriculumCfg`
+- 当前 `CompleteCarCfg.__post_init__` 的职责已经收口为：
+  - 读取嵌套参数树
+  - 组装 Isaac Lab manager-based 运行配置
+  - 不再在本文件中定义 env runtime 类和独立 helper 函数
+- 同步更新：
+  - `RL_Training/complete_car_rl_training/envs/base/__init__.py`
+    - 改为从新拆分文件导出 `CompleteCarRLEnv` 和 `CompleteCarSceneCfg`
+- 实际执行静态校验：
+  - `python3 -m py_compile RL_Training/complete_car_rl_training/envs/base/manager_helpers.py`
+  - `python3 -m py_compile RL_Training/complete_car_rl_training/envs/base/complete_car_env.py`
+  - `python3 -m py_compile RL_Training/complete_car_rl_training/envs/base/complete_car_config.py`
+  - `python3 -m py_compile RL_Training/complete_car_rl_training/envs/base/__init__.py RL_Training/complete_car_rl_training/envs/baseline/complete_car_config_baseline.py RL_Training/complete_car_rl_training/envs/__init__.py`
+  - 语法检查通过
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `RL_Training/complete_car_rl_training/envs/base/__init__.py`
+- `RL_Training/complete_car_rl_training/envs/base/complete_car_config.py`
+- `RL_Training/complete_car_rl_training/envs/base/complete_car_env.py`
+- `RL_Training/complete_car_rl_training/envs/base/manager_helpers.py`
+
+产出/结论：
+- 当前 `complete_car_config.py` 已满足“只保留两个顶层类”的结构边界。
+- 当前共享主干已经形成：
+  - 参数树文件
+  - helper 文件
+  - runtime env 文件
+  三者分离的结构。
+- 之后若继续加 reward / command / env runtime 逻辑，不应再回填到 `complete_car_config.py`。
+
+下一步：
+- 在 `env_isaacLab` 中从 `RL_Training/` 目录执行：
+  - `python scripts/list_envs.py --keyword Complete-Car`
+  - 或 `python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --num_envs 100 --max_iterations 10`
+  继续确认这次拆分后注册和运行态没有被破坏。
+
+## 2026-04-08
+
+已完成：
+- 按用户最新要求进一步重构 `RL_Training/complete_car_rl_training/` 的主包结构。
+- 实际调整：
+  - 删除顶层历史残留目录：
+    - `RL_Training/complete_car_rl_training/agents`
+    - `RL_Training/complete_car_rl_training/mdp`
+  - 删除 `envs/base/agents/` 与 `envs/base/mdp/`
+  - 删除旧共享文件：
+    - `envs/base/base_env_cfg.py`
+    - `envs/base/scene_cfg.py`
+  - 新增并作为共享主干收口到：
+    - `envs/base/complete_car_config.py`
+- 新共享主干当前集中承载：
+  - `CompleteCarCfg`
+  - `CompleteCarCfgPPO`
+  - `CompleteCarSceneCfg`
+  - `CompleteCarRLEnv`
+  - 共享 command / observation / action / event / termination / reward helper 逻辑
+- 同步修复：
+  - `complete_car_rl_training/__init__.py`
+  - 新增 `complete_car_rl_training/envs/__init__.py`
+  - `envs/baseline/stage1_env_cfg.py`
+  - `envs/baseline/stage1_env.py`
+  - `envs/baseline/agents/rsl_rl_ppo_cfg.py`
+  - 根目录 Isaac Sim 脚本对旧 `common/stage1` 路径的引用
+- 根目录 Isaac Sim 脚本当前统一改为从：
+  - `complete_car_rl_training.envs.base`
+  - `complete_car_rl_training.envs.baseline.stage1_terrain`
+  读取机器人配置和地形。
+- 实际执行静态校验：
+  - 对主包、Stage1 包、训练脚本和 Isaac Sim 相关脚本执行了新的 `py_compile`
+  - 语法检查通过
+
+修改文件：
+- `README.md`
+- `RL_Training/README.md`
+- `docs/current_status.md`
+- `docs/project_file_map.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `RL_Training/complete_car_rl_training/__init__.py`
+- `RL_Training/complete_car_rl_training/envs/__init__.py`
+- `RL_Training/complete_car_rl_training/envs/base/__init__.py`
+- `RL_Training/complete_car_rl_training/envs/base/complete_car_config.py`
+- `RL_Training/complete_car_rl_training/envs/base/robot_cfg.py`
+- `RL_Training/complete_car_rl_training/envs/baseline/stage1_env_cfg.py`
+- `RL_Training/complete_car_rl_training/envs/baseline/stage1_env.py`
+- `RL_Training/complete_car_rl_training/envs/baseline/agents/rsl_rl_ppo_cfg.py`
+- `scripts/isaac_sim/preview_stage1_terrain.py`
+- `scripts/isaac_sim/preview_stage1_tile.py`
+- `scripts/isaac_sim/preview_stage1_last_six.py`
+- `scripts/isaac_sim/control_keyboard.py`
+
+产出/结论：
+- 当前 RL 主线已经从“`common/ + stage1/` 两层包结构”进一步收敛到“`envs/base + envs/baseline`”结构。
+- 当前共享模板不再分散在多个 base 子文件里，而是统一集中到 `complete_car_config.py`。
+- 这次调整的重点不是改变任务语义，而是让后续 Stage2 / Stage3 扩展时继续保持“共享主干明确、阶段特化独立”的组织方式。
+
+下一步：
+- 在 `env_isaacLab` 中从 `RL_Training/` 目录执行：
+  - `python scripts/list_envs.py --keyword Complete-Car`
+  - 或小规模 `python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --num_envs 100 --max_iterations 10`
+  继续做运行态冒烟确认。
+
 ## 2026-04-07
 
 已完成：
@@ -2909,3 +3358,97 @@
   - `Metrics/base_velocity/root_height_mean`
   - `Metrics/base_velocity/root_height_min`
   - `Episode_Termination/root_too_low`
+
+## 2026-04-08
+
+已完成：
+- 按用户要求重构 Isaac Lab RL 训练目录，去掉旧的单体 `complete_car_env_cfg.py` 方案，改成可分阶段继承的 `common/ + stage1/` 架构。
+- 新增通用模板层：
+  - `common/base_env_cfg.py`
+  - `common/agents/base_rsl_rl_ppo_cfg.py`
+  - `common/robot_cfg.py`
+  - `common/scene_cfg.py`
+  - `common/mdp/`
+- 将当前 Stage1 独立成子包：
+  - `stage1/stage1_env_cfg.py`
+  - `stage1/stage1_env.py`
+  - `stage1/stage1_terrain.py`
+  - `stage1/mdp/`
+  - `stage1/agents/rsl_rl_ppo_cfg.py`
+- 删除旧的顶层 Stage1 单体入口和旧 `mdp/`、旧 `agents/`。
+- 已同步修改 `preview_stage1_terrain.py`、`preview_stage1_tile.py`、`preview_stage1_last_six.py`、`control_keyboard.py`，让它们全部从新的 `stage1/stage1_terrain.py` 取训练同源地形。
+- 已执行一次 Python 语法级验证，确认新结构下主要任务文件与受影响脚本均可通过 `py_compile`。
+
+修改文件：
+- `scripts/isaac_sim/control_keyboard.py`
+- `scripts/isaac_sim/preview_stage1_last_six.py`
+- `scripts/isaac_sim/preview_stage1_terrain.py`
+- `scripts/isaac_sim/preview_stage1_tile.py`
+- `src/rl_lab/complete_car_rl_training/README.md`
+- `README.md`
+- `docs/project_file_map.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/__init__.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/common/__init__.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/common/base_env_cfg.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/common/agents/__init__.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/common/agents/base_rsl_rl_ppo_cfg.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1/stage1_env_cfg.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1/stage1_env.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1/stage1_terrain.py`
+- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/stage1/agents/rsl_rl_ppo_cfg.py`
+
+产出/结论：
+- 当前 RL 训练代码已经从“一个 Stage1 大配置文件不断改写”的模式，切到“通用模板 + 分阶段子包”的模式。
+- 这次重构保留了 manager-based 框架负责的生命周期，不再模仿 MGDP 去重写 `base_task` 一类的底层骨架；真正被迁移的是“分阶段组织和配置继承思想”。
+- 后续如果进入 Stage2 / Stage3，应新增同级子包，而不是重新把感知、地形、课程学习继续塞回 Stage1 配置文件。
+
+下一步：
+- 在新结构下重新执行一轮 `train.py` smoke test，确认 Gym 注册、Hydra 配置入口和日志输出都正常。
+
+已完成：
+- 检查用户本轮大规模目录整理后的实际仓库状态，确认 RL 主线已从旧的 `src/rl_lab/complete_car_rl_training/` 迁移到新的 `RL_Training/`。
+- 修复会直接影响训练启动的旧导入路径问题：
+  - `RL_Training/scripts/list_envs.py`
+  - `RL_Training/scripts/zero_agent.py`
+  - `RL_Training/scripts/random_agent.py`
+  - `RL_Training/scripts/export_training_stage.py`
+  - `RL_Training/scripts/rsl_rl/train.py`
+  - `RL_Training/scripts/rsl_rl/play.py`
+  上述脚本原本仍写 `import complete_car_rl_training.tasks`，当前已统一改为直接导入包根 `import complete_car_rl_training`。
+- 修复仓库根目录 Isaac Sim 脚本对旧包结构和旧项目根的引用：
+  - `scripts/isaac_sim/preview_stage1_terrain.py`
+  - `scripts/isaac_sim/preview_stage1_tile.py`
+  - `scripts/isaac_sim/preview_stage1_last_six.py`
+  - `scripts/isaac_sim/control_keyboard.py`
+  当前已统一改为从 `RL_Training/complete_car_rl_training/common/` 与 `RL_Training/complete_car_rl_training/stage1/` 读取配置与地形。
+- 同步更新了根 README、当前状态、项目文件地图和 `RL_Training/README.md`，把默认主线入口改到 `RL_Training/`。
+- 对 `RL_Training` 主包、训练脚本和受影响的 Isaac Sim 脚本执行了 `python3 -m py_compile`，静态检查通过。
+
+修改文件：
+- `README.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `docs/project_file_map.md`
+- `logs/daily_work_log.md`
+- `RL_Training/README.md`
+- `RL_Training/docs/training_workflow_and_tensorboard_guide.md`
+- `RL_Training/scripts/list_envs.py`
+- `RL_Training/scripts/zero_agent.py`
+- `RL_Training/scripts/random_agent.py`
+- `RL_Training/scripts/export_training_stage.py`
+- `RL_Training/scripts/rsl_rl/train.py`
+- `RL_Training/scripts/rsl_rl/play.py`
+- `scripts/isaac_sim/preview_stage1_terrain.py`
+- `scripts/isaac_sim/preview_stage1_tile.py`
+- `scripts/isaac_sim/preview_stage1_last_six.py`
+- `scripts/isaac_sim/control_keyboard.py`
+
+产出/结论：
+- 当前真正会导致训练或注册失败的代码级问题已经定位并修正，核心问题是“主线目录已经迁移，但脚本仍引用旧包入口和旧文件路径”。
+- 当前剩余未完成的是运行态冒烟，而不是静态路径修正。
+
+下一步：
+- 在 `env_isaacLab` 中进入 `RL_Training/` 后，优先执行一次 `python scripts/list_envs.py --keyword Complete-Car` 或小规模 `train.py` 冒烟。

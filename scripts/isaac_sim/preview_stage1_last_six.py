@@ -12,7 +12,7 @@ from isaaclab.app import AppLauncher
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RL_PROJECT_ROOT = PROJECT_ROOT / "src" / "rl_lab" / "complete_car_rl_training"
+RL_PROJECT_ROOT = PROJECT_ROOT / "RL_Training"
 if str(RL_PROJECT_ROOT) not in sys.path:
     sys.path.append(str(RL_PROJECT_ROOT))
 
@@ -20,13 +20,15 @@ STAGE1_TERRAIN_PATH = (
     RL_PROJECT_ROOT
     / "complete_car_rl_training"
     / "tasks"
-    / "manager_based"
-    / "stage1_terrain.py"
+    / "direct"
+    / "complete_car"
+    / "terrain"
+    / "terrain_generator.py"
 )
 
 
 def load_stage1_terrain_module():
-    """Load stage1_terrain.py directly to avoid importing the full task package tree."""
+    """Load terrain_generator.py directly to avoid importing the full task package tree."""
     spec = importlib.util.spec_from_file_location("stage1_terrain_local", STAGE1_TERRAIN_PATH)
     if spec is None or spec.loader is None:
         raise ImportError(f"Unable to load stage1 terrain module from {STAGE1_TERRAIN_PATH}")
@@ -148,9 +150,7 @@ from isaaclab.sim import SimulationContext
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 
-from complete_car_rl_training.tasks.manager_based.complete_car_env_cfg import (
-    COMPLETE_CAR_CFG,
-)
+from complete_car_rl_training.tasks.direct.complete_car.assets import COMPLETE_CAR_CFG
 
 
 def is_single_tile_mode() -> bool:

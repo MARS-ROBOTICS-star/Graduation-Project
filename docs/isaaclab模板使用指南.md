@@ -2,43 +2,44 @@
 
 本文档对应当前仓库中唯一保留的 Isaac Lab 训练项目：
 
-- `src/rl_lab/complete_car_rl_training/`
+- `RL_Training/`
 
-该目录已经从原始模板整理为单层项目结构，不再保留重复的 `source/complete_car_rl_training/...` 壳层。
+该目录当前已经切到 Isaac Lab direct workflow，不再沿用旧的 manager-based 主线。
 
 ## 1. 当前项目结构
 
 核心目录如下：
 
-- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/`
+- `RL_Training/complete_car_rl_training/`
   - Python 包入口与任务实现
-- `src/rl_lab/complete_car_rl_training/scripts/`
+- `RL_Training/scripts/`
   - 环境枚举、零动作测试、随机动作测试、训练、回放脚本
-- `src/rl_lab/complete_car_rl_training/config/extension.toml`
+- `RL_Training/config/extension.toml`
   - Isaac Lab 扩展元数据
-- `src/rl_lab/complete_car_rl_training/setup.py`
+- `RL_Training/setup.py`
   - Python 安装入口
-- `src/rl_lab/complete_car_rl_training/pyproject.toml`
+- `RL_Training/pyproject.toml`
   - 本地工具配置与构建配置
 
 ## 2. 当前关键文件
 
-- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/__init__.py`
+- `RL_Training/complete_car_rl_training/__init__.py`
   - 包入口，只负责导入任务注册
-- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/__init__.py`
-  - Gym 任务注册
-- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
-  - manager-based 环境配置
-- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/agents/rsl_rl_ppo_cfg.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/__init__.py`
+  - direct Gym 任务注册
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+  - direct 共享配置主干
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env.py`
+  - direct 环境主类
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/agents/ppo_cfg.py`
   - PPO 配置
-- `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/mdp/rewards.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/rewards.py`
   - 自定义奖励函数
 
 ## 3. 当前任务状态
 
-- 当前任务 ID：`Complete-Car-Rl-Training-v0`
-- 当前日志实验名：`complete_car_rl_training`
-- 当前环境采用 manager-based workflow
+- 当前默认任务 ID：`Complete-Car-Stage0-Flat-Direct-v0`
+- 当前环境采用 direct workflow
 - 当前动作设计为 12 维：
   - 6 维球铰位置动作
   - 6 维车轮速度动作
@@ -48,7 +49,7 @@
 进入项目目录：
 
 ```bash
-cd /home/lbz/Graduation-Project/src/rl_lab/complete_car_rl_training
+cd /home/lbz/Graduation-Project/RL_Training
 ```
 
 在已激活的 `env_isaacLab` conda 环境中安装项目包：
@@ -78,25 +79,25 @@ python scripts/list_envs.py --keyword Complete-Car
 零动作验证：
 
 ```bash
-python scripts/zero_agent.py --task Complete-Car-Rl-Training-v0 --num_envs 32
+python scripts/zero_agent.py --task Complete-Car-Stage0-Flat-Direct-v0 --num_envs 32
 ```
 
 随机动作验证：
 
 ```bash
-python scripts/random_agent.py --task Complete-Car-Rl-Training-v0 --num_envs 32
+python scripts/random_agent.py --task Complete-Car-Stage0-Flat-Direct-v0 --num_envs 32
 ```
 
 第一次训练冒烟测试：
 
 ```bash
-python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0  --num_envs 100 
+python scripts/rsl_rl/train.py --task Complete-Car-Stage0-Flat-Direct-v0 --num_envs 100
 ```
 
 训练结果回放：
 
 ```bash
-python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0 --device cpu
+python scripts/rsl_rl/play.py --task Complete-Car-Stage0-Flat-Direct-v0 --device cpu
 ```
 
 ## 6. 当前建议工作顺序
@@ -109,8 +110,8 @@ python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0 --device cpu
 
 ## 7. 当前整理结论
 
-- 训练项目已经整理为单层结构，后续开发统一在 `src/rl_lab/complete_car_rl_training/` 下进行
+- 训练项目当前统一在 `RL_Training/` 下维护
 - 包路径已经统一到 `complete_car_rl_training/...`
 - 当前默认启动方式是在激活的 `env_isaacLab` 环境中直接运行 `python scripts/...`
 - 项目包需要先执行一次 `python -m pip install -e . --no-build-isolation`
-- 旧模板的 UI 示例、嵌套 `.git`、`.vscode` 和重复壳层已移除
+- 当前 active RL 主线已经按 direct workflow 固定到 `tasks/direct/complete_car/`

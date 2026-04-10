@@ -2,6 +2,96 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-10
+
+### Complete-car RL mainline has been fully refactored from manager-based to Isaac Lab direct workflow
+- Updated:
+  - `RL_Training/complete_car_rl_training/__init__.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/`
+  - `scripts/isaac_sim/preview_stage1_terrain.py`
+  - `scripts/isaac_sim/preview_stage1_tile.py`
+  - `scripts/isaac_sim/preview_stage1_last_six.py`
+  - `scripts/isaac_sim/control_keyboard.py`
+- Durable implementation conclusion:
+  - the active RL mainline no longer uses:
+    - `envs/base/`
+    - `envs/baseline/`
+    - manager-based observation / action / event / termination config groups
+  - the new active task tree is:
+    - `tasks/direct/complete_car/complete_car_env.py`
+    - `tasks/direct/complete_car/complete_car_env_cfg.py`
+    - `tasks/direct/complete_car/stage0_flat_cfg.py`
+    - `tasks/direct/complete_car/stage1_terrain_cfg.py`
+    - `tasks/direct/complete_car/stage2_perception_cfg.py`
+    - `tasks/direct/complete_car/assets/robot_cfg.py`
+    - `tasks/direct/complete_car/terrain/terrain_generator.py`
+    - `tasks/direct/complete_car/terrain/terrain_runtime.py`
+    - `tasks/direct/complete_car/sensors/sensor_runtime.py`
+    - `tasks/direct/complete_car/agents/ppo_cfg.py`
+  - the direct task registration ids are now:
+    - `Complete-Car-Stage0-Flat-Direct-v0`
+    - `Complete-Car-Stage1-Terrain-Direct-v0`
+    - `Complete-Car-Stage2-Perception-Direct-v0`
+  - direct task logic is now organized so that:
+    - `CompleteCarEnv` directly owns actions, commands, resets, rewards, dones, terrain runtime, and sensor runtime
+    - `rewards.py / observations.py / commands.py / terminations.py` only hold task-specific tensor helpers
+    - terrain and perception support are retained as runtime helpers instead of manager terms
+- Reason:
+  - the user explicitly decided to stop using manager-based architecture and requested a full cut to Isaac Lab's official direct workflow rather than a compatibility layer
+- Impact:
+  - future environment changes must continue under `tasks/direct/complete_car/`
+  - future smoke tests, training commands, and documentation should use the new `-Direct` task ids
+  - old `envs/base/*.py`, `envs/baseline/*.py`, and `utils/terrain.py` should be treated as retired mainline code and not restored by default
+- Status:
+  - code refactor completed
+  - real Isaac Lab runtime validation still pending on a machine with the environment installed
+
+## 2026-04-09
+
+### Thesis chapter03 was rebuilt into clean LaTeX and the full thesis now compiles again
+- Updated:
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- Durable implementation conclusion:
+  - the previous `chapter03.tex` had been contaminated by invalid pseudo-markdown and malformed math markup, including:
+    - separator lines such as `=================`
+    - stray `#` markers
+    - broken matrix row separators
+    - malformed subscripts and inline math
+  - the chapter body was rewritten into clean XeLaTeX-compatible source while preserving the chapter structure and the main kinematics / Jacobian derivation flow
+  - after the rewrite, running:
+    - `latexmk -xelatex -interaction=nonstopmode -file-line-error main.tex`
+    now succeeds again and regenerates:
+    - `毕业论文/毕业论文模板/LaTeX/main.pdf`
+- Remaining non-blocking warnings:
+  - two bibliography keys are still missing from `reference/ref.bib`:
+    - `fang2015survey`
+    - `MATSUMURA2017566`
+- Impact:
+  - future thesis-writing sessions should treat `chapter03.tex` as a clean LaTeX baseline again rather than trying to repair the old corrupted markup incrementally
+  - if later compilation warnings are about bibliography only, they are separate from this chapter-format failure
+- Status:
+  - compile blocker resolved
+
+### Thesis chapter03 line-velocity derivation now uses an inertial-frame-first explanation
+- Updated:
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- Durable writing conclusion:
+  - the subsection for front/rear module linear velocity derivation was rewritten to introduce an inertial frame `${W}$` first
+  - the expressions
+    - `${}^{2}\mathbf v_1={}^2\mathbf v_2+{}^2\boldsymbol\omega_2\times{}^2\mathbf p_1+{}^2\dot{\mathbf p}_1`
+    - `${}^{2}\mathbf v_3={}^2\mathbf v_2+{}^2\boldsymbol\omega_2\times{}^2\mathbf p_3+{}^2\dot{\mathbf p}_3`
+    are now derived from:
+    - absolute position in `${W}`
+    - product differentiation
+    - transport velocity caused by frame rotation
+  - this replaces the previous shorter presentation that stated the velocity relation more directly
+- Reason:
+  - the user explicitly pointed out that the confusing part was why the extra derivative term appears, and requested a derivation that makes the term emerge naturally from absolute-position differentiation
+- Impact:
+  - future chapter03 edits should preserve this inertial-frame explanation path instead of reverting to a compact but less intuitive derivation
+- Status:
+  - completed and recompiled successfully
+
 ## 2026-04-07
 
 ### Stage1 wheel action remains six independent wheel velocities
@@ -2185,3 +2275,230 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Impact:
   - for the current simple Stage1 baseline, `2026-04-07_19-42-44` is a stronger reference run than `2026-04-07_15-57-27`
   - future comparisons with older runs that used independently sampled `ang_vel_z` must explicitly note the command-distribution change
+
+### Manager-based RL task architecture has been split into `common/` and `stage1/`
+- Date:
+  - 2026-04-08
+- Decision:
+  - remove the old monolithic Stage1 task layout under:
+    - `tasks/manager_based/complete_car_env_cfg.py`
+    - `tasks/manager_based/mdp/`
+    - `tasks/manager_based/agents/`
+    - `tasks/manager_based/complete_car_stage1_terrain_env.py`
+    - `tasks/manager_based/stage1_terrain.py`
+  - replace it with:
+    - `tasks/manager_based/common/`
+    - `tasks/manager_based/stage1/`
+- Reason:
+  - the user explicitly wants MGDP-style staged task growth, but adapted to Isaac Lab manager-based instead of recreating old `legged_gym`-style giant env classes
+  - the previous single-file Stage1 config made it too easy to overwrite old parameters and too hard to preserve stage-by-stage comparisons
+- Durable structure conclusion:
+  - `common/` now holds the reusable manager-based template layer:
+    - robot asset config
+    - scene config
+    - shared MDP terms
+    - `CompleteCarBaseEnvCfg`
+    - `CompleteCarBasePPORunnerCfg`
+  - `stage1/` now holds only Stage1-specific logic:
+    - `stage1_env_cfg.py`
+    - `stage1_env.py`
+    - `stage1_terrain.py`
+    - `stage1/mdp/`
+    - `stage1/agents/rsl_rl_ppo_cfg.py`
+- Impact:
+  - future Stage2 / Stage3 work should be added as sibling stage packages, not by reopening a new monolithic `complete_car_env_cfg.py`
+  - future reusable terms should go into `common/`, while terrain/perception/curriculum logic that belongs only to one stage should stay inside that stage package
+  - Isaac Sim preview and keyboard scripts now treat `stage1/stage1_terrain.py` as the training-aligned terrain source of truth
+- Status:
+  - Python-level import and syntax checks passed after the refactor
+
+### RL mainline has now moved from `src/rl_lab/complete_car_rl_training/` to `RL_Training/`
+- Date:
+  - 2026-04-08
+- Decision:
+  - treat `RL_Training/` as the only active Isaac Lab RL workspace
+  - stop using the deleted `src/rl_lab/complete_car_rl_training/` tree as the default engineering mainline
+- Reason:
+  - the user performed a bulk repository reorganization and moved the live RL project, IK utilities, and project docs into `RL_Training/`
+  - leaving scripts and memory files on the old path would cause future sessions to follow dead entry points
+- Durable implementation conclusion:
+  - the current active package root is:
+    - `RL_Training/complete_car_rl_training/`
+  - the current active training/play/list scripts are:
+    - `RL_Training/scripts/`
+  - root Isaac Sim helper scripts under:
+    - `scripts/isaac_sim/`
+    now resolve package imports and stage1 terrain paths against `RL_Training/`
+- Impact:
+  - future sessions should default to `RL_Training/` whenever the task is about runnable RL code
+  - old historical references to `src/rl_lab/complete_car_rl_training/` remain valid only as history, not as the current working location
+- Status:
+  - stale code imports and file-path references that would break task registration were fixed
+
+### RL mainline structure has now converged to `envs/base + envs/baseline`, and base shared logic is merged into `complete_car_config.py`
+- Date:
+  - 2026-04-08
+- Decision:
+  - stop using the intermediate `common/ + stage1/` package split as the active structure
+  - use:
+    - `RL_Training/complete_car_rl_training/envs/base/`
+    - `RL_Training/complete_car_rl_training/envs/baseline/`
+    as the current task layout
+  - merge the previous base shared files into:
+    - `RL_Training/complete_car_rl_training/envs/base/complete_car_config.py`
+- Reason:
+  - the user further simplified the project and explicitly requested that the shared template layer should no longer be scattered across:
+    - `base_env_cfg.py`
+    - `scene_cfg.py`
+    - `envs/base/agents/`
+    - `envs/base/mdp/`
+  - the engineering goal is to keep one clear shared trunk file while preserving stage-specific extension files
+- Durable structure conclusion:
+  - `envs/base/complete_car_config.py` now holds:
+    - shared scene class
+    - shared command / observation / action / event / termination / reward helper logic
+    - shared RL env base class
+    - shared env cfg class `CompleteCarCfg`
+    - shared PPO cfg class `CompleteCarCfgPPO`
+  - `envs/base/robot_cfg.py` remains separate as the robot asset definition file
+  - `envs/baseline/` now holds only Stage1-specific logic:
+    - `stage1_env_cfg.py`
+    - `stage1_env.py`
+    - `stage1_terrain.py`
+    - `baseline/mdp/`
+    - `baseline/agents/rsl_rl_ppo_cfg.py`
+  - package registration now flows through:
+    - `complete_car_rl_training/__init__.py`
+    - `complete_car_rl_training/envs/__init__.py`
+    - `complete_car_rl_training/envs/baseline/__init__.py`
+- Impact:
+  - future Stage2 / Stage3 should continue to add sibling stage packages under `envs/`
+  - future shared changes should go into `envs/base/complete_car_config.py` first instead of recreating new shared subdirectories
+  - root Isaac Sim preview / teleop scripts must treat `envs/baseline/stage1_terrain.py` as the active terrain source of truth
+- Status:
+  - stale imports and task registration entry points were updated
+
+### Shared trunk now uses a MGDP-style nested config tree while staying Isaac Lab manager-based
+- Date:
+  - 2026-04-09
+- Updated:
+  - `RL_Training/complete_car_rl_training/envs/base/complete_car_config.py`
+  - `RL_Training/complete_car_rl_training/envs/base/__init__.py`
+  - `RL_Training/complete_car_rl_training/envs/baseline/complete_car_config_baseline.py`
+- Durable implementation conclusion:
+  - the shared trunk `complete_car_config.py` now exposes a MGDP-style top-level config tree centered on:
+    - `CompleteCarCfg`
+  - inside `CompleteCarCfg`, the user-facing root config sections now explicitly include:
+    - `env`
+    - `env_init_info`
+    - `IMU`
+    - `camera`
+    - `Radar`
+    - `terrain`
+    - `commands`
+    - `init_state`
+    - `control`
+    - `asset`
+    - `domain_rand`
+    - `rewards`
+    - `evals`
+    - `normalization`
+    - `noise`
+    - `viewer`
+    - `sim`
+    - `randomization`
+    - `privInfo`
+  - the file still preserves Isaac Lab manager-based execution by auto-configuring:
+    - `scene`
+    - `observations`
+    - `actions`
+    - `events`
+    - `terminations`
+    - `curriculum`
+    inside `__post_init__`
+  - the shared PPO trunk class is now:
+    - `CompleteCarPPoCfg`
+    instead of the earlier `CompleteCarCfgPPO`
+  - `camera` and `IMU` now follow Isaac Lab sensor-config style, while `Radar` is currently kept as a standard reserved config slot and remains disabled by default
+- Reason:
+  - the user explicitly requested rewriting the shared trunk in the style of `/MGDP/legged_robot_config.py`, but without abandoning Isaac Lab's manager-based task organization
+- Impact:
+  - future baseline / Stage2 / Stage3 config files should inherit from `CompleteCarCfg` and override nested fields first, rather than recreating full reward or command config classes
+  - future shared PPO overrides should inherit from `CompleteCarPPoCfg`
+  - future sensor-stage work can enable `camera / IMU / Radar` through the shared config tree instead of reopening the base-file structure debate
+- Status:
+  - static `py_compile` validation passed
+
+### `complete_car_config.py` is now reduced to only `CompleteCarCfg` and `CompleteCarPPoCfg`
+- Date:
+  - 2026-04-09
+- Updated:
+  - `RL_Training/complete_car_rl_training/envs/base/complete_car_config.py`
+  - `RL_Training/complete_car_rl_training/envs/base/complete_car_env.py`
+  - `RL_Training/complete_car_rl_training/envs/base/manager_helpers.py`
+  - `RL_Training/complete_car_rl_training/envs/base/__init__.py`
+- Durable structure conclusion:
+  - the user clarified that `complete_car_config.py` should be a parameter-definition file only
+  - after this clarification, `complete_car_config.py` now contains only two top-level classes:
+    - `CompleteCarCfg`
+    - `CompleteCarPPoCfg`
+  - runtime environment logic moved to:
+    - `envs/base/complete_car_env.py`
+    where:
+    - `CompleteCarRLEnv`
+    is defined
+  - command / reward helper callables and Isaac Lab manager helper classes moved to:
+    - `envs/base/manager_helpers.py`
+  - `CompleteCarCfg.__post_init__` now serves as the assembly point that maps the nested parameter tree into Isaac Lab manager-based runtime config objects
+- Reason:
+  - the user explicitly rejected mixing runnable env logic and helper function definitions into the shared config trunk file
+- Impact:
+  - future work should keep `complete_car_config.py` focused on parameter tree definition and runtime-config assembly only
+  - new helper functions, custom command classes, and env runtime code should be added to sibling files under `envs/base/`, not back into `complete_car_config.py`
+- Status:
+  - static `py_compile` validation passed
+
+### RL mainline has been simplified again: `baseline/` now keeps only one override file, and terrain generation moved to `utils/terrain.py`
+- Date:
+  - 2026-04-09
+- Decision:
+  - treat `envs/base/complete_car_config.py` as the single shared RL framework file
+  - treat `envs/baseline/complete_car_config_baseline.py` as the single current baseline-stage override file
+  - move the terrain builder out of `envs/baseline/` into:
+    - `complete_car_rl_training/utils/terrain.py`
+- Reason:
+  - the user explicitly wanted the shared framework file to read more like MGDP's config trunk, with clear sections for:
+    - terrain
+    - perception
+    - observation
+    - action
+    - reward
+    - termination
+  - the user also wanted the current baseline layer to stop carrying extra runtime/agent/mdp files and instead remain only as a parameter-overriding stage config
+- Durable structure conclusion:
+  - `envs/base/complete_car_config.py` now owns:
+    - shared env settings
+    - shared terrain settings
+    - shared perception settings
+    - shared control settings
+    - scene / commands / observations / actions / events / terminations / reward helper logic
+    - the shared runtime env class `CompleteCarRLEnv`
+    - the shared PPO trunk `CompleteCarCfgPPO`
+  - `envs/baseline/` now contains only:
+    - `complete_car_config_baseline.py`
+  - `utils/terrain.py` now owns:
+    - terrain generation
+    - `terrain_type / terrain_class / env_origins`
+    - terrain curriculum helper
+    - terrain spawn-offset helper
+  - Gym task registration now happens inside:
+    - `envs/baseline/complete_car_config_baseline.py`
+  - `envs/__init__.py` imports that module directly for registration side effects
+- Impact:
+  - future Stage2 / Stage3 should continue to add sibling override files or sibling stage packages, but the current baseline layer should remain thin
+  - future terrain changes should first update `utils/terrain.py`, not recreate another terrain file inside `baseline/`
+  - root Isaac Sim preview / teleop scripts should now treat `utils/terrain.py` as the active terrain source of truth
+- Status:
+  - code structure updated
+  - static syntax validation passed
+  - static syntax validation passed

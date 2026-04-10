@@ -4,13 +4,29 @@ This repository is the long-term working tree for an undergraduate robotics thes
 
 ## Active Mainline
 
-The current engineering mainline is the single Isaac Lab project under `src/rl_lab/complete_car_rl_training/`.
+The current engineering mainline is the single Isaac Lab project under `RL_Training/`.
+Its active RL package structure now uses Isaac Lab's direct workflow:
+
+- `complete_car_rl_training/tasks/direct/complete_car/complete_car_env.py`
+  - the single `DirectRLEnv` task implementation
+- `complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+  - the shared direct config trunk
+- `complete_car_rl_training/tasks/direct/complete_car/stage0_flat_cfg.py`
+  - Stage 0 flat-ground config
+- `complete_car_rl_training/tasks/direct/complete_car/stage1_terrain_cfg.py`
+  - Stage 1 terrain + curriculum config
+- `complete_car_rl_training/tasks/direct/complete_car/stage2_perception_cfg.py`
+  - Stage 2 perception config
+- `complete_car_rl_training/tasks/direct/complete_car/terrain/`
+  - terrain generation and runtime helper
+- `complete_car_rl_training/tasks/direct/complete_car/sensors/`
+  - camera / lidar / imu runtime helper
 
 The current research stage is:
 
 1. Stage 0 completed: prove `reset -> step -> reward -> termination -> train` works end to end.
-2. Stage 1 ongoing: `flat-only` baseline with proprioception, 6 spherical-joint position targets plus 6 wheel-speed targets, and velocity tracking.
-3. Later stages: to be defined after the new Stage 1 baseline is stable.
+2. Current code mainline has been refactored to direct workflow, with staged configs for `flat -> terrain -> perception`.
+3. Runtime smoke in a real Isaac Lab environment is still pending after the direct refactor.
 
 ## Repository Map
 
@@ -22,8 +38,8 @@ The current research stage is:
   - Detailed Chinese map of the repository structure and the role of each major file group.
 - `logs/`
   - Date-based work log.
-- `src/rl_lab/complete_car_rl_training/`
-  - The only active Isaac Lab RL code workspace.
+- `RL_Training/`
+  - The only active Isaac Lab RL code workspace, including the Python package, launch scripts, docs, skills, and IK utilities.
 - `scripts/isaac_sim/`
   - Isaac Sim validation, keyboard control, USD inspection, and asset-repair helpers.
 - `scripts/literature/`
@@ -42,15 +58,19 @@ The current research stage is:
   - Thesis template, LaTeX sources, and compiled thesis artifacts.
 - `Drawing/`
   - CAD and illustration assets.
-- `FK_iteration.m`, `IK_iteration.md`, `IK_iteration.mlx`
-  - Symbolic forward/inverse-kinematics derivation workspace.
+- `RL_Training/Kinematic Model/`
+  - Current forward/inverse-kinematics derivation workspace and IK validation utilities.
 
 ## Where To Work
 
 - RL environment logic:
-  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/`
+- RL terrain runtime:
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/terrain/`
+- RL sensor runtime:
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/sensors/`
 - RL launch scripts:
-  - `src/rl_lab/complete_car_rl_training/scripts/`
+  - `RL_Training/scripts/`
 - Isaac Sim validation and teleoperation:
   - `scripts/isaac_sim/`
 - Literature notes and PDFs:
@@ -60,7 +80,7 @@ The current research stage is:
 
 ## Practical Rule
 
-If a task is about runnable RL code, default to `src/rl_lab/complete_car_rl_training/`.
+If a task is about runnable RL code, default to `RL_Training/`.
 
 If a task is about robot assets or simulator-side validation, inspect `USD/` and `scripts/isaac_sim/` first.
 

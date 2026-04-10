@@ -17,7 +17,7 @@
 
 ## 2. 根目录按职责划分
 
-- `src/`
+- `RL_Training/`
   - 当前唯一活跃的 RL 代码工作区入口。
 - `scripts/`
   - Isaac Sim 验证、资产修复、文献处理等辅助脚本。
@@ -37,12 +37,8 @@
   - 论文模板、章节正文、编译输出。
 - `Drawing/`
   - 图纸、示意图、PPT 素材。
-- `IK_iteration.md`
-  - 逆运动学符号推导的 Markdown 导出。
-- `IK_iteration.mlx`
-  - MATLAB Live Script 版逆运动学推导主文件。
-- `IK_iteration.asv`
-  - MATLAB 自动保存文件，属于派生产物。
+- `RL_Training/Kinematic Model/`
+  - 当前前向/逆向运动学推导与 IK 验证脚本集中目录。
 - `literature_note_skill.md`
   - 文献阅读 skill 的仓库内草稿源。
 - `.venv-mineru/`
@@ -52,28 +48,49 @@
 
 主线目录：
 
-- `src/rl_lab/complete_car_rl_training/`
+- `RL_Training/`
 
 该目录是当前唯一应该持续演化的 Isaac Lab RL 项目，内部再分为：
 
 - `complete_car_rl_training/`
   - Python 包根目录。
-- `complete_car_rl_training/tasks/`
-  - 环境定义、动作、观测、reward、termination 等主线任务代码。
+- `complete_car_rl_training/tasks/direct/complete_car/`
+  - 当前唯一活跃的 direct task 主目录。
+  - 其中：
+    - `complete_car_env.py`
+      - 单一 `DirectRLEnv` 运行主类。
+    - `complete_car_env_cfg.py`
+      - 共享 direct 配置主干。
+    - `stage0_flat_cfg.py`
+      - Stage0 平地配置。
+    - `stage1_terrain_cfg.py`
+      - Stage1 terrain + curriculum 配置。
+    - `stage2_perception_cfg.py`
+      - Stage2 perception 配置。
+    - `rewards.py / observations.py / commands.py / terminations.py`
+      - 纯张量 helper。
+    - `assets/robot_cfg.py`
+      - 机器人 articulation 配置和关节名常量。
+    - `terrain/`
+      - 地形生成和 terrain runtime。
+    - `sensors/`
+      - IMU / Camera / Lidar runtime。
+    - `agents/ppo_cfg.py`
+      - 三阶段 PPO 配置。
 - `scripts/`
   - `train.py`、`play.py`、`zero_agent.py`、`random_agent.py`、`tensorboard_export.py` 等运行入口。
 - `docs/`
   - 训练日志阅读说明等项目内文档。
 - `skills/isaac-rl-run-diagnosis/`
   - 训练日志诊断 skill。
-- `IK_model.py`、`IK_model_true.py`
-  - 与球铰逆运动学相关的 Python 推导/验证脚本。
-- `test_ik_keyboard.py`
-  - 当前较新的键盘验证脚本，走“姿态目标 -> IK -> joint target -> articulation controller”链路。
+- `Kinematic Model/IK/`
+  - 当前 IK 推导、README 与键盘验证脚本。
 
 结论：
 
 - 只要是 RL baseline、环境定义、训练脚本、日志导出相关问题，默认先看这里。
+- 当前 RL 主线已经彻底切到 Isaac Lab direct workflow，不再沿用 `envs/base + envs/baseline` 的 manager-based 组织方式。
+- terrain runtime 和 sensor runtime 已经从 env 主类中拆为 direct helper，但任务语义仍统一回收到 `CompleteCarEnv`。
 - 不应再把新的 RL 主线代码分散到根目录或其他旧工作区。
 
 ## 4. Isaac Sim 与资产相关目录
@@ -235,13 +252,15 @@
 - 长期继承结论
   - `docs/conversation_history.md`
 - RL 环境主配置
-  - `src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/stage0_flat_cfg.py`
+- RL 通用 direct 主干
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
 - RL 训练脚本
-  - `src/rl_lab/complete_car_rl_training/scripts/rsl_rl/train.py`
+  - `RL_Training/scripts/rsl_rl/train.py`
 - 旧版键盘控车脚本
   - `scripts/isaac_sim/control_keyboard.py`
 - 当前 IK 键盘验证脚本
-  - `src/rl_lab/complete_car_rl_training/tools/ik/test_ik_keyboard.py`
+  - `RL_Training/Kinematic Model/IK/test_ik_keyboard.py`
 - 论文逆运动学章节
   - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
 
@@ -250,7 +269,7 @@
 基于当前实际结构，可以把仓库内容理解为五条并行工作线：
 
 - RL 主线
-  - `src/rl_lab/complete_car_rl_training/`
+  - `RL_Training/`
 - 资产与仿真验证线
   - `USD/`、`scripts/isaac_sim/`、`complete_car_*`
 - 文献线

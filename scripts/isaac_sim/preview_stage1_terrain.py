@@ -10,7 +10,7 @@ from isaaclab.app import AppLauncher
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RL_PROJECT_ROOT = PROJECT_ROOT / "src" / "rl_lab" / "complete_car_rl_training"
+RL_PROJECT_ROOT = PROJECT_ROOT / "RL_Training"
 if str(RL_PROJECT_ROOT) not in sys.path:
     sys.path.append(str(RL_PROJECT_ROOT))
 
@@ -43,10 +43,8 @@ from isaaclab.sim import SimulationContext
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 
-from complete_car_rl_training.tasks.manager_based.complete_car_env_cfg import (
-    COMPLETE_CAR_CFG,
-)
-from complete_car_rl_training.tasks.manager_based.stage1_terrain import (
+from complete_car_rl_training.tasks.direct.complete_car.assets import COMPLETE_CAR_CFG
+from complete_car_rl_training.tasks.direct.complete_car.terrain import (
     Stage1TerrainCfg,
     build_stage1_terrain_data,
     get_terrain_name_from_idx,

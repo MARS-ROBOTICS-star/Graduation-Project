@@ -9,14 +9,16 @@ from pathlib import Path
 
 _THIS_FILE = Path(__file__).resolve()
 PROJECT_ROOT = next(parent for parent in _THIS_FILE.parents if (parent / "AGENTS.md").exists())
-RL_PROJECT_ROOT = PROJECT_ROOT / "src" / "rl_lab" / "complete_car_rl_training"
+RL_PROJECT_ROOT = PROJECT_ROOT / "RL_Training"
 ISAACLAB_SOURCE_ROOT = Path("/home/ubuntu/IsaacLab/source/isaaclab")
 STAGE1_TERRAIN_PATH = (
     RL_PROJECT_ROOT
     / "complete_car_rl_training"
     / "tasks"
-    / "manager_based"
-    / "stage1_terrain.py"
+    / "direct"
+    / "complete_car"
+    / "terrain"
+    / "terrain_generator.py"
 )
 DEFAULT_HEADLESS_FRAMES = 120
 ISAAC_SIM_ROOT = Path(os.environ.get("ISAAC_SIM_ROOT", "/home/ubuntu/isaacsim"))
@@ -291,7 +293,7 @@ if input_iface is not None and keyboard is not None:
 
 
 def load_stage1_terrain_module():
-    """Load stage1_terrain.py directly to avoid importing the full task package tree."""
+    """Load terrain_generator.py directly to avoid importing the full task package tree."""
     spec = importlib.util.spec_from_file_location("stage1_terrain_local", STAGE1_TERRAIN_PATH)
     if spec is None or spec.loader is None:
         raise ImportError(f"Unable to load stage1 terrain module from {STAGE1_TERRAIN_PATH}")

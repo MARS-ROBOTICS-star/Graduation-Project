@@ -1,511 +1,828 @@
-\section{运动学模型}
+\setlength{\baselineskip}{20pt}
+\chapter{第三章：一级标题}
+\label{cha:chap3}
+\section{整车运动学速度雅可比分析}
 
-\subsection{基础理论}
+为建立三模块六轮小车在给定构型与运动指令条件下的车轮角速度分配关系，本节在统一符号体系下推导整车主运动、模块相对构型变化以及各轮滚动速度之间的映射关系。考虑到车体几何结构关于中模块参考点呈镜像对称，故将整车主坐标系设置于中模块参考点处，并采用前后对称向量统一描述几何参数。该处理方式可将前后模块的位姿关系、速度传播关系以及轮速分配关系压缩为一组结构一致的表达式，从而为后续控制分配与雅可比矩阵构造提供清晰基础。
 
-为了统一后续正运动学、逆运动学以及速度雅可比矩阵的符号表达，本文首先对空间位置、姿态、位姿、旋转矩阵以及齐次变换矩阵作简要说明。本文的符号体系参考《机器人学导论》中关于坐标系表示与空间变换的写法，采用上标表示参考坐标系，下标表示被描述对象或目标坐标系。
+\subsection{坐标系与几何参数定义}
 
-\subsubsection{空间位置、姿态与位姿}
+设前模块、中模块、后模块分别记为 $M_1$、$M_2$、$M_3$，其参考点分别为 $O_1$、$O_2$、$O_3$。在三个模块上分别建立局部坐标系 ${B_1}$、${B_2}$、${B_3}$，其中 ${B_2}$ 固定于中模块参考点 $O_2$，并作为整车主坐标系。各模块坐标系均满足右手定则，且在基准构型下三个模块的 $x$ 轴均指向整车前进方向，$y$ 轴指向车体左侧，$z$ 轴竖直向上。
 
-设空间中建立参考坐标系 $\{A\}$ 与移动坐标系 $\{B\}$。若点 $P$ 在坐标系 $\{A\}$ 中的位置矢量记为
+设前后连接中心分别为 $J_f$ 与 $J_r$。考虑整车关于中模块参考点的对称结构，在 ${B_2}$ 中定义中模块参考点至前连接中心的向量为
 \begin{equation}
-{}^{A}\mathbf{p}_{P}
-=
+{}^{2}\mathbf a=
 \begin{bmatrix}
-{}^{A}x_{P} & {}^{A}y_{P} & {}^{A}z_{P}
-\end{bmatrix}^{\mathrm T},
-\end{equation}
-则该矢量描述了点 $P$ 相对于坐标系 $\{A\}$ 原点的空间位置。
-
-仅有位置并不能完整刻画一个刚体在空间中的状态。对于刚体或坐标系而言，还需要描述其方向信息，即姿态。所谓姿态，本质上是一个坐标系的三个坐标轴相对于另一坐标系的方向关系。当同时给出刚体的空间位置与姿态时，便得到该刚体的位姿。
-
-从几何意义上看，位姿可以理解为：将坐标系 $\{B\}$ 的原点放置到空间某一点，同时再将其三个坐标轴旋转到某一特定方向。这样，坐标系 $\{B\}$ 相对于坐标系 $\{A\}$ 的状态就被唯一确定。
-
-\begin{figure}[htbp]
-\centering
-\begin{tikzpicture}[scale=1.0,>=Latex]
-\coordinate (OA) at (0,0);
-\coordinate (OB) at (4.2,1.6);
-
-\draw[->,thick] (OA) -- ++(2.2,0) node[below] {$x_A$};
-\draw[->,thick] (OA) -- ++(0,2.0) node[left] {$y_A$};
-\fill (OA) circle (1.4pt) node[below left] {$O_A$};
-
-\draw[->,thick] (OB) -- ++(1.4,0.8) node[right] {$x_B$};
-\draw[->,thick] (OB) -- ++(-0.7,1.3) node[above] {$y_B$};
-\fill (OB) circle (1.4pt) node[below right] {$O_B$};
-
-\draw[->,thick,dashed] (OA) -- (OB) node[midway,below] {$^{A}\mathbf{p}_{B}$};
-
-\coordinate (P) at (5.5,3.0);
-\fill (P) circle (1.4pt) node[above right] {$P$};
-\draw[->,thick] (OA) -- (P) node[midway,left] {$^{A}\mathbf{p}_{P}$};
-\draw[->,thick,dotted] (OB) -- (P) node[midway,right] {$^{B}\mathbf{p}_{P}$};
-
-\node at (2.0,-0.8) {$\{A\}$};
-\node at (5.2,0.5) {$\{B\}$};
-\end{tikzpicture}
-\caption{位置、姿态与位姿的几何含义示意图}
-\label{fig:pose_definition}
-\end{figure}
-
-图 \ref{fig:pose_definition} 给出了位置与位姿的直观含义。向量 $^{A}\mathbf{p}_{B}$ 描述坐标系 $\{B\}$ 原点在 $\{A\}$ 中的位置，而坐标系 $\{B\}$ 的轴方向则描述其姿态。二者共同构成坐标系 $\{B\}$ 相对于 $\{A\}$ 的位姿。
-
-\subsubsection{旋转矩阵}
-
-设坐标系 $\{B\}$ 相对于 $\{A\}$ 的姿态由旋转矩阵表示为
-\begin{equation}
-{}^{A}_{B}\mathbf{R}
-=
-\begin{bmatrix}
-{}^{A}\mathbf{\hat{x}}_{B} &
-{}^{A}\mathbf{\hat{y}}_{B} &
-{}^{A}\mathbf{\hat{z}}_{B}
-\end{bmatrix},
-\end{equation}
-其中 $^{A}\mathbf{\hat{x}}_{B}$、$^{A}\mathbf{\hat{y}}_{B}$、$^{A}\mathbf{\hat{z}}_{B}$ 分别表示坐标系 $\{B\}$ 的三个单位轴在坐标系 $\{A\}$ 中的表示。因此，旋转矩阵的每一列都具有明确的几何意义，即目标坐标系各坐标轴在参考坐标系中的方向余弦。
-
-旋转矩阵满足正交性条件
-\begin{equation}
-{}^{A}_{B}\mathbf{R}^{\mathrm T} \, {}^{A}_{B}\mathbf{R}
-=
-\mathbf{I},
-\end{equation}
-且其行列式满足
-\begin{equation}
-\det\left({}^{A}_{B}\mathbf{R}\right)=1.
-\end{equation}
-因此，旋转矩阵既能够实现向量坐标变换，又能够保持向量长度与夹角不变。
-
-绕固定坐标轴的基本旋转矩阵分别写为
-\begin{equation}
-\mathbf{R}_{x}(\varphi)
-=
-\begin{bmatrix}
-1 & 0 & 0 \\
-0 & \cos\varphi & -\sin\varphi \\
-0 & \sin\varphi & \cos\varphi
-\end{bmatrix},
-\end{equation}
-\begin{equation}
-\mathbf{R}_{y}(\theta)
-=
-\begin{bmatrix}
-\cos\theta & 0 & \sin\theta \\
-0 & 1 & 0 \\
--\sin\theta & 0 & \cos\theta
-\end{bmatrix},
-\end{equation}
-\begin{equation}
-\mathbf{R}_{z}(\psi)
-=
-\begin{bmatrix}
-\cos\psi & -\sin\psi & 0 \\
-\sin\psi & \cos\psi & 0 \\
-0 & 0 & 1
+a_x\\
+a_y\\
+a_z
 \end{bmatrix}.
 \end{equation}
-
-在本文中，移动平台姿态采用 $Z$-$Y$-$X$ 顺序的欧拉角表示，即
+由对称性可得
 \begin{equation}
-{}^{O}_{P}\mathbf{R}
-=
-\mathbf{R}_{z}(\psi)\mathbf{R}_{y}(\theta)\mathbf{R}_{x}(\phi),
-\label{eq:rpy_rotation}
+{}^{2}\overrightarrow{O_2J_f}={}^{2}\mathbf a,
+\qquad
+{}^{2}\overrightarrow{O_2J_r}=-{}^{2}\mathbf a.
 \end{equation}
-其中 $\phi$、$\theta$、$\psi$ 分别表示平台绕 $x$ 轴、$y$ 轴和 $z$ 轴的姿态角。
+该向量表征中模块参考点与两侧连接中心之间的固定几何关系。
 
-\begin{figure}[htbp]
-\centering
-\begin{tikzpicture}[scale=1.0,>=Latex]
-\coordinate (O) at (0,0);
-\draw[->,thick] (O) -- ++(2.4,0) node[below] {$x_A$};
-\draw[->,thick] (O) -- ++(0,2.3) node[left] {$y_A$};
-
-\draw[->,thick] (O) -- ++(1.6,1.0) node[right] {$x_B$};
-\draw[->,thick] (O) -- ++(-0.9,1.8) node[above] {$y_B$};
-
-\draw (1.0,0) arc[start angle=0,end angle=32,radius=1.0];
-\node at (1.2,0.45) {$\psi$};
-
-\fill (O) circle (1.4pt) node[below left] {$O$};
-\node at (2.1,-0.6) {$\{A\}$};
-\node at (1.9,1.7) {$\{B\}$};
-\end{tikzpicture}
-\caption{旋转矩阵几何意义示意图}
-\label{fig:rotation_geometry}
-\end{figure}
-
-图 \ref{fig:rotation_geometry} 表明，姿态变换的本质并不是改变刚体本身，而是改变同一几何对象在不同坐标系下的表示方式。旋转矩阵正是这种方向关系的代数表达。
-
-\subsubsection{齐次变换矩阵}
-
-为了同时表达位置变换和姿态变换，通常引入齐次变换矩阵。设坐标系 $\{B\}$ 相对于坐标系 $\{A\}$ 的位姿为
+进一步地，在侧模块局部坐标系中定义连接中心到模块参考点的内向偏置向量为
 \begin{equation}
-{}^{A}_{B}\mathbf{T}
-=
+\mathbf b=
 \begin{bmatrix}
-{}^{A}_{B}\mathbf{R} & {}^{A}\mathbf{p}_{B} \\
-\mathbf{0}^{\mathrm T} & 1
+b_x\\
+0\\
+b_z
 \end{bmatrix}.
-\label{eq:homogeneous_transform}
 \end{equation}
-则点 $P$ 在两个坐标系中的齐次坐标满足
+于是有
 \begin{equation}
+{}^{1}\overrightarrow{J_fO_1}=\mathbf b,
+\qquad
+{}^{3}\overrightarrow{J_rO_3}=-\mathbf b.
+\end{equation}
+其中，$\mathbf b$ 刻画了侧模块参考点相对于连接中心的固定安装偏置。采用该定义后，前后模块的位置关系仅通过符号相反体现镜像对称性。
+
+\subsection{构型变量与相对姿态矩阵}
+
+以前后模块相对中模块的姿态作为整车构型变量。采用 $ZYX$ 欧拉角描述模块相对姿态，则前模块相对中模块的构型向量与后模块相对中模块的构型向量分别定义为
+\begin{equation}
+\mathbf q_f=
 \begin{bmatrix}
-{}^{A}\mathbf{p}_{P} \\
-1
+\psi_f\\
+\theta_f\\
+\phi_f
+\end{bmatrix},
+\qquad
+\mathbf q_r=
+\begin{bmatrix}
+\psi_r\\
+\theta_r\\
+\phi_r
+\end{bmatrix}.
+\end{equation}
+于是整车构型向量可写为
+\begin{equation}
+\mathbf q=
+\begin{bmatrix}
+\mathbf q_f^T & \mathbf q_r^T
+\end{bmatrix}^{T}
+=
+\begin{bmatrix}
+\psi_f & \theta_f & \phi_f & \psi_r & \theta_r & \phi_r
+\end{bmatrix}^{T}.
+\end{equation}
+相应的构型变化率定义为
+\begin{equation}
+\dot{\mathbf q}=
+\begin{bmatrix}
+\dot{\mathbf q}_f^T & \dot{\mathbf q}_r^T
+\end{bmatrix}^{T}
+=
+\begin{bmatrix}
+\dot\psi_f & \dot\theta_f & \dot\phi_f & \dot\psi_r & \dot\theta_r & \dot\phi_r
+\end{bmatrix}^{T}.
+\end{equation}
+
+按照 $ZYX$ 旋转顺序，前后模块相对中模块的旋转矩阵分别表示为
+\begin{equation}
+{}^{2}\mathbf R_1=
+\mathbf R_z(\psi_f)\mathbf R_y(\theta_f)\mathbf R_x(\phi_f),
+\qquad
+{}^{2}\mathbf R_3=
+\mathbf R_z(\psi_r)\mathbf R_y(\theta_r)\mathbf R_x(\phi_r).
+\end{equation}
+式中，${}^{2}\mathbf R_i$ 表示将 ${B_i}$ 中表示的向量映射到 ${B_2}$ 中。其逆变换为
+\begin{equation}
+{}^{1}\mathbf R_2=({}^{2}\mathbf R_1)^T,
+\qquad
+{}^{3}\mathbf R_2=({}^{2}\mathbf R_3)^T.
+\end{equation}
+上述定义给出了后续位置、速度以及轮速推导所需的姿态变换基础。
+
+\subsection{模块参考点绝对位置表达}
+
+根据几何关系，前模块参考点 $O_1$ 相对中模块参考点 $O_2$ 的位置向量为
+\begin{equation}
+{}^{2}\mathbf p_1
+=
+{}^{2}\overrightarrow{O_2O_1}
+=
+{}^{2}\overrightarrow{O_2J_f}
++
+{}^{2}\overrightarrow{J_fO_1}.
+\end{equation}
+由几何定义可知
+\begin{equation}
+{}^{2}\overrightarrow{O_2J_f}={}^{2}\mathbf a,
+\qquad
+{}^{2}\overrightarrow{J_fO_1}={}^{2}\mathbf R_1\mathbf b,
+\end{equation}
+因此有
+\begin{equation}
+{}^{2}\mathbf p_1
+=
+{}^{2}\mathbf a+{}^{2}\mathbf R_1\mathbf b.
+\label{eq:p1}
+\end{equation}
+该式表明，前模块参考点的位置由中模块到前连接中心的固定偏置与前模块相对姿态作用下的局部安装偏置共同决定。
+
+同理，后模块参考点 $O_3$ 相对中模块参考点 $O_2$ 的位置向量为
+\begin{equation}
+{}^{2}\mathbf p_3
+=
+{}^{2}\overrightarrow{O_2O_3}
+=
+{}^{2}\overrightarrow{O_2J_r}
++
+{}^{2}\overrightarrow{J_rO_3}.
+\end{equation}
+由对称定义可得
+\begin{equation}
+{}^{2}\overrightarrow{O_2J_r}=-{}^{2}\mathbf a,
+\qquad
+{}^{2}\overrightarrow{J_rO_3}={}^{2}\mathbf R_3(-\mathbf b),
+\end{equation}
+故后模块参考点位置为
+\begin{equation}
+{}^{2}\mathbf p_3
+=
+-{}^{2}\mathbf a-{}^{2}\mathbf R_3\mathbf b.
+\label{eq:p3}
+\end{equation}
+中模块参考点即主坐标系原点，因此有
+\begin{equation}
+{}^{2}\mathbf p_2=\mathbf 0.
+\end{equation}
+式 \eqref{eq:p1} 与式 \eqref{eq:p3} 体现了前后模块位置关系的严格镜像对称性。
+
+\subsection{整车主运动输入与广义速度定义}
+
+由于整车主坐标系设置于中模块参考点 $O_2$，故整车运动指令直接定义在 ${B_2}$ 下。中模块参考点的线速度与角速度分别记为
+\begin{equation}
+{}^{2}\mathbf v_c=
+\begin{bmatrix}
+V_x\\
+V_y\\
+V_z
+\end{bmatrix},
+\qquad
+{}^{2}\boldsymbol\omega_c=
+\begin{bmatrix}
+\Omega_x\\
+\Omega_y\\
+\Omega_z
+\end{bmatrix}.
+\end{equation}
+此处保留三维一般形式，不对运动模式施加平面约束。于是中模块的绝对速度可直接写为
+\begin{equation}
+{}^{2}\mathbf v_2={}^2\mathbf v_c,
+\qquad
+{}^{2}\boldsymbol\omega_2={}^2\boldsymbol\omega_c.
+\label{eq:middle_twist}
+\end{equation}
+
+为便于后续雅可比矩阵构造，定义整车广义速度向量为
+\begin{equation}
+\boldsymbol\xi=
+\begin{bmatrix}
+{}^{2}\mathbf v_c^T &
+{}^{2}\boldsymbol\omega_c^T &
+\dot{\mathbf q}_f^T &
+\dot{\mathbf q}_r^T
+\end{bmatrix}^{T}
+\in \mathbb{R}^{12}.
+\end{equation}
+该向量同时包含整车主运动速度与前后模块的构型变化率，是驱动车轮速度分配的直接输入量。
+
+\subsection{构型变化率与模块相对角速度}
+
+前后模块相对中模块的角速度由欧拉角变化率决定。对于任一侧模块 $M_i$（$i\in\{1,3\}$），由 $ZYX$ 欧拉角旋转序列可知，其相对中模块的角速度在 ${B_2}$ 中可表示为
+\begin{equation}
+{}^{2}\boldsymbol\omega_{i/2}
+=
+\dot\psi_i\,\mathbf e_z
++
+\dot\theta_i\,\mathbf R_z(\psi_i)\mathbf e_y
++
+\dot\phi_i\,\mathbf R_z(\psi_i)\mathbf R_y(\theta_i)\mathbf e_x,
+\label{eq:omega_rel_space}
+\end{equation}
+其中 $\mathbf e_x=[1,0,0]^T$、$\mathbf e_y=[0,1,0]^T$、$\mathbf e_z=[0,0,1]^T$ 为标准基向量。式 \eqref{eq:omega_rel_space} 给出了相对角速度在中模块坐标系中的分解形式。
+
+为了便于轮速推导，将相对角速度变换到侧模块自身坐标系。左乘 ${}^{i}\mathbf R_2$ 后可得
+\begin{equation}
+{}^{i}\boldsymbol\omega_{i/2}
+=
+{}^{i}\mathbf R_2\,{}^{2}\boldsymbol\omega_{i/2}.
+\end{equation}
+将式 \eqref{eq:omega_rel_space} 展开整理，可得
+\begin{equation}
+{}^{i}\boldsymbol\omega_{i/2}
+=
+\mathbf T(\phi_i,\theta_i)
+\begin{bmatrix}
+\dot\psi_i\\
+\dot\theta_i\\
+\dot\phi_i
+\end{bmatrix},
+\label{eq:T_euler}
+\end{equation}
+其中
+\begin{equation}
+\mathbf T(\phi,\theta)=
+\begin{bmatrix}
+-\sin\theta & 0 & 1\\
+\sin\phi\cos\theta & \cos\phi & 0\\
+\cos\phi\cos\theta & -\sin\phi & 0
+\end{bmatrix}.
+\end{equation}
+因此，前后模块相对角速度分别写为
+\begin{equation}
+{}^{1}\boldsymbol\omega_{1/2}
+=
+\mathbf T(\phi_f,\theta_f)\dot{\mathbf q}_f,
+\qquad
+{}^{3}\boldsymbol\omega_{3/2}
+=
+\mathbf T(\phi_r,\theta_r)\dot{\mathbf q}_r.
+\label{eq:relative_omega_body}
+\end{equation}
+式 \eqref{eq:relative_omega_body} 建立了欧拉角速度与模块相对角速度之间的线性关系，是构型变化率进入轮速分配模型的关键环节。
+
+由绝对角速度的叠加关系，可得前后模块绝对角速度在各自局部坐标系中的表达式
+\begin{equation}
+{}^{1}\boldsymbol\omega_1
+=
+{}^{1}\mathbf R_2\,{}^{2}\boldsymbol\omega_c
++
+{}^{1}\boldsymbol\omega_{1/2},
+\qquad
+{}^{3}\boldsymbol\omega_3
+=
+{}^{3}\mathbf R_2\,{}^{2}\boldsymbol\omega_c
++
+{}^{3}\boldsymbol\omega_{3/2}.
+\label{eq:body_omega}
+\end{equation}
+式 \eqref{eq:body_omega} 表明，侧模块的绝对角速度由整车主角速度和构型变化引起的相对角速度共同决定。
+
+\subsection{前后模块线速度推导}
+
+为解释前后模块线速度表达式中为何会出现“牵连速度项 + 相对位置导数项”的结构，以下显式引入惯性坐标系 ${W}$。在该坐标系中，前后模块参考点的绝对位置均可写成“中模块绝对位置 + 相对位移经姿态变换后的结果”。随后对该绝对位置关系关于时间求导，速度传递公式将自然得到。
+
+\subsubsection{前模块线速度}
+
+根据式 \eqref{eq:p1}，前模块参考点相对中模块参考点的位移在 ${B_2}$ 中为
+\begin{equation}
+{}^{2}\mathbf p_1
+=
+{}^{2}\mathbf a+{}^{2}\mathbf R_1\mathbf b.
+\end{equation}
+将其写成惯性坐标系 ${W}$ 中的绝对位置关系，可得
+\begin{equation}
+{}^{W}\mathbf r_{O_1}
+=
+{}^{W}\mathbf r_{O_2}
++
+{}^{W}\mathbf R_2\,{}^{2}\mathbf p_1.
+\label{eq:rO1_world}
+\end{equation}
+式 \eqref{eq:rO1_world} 表明，前模块参考点的绝对位置由中模块参考点的绝对位置与矢量 ${}^{2}\mathbf p_1$ 在空间中的实际朝向共同决定。对式 \eqref{eq:rO1_world} 关于时间求导，有
+\begin{equation}
+{}^{W}\mathbf v_1
+=
+{}^{W}\mathbf v_2
++
+\frac{\mathrm d}{\mathrm dt}\left({}^{W}\mathbf R_2\,{}^{2}\mathbf p_1\right).
+\label{eq:v1_world_start}
+\end{equation}
+对乘积项进一步展开，可得
+\begin{equation}
+{}^{W}\mathbf v_1
+=
+{}^{W}\mathbf v_2
++
+\dot{{}^{W}\mathbf R_2}\,{}^{2}\mathbf p_1
++
+{}^{W}\mathbf R_2\,{}^{2}\dot{\mathbf p}_1.
+\label{eq:v1_world_expand}
+\end{equation}
+其中，第二项对应主坐标系 ${B_2}$ 自身转动引起的牵连速度，第三项对应矢量 ${}^{2}\mathbf p_1$ 在 ${B_2}$ 中本身随构型变化而产生的相对运动速度。根据刚体转动中的标准关系
+\begin{equation}
+\dot{{}^{W}\mathbf R_2}\,\mathbf x
+=
+{}^{W}\boldsymbol\omega_2\times\left({}^{W}\mathbf R_2\,\mathbf x\right),
+\end{equation}
+有
+\begin{equation}
+\dot{{}^{W}\mathbf R_2}\,{}^{2}\mathbf p_1
+=
+{}^{W}\boldsymbol\omega_2\times\left({}^{W}\mathbf R_2\,{}^{2}\mathbf p_1\right).
+\end{equation}
+再将式 \eqref{eq:v1_world_expand} 左乘 ${}^{2}\mathbf R_W$，写回 ${B_2}$ 分量，即得
+\begin{equation}
+{}^{2}\mathbf v_1
+=
+{}^{2}\mathbf v_2
++
+{}^{2}\boldsymbol\omega_2\times {}^{2}\mathbf p_1
++
+{}^{2}\dot{\mathbf p}_1.
+\label{eq:v1_start}
+\end{equation}
+式 \eqref{eq:v1_start} 表明，前模块线速度由三部分组成：中模块参考点平动速度、主坐标系转动引起的牵连速度，以及前模块相对中模块运动引起的局部相对速度。接下来只需展开 ${}^{2}\dot{\mathbf p}_1$ 即可得到最终表达式。
+
+由于 ${}^{2}\mathbf a$ 为固定几何向量，故 $\frac{\mathrm d}{\mathrm dt}({}^{2}\mathbf a)=\mathbf 0$。同时 $\mathbf b$ 在 ${B_1}$ 中为常向量，因此有
+\begin{equation}
+{}^{2}\dot{\mathbf p}_1
+=
+\frac{\mathrm d}{\mathrm dt}\left({}^{2}\mathbf R_1\mathbf b\right)
+=
+{}^{2}\boldsymbol\omega_{1/2}\times\left({}^{2}\mathbf R_1\mathbf b\right).
+\label{eq:p1dot}
+\end{equation}
+式 \eqref{eq:p1dot} 表明，前模块相对位置导数项完全由前模块相对中模块的姿态变化引起。将式 \eqref{eq:middle_twist}、式 \eqref{eq:p1} 及式 \eqref{eq:p1dot} 代入式 \eqref{eq:v1_start}，得
+\begin{align}
+{}^{2}\mathbf v_1
+&=
+{}^{2}\mathbf v_c
++
+{}^{2}\boldsymbol\omega_c\times\left({}^{2}\mathbf a+{}^{2}\mathbf R_1\mathbf b\right)
++
+{}^{2}\boldsymbol\omega_{1/2}\times\left({}^{2}\mathbf R_1\mathbf b\right) \nonumber\\
+&=
+{}^{2}\mathbf v_c
++
+{}^{2}\boldsymbol\omega_c\times {}^{2}\mathbf a
++
+{}^{2}\boldsymbol\omega_c\times\left({}^{2}\mathbf R_1\mathbf b\right)
++
+{}^{2}\boldsymbol\omega_{1/2}\times\left({}^{2}\mathbf R_1\mathbf b\right).
+\label{eq:v1_space}
+\end{align}
+式 \eqref{eq:v1_space} 中，第一项为中模块平动贡献，第二项为中模块绕 $O_2$ 转动在前连接侧形成的牵连速度，第三项与第四项分别对应整车主角速度和相对角速度在前模块偏置 $\mathbf b$ 处产生的附加速度。
+
+为了与轮速表达式统一，将式 \eqref{eq:v1_space} 变换到前模块局部坐标系。左乘 ${}^{1}\mathbf R_2$，并利用旋转变换与叉乘运算的交换关系，可得
+\begin{align}
+{}^{1}\mathbf v_1
+&=
+{}^{1}\mathbf R_2\left({}^{2}\mathbf v_c+{}^{2}\boldsymbol\omega_c\times {}^{2}\mathbf a\right)
++
+\left({}^{1}\mathbf R_2\,{}^{2}\boldsymbol\omega_c\right)\times \mathbf b
++
+{}^{1}\boldsymbol\omega_{1/2}\times \mathbf b \nonumber\\
+&=
+{}^{1}\mathbf R_2\left({}^{2}\mathbf v_c+{}^{2}\boldsymbol\omega_c\times {}^{2}\mathbf a\right)
++
+{}^{1}\boldsymbol\omega_1\times \mathbf b.
+\label{eq:v1_body}
+\end{align}
+式 \eqref{eq:v1_body} 是前模块参考点线速度的最终形式，其中 ${}^{1}\boldsymbol\omega_1$ 已包含整车主角速度和构型变化率的耦合作用。
+
+\subsubsection{后模块线速度}
+
+后模块的推导与前模块完全同构，只是几何符号关于中模块呈镜像关系。由式 \eqref{eq:p3}，后模块参考点相对中模块参考点的位移在 ${B_2}$ 中为
+\begin{equation}
+{}^{2}\mathbf p_3
+=
+-{}^{2}\mathbf a-{}^{2}\mathbf R_3\mathbf b.
+\end{equation}
+对应的惯性坐标系绝对位置关系可写为
+\begin{equation}
+{}^{W}\mathbf r_{O_3}
+=
+{}^{W}\mathbf r_{O_2}
++
+{}^{W}\mathbf R_2\,{}^{2}\mathbf p_3.
+\label{eq:rO3_world}
+\end{equation}
+对式 \eqref{eq:rO3_world} 关于时间求导，并同样利用乘积求导与转动坐标系速度变换关系，可得
+\begin{equation}
+{}^{2}\mathbf v_3
+=
+{}^{2}\mathbf v_2
++
+{}^{2}\boldsymbol\omega_2\times {}^{2}\mathbf p_3
++
+{}^{2}\dot{\mathbf p}_3.
+\label{eq:v3_start}
+\end{equation}
+式 \eqref{eq:v3_start} 与前模块对应式完全一致，只是相对位置向量改为 ${}^{2}\mathbf p_3$。再对 ${}^{2}\mathbf p_3$ 求导，有
+\begin{equation}
+{}^{2}\dot{\mathbf p}_3
+=
+-\frac{\mathrm d}{\mathrm dt}\left({}^{2}\mathbf R_3\mathbf b\right)
+=
+-{}^{2}\boldsymbol\omega_{3/2}\times\left({}^{2}\mathbf R_3\mathbf b\right).
+\label{eq:p3dot}
+\end{equation}
+该式表明，后模块相对位置导数项的符号与前模块相反，体现了几何镜像关系。将式 \eqref{eq:middle_twist}、式 \eqref{eq:p3} 及式 \eqref{eq:p3dot} 代入式 \eqref{eq:v3_start}，得
+\begin{align}
+{}^{2}\mathbf v_3
+&=
+{}^{2}\mathbf v_c
++
+{}^{2}\boldsymbol\omega_c\times\left(-{}^{2}\mathbf a-{}^{2}\mathbf R_3\mathbf b\right)
+-{}^{2}\boldsymbol\omega_{3/2}\times\left({}^{2}\mathbf R_3\mathbf b\right) \nonumber\\
+&=
+{}^{2}\mathbf v_c
+-{}^{2}\boldsymbol\omega_c\times {}^{2}\mathbf a
+-{}^{2}\boldsymbol\omega_c\times\left({}^{2}\mathbf R_3\mathbf b\right)
+-{}^{2}\boldsymbol\omega_{3/2}\times\left({}^{2}\mathbf R_3\mathbf b\right).
+\label{eq:v3_space}
+\end{align}
+式 \eqref{eq:v3_space} 的各项物理意义与前模块完全对应，仅几何符号相反。
+
+同样将其变换到后模块局部坐标系，得
+\begin{align}
+{}^{3}\mathbf v_3
+&=
+{}^{3}\mathbf R_2\left({}^{2}\mathbf v_c-{}^{2}\boldsymbol\omega_c\times {}^{2}\mathbf a\right)
+-\left({}^{3}\mathbf R_2\,{}^{2}\boldsymbol\omega_c\right)\times \mathbf b
+-{}^{3}\boldsymbol\omega_{3/2}\times \mathbf b \nonumber\\
+&=
+{}^{3}\mathbf R_2\left({}^{2}\mathbf v_c-{}^{2}\boldsymbol\omega_c\times {}^{2}\mathbf a\right)
+-{}^{3}\boldsymbol\omega_3\times \mathbf b.
+\label{eq:v3_body}
+\end{align}
+式 \eqref{eq:v3_body} 给出了后模块参考点的局部线速度表达式。
+
+\subsubsection{中模块线速度}
+
+由式 \eqref{eq:middle_twist} 可知，中模块参考点速度直接为
+\begin{equation}
+{}^{2}\mathbf v_2={}^2\mathbf v_c,
+\qquad
+{}^{2}\boldsymbol\omega_2={}^2\boldsymbol\omega_c.
+\label{eq:v2_body}
+\end{equation}
+中模块不包含额外的相对构型偏置项，因此其速度表达最为简洁。
+
+\subsection{轮心位置向量与轮心速度表达}
+
+设模块 $M_i$（$i=1,2,3$）左、右轮中心相对该模块参考点的局部位置向量分别为
+\begin{equation}
+{}^{i}\mathbf r_{iL}=
+\begin{bmatrix}
+l_i\\
+\dfrac{d_i}{2}\\
+h_i
+\end{bmatrix},
+\qquad
+{}^{i}\mathbf r_{iR}=
+\begin{bmatrix}
+l_i\\
+-\dfrac{d_i}{2}\\
+h_i
+\end{bmatrix}.
+\label{eq:wheel_pos}
+\end{equation}
+其中，$l_i$ 表示轮轴中心相对模块参考点的纵向偏置，$d_i$ 为模块轮距，$h_i$ 表示轮轴中心相对模块参考点的竖向偏置。若三模块轮系完全一致，则有 $l_1=l_2=l_3$、$d_1=d_2=d_3$、$h_1=h_2=h_3$；若存在局部结构差异，则保持式 \eqref{eq:wheel_pos} 的模块下标形式即可。
+
+对于刚体上任意一点 $P$，其线速度满足刚体速度传播关系
+\begin{equation}
+{}^{i}\mathbf v_P
+=
+{}^{i}\mathbf v_i
++
+{}^{i}\boldsymbol\omega_i\times {}^{i}\mathbf r_P.
+\label{eq:rigid_propagation}
+\end{equation}
+因此，模块 $M_i$ 左、右轮心速度分别为
+\begin{equation}
+{}^{i}\mathbf v_{iL}
+=
+{}^{i}\mathbf v_i
++
+{}^{i}\boldsymbol\omega_i\times {}^{i}\mathbf r_{iL},
+\qquad
+{}^{i}\mathbf v_{iR}
+=
+{}^{i}\mathbf v_i
++
+{}^{i}\boldsymbol\omega_i\times {}^{i}\mathbf r_{iR}.
+\label{eq:wheel_center_velocity}
+\end{equation}
+式 \eqref{eq:wheel_center_velocity} 清楚地体现了轮心位置向量与刚体速度传播之间的直接对应关系，即任一轮心速度均由模块参考点速度与角速度在轮心位置处的附加线速度叠加得到。
+
+设
+\begin{equation}
+{}^{i}\mathbf v_i=
+\begin{bmatrix}
+v_{ix}\\
+v_{iy}\\
+v_{iz}
+\end{bmatrix},
+\qquad
+{}^{i}\boldsymbol\omega_i=
+\begin{bmatrix}
+\omega_{ix}\\
+\omega_{iy}\\
+\omega_{iz}
+\end{bmatrix},
+\end{equation}
+则由叉乘展开可得
+\begin{equation}
+{}^{i}\boldsymbol\omega_i\times {}^{i}\mathbf r_{iL}
+=
+\begin{bmatrix}
+\omega_{iy}h_i-\omega_{iz}\dfrac{d_i}{2}\\[4pt]
+\omega_{iz}l_i-\omega_{ix}h_i\\[4pt]
+\omega_{ix}\dfrac{d_i}{2}-\omega_{iy}l_i
+\end{bmatrix},
+\end{equation}
+以及
+\begin{equation}
+{}^{i}\boldsymbol\omega_i\times {}^{i}\mathbf r_{iR}
+=
+\begin{bmatrix}
+\omega_{iy}h_i+\omega_{iz}\dfrac{d_i}{2}\\[4pt]
+\omega_{iz}l_i-\omega_{ix}h_i\\[4pt]
+-\omega_{ix}\dfrac{d_i}{2}-\omega_{iy}l_i
+\end{bmatrix}.
+\end{equation}
+因此左右轮心速度在滚动方向 $x_i$ 上的分量分别为
+\begin{equation}
+({}^{i}\mathbf v_{iL})_x
+=
+v_{ix}
++
+h_i\omega_{iy}
+-\frac{d_i}{2}\omega_{iz},
+\label{eq:vlx}
+\end{equation}
+\begin{equation}
+({}^{i}\mathbf v_{iR})_x
+=
+v_{ix}
++
+h_i\omega_{iy}
++
+\frac{d_i}{2}\omega_{iz}.
+\label{eq:vrx}
+\end{equation}
+式 \eqref{eq:vlx} 与式 \eqref{eq:vrx} 表明，轮心纵向速度不仅与模块参考点的纵向平动有关，还受到俯仰角速度与偏航角速度的耦合影响。
+
+\subsection{纯滚动约束与车轮角速度表达}
+
+设模块 $M_i$ 左、右轮半径均为 $\rho_i$，且轮胎满足纯滚动条件，则车轮角速度等于轮心在滚动方向上的线速度除以轮半径。于是有
+\begin{equation}
+\dot\phi_{iL}
+=
+\frac{1}{\rho_i}({}^{i}\mathbf v_{iL})_x,
+\qquad
+\dot\phi_{iR}
+=
+\frac{1}{\rho_i}({}^{i}\mathbf v_{iR})_x.
+\end{equation}
+将式 \eqref{eq:vlx} 与式 \eqref{eq:vrx} 代入上式，可得模块 $M_i$ 左、右车轮的角速度表达式
+\begin{equation}
+\dot\phi_{iL}
+=
+\frac{1}{\rho_i}
+\left(
+v_{ix}
++
+h_i\omega_{iy}
+-\frac{d_i}{2}\omega_{iz}
+\right),
+\label{eq:wheel_speed_left}
+\end{equation}
+\begin{equation}
+\dot\phi_{iR}
+=
+\frac{1}{\rho_i}
+\left(
+v_{ix}
++
+h_i\omega_{iy}
++
+\frac{d_i}{2}\omega_{iz}
+\right).
+\label{eq:wheel_speed_right}
+\end{equation}
+式 \eqref{eq:wheel_speed_left} 与式 \eqref{eq:wheel_speed_right} 构成了三模块六轮角速度分配的基本约束方程。
+
+\subsection{模块轮速矩阵形式}
+
+定义模块 $M_i$ 的轮速向量为
+\begin{equation}
+\dot{\boldsymbol\Phi}_i=
+\begin{bmatrix}
+\dot\phi_{iL}\\
+\dot\phi_{iR}
+\end{bmatrix},
+\end{equation}
+并定义模块速度向量为
+\begin{equation}
+\boldsymbol\eta_i=
+\begin{bmatrix}
+{}^{i}\mathbf v_i\\
+{}^{i}\boldsymbol\omega_i
 \end{bmatrix}
 =
-{}^{A}_{B}\mathbf{T}
 \begin{bmatrix}
-{}^{B}\mathbf{p}_{P} \\
-1
-\end{bmatrix}.
-\label{eq:point_transform}
+v_{ix} & v_{iy} & v_{iz} & \omega_{ix} & \omega_{iy} & \omega_{iz}
+\end{bmatrix}^{T}.
 \end{equation}
-
-齐次变换矩阵的最大优点在于能够方便地描述多次连续坐标变换。若已知 $\{B\}$ 相对于 $\{A\}$ 的变换矩阵 $^{A}_{B}\mathbf{T}$，以及 $\{C\}$ 相对于 $\{B\}$ 的变换矩阵 $^{B}_{C}\mathbf{T}$，则 $\{C\}$ 相对于 $\{A\}$ 的变换矩阵可直接写为
+则由式 \eqref{eq:wheel_speed_left} 与式 \eqref{eq:wheel_speed_right} 可将单模块轮速关系写为
 \begin{equation}
-{}^{A}_{C}\mathbf{T}
+\dot{\boldsymbol\Phi}_i
 =
-{}^{A}_{B}\mathbf{T}\,{}^{B}_{C}\mathbf{T}.
-\label{eq:chain_transform}
-\end{equation}
-
-\begin{figure}[htbp]
-\centering
-\begin{tikzpicture}[scale=1.0,>=Latex]
-\node[draw,minimum width=2.6cm,minimum height=1cm] (A) at (0,0) {$\{A\}$};
-\node[draw,minimum width=2.6cm,minimum height=1cm] (B) at (4,0) {$\{B\}$};
-\node[draw,minimum width=2.6cm,minimum height=1cm] (C) at (8,0) {$\{C\}$};
-
-\draw[->,thick] (A) -- (B) node[midway,above] {$^{A}_{B}\mathbf{T}$};
-\draw[->,thick] (B) -- (C) node[midway,above] {$^{B}_{C}\mathbf{T}$};
-\draw[->,thick,bend left=18] (A) to (C) node[midway,above] {$^{A}_{C}\mathbf{T}$};
-\end{tikzpicture}
-\caption{连续坐标变换示意图}
-\label{fig:chain_transform}
-\end{figure}
-
-由式 \eqref{eq:chain_transform} 可以看出，复杂空间变换可以通过若干简单变换逐级复合得到。对于机器人机构而言，这一思想是建立运动学模型的基础。
-
-% \subsection{正运动学模型}
-% 本节后续补充。
-
-% \subsection{速度雅可比矩阵}
-% 本节后续补充。
-
-\subsection{逆运动学模型}
-
-本文研究的 3-RRR 球面并联机构本质上是一种球面机构，其所有转轴均通过同一球心。因此，在进行逆运动学分析时，可以将机构的运动视为移动平台绕球心的纯转动，而不涉及平移自由度。逆运动学问题的核心，是在给定移动平台目标姿态的条件下，求解三条支链主动关节的转角 $\theta_i$。
-
-\subsubsection{机构几何关系与向量定义}
-
-在球心处建立基坐标系 $\{O\}$，并在移动平台上建立平台坐标系 $\{P\}$。由于该机构为对称三支链结构，三条支链的方位角可统一写为
-\begin{equation}
-\eta_i=\frac{2(i-1)\pi}{3}, \qquad i=1,2,3.
-\label{eq:eta_i}
-\end{equation}
-
-定义单位基向量
-\begin{equation}
-\mathbf{e}_{x}
-=
-\begin{bmatrix}
-1 & 0 & 0
-\end{bmatrix}^{\mathrm T}.
-\end{equation}
-
-根据机构几何构型，基座侧参考向量可写为
-\begin{equation}
-{}^{O}\mathbf{u}_{i}
-=
-\mathbf{R}_{z}\left(\eta_i+\frac{\pi}{2}\right)
-\mathbf{R}_{y}\left(\frac{\pi}{2}-\gamma\right)
-\mathbf{e}_{x}.
-\label{eq:u_i_def}
-\end{equation}
-将式 \eqref{eq:u_i_def} 展开，可得
-\begin{equation}
-{}^{O}\mathbf{u}_{i}
-=
-\begin{bmatrix}
--\sin\eta_i\sin\gamma \\
-\cos\eta_i\sin\gamma \\
--\cos\gamma
-\end{bmatrix}.
-\label{eq:u_i_expand}
-\end{equation}
-
-当主动关节转角为 $\theta_i$ 时，中间连杆方向向量可表示为
-\begin{equation}
-{}^{O}\mathbf{w}_{i}
-=
-\mathbf{R}_{z}\left(\eta_i+\frac{\pi}{2}\right)
-\mathbf{R}_{y}\left(\frac{\pi}{2}-\gamma\right)
-\mathbf{R}_{x}\left(\theta_i\right)
-\mathbf{R}_{z}\left(\alpha_{1}\right)
-\mathbf{e}_{x}.
-\label{eq:w_i_def}
-\end{equation}
-展开后得到
-\begin{equation}
-{}^{O}\mathbf{w}_{i}
-=
-\begin{bmatrix}
--\cos\eta_i\sin\alpha_1\cos\theta_i
--\cos\alpha_1\sin\eta_i\sin\gamma
--\cos\gamma\sin\alpha_1\sin\eta_i\sin\theta_i \\
-\cos\alpha_1\cos\eta_i\sin\gamma
--\sin\alpha_1\sin\eta_i\cos\theta_i
-+\cos\eta_i\cos\gamma\sin\alpha_1\sin\theta_i \\
-\sin\alpha_1\sin\gamma\sin\theta_i
--\cos\alpha_1\cos\gamma
-\end{bmatrix}.
-\label{eq:w_i_expand}
-\end{equation}
-
-移动平台目标姿态由式 \eqref{eq:rpy_rotation} 给出。平台侧参考向量定义为
-\begin{equation}
-{}^{O}\mathbf{v}_{i}
-=
-{}^{O}_{P}\mathbf{R}
-\mathbf{R}_{z}\left(\eta_i+\frac{5\pi}{6}\right)
-\mathbf{R}_{y}\left(\beta-\frac{\pi}{2}\right)
-\mathbf{e}_{x}.
-\label{eq:v_i_def}
-\end{equation}
-若记
-\begin{equation}
-{}^{O}\mathbf{v}_{i}
-=
-\begin{bmatrix}
-v_{ix} & v_{iy} & v_{iz}
-\end{bmatrix}^{\mathrm T},
-\label{eq:v_i_components}
-\end{equation}
-则平台目标姿态对逆解的影响被集中到分量 $v_{ix}$、$v_{iy}$、$v_{iz}$ 中，后续推导可写成较为紧凑的解析形式。
-
-\begin{figure}[htbp]
-\centering
-\begin{tikzpicture}[scale=1.1,>=Latex]
-\coordinate (O) at (0,0);
-\draw[thick] (O) circle (2.1);
-\fill (O) circle (1.4pt) node[below] {$O$};
-
-\draw[->,thick] (O) -- (20:1.9) node[right] {$\mathbf{u}_i$};
-\draw[->,thick] (O) -- (70:1.9) node[above] {$\mathbf{w}_i$};
-\draw[->,thick] (O) -- (135:1.9) node[left] {$\mathbf{v}_i$};
-
-\draw (0.9,0.0) arc[start angle=0,end angle=48,radius=0.9];
-\node at (1.05,0.45) {$\theta_i$};
-
-\draw (1.1,1.6) arc[start angle=55,end angle=105,radius=0.55];
-\node at (0.75,1.55) {$\alpha_2$};
-
-\node at (0,-2.6) {示意图仅用于说明球心处向量关系};
-\end{tikzpicture}
-\caption{3-RRR 球面并联机构单支链向量关系示意图}
-\label{fig:ik_geometry}
-\end{figure}
-
-图 \ref{fig:ik_geometry} 表明，逆运动学求解的本质是：在给定平台姿态后，平台侧向量 ${}^{O}\mathbf{v}_i$ 已知；由机构结构参数决定的中间连杆向量 ${}^{O}\mathbf{w}_i$ 需要通过主动关节转角 $\theta_i$ 来匹配该目标几何关系。
-
-\subsubsection{约束方程建立}
-
-由于中间连杆向量 ${}^{O}\mathbf{w}_i$ 与平台侧向量 ${}^{O}\mathbf{v}_i$ 之间的夹角恒为结构常数 $\alpha_2$，故可建立球面机构的基本约束方程
-\begin{equation}
-{}^{O}\mathbf{w}_{i}^{\mathrm T}\,{}^{O}\mathbf{v}_{i}
-=
-\cos\alpha_2.
-\label{eq:ik_constraint}
-\end{equation}
-
-将式 \eqref{eq:w_i_expand} 与式 \eqref{eq:v_i_components} 代入式 \eqref{eq:ik_constraint}，并按 $\sin\theta_i$、$\cos\theta_i$ 分类整理，可得
-\begin{equation}
-a_i\sin\theta_i+b_i\cos\theta_i+d_i=0,
-\label{eq:ik_linear_trig}
+\mathbf H_i\boldsymbol\eta_i,
+\qquad i=1,2,3,
+\label{eq:Hi_eta}
 \end{equation}
 其中
 \begin{equation}
-a_i
+\mathbf H_i
 =
-\sin\alpha_1
-\left(
-v_{iz}\sin\gamma
-+
-v_{iy}\cos\eta_i\cos\gamma
--
-v_{ix}\cos\gamma\sin\eta_i
-\right),
-\label{eq:ai}
+\frac{1}{\rho_i}
+\begin{bmatrix}
+1 & 0 & 0 & 0 & h_i & -\dfrac{d_i}{2}\\[4pt]
+1 & 0 & 0 & 0 & h_i & \dfrac{d_i}{2}
+\end{bmatrix}.
+\label{eq:Hi}
 \end{equation}
-\begin{equation}
-b_i
-=
--\sin\alpha_1
-\left(
-v_{ix}\cos\eta_i+v_{iy}\sin\eta_i
-\right),
-\label{eq:bi}
-\end{equation}
-\begin{equation}
-d_i
-=
-v_{iy}\cos\alpha_1\cos\eta_i\sin\gamma
--
-v_{iz}\cos\alpha_1\cos\gamma
--
-\cos\alpha_2
--
-v_{ix}\cos\alpha_1\sin\eta_i\sin\gamma.
-\label{eq:di}
-\end{equation}
+矩阵 $\mathbf H_i$ 描述了模块刚体速度到左右轮角速度的局部映射关系。
 
-式 \eqref{eq:ik_linear_trig} 已将原始几何约束转化为关于单个关节变量 $\theta_i$ 的一元三角方程。与直接数值迭代相比，这种表达更适合进一步推导出解析解，也更便于后续程序实现与分支判断。
+\subsection{整车速度雅可比矩阵构造}
 
-\subsubsection{半角代换与解析求解}
-
-为将式 \eqref{eq:ik_linear_trig} 转化为代数方程，引入半角代换
+为将六个车轮的角速度统一表示为整车广义速度向量 $\boldsymbol\xi$ 的线性函数，引入反对称矩阵算子
 \begin{equation}
-t_i=\tan\frac{\theta_i}{2}.
-\label{eq:half_angle}
-\end{equation}
-则有
-\begin{equation}
-\sin\theta_i=\frac{2t_i}{1+t_i^2},
+\mathbf S(\mathbf x)=
+\begin{bmatrix}
+0 & -x_3 & x_2\\
+x_3 & 0 & -x_1\\
+-x_2 & x_1 & 0
+\end{bmatrix},
 \qquad
-\cos\theta_i=\frac{1-t_i^2}{1+t_i^2}.
-\label{eq:half_angle_sub}
+\mathbf x\times \mathbf y=\mathbf S(\mathbf x)\mathbf y=-\mathbf S(\mathbf y)\mathbf x.
+\label{eq:skew}
 \end{equation}
+由式 \eqref{eq:body_omega}、式 \eqref{eq:v1_body}、式 \eqref{eq:v3_body} 及式 \eqref{eq:v2_body}，前、中、后模块速度均可写为 $\boldsymbol\xi$ 的线性映射。
 
-将式 \eqref{eq:half_angle_sub} 代入式 \eqref{eq:ik_linear_trig}，并消去分母后，可得标准二次方程
+对于前模块，由
 \begin{equation}
-A_i t_i^2 + B_i t_i + C_i = 0,
-\label{eq:quadratic_t}
+{}^{1}\boldsymbol\omega_1
+=
+{}^{1}\mathbf R_2\,{}^{2}\boldsymbol\omega_c
++
+\mathbf T(\phi_f,\theta_f)\dot{\mathbf q}_f
+\end{equation}
+和
+\begin{equation}
+{}^{1}\mathbf v_1
+=
+{}^{1}\mathbf R_2\,{}^{2}\mathbf v_c
+-{}^{1}\mathbf R_2\mathbf S({}^{2}\mathbf a)\,{}^{2}\boldsymbol\omega_c
+-\mathbf S(\mathbf b)\,{}^{1}\boldsymbol\omega_1
+\end{equation}
+可得
+\begin{equation}
+\begin{bmatrix}
+{}^{1}\mathbf v_1\\
+{}^{1}\boldsymbol\omega_1
+\end{bmatrix}
+=
+\mathbf K_1(\mathbf q)\boldsymbol\xi,
 \end{equation}
 其中
 \begin{equation}
-A_i=d_i-b_i,
+\mathbf K_1(\mathbf q)=
+\begin{bmatrix}
+{}^{1}\mathbf R_2 &
+-\left({}^{1}\mathbf R_2\mathbf S({}^{2}\mathbf a)+\mathbf S(\mathbf b)\,{}^{1}\mathbf R_2\right) &
+-\mathbf S(\mathbf b)\mathbf T(\phi_f,\theta_f) &
+\mathbf 0_{3\times 3}\\[4pt]
+\mathbf 0_{3\times 3} &
+{}^{1}\mathbf R_2 &
+\mathbf T(\phi_f,\theta_f) &
+\mathbf 0_{3\times 3}
+\end{bmatrix}.
+\label{eq:K1}
+\end{equation}
+式 \eqref{eq:K1} 说明前模块刚体速度同时受整车主运动和前模块构型变化率影响，而与后模块构型变化率无关。
+
+对于中模块，由式 \eqref{eq:v2_body} 直接可得
+\begin{equation}
+\begin{bmatrix}
+{}^{2}\mathbf v_2\\
+{}^{2}\boldsymbol\omega_2
+\end{bmatrix}
+=
+\mathbf K_2\boldsymbol\xi,
 \qquad
-B_i=2a_i,
-\qquad
-C_i=d_i+b_i.
-\label{eq:ABC_compact}
+\mathbf K_2=
+\begin{bmatrix}
+\mathbf I_3 & \mathbf 0_{3\times 3} & \mathbf 0_{3\times 3} & \mathbf 0_{3\times 3}\\
+\mathbf 0_{3\times 3} & \mathbf I_3 & \mathbf 0_{3\times 3} & \mathbf 0_{3\times 3}
+\end{bmatrix}.
+\label{eq:K2}
 \end{equation}
 
-将式 \eqref{eq:ai}--\eqref{eq:di} 代入式 \eqref{eq:ABC_compact}，得到
+对于后模块，由
 \begin{equation}
-A_i
+{}^{3}\boldsymbol\omega_3
 =
-v_{ix}\cos\eta_i\sin\alpha_1
--
-v_{iz}\cos\alpha_1\cos\gamma
--
-\cos\alpha_2
+{}^{3}\mathbf R_2\,{}^{2}\boldsymbol\omega_c
 +
-v_{iy}\sin\alpha_1\sin\eta_i
+\mathbf T(\phi_r,\theta_r)\dot{\mathbf q}_r
+\end{equation}
+和
+\begin{equation}
+{}^{3}\mathbf v_3
+=
+{}^{3}\mathbf R_2\,{}^{2}\mathbf v_c
 +
-v_{iy}\cos\alpha_1\cos\eta_i\sin\gamma
--
-v_{ix}\cos\alpha_1\sin\eta_i\sin\gamma,
-\label{eq:A_i}
-\end{equation}
-\begin{equation}
-B_i
-=
-2\sin\alpha_1
-\left(
-v_{iz}\sin\gamma
+{}^{3}\mathbf R_2\mathbf S({}^{2}\mathbf a)\,{}^{2}\boldsymbol\omega_c
 +
-v_{iy}\cos\eta_i\cos\gamma
--
-v_{ix}\cos\gamma\sin\eta_i
-\right),
-\label{eq:B_i}
+\mathbf S(\mathbf b)\,{}^{3}\boldsymbol\omega_3
 \end{equation}
+可得
 \begin{equation}
-C_i
+\begin{bmatrix}
+{}^{3}\mathbf v_3\\
+{}^{3}\boldsymbol\omega_3
+\end{bmatrix}
 =
-v_{iy}\cos\alpha_1\cos\eta_i\sin\gamma
--
-v_{iz}\cos\alpha_1\cos\gamma
--
-v_{ix}\cos\eta_i\sin\alpha_1
--
-v_{iy}\sin\alpha_1\sin\eta_i
--
-\cos\alpha_2
--
-v_{ix}\cos\alpha_1\sin\eta_i\sin\gamma.
-\label{eq:C_i}
+\mathbf K_3(\mathbf q)\boldsymbol\xi,
 \end{equation}
+其中
+\begin{equation}
+\mathbf K_3(\mathbf q)=
+\begin{bmatrix}
+{}^{3}\mathbf R_2 &
+{}^{3}\mathbf R_2\mathbf S({}^{2}\mathbf a)+\mathbf S(\mathbf b)\,{}^{3}\mathbf R_2 &
+\mathbf 0_{3\times 3} &
+\mathbf S(\mathbf b)\mathbf T(\phi_r,\theta_r)\\[4pt]
+\mathbf 0_{3\times 3} &
+{}^{3}\mathbf R_2 &
+\mathbf 0_{3\times 3} &
+\mathbf T(\phi_r,\theta_r)
+\end{bmatrix}.
+\label{eq:K3}
+\end{equation}
+式 \eqref{eq:K3} 与式 \eqref{eq:K1} 在结构上呈镜像对称，仅几何符号相反。
 
-由一元二次方程求根公式可得
+将式 \eqref{eq:Hi_eta} 分别与式 \eqref{eq:K1}、式 \eqref{eq:K2}、式 \eqref{eq:K3} 结合，可得三个模块的轮速雅可比分别为
 \begin{equation}
-\Delta_i = B_i^2 - 4A_iC_i,
-\label{eq:delta_i}
-\end{equation}
-\begin{equation}
-t_i^{(1)}
+\dot{\boldsymbol\Phi}_1
 =
-\frac{-B_i+\sqrt{\Delta_i}}{2A_i},
+\mathbf H_1\mathbf K_1(\mathbf q)\boldsymbol\xi,
 \qquad
-t_i^{(2)}
+\dot{\boldsymbol\Phi}_2
 =
-\frac{-B_i-\sqrt{\Delta_i}}{2A_i}.
-\label{eq:t_solutions}
-\end{equation}
-因此，主动关节角的两组解析解为
-\begin{equation}
-\theta_i^{(1)}
-=
-2\arctan\left(\frac{-B_i+\sqrt{\Delta_i}}{2A_i}\right),
+\mathbf H_2\mathbf K_2\boldsymbol\xi,
 \qquad
-\theta_i^{(2)}
+\dot{\boldsymbol\Phi}_3
 =
-2\arctan\left(\frac{-B_i-\sqrt{\Delta_i}}{2A_i}\right).
-\label{eq:theta_solution}
+\mathbf H_3\mathbf K_3(\mathbf q)\boldsymbol\xi.
 \end{equation}
-
-为了提高数值实现的稳定性，程序求解时也可采用等价的 $\mathrm{atan2}$ 形式
+进一步将六个车轮角速度堆叠为整车轮速向量
 \begin{equation}
-\theta_i^{(1)}
+\dot{\boldsymbol\Phi}
 =
-2\,\mathrm{atan2}\left(-B_i+\sqrt{\Delta_i},\,2A_i\right),
-\qquad
-\theta_i^{(2)}
+\begin{bmatrix}
+\dot{\boldsymbol\Phi}_1\\
+\dot{\boldsymbol\Phi}_2\\
+\dot{\boldsymbol\Phi}_3
+\end{bmatrix}
 =
-2\,\mathrm{atan2}\left(-B_i-\sqrt{\Delta_i},\,2A_i\right).
-\label{eq:theta_solution_atan2}
+\begin{bmatrix}
+\dot\phi_{1L} &
+\dot\phi_{1R} &
+\dot\phi_{2L} &
+\dot\phi_{2R} &
+\dot\phi_{3L} &
+\dot\phi_{3R}
+\end{bmatrix}^{T},
 \end{equation}
-
-\subsubsection{逆解存在性与工程分支选择}
-
-由式 \eqref{eq:delta_i} 可知，判别式 $\Delta_i$ 直接反映了目标姿态的可达性。
-
-当
+则整车速度雅可比关系可统一表示为
 \begin{equation}
-\Delta_i < 0
+\dot{\boldsymbol\Phi}
+=
+\mathbf J_w(\mathbf q)\boldsymbol\xi,
+\label{eq:Jw_total}
 \end{equation}
-时，方程不存在实数解，说明当前给定平台姿态超出了该支链可实现的工作空间范围，机构不可达。
-
-当
+其中
 \begin{equation}
-\Delta_i = 0
+\mathbf J_w(\mathbf q)=
+\begin{bmatrix}
+\mathbf H_1\mathbf K_1(\mathbf q)\\
+\mathbf H_2\mathbf K_2\\
+\mathbf H_3\mathbf K_3(\mathbf q)
+\end{bmatrix}
+\in \mathbb{R}^{6\times 12}.
+\label{eq:Jw_detail}
 \end{equation}
-时，二次方程退化为重根，对应机构处于分支切换边界附近，此时对数值误差较为敏感。
+式 \eqref{eq:Jw_total} 与式 \eqref{eq:Jw_detail} 给出了整车六个驱动轮角速度对整车主运动速度及构型变化率的完整雅可比映射关系。
 
-当
-\begin{equation}
-\Delta_i > 0
-\end{equation}
-时，存在两组候选解 $\theta_i^{(1)}$ 和 $\theta_i^{(2)}$。这两组解分别对应机构在同一目标姿态下的不同装配分支。考虑到实际机构存在关节极限、初始装配状态以及运动连续性要求，最终控制中不能仅依据数学公式任意取解，而应结合以下原则进行筛选：
+\subsection{本节小结}
 
-\begin{enumerate}
-\item 满足电机物理转角范围与机构干涉约束；
-\item 与初始装配分支保持一致，避免解分支突变；
-\item 在连续轨迹跟踪过程中优先选择与上一时刻关节角最接近的解，以保证控制指令平滑连续。
-\end{enumerate}
+通过将整车主坐标系设置于中模块参考点 $O_2$，并利用前后模块关于 $O_2$ 的镜像对称几何特征，可将前后模块的位置、角速度与线速度传播关系统一到同一建模框架内。基于轮心位置向量与刚体速度传播关系，进一步建立了轮心纵向速度与模块刚体速度之间的明确映射，并在纯滚动约束下推导得到六个车轮角速度表达式。最终构造的整车速度雅可比矩阵 $\mathbf J_w(\mathbf q)$ 将整车主运动输入 ${}^{2}\mathbf v_c$、${}^{2}\boldsymbol\omega_c$ 与构型变化率 $\dot{\mathbf q}$ 统一映射到六轮角速度空间，为后续的轮速控制分配、构型协调控制以及强化学习动作接口设计提供了直接的运动学基础。
 
-因此，本文所建立的逆运动学模型不仅给出了单支链主动关节角的解析表达式，而且为后续正运动学验证、分支管理以及控制器实现提供了统一的理论基础。对于给定平台目标姿态，只需先由式 \eqref{eq:v_i_def} 计算三条支链对应的 ${}^{O}\mathbf{v}_i$，再依次求得各支链的 $A_i$、$B_i$、$C_i$，即可根据式 \eqref{eq:theta_solution} 或式 \eqref{eq:theta_solution_atan2} 求出三组主动关节候选解，从而完成 3-RRR 球面并联机构的逆运动学求解。
+\section{Summary}
+
+This chapter derives the wheel-speed Jacobian of the three-module six-wheel vehicle. By using the middle module as the main reference frame and by exploiting the mirror symmetry of the front and rear modules, the kinematic relations are written in a unified form. The resulting mapping from the generalized vehicle velocity to the six wheel angular velocities provides a direct basis for wheel-speed allocation and later controller design.

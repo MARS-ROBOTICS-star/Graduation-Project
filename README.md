@@ -17,6 +17,8 @@ Its active RL package structure now uses Isaac Lab's direct workflow:
   - Stage 1 terrain + curriculum config
 - `complete_car_rl_training/tasks/direct/complete_car/stage2_perception_cfg.py`
   - Stage 2 perception config
+- `kinematics/wheel_speed_allocator.py`
+  - measured-geometry wheel-speed allocation and Jacobian helper shared by validation and direct env runtime
 - `complete_car_rl_training/tasks/direct/complete_car/terrain/`
   - terrain generation and runtime helper
 - `complete_car_rl_training/tasks/direct/complete_car/sensors/`
@@ -42,6 +44,8 @@ The current research stage is:
   - Date-based work log.
 - `RL_Training/`
   - The only active Isaac Lab RL code workspace, including the Python package, launch scripts, docs, skills, and IK utilities.
+- `RL_Training/kinematics/`
+  - Standalone vehicle-kinematics helpers, including the wheel-speed allocator used by the direct RL mainline.
 - `scripts/isaac_sim/`
   - Isaac Sim validation, keyboard control, USD inspection, and asset-repair helpers.
 - `scripts/literature/`
@@ -67,6 +71,8 @@ The current research stage is:
 
 - RL environment logic:
   - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/`
+- Wheel-speed allocation and vehicle Jacobian helpers:
+  - `RL_Training/kinematics/`
 - RL terrain runtime:
   - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/terrain/`
 - RL sensor runtime:

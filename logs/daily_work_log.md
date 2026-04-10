@@ -3687,3 +3687,138 @@
 下一步：
 - 在 Isaac Lab 环境中优先运行 `python scripts/list_envs.py --keyword Complete-Car`。
 - 然后对 `Complete-Car-Stage0-Flat-Direct-v0` 做一次小规模 `train.py` 冒烟，重点检查 action space、observation dim 和车轮驱动效果。
+
+已完成：
+- 按用户新要求修改 `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex` 中“整车运动学速度雅可比分析”对应正文。
+- 本轮没有采用远端那种整段重写方式，而是在尽量保留当前正文叙述结构的前提下，只对涉及侧模块固定偏置的部分做不对称改写。
+- 将原先共用单一 `\mathbf b` 的位置关系改为分别使用：
+  - `${}^{1}\mathbf b_1`
+  - `${}^{3}\mathbf b_3`
+- 同步改写并校正了以下链条中的对应公式：
+  - 前后模块参考点位置表达
+  - 前后模块线速度传播
+  - `\mathbf K_1(\mathbf q)`、`\mathbf K_3(\mathbf q)`
+  - 前后轮对应的行雅可比显式展开
+- 轮心位置向量与单模块轮速矩阵 `\mathbf H_i` 本轮仍保留原有符号化模板写法，没有切换成整段实测参数直代版正文。
+- 在 `毕业论文/毕业论文模板/LaTeX/` 下执行：
+  - `latexmk -xelatex -interaction=nonstopmode -file-line-error main.tex`
+  编译通过，`main.pdf` 已重新生成。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `毕业论文/毕业论文模板/LaTeX/main.pdf`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `chapter03` 正文已经从“统一侧模块偏置 `\mathbf b`”切到“前后固定偏置分开建模”的写法。
+- 本轮采取的是最小侵入式正文修订，而不是整段换成新的远端版本。
+- 当前论文仍只保留 2 条旧的非阻塞文献警告：
+  - `fang2015survey`
+  - `MATSUMURA2017566`
+
+下一步：
+- 如果还要继续打磨 chapter03，下一轮应优先检查各段文字对 `${}^{1}\mathbf b_1` 与 `${}^{3}\mathbf b_3` 的物理意义解释是否还可再压缩得更清楚，而不是再大范围重写正文结构。
+
+已完成：
+- 按用户新的严格修订要求，再次处理 `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex` 中“整车运动学速度雅可比分析”对应正文。
+- 本轮仍坚持“不推翻原推导框架、不整体重写正文”，仅在原有主线内修正符号冲突、几何定义和物理表述。
+- 已将车轮角速度符号从：
+  - `\dot\phi_{iL}, \dot\phi_{iR}`
+  统一改为：
+  - `\Omega_{iL}, \Omega_{iR}`
+  并同步修改相关文字、轮速向量与整车雅可比表达。
+- 已将连接向量明确为：
+  - `${}^{2}\mathbf a=[a_x,0,0]^T`
+  同时把正文中的“对称结构”表述收紧为“前后连接中心沿 `x_2` 轴镜像分布”。
+- 已将 `${}^{2}\mathbf v_c`、`${}^{2}\boldsymbol\omega_c` 的物理定义统一改为：
+  - 主模块瞬时刚体速度
+  - 运动学分析中的广义速度描述
+  不再称为“运动指令”。
+- 已将“纯滚动约束”相关措辞统一改为“基于滚动方向无滑移条件”的轮速映射表述，并补充说明这里只使用了滚动方向速度关系，没有完整展开侧向无滑移约束。
+- 已补充车轮角速度正方向约定，并在欧拉角速度映射处补充参数奇异性说明。
+- 在 `毕业论文/毕业论文模板/LaTeX/` 下再次执行：
+  - `latexmk -xelatex -interaction=nonstopmode -file-line-error main.tex`
+  编译通过，`main.pdf` 已重新生成。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `毕业论文/毕业论文模板/LaTeX/main.pdf`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `chapter03` 中“整车运动学速度雅可比分析”这一节已经在保留原推导主线的前提下完成一轮更严格的学术化修订。
+- 当前该节的关键符号、几何定义和物理表述已经与“不对称固定偏置 + 主模块瞬时刚体速度 + 滚动方向轮速映射”的写法保持一致。
+- 当前论文仍只保留 2 条旧的非阻塞文献警告：
+  - `fang2015survey`
+  - `MATSUMURA2017566`
+
+下一步：
+- 若继续修改 chapter03，后续应优先做局部措辞压缩和版面整理，不再回退这套已经统一好的符号与物理定义。
+
+已完成：
+- 基于论文最终采用的真实参数与整车速度雅可比矩阵，新增独立轮速分配模块：
+  - `RL_Training/kinematics/wheel_speed_allocator.py`
+- 同步新增：
+  - `RL_Training/kinematics/__init__.py`
+  - `RL_Training/scripts/validate_wheel_speed_allocator.py`
+- 新分配器内部已固定使用真实几何参数：
+  - `a`
+  - `b1`
+  - `b3`
+  - 三个模块左右轮轮心位置
+  - `r_wheel`
+- 新分配器同时提供：
+  - `numpy` 验证接口
+  - `torch` 运行接口
+- 新分配器显式构造：
+  - `\mathbf K_1(\mathbf q), \mathbf K_2, \mathbf K_3(\mathbf q)`
+  - 实测参数版 `\mathbf H_i`
+  - 整车 Jacobian `\mathbf J_w(\mathbf q)`
+  并将论文中的前-中-后轮速顺序重排为仿真实际 joint 顺序：
+  - `body_car_wheel_left_joint`
+  - `body_car_wheel_right_joint`
+  - `head_car_wheel_left_joint`
+  - `head_car_wheel_right_joint`
+  - `tail_car_wheel_left_joint`
+  - `tail_car_wheel_right_joint`
+- 已将 direct env 中旧的经验缩放轮速逻辑删除，改为在每步根据：
+  - 当前 6 个球铰关节角
+  - 当前 6 个球铰关节角速度
+  - RL command 中的 `lin_vel_x / lin_vel_y / ang_vel_yaw`
+  通过 Jacobian 分配器生成 6 维 wheel target。
+- 已删除旧控制参数：
+  - `wheel_drive_lin_vel_scale`
+  - `wheel_drive_yaw_rate_scale`
+  因为它们已不再符合当前轮速分配语义。
+- 已在 `RL_Training/` 下执行：
+  - `python3 scripts/validate_wheel_speed_allocator.py`
+  基础数值检查通过，覆盖：
+  - 零输入
+  - 纯前进
+  - 纯偏航
+- 已执行：
+  - `python3 -m py_compile RL_Training/kinematics/__init__.py RL_Training/kinematics/wheel_speed_allocator.py RL_Training/scripts/validate_wheel_speed_allocator.py RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env.py RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+  静态语法检查通过。
+
+修改文件：
+- `RL_Training/kinematics/__init__.py`
+- `RL_Training/kinematics/wheel_speed_allocator.py`
+- `RL_Training/scripts/validate_wheel_speed_allocator.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+- `README.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 RL 主线已经从“经验缩放差速轮速”切到“真实参数 Jacobian 轮速分配”。
+- 当前轮速分配模块既可以独立验证论文模型，也可以直接作为 Isaac Lab env 的 wheel target 生成器。
+- 当前 `heading` command 仍保留给高层任务语义，但不直接进入瞬时轮速 Jacobian 映射。
+
+下一步：
+- 在真实 Isaac Lab 环境中优先验证新 allocator 接入后 Stage0 的前进、转向与速度跟踪 reward 是否一致。

@@ -4,6 +4,144 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-10
 
+### Direct mainline now uses a measured-geometry wheel-speed allocator instead of the old heuristic left-right scaling
+- Updated:
+  - `RL_Training/kinematics/__init__.py`
+  - `RL_Training/kinematics/wheel_speed_allocator.py`
+  - `RL_Training/scripts/validate_wheel_speed_allocator.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+  - `README.md`
+- Durable implementation conclusion:
+  - the project now has a standalone wheel-speed allocation package under:
+    - `RL_Training/kinematics/`
+    so the thesis kinematic model can be validated independently from Isaac Lab
+  - the allocator uses the measured geometry directly:
+    - `a = [0.25632, 0.0, 0.0]`
+    - `b1 = [-0.29665, 0.0, 0.00481]`
+    - `b3 = [0.29665, 0.0, 0.00951]`
+    - measured left/right wheel-center locations for all three modules
+    - `r_wheel = 0.19`
+  - the allocator explicitly constructs the thesis Jacobian chain:
+    - `\mathbf K_1(\mathbf q), \mathbf K_2, \mathbf K_3(\mathbf q)`
+    - measured `\mathbf H_i`
+    - full wheel-speed Jacobian `\mathbf J_w(\mathbf q)`
+    and then computes wheel targets from `\boldsymbol\Omega = \mathbf J_w(\mathbf q)\boldsymbol\xi`
+  - the front/middle/rear formula order from the thesis is internally reordered to the actual wheel-joint output order required by the simulator:
+    - `body_car_wheel_left_joint`
+    - `body_car_wheel_right_joint`
+    - `head_car_wheel_left_joint`
+    - `head_car_wheel_right_joint`
+    - `tail_car_wheel_left_joint`
+    - `tail_car_wheel_right_joint`
+  - the allocator now provides:
+    - a NumPy interface for standalone verification
+    - a Torch interface for Isaac Lab runtime use
+  - the direct env no longer derives wheel targets from the old heuristic:
+    - `lin_vel_x * scale +/- ang_vel_yaw * scale`
+    and instead reads the current 6 ball-joint positions and velocities, combines them with the RL command, and generates 6 wheel angular-velocity targets from the measured-geometry Jacobian allocator
+  - for the current RL command semantics, the allocator maps:
+    - `lin_vel_x`
+    - `lin_vel_y`
+    - `ang_vel_yaw`
+    into the middle-module instantaneous rigid-body velocity, while the separate `heading` command is intentionally not injected into the instantaneous wheel-speed mapping
+  - the old control config fields:
+    - `wheel_drive_lin_vel_scale`
+    - `wheel_drive_yaw_rate_scale`
+    were removed because they no longer match the active wheel-drive semantics
+  - running:
+    - `python3 scripts/validate_wheel_speed_allocator.py`
+    from `RL_Training/`
+    now passes the basic numerical checks for:
+    - zero input
+    - pure forward motion
+    - pure yaw motion
+  - running:
+    - `python3 -m py_compile ...`
+    on the touched files also passes
+- Impact:
+  - future wheel-drive changes should continue from `RL_Training/kinematics/wheel_speed_allocator.py` instead of reintroducing ad hoc left-right scaling inside the env
+  - future direct-task code must preserve the strict joint-order contract between allocator output and simulator wheel joints
+  - if command semantics change later, the mapping from RL command to middle-module rigid-body velocity should be updated in the allocator, not by adding another wheel-speed shortcut in the env
+- Status:
+  - completed
+  - real Isaac Lab runtime validation still pending
+
+### Thesis chapter03 Jacobian body was further tightened without changing the derivation backbone
+- Updated:
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- Durable writing conclusion:
+  - after the earlier asymmetric `{}^{1}\mathbf b_1 / {}^{3}\mathbf b_3` revision, the same chapter03 Jacobian body was tightened again under a strict “keep the existing derivation backbone” rule instead of being rewritten
+  - the wheel angular-velocity notation was unified from:
+    - `\dot\phi_{iL}, \dot\phi_{iR}`
+    to:
+    - `\Omega_{iL}, \Omega_{iR}`
+    across prose, scalar formulas, vector forms, and Jacobian expressions, so that wheel-speed symbols no longer conflict with the Euler angle `\phi`
+  - the connection-center vector in `${B_2}` is now explicitly fixed as:
+    - `${}^{2}\mathbf a = [a_x, 0, 0]^T`
+    and the surrounding text now states the symmetry only for the front/rear connection centers along the `x_2` axis, not for a generic three-dimensional offset
+  - the old wording that treated `${}^{2}\mathbf v_c` and `${}^{2}\boldsymbol\omega_c` as “motion commands” was replaced by the physically stricter interpretation of:
+    - middle-module instantaneous rigid-body velocity
+    - generalized-velocity description used in the kinematic analysis
+    while explicitly keeping the three-dimensional general form and noting that planar control may use only a subset in practice
+  - the old “pure rolling constraint” wording was replaced by rolling-direction no-slip wording; the text now explicitly states that this section only uses the rolling-direction velocity relation to map module rigid-body velocity to left/right wheel angular velocity, and does not claim a full lateral no-slip constraint set
+  - the wheel-speed sign convention is now explicit: positive wheel angular velocity corresponds to positive rolling velocity of the wheel center along the local module `x_i` axis
+  - the Euler-angle-rate mapping section now explicitly notes the `ZYX` parametrization singularity near `\theta = \pm \pi/2`, and the analysis is stated to assume configurations away from those singular poses
+  - the derivation backbone remained unchanged:
+    - frame and geometry definitions
+    - front/middle/rear position relations
+    - velocity propagation from position differentiation
+    - Euler-rate to angular-velocity mapping
+    - module rigid-body Jacobians
+    - wheel-speed mapping
+    - full vehicle Jacobian assembly
+  - after the tightened revision, running:
+    - `latexmk -xelatex -interaction=nonstopmode -file-line-error main.tex`
+    still succeeds and regenerates:
+    - `毕业论文/毕业论文模板/LaTeX/main.pdf`
+- Remaining non-blocking warnings:
+  - two bibliography keys are still missing from `reference/ref.bib`:
+    - `fang2015survey`
+    - `MATSUMURA2017566`
+- Impact:
+  - future edits to this chapter03 section should preserve the current symbol system and terminology instead of reintroducing:
+    - wheel-speed symbols based on `\dot\phi`
+    - “motion command” wording for `${}^{2}\mathbf v_c` and `${}^{2}\boldsymbol\omega_c`
+    - blanket “pure rolling constraint” wording for a relation that only uses rolling-direction speed
+- Status:
+  - completed and recompiled successfully
+
+### Thesis chapter03 kinematic-model body now uses separate asymmetric fixed offsets `{}^{1}\mathbf b_1` and `{}^{3}\mathbf b_3` with minimal text disruption
+- Updated:
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- Durable writing conclusion:
+  - the user explicitly required keeping the existing chapter03 prose structure as much as possible instead of replacing the whole body with a new remote-style rewrite
+  - the active chapter03 main text now treats the front and rear fixed offsets separately as:
+    - `${}^{1}\mathbf b_1`
+    - `${}^{3}\mathbf b_3`
+    instead of reusing one shared side-module offset vector `\mathbf b`
+  - the corresponding position relations are now written as:
+    - `${}^{2}\mathbf p_1={}^2\mathbf a+{}^2\mathbf R_1\,{}^{1}\mathbf b_1`
+    - `${}^{2}\mathbf p_3=-{}^2\mathbf a+{}^2\mathbf R_3\,{}^{3}\mathbf b_3`
+  - the front / rear module line-velocity propagation, the rigid-body mappings `\mathbf K_1(\mathbf q)` and `\mathbf K_3(\mathbf q)`, and the row-wise wheel-speed Jacobian expansion were updated consistently to match this asymmetric fixed-offset model
+  - the wheel-center position template and the single-module wheel-speed matrix `\mathbf H_i` were intentionally kept in the original symbolic form; this revision did not switch the whole chapter body to a measured-geometry direct-substitution style
+  - after the revision, running:
+    - `latexmk -xelatex -interaction=nonstopmode -file-line-error main.tex`
+    succeeds again and regenerates:
+    - `毕业论文/毕业论文模板/LaTeX/main.pdf`
+- Remaining non-blocking warnings:
+  - two bibliography keys are still missing from `reference/ref.bib`:
+    - `fang2015survey`
+    - `MATSUMURA2017566`
+- Reason:
+  - the user asked for an asymmetric fixed-offset derivation but explicitly rejected a full remote-style body rewrite, requiring a minimal-invasive update on top of the current text
+- Impact:
+  - future chapter03 edits should continue from this symbolic asymmetric `b_1 / b_3` version instead of reverting either to:
+    - the older symmetric single-`\mathbf b` model
+    - or a wholesale measured-geometry body rewrite that discards the current prose organization
+- Status:
+  - completed and recompiled successfully
+
 ### Direct complete-car mainline completed a structural migration to 4D commands, 6D policy actions, and attitude-centric observations
 - Updated:
   - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/assets/robot_cfg.py`

@@ -15,8 +15,9 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
+from kinematics.wheel_speed_allocator import TorchWheelSpeedAllocator
 
-from .assets.robot_cfg import BALL_JOINT_NAMES, LEFT_WHEEL_JOINT_NAMES, RIGHT_WHEEL_JOINT_NAMES, WHEEL_JOINT_NAMES
+from .assets.robot_cfg import BALL_JOINT_NAMES, WHEEL_JOINT_NAMES
 from .commands import resample_velocity_commands, step_command_timer
 from .complete_car_env_cfg import CompleteCarEnvCfg
 from .observations import compute_policy_observation
@@ -36,11 +37,15 @@ class CompleteCarEnv(DirectRLEnv):
         self._terrain_runtime: CompleteCarTerrainRuntime | None = None
         self._sensor_runtime: CompleteCarSensorRuntime | None = None
         super().__init__(cfg, render_mode, **kwargs)
+        self._wheel_speed_allocator = TorchWheelSpeedAllocator(device=self.device, dtype=self.robot.data.joint_pos.dtype)
 
         self._ball_joint_ids, _ = self.robot.find_joints(BALL_JOINT_NAMES)
         self._wheel_joint_ids, _ = self.robot.find_joints(WHEEL_JOINT_NAMES)
-        self._left_wheel_joint_ids, _ = self.robot.find_joints(LEFT_WHEEL_JOINT_NAMES)
-        self._right_wheel_joint_ids, _ = self.robot.find_joints(RIGHT_WHEEL_JOINT_NAMES)
+
+        if tuple(BALL_JOINT_NAMES) != self._wheel_speed_allocator.geometry.ball_joint_names:
+            raise ValueError("Ball-joint order in env does not match wheel-speed allocator input order.")
+        if tuple(WHEEL_JOINT_NAMES) != self._wheel_speed_allocator.geometry.wheel_joint_names:
+            raise ValueError("Wheel-joint order in env does not match wheel-speed allocator output order.")
 
         self.actions = torch.zeros((self.num_envs, self.cfg.action_space), device=self.device)
         self.last_actions = torch.zeros_like(self.actions)
@@ -116,16 +121,12 @@ class CompleteCarEnv(DirectRLEnv):
             + self._processed_actions * self.cfg.control.ball_joint_action_scale
         )
 
-        left_wheel_target = (
-            self.commands[:, 0] * self.cfg.control.wheel_drive_lin_vel_scale
-            - self.commands[:, 2] * self.cfg.control.wheel_drive_yaw_rate_scale
+        wheel_targets = self._wheel_speed_allocator.compute_wheel_speed_targets_from_planar_command(
+            ball_joint_pos=self.robot.data.joint_pos[:, self._ball_joint_ids],
+            ball_joint_vel=self.robot.data.joint_vel[:, self._ball_joint_ids],
+            planar_command=self.commands,
         )
-        right_wheel_target = (
-            self.commands[:, 0] * self.cfg.control.wheel_drive_lin_vel_scale
-            + self.commands[:, 2] * self.cfg.control.wheel_drive_yaw_rate_scale
-        )
-        self._joint_vel_targets[:, self._left_wheel_joint_ids] = left_wheel_target.unsqueeze(-1)
-        self._joint_vel_targets[:, self._right_wheel_joint_ids] = right_wheel_target.unsqueeze(-1)
+        self._joint_vel_targets[:, self._wheel_joint_ids] = wheel_targets
 
     def _apply_action(self) -> None:
         self.robot.set_joint_position_target(self._joint_pos_targets[:, self._ball_joint_ids], joint_ids=self._ball_joint_ids)

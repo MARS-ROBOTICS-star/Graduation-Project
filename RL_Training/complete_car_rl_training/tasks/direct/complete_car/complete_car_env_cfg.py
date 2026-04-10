@@ -45,8 +45,6 @@ class CompleteCarCommandCfg:
 class CompleteCarControlCfg:
     decimation: int = 2
     ball_joint_action_scale: float = 0.25
-    wheel_drive_lin_vel_scale: float = 8.0
-    wheel_drive_yaw_rate_scale: float = 2.0
     ball_joint_stiffness: float = 100.0
     ball_joint_damping: float = 10.0
     ball_joint_effort_limit_sim: float = 120.0

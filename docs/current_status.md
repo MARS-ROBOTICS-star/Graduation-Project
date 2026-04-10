@@ -94,6 +94,17 @@
   已完成一次面向编译恢复的格式清理，移除了损坏的伪 Markdown / 伪公式标记，并统一改回合法 LaTeX 写法。
 - `chapter03.tex` 中“前后模块线速度推导”小节已进一步按“先引入惯性坐标系 ${W}$，再从绝对位置求导推出牵连速度项”的逻辑重写。
 - `chapter03.tex` 中 `3.1.10`“整车速度雅可比矩阵构造”小节已按新的长版推导内容整体替换，并完成 LaTeX 格式修正。
+- `chapter03.tex` 中“整车运动学速度雅可比分析”正文已进一步按“前后模块固定偏置不对称”改为分别使用：
+  - `${}^{1}\mathbf b_1`
+  - `${}^{3}\mathbf b_3`
+  建模。
+- 本轮论文修改遵循“尽量保留现有正文叙述，只补不对称偏置与对应公式”的原则，没有改成整段实测参数版正文。
+- `chapter03.tex` 中“整车运动学速度雅可比分析”正文随后又完成一轮严格学术化修订，在不改推导主线的前提下同步处理了：
+  - 车轮角速度符号从 `\dot\phi_{iL},\dot\phi_{iR}` 统一切到 `\Omega_{iL},\Omega_{iR}`
+  - `${}^{2}\mathbf a` 明确固定为 `[a_x,0,0]^T`
+  - “运动指令”改写为“主模块瞬时刚体速度/广义速度”表述
+  - “纯滚动约束”改写为“基于滚动方向无滑移条件”的轮速映射表述
+  - 补充轮速正方向约定与欧拉角速度映射的参数奇异性说明
 - 当前前、后模块线速度表达式不再直接给出，而是通过：
   - 绝对位置关系
   - 乘积求导
@@ -109,6 +120,39 @@
   - `\mathbf H_i`
   - `\mathbf J_w(\mathbf q)`
   这一套整车速度雅可比矩阵构造链条，并已通过 XeLaTeX 编译。
+- 当前 `chapter03` 中与固定偏置相关的位置关系、前后模块线速度传播以及 `\mathbf K_1(\mathbf q)`、`\mathbf K_3(\mathbf q)` 和对应行雅可比显式展开，均已不再共用单一 `\mathbf b`，而改为：
+  - 前模块使用 `${}^{1}\mathbf b_1`
+  - 后模块使用 `${}^{3}\mathbf b_3`
+- 轮心位置向量和单模块轮速矩阵 `\mathbf H_i` 当前仍保留原有符号化模板写法，没有在本轮切到实测数值直代版本。
+- 当前 `chapter03` 这一节的正文物理语义已经固定为：
+  - 主模块瞬时刚体速度作为运动学广义速度描述
+  - 车轮角速度映射基于滚动方向速度关系建立
+  - 欧拉角速度映射默认避开参数奇异位姿
+- 当前已新增独立的真实参数轮速分配模块：
+  - `RL_Training/kinematics/wheel_speed_allocator.py`
+  其中同时提供：
+  - `numpy` 验证接口
+  - `torch` 运行时接口
+- 当前 direct env 已不再使用旧的 `lin_vel/yaw_rate` 经验缩放差速轮速逻辑，而改为在每步根据：
+  - 实时球铰关节角
+  - 实时球铰关节角速度
+  - RL command 中的 `lin_vel_x / lin_vel_y / ang_vel_yaw`
+  通过真实参数 Jacobian 分配器生成 6 个 wheel joint 速度目标。
+- 当前 wheel target 输出顺序已经与实际 joint 名称严格对齐为：
+  - `body_car_wheel_left_joint`
+  - `body_car_wheel_right_joint`
+  - `head_car_wheel_left_joint`
+  - `head_car_wheel_right_joint`
+  - `tail_car_wheel_left_joint`
+  - `tail_car_wheel_right_joint`
+- 当前 `heading` command 在 direct 主线中仍保留给高层任务语义使用，但不直接进入瞬时轮速 Jacobian 映射。
+- 当前已新增纯 Python 验证脚本：
+  - `RL_Training/scripts/validate_wheel_speed_allocator.py`
+  已验证：
+  - 零输入
+  - 纯前进
+  - 纯偏航
+  这三个基础工况下的轮速分配结果。
 
 ## 当前默认设计选择
 - 当前默认 runnable 起点：
@@ -140,7 +184,7 @@
 - 新 6 维 policy action 方案下，车轮驱动已经改为 env 内的 command 派生控制；这部分仍需在真实 Isaac Lab 中验证：
   - 平地前进是否正常
   - 左右轮差速带来的 yaw 控制是否稳定
-  - 速度跟踪 reward 是否与新的 wheel-drive 映射一致
+  - 速度跟踪 reward 是否与新的 Jacobian wheel-speed allocator 一致
 - `docs/conversation_history.md` 中仍保留大量旧 `src/rl_lab/...` 路径，它们属于历史记录，不代表当前主线位置。
 - 论文编译当前仍保留 2 条非阻塞参考文献警告：
   - `fang2015survey`

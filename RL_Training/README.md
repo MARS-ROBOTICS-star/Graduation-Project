@@ -34,6 +34,8 @@ layout under `complete_car_rl_training/`.
     - Shared project-root and asset-path discovery.
 - `docs/`
   - Local project notes such as the TensorBoard reading guide and the RL migration route.
+- `rsl_rl/`
+  - Vendored local copy of the active RSL-RL runner / PPO / model implementation used by training and playback.
 - `scripts/`
   - Utility scripts for listing environments, smoke-testing with dummy agents, training, and playback.
 - `Kinematic Model/IK/`
@@ -54,6 +56,9 @@ Run from this directory:
 cd /home/ubuntu/Graduation-Project/RL_Training
 python -m pip install -e . --no-build-isolation
 ```
+
+This editable install now also exposes the vendored local `rsl_rl/` package bundled in this repository, so the
+training entrypoints no longer depend on the external `rsl-rl-lib` implementation at runtime.
 
 If you launch Isaac Sim or Isaac Lab from a non-interactive shell for the first time, accept the Omniverse EULA first or set:
 

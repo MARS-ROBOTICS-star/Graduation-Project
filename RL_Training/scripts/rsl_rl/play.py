@@ -14,6 +14,11 @@ from isaaclab.app import AppLauncher
 
 # local imports
 import cli_args  # isort: skip
+from pathlib import Path  # isort: skip
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Play an RL agent checkpoint with RSL-RL.")
@@ -51,13 +56,12 @@ sys.argv = [sys.argv[0]] + hydra_args
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
-"""Check for installed RSL-RL version."""
-
-import importlib.metadata as metadata
+"""Check for vendored RSL-RL version."""
 
 from packaging import version
+import rsl_rl
 
-installed_version = metadata.version("rsl-rl-lib")
+installed_version = getattr(rsl_rl, "__version__", "0.0.0")
 
 """Rest everything follows."""
 

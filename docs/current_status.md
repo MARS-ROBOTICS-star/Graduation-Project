@@ -21,6 +21,8 @@
 ## 当前代码结构
 - 当前 direct task 主目录：
   - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/`
+- 当前 vendored RSL-RL 本地实现：
+  - `RL_Training/rsl_rl/`
 - 当前 terrain runtime：
   - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/terrain/`
 - 当前 sensor runtime：
@@ -87,6 +89,23 @@
   - 当前项目本地副本位于：
     - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/agents/local_rsl_rl_cfg.py`
   - 当前 `ppo_cfg.py` 已切到本地 `actor / critic / distribution_cfg` 结构
+- 当前 `rsl_rl` 算法实现本体与网络实现本体也已拷入项目本地：
+  - `RL_Training/rsl_rl/`
+  - 其中包含当前训练主线实际会用到的：
+    - `runners/on_policy_runner.py`
+    - `algorithms/ppo.py`
+    - `models/mlp_model.py`
+    - `storage/rollout_storage.py`
+    - `modules/distribution.py`
+    - `modules/mlp.py`
+    - `modules/normalization.py`
+    - `utils/logger.py`
+    - 以及对应闭环依赖文件
+- `train.py / play.py` 当前已通过在脚本启动时插入 `RL_Training/` 项目根路径，优先导入仓库内 `RL_Training/rsl_rl/`，不再默认吃 site-packages 中外部 `rsl_rl` 实现。
+- `setup.py` 当前也已把：
+  - `rsl_rl`
+  - `rsl_rl.*`
+  纳入 editable install 的打包范围。
 - 速度跟踪 reward 的核心 tracking kernel 已下沉到项目本地文件：
   - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/local_velocity_tracking_reward.py`
 - 论文章节：
@@ -165,6 +184,9 @@
 - 当前默认 observation 语义：
   - 基础 28 维本体观测以姿态角和姿态角变化率为主
   - Stage2 才在这套基础 observation 上追加 `camera / lidar / imu`
+- 当前训练入口默认使用的 PPO / runner / 网络实现：
+  - 优先使用仓库内 `RL_Training/rsl_rl/`
+  - 不再把外部 `rsl-rl-lib` 作为当前主线实现本体
 - `train.py / play.py` 已完成 direct 主线收口，不再保留 manager-based 或 MARL 模板类型联合。
 - direct 主线的动作噪声与观测噪声已收口到 Isaac Lab 基类 `action_noise_model / observation_noise_model`，不再由本地 env / observation helper 手写注入。
 - 当前与资产根节点相关的直接脚本默认使用新的 articulation root：
@@ -181,6 +203,9 @@
   - `list_envs.py`
   - `train.py`
   - `play.py`
+- 虽然 `rsl_rl` 算法与网络实现已 vendored 到仓库，但仍需在真实 Isaac Lab 环境中验证：
+  - `train.py / play.py` 实际导入的 `rsl_rl` 是否来自 `RL_Training/rsl_rl/`
+  - 本地 `OnPolicyRunner -> PPO -> MLPModel` 链路是否与现有 `ppo_cfg.py` 完整兼容
 - 新 6 维 policy action 方案下，车轮驱动已经改为 env 内的 command 派生控制；这部分仍需在真实 Isaac Lab 中验证：
   - 平地前进是否正常
   - 左右轮差速带来的 yaw 控制是否稳定
@@ -198,6 +223,7 @@
 - Stage0 冒烟时重点先核对：
   - 6 维 action space 是否正确注册
   - observation 维度是否为 `28`
+  - `train.py / play.py` 实际导入的 `rsl_rl` 是否来自仓库内 `RL_Training/rsl_rl/`
   - 车轮 command 派生驱动后机器人是否能正常前进
 - 如果 Stage0 direct 冒烟正常，再继续：
   - `Complete-Car-Stage1-Terrain-Direct-v0`

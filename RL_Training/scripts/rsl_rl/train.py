@@ -16,6 +16,10 @@ from isaaclab.app import AppLauncher
 import cli_args  # isort: skip
 from pathlib import Path  # isort: skip
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
@@ -55,25 +59,19 @@ sys.argv = [sys.argv[0]] + hydra_args
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
-"""Check for minimum supported RSL-RL version."""
-
-import importlib.metadata as metadata
-import platform
+"""Check for minimum supported vendored RSL-RL version."""
 
 from packaging import version
+import rsl_rl
 
-# check minimum supported rsl-rl version
+# check minimum supported vendored rsl-rl version
 RSL_RL_VERSION = "3.0.1"
-installed_version = metadata.version("rsl-rl-lib")
+installed_version = getattr(rsl_rl, "__version__", "0.0.0")
 if version.parse(installed_version) < version.parse(RSL_RL_VERSION):
-    if platform.system() == "Windows":
-        cmd = [r".\isaaclab.bat", "-p", "-m", "pip", "install", f"rsl-rl-lib=={RSL_RL_VERSION}"]
-    else:
-        cmd = ["./isaaclab.sh", "-p", "-m", "pip", "install", f"rsl-rl-lib=={RSL_RL_VERSION}"]
     print(
-        f"Please install the correct version of RSL-RL.\nExisting version is: '{installed_version}'"
-        f" and required version is: '{RSL_RL_VERSION}'.\nTo install the correct version, run:"
-        f"\n\n\t{' '.join(cmd)}\n"
+        "The vendored local RSL-RL copy is older than the minimum supported version.\n"
+        f"Existing local version is: '{installed_version}' and required version is: '{RSL_RL_VERSION}'.\n"
+        "Please refresh the local RL_Training/rsl_rl package from a newer upstream source before training.\n"
     )
     exit(1)
 

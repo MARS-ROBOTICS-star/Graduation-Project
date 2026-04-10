@@ -43,7 +43,7 @@ The current research stage is:
 - `logs/`
   - Date-based work log.
 - `RL_Training/`
-  - The only active Isaac Lab RL code workspace, including the Python package, launch scripts, docs, skills, and IK utilities.
+  - The only active Isaac Lab RL code workspace, including the Python package, vendored local `rsl_rl` runtime, launch scripts, docs, skills, and IK utilities.
 - `RL_Training/kinematics/`
   - Standalone vehicle-kinematics helpers, including the wheel-speed allocator used by the direct RL mainline.
 - `scripts/isaac_sim/`

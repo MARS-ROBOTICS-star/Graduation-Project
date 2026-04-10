@@ -22,14 +22,16 @@ with open(os.path.join(EXTENSION_PATH, "config", "extension.toml"), "rb") as f:
 
 # Minimum dependencies required prior to installation
 INSTALL_REQUIRES = [
-    # NOTE: Add dependencies
     "psutil",
+    "GitPython",
+    "tensordict",
+    "tensorboard",
 ]
 
 # Installation operation
 setup(
     name="complete_car_rl_training",
-    packages=find_packages(include=["complete_car_rl_training", "complete_car_rl_training.*"]),
+    packages=find_packages(include=["complete_car_rl_training", "complete_car_rl_training.*", "rsl_rl", "rsl_rl.*"]),
     author=EXTENSION_TOML_DATA["package"]["author"],
     maintainer=EXTENSION_TOML_DATA["package"]["maintainer"],
     url=EXTENSION_TOML_DATA["package"]["repository"],

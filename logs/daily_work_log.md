@@ -3822,3 +3822,60 @@
 
 下一步：
 - 在真实 Isaac Lab 环境中优先验证新 allocator 接入后 Stage0 的前进、转向与速度跟踪 reward 是否一致。
+
+## 2026-04-10
+
+已完成：
+- 按用户要求先以 GitHub 为准同步本地：
+  - 发现 `origin/main` 已被强制更新，无法 fast-forward
+  - 已将本地 `main` 直接重置到 `origin/main`
+  - 当前同步基线为 `97ca6b6`
+- 将当前环境中的 `rsl_rl` 实现整包 vendoring 到项目本地：
+  - `RL_Training/rsl_rl/`
+- 当前 vendored 包已包含训练主线实际会用到的实现链：
+  - `runners/on_policy_runner.py`
+  - `algorithms/ppo.py`
+  - `models/mlp_model.py`
+  - `storage/rollout_storage.py`
+  - `modules/distribution.py`
+  - `modules/mlp.py`
+  - `modules/normalization.py`
+  - `utils/logger.py`
+  - 以及其余闭环依赖文件
+- 修改 `RL_Training/scripts/rsl_rl/train.py` 与 `play.py`：
+  - 在脚本启动时将 `RL_Training/` 项目根路径插入 `sys.path`
+  - 让训练/回放优先导入仓库内 `RL_Training/rsl_rl/`
+  - 不再把外部 `rsl-rl-lib` 的 metadata 版本当作当前实现本体来源
+- 修改 `RL_Training/rsl_rl/__init__.py`：
+  - 增加本地版本标记 `5.0.1-local`
+- 修改 `RL_Training/setup.py`：
+  - 将 `rsl_rl`、`rsl_rl.*` 纳入 editable install 的打包范围
+  - 补充 `GitPython`、`tensordict`、`tensorboard` 依赖声明
+- 更新 `README.md` 与 `RL_Training/README.md`，把 vendored `rsl_rl/` 明确记为当前训练主线的一部分。
+- 执行：
+  - `python3 -m compileall RL_Training/rsl_rl RL_Training/scripts/rsl_rl RL_Training/complete_car_rl_training/tasks/direct/complete_car/agents`
+  编译通过。
+- 额外做了直接导入校验，确认当前解析到的是仓库内文件：
+  - `OnPolicyRunner -> RL_Training/rsl_rl/runners/on_policy_runner.py`
+  - `PPO -> RL_Training/rsl_rl/algorithms/ppo.py`
+  - `MLPModel -> RL_Training/rsl_rl/models/mlp_model.py`
+
+修改文件：
+- `README.md`
+- `RL_Training/README.md`
+- `RL_Training/setup.py`
+- `RL_Training/scripts/rsl_rl/train.py`
+- `RL_Training/scripts/rsl_rl/play.py`
+- `RL_Training/rsl_rl/`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前项目不再只有本地 PPO 配置壳；`rsl_rl` 的 runner、PPO、本体网络、分布、存储和日志实现也已经随仓库一并进入版本控制。
+- 当前训练入口在运行时会优先吃仓库内 `RL_Training/rsl_rl/`，不再默认依赖 site-packages 中外部 `rsl_rl` 实现。
+- 本轮目标不是替换算法逻辑，而是把当前正在使用的算法实现本体一并纳入项目，便于后续继续改 PPO / runner / network 细节。
+
+下一步：
+- 在真实 Isaac Lab 环境中跑一次 `Stage0` 冒烟，确认训练启动时加载的确实是仓库内 `RL_Training/rsl_rl/`。
+- 然后把本轮 vendored `rsl_rl` 改动与训练主线改动一起提交并推送到 GitHub。

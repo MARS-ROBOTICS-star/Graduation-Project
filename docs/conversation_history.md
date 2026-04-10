@@ -4,6 +4,47 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-10
 
+### The active training mainline now vendors the RSL-RL runtime implementation into the repository
+- Updated:
+  - `RL_Training/rsl_rl/`
+  - `RL_Training/scripts/rsl_rl/train.py`
+  - `RL_Training/scripts/rsl_rl/play.py`
+  - `RL_Training/setup.py`
+  - `RL_Training/README.md`
+  - `README.md`
+- Durable implementation conclusion:
+  - the repository now contains a vendored local copy of the active `rsl_rl` runtime under:
+    - `RL_Training/rsl_rl/`
+  - this vendored package now carries the actual runtime implementation chain used by training and playback, including:
+    - `runners/on_policy_runner.py`
+    - `algorithms/ppo.py`
+    - `models/mlp_model.py`
+    - `storage/rollout_storage.py`
+    - `modules/distribution.py`
+    - `modules/mlp.py`
+    - `modules/normalization.py`
+    - `utils/logger.py`
+    - and the remaining package files needed to keep that chain closed locally
+  - `train.py` and `play.py` now prepend `RL_Training/` to `sys.path` before importing `rsl_rl`, so the vendored package is preferred over the external site-packages copy at runtime
+  - `setup.py` now also includes:
+    - `rsl_rl`
+    - `rsl_rl.*`
+    in the editable-install package list, so the local implementation is part of the project install surface
+  - the vendored package records:
+    - `__version__ = "5.0.1-local"`
+    in `RL_Training/rsl_rl/__init__.py`
+  - `train.py` and `play.py` no longer use `importlib.metadata.version("rsl-rl-lib")` as the source of truth for the active runtime implementation
+- Reason:
+  - the user explicitly required that the real PPO / runner / network implementation body be copied into the project after noticing that earlier localization only copied config classes and local reward helpers
+- Impact:
+  - future PPO, runner, and network modifications should start from `RL_Training/rsl_rl/` instead of patching around the external `rsl-rl-lib` installation
+  - future runtime validation should explicitly confirm that the training entrypoints import the vendored `RL_Training/rsl_rl/` package
+  - future editable installs of `RL_Training/` should preserve this vendored runtime because it is now part of the project package manifest
+- Status:
+  - vendoring completed
+  - `python3 -m compileall` passed for the vendored `rsl_rl` tree and the touched training scripts
+  - direct import verification confirmed that `OnPolicyRunner`, `PPO`, and `MLPModel` now resolve to files under `RL_Training/rsl_rl/`
+
 ### Direct mainline now uses a measured-geometry wheel-speed allocator instead of the old heuristic left-right scaling
 - Updated:
   - `RL_Training/kinematics/__init__.py`

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import torch
 
+from .local_velocity_tracking_reward import compute_velocity_tracking_terms
 from .utils import wrap_to_pi_tensor
 
 
 REWARD_TERM_NAMES = (
     "tracking_lin_vel",
     "tracking_ang_vel",
+    "tracking_heading",
     "orientation",
     "lin_vel_z",
     "ang_vel_xy",
@@ -37,11 +39,7 @@ def compute_reward_terms(
     ball_joint_pos = wrap_to_pi_tensor(robot.data.joint_pos[:, ball_joint_ids])
     ball_joint_vel = robot.data.joint_vel[:, ball_joint_ids]
 
-    lin_vel_error = torch.sum(torch.square(commands[:, :2] - base_lin_vel[:, :2]), dim=1)
-    tracking_lin_vel = torch.exp(-lin_vel_error / max(cfg.rewards.tracking_lin_vel_std**2, 1.0e-6))
-
-    ang_vel_error = torch.square(commands[:, 2] - base_ang_vel[:, 2])
-    tracking_ang_vel = torch.exp(-ang_vel_error / max(cfg.rewards.tracking_ang_vel_std**2, 1.0e-6))
+    tracking_terms = compute_velocity_tracking_terms(cfg, robot, commands)
 
     orientation = torch.sum(torch.square(projected_gravity[:, :2]), dim=1)
     lin_vel_z = torch.square(base_lin_vel[:, 2])
@@ -52,8 +50,9 @@ def compute_reward_terms(
     termination = reset_terminated.float()
 
     components = {
-        "tracking_lin_vel": scales.tracking_lin_vel * tracking_lin_vel,
-        "tracking_ang_vel": scales.tracking_ang_vel * tracking_ang_vel,
+        "tracking_lin_vel": scales.tracking_lin_vel * tracking_terms["tracking_lin_vel"],
+        "tracking_ang_vel": scales.tracking_ang_vel * tracking_terms["tracking_ang_vel"],
+        "tracking_heading": scales.tracking_heading * tracking_terms["tracking_heading"],
         "orientation": scales.orientation * orientation,
         "lin_vel_z": scales.lin_vel_z * lin_vel_z,
         "ang_vel_xy": scales.ang_vel_xy * ang_vel_xy,

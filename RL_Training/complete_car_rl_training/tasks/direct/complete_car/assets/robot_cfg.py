@@ -30,7 +30,21 @@ WHEEL_JOINT_NAMES = [
     "tail_car_wheel_right_joint",
 ]
 
-CONTROLLED_JOINT_NAMES = BALL_JOINT_NAMES + WHEEL_JOINT_NAMES
+LEFT_WHEEL_JOINT_NAMES = [
+    "body_car_wheel_left_joint",
+    "head_car_wheel_left_joint",
+    "tail_car_wheel_left_joint",
+]
+
+RIGHT_WHEEL_JOINT_NAMES = [
+    "body_car_wheel_right_joint",
+    "head_car_wheel_right_joint",
+    "tail_car_wheel_right_joint",
+]
+
+ALL_JOINT_NAMES = BALL_JOINT_NAMES + WHEEL_JOINT_NAMES
+CONTROLLED_JOINT_NAMES = BALL_JOINT_NAMES
+COMPLETE_CAR_ARTICULATION_ROOT_PRIM_PATH = "/body_car_chassis"
 
 COMPLETE_CAR_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
@@ -52,10 +66,11 @@ COMPLETE_CAR_CFG = ArticulationCfg(
             stabilization_threshold=0.001,
         ),
     ),
+    articulation_root_prim_path=COMPLETE_CAR_ARTICULATION_ROOT_PRIM_PATH,
     init_state=ArticulationCfg.InitialStateCfg(
         pos=(0.0, 0.0, 0.30),
-        joint_pos={name: 0.0 for name in CONTROLLED_JOINT_NAMES},
-        joint_vel={name: 0.0 for name in CONTROLLED_JOINT_NAMES},
+        joint_pos={name: 0.0 for name in ALL_JOINT_NAMES},
+        joint_vel={name: 0.0 for name in ALL_JOINT_NAMES},
     ),
     actuators={
         "ball_joints": ImplicitActuatorCfg(

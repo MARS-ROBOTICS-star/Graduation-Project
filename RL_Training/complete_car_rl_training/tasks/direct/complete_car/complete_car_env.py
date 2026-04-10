@@ -16,7 +16,7 @@ from isaaclab.assets import Articulation
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 
-from .assets.robot_cfg import BALL_JOINT_NAMES, WHEEL_JOINT_NAMES
+from .assets.robot_cfg import BALL_JOINT_NAMES, LEFT_WHEEL_JOINT_NAMES, RIGHT_WHEEL_JOINT_NAMES, WHEEL_JOINT_NAMES
 from .commands import resample_velocity_commands, step_command_timer
 from .complete_car_env_cfg import CompleteCarEnvCfg
 from .observations import compute_policy_observation
@@ -39,12 +39,14 @@ class CompleteCarEnv(DirectRLEnv):
 
         self._ball_joint_ids, _ = self.robot.find_joints(BALL_JOINT_NAMES)
         self._wheel_joint_ids, _ = self.robot.find_joints(WHEEL_JOINT_NAMES)
+        self._left_wheel_joint_ids, _ = self.robot.find_joints(LEFT_WHEEL_JOINT_NAMES)
+        self._right_wheel_joint_ids, _ = self.robot.find_joints(RIGHT_WHEEL_JOINT_NAMES)
 
         self.actions = torch.zeros((self.num_envs, self.cfg.action_space), device=self.device)
         self.last_actions = torch.zeros_like(self.actions)
+        self._policy_actions = torch.zeros_like(self.actions)
         self._processed_actions = torch.zeros_like(self.actions)
         self._motor_strength = torch.ones_like(self.actions)
-        self._action_bias = torch.zeros_like(self.actions)
         self.commands = torch.zeros((self.num_envs, self.cfg.commands.num_commands), device=self.device)
         self._command_time_left = torch.zeros(self.num_envs, device=self.device)
 
@@ -65,6 +67,16 @@ class CompleteCarEnv(DirectRLEnv):
         if not hasattr(self, "extras"):
             self.extras = {}
         self.extras.setdefault("log", {})
+
+    def step(self, action: torch.Tensor):
+        clipped_action = action.clone().clamp(-self.cfg.observations.clip_actions, self.cfg.observations.clip_actions)
+        self._policy_actions.copy_(clipped_action)
+        observations, rewards, terminated, time_outs, extras = super().step(clipped_action)
+        observations["policy"] = observations["policy"].clamp(
+            -self.cfg.observations.clip_observations,
+            self.cfg.observations.clip_observations,
+        )
+        return observations, rewards, terminated, time_outs, extras
 
     def _setup_scene(self) -> None:
         self.robot = Articulation(self.cfg.robot_cfg)
@@ -92,41 +104,43 @@ class CompleteCarEnv(DirectRLEnv):
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self.last_actions.copy_(self.actions)
-        self.actions = actions.clone().clamp(-self.cfg.observations.clip_actions, self.cfg.observations.clip_actions)
-
-        if self.cfg.randomization.action_noise_std > 0.0:
-            self._processed_actions = self.actions + torch.randn_like(self.actions) * self.cfg.randomization.action_noise_std
-        else:
-            self._processed_actions = self.actions.clone()
-        self._processed_actions = (self._processed_actions + self._action_bias) * self._motor_strength
+        self.actions.copy_(self._policy_actions)
+        self._processed_actions = actions.clone() * self._motor_strength
 
         resample_env_ids = step_command_timer(self._command_time_left, self.step_dt)
         if resample_env_ids.numel() > 0:
             resample_velocity_commands(self.commands, self._command_time_left, resample_env_ids, self.cfg.commands)
 
-        ball_actions = self._processed_actions[:, : len(BALL_JOINT_NAMES)]
-        wheel_actions = self._processed_actions[:, len(BALL_JOINT_NAMES) :]
-
         self._joint_pos_targets[:, self._ball_joint_ids] = (
-            self.robot.data.default_joint_pos[:, self._ball_joint_ids] + ball_actions * self.cfg.control.ball_joint_action_scale
+            self.robot.data.default_joint_pos[:, self._ball_joint_ids]
+            + self._processed_actions * self.cfg.control.ball_joint_action_scale
         )
-        self._joint_vel_targets[:, self._wheel_joint_ids] = wheel_actions * self.cfg.control.wheel_velocity_action_scale
+
+        left_wheel_target = (
+            self.commands[:, 0] * self.cfg.control.wheel_drive_lin_vel_scale
+            - self.commands[:, 2] * self.cfg.control.wheel_drive_yaw_rate_scale
+        )
+        right_wheel_target = (
+            self.commands[:, 0] * self.cfg.control.wheel_drive_lin_vel_scale
+            + self.commands[:, 2] * self.cfg.control.wheel_drive_yaw_rate_scale
+        )
+        self._joint_vel_targets[:, self._left_wheel_joint_ids] = left_wheel_target.unsqueeze(-1)
+        self._joint_vel_targets[:, self._right_wheel_joint_ids] = right_wheel_target.unsqueeze(-1)
 
     def _apply_action(self) -> None:
         self.robot.set_joint_position_target(self._joint_pos_targets[:, self._ball_joint_ids], joint_ids=self._ball_joint_ids)
         self.robot.set_joint_velocity_target(self._joint_vel_targets[:, self._wheel_joint_ids], joint_ids=self._wheel_joint_ids)
 
     def _get_observations(self) -> dict:
-        height_features = self._sensor_runtime.get_height_features() if self._sensor_runtime is not None else None
+        if self._sensor_runtime is not None:
+            self._sensor_runtime.get_height_features()
         sensor_features = self._sensor_runtime.get_policy_features() if self._sensor_runtime is not None else []
         current_obs = compute_policy_observation(
             self.cfg,
             self.robot,
             self._ball_joint_ids,
-            self._wheel_joint_ids,
             self.commands,
             self.last_actions,
-            height_features,
             sensor_features,
         )
         policy_obs = update_history(self._obs_history, current_obs)
@@ -174,7 +188,8 @@ class CompleteCarEnv(DirectRLEnv):
         extras["episode/root_height_mean"] = float(torch.mean(root_height_mean).item())
         extras["episode/root_height_min"] = float(torch.mean(root_height_min).item())
         extras["episode/command_lin_x"] = float(torch.mean(self.commands[env_ids, 0]).item())
-        extras["episode/command_ang_z"] = float(torch.mean(self.commands[env_ids, 2]).item())
+        extras["episode/command_ang_vel_yaw"] = float(torch.mean(self.commands[env_ids, 2]).item())
+        extras["episode/command_heading"] = float(torch.mean(self.commands[env_ids, 3]).item())
         if terrain_metrics is not None:
             extras.update({f"terrain/{key}": value for key, value in terrain_metrics.items()})
         return extras
@@ -203,8 +218,6 @@ class CompleteCarEnv(DirectRLEnv):
 
         self._root_height_sum[env_ids] = 0.0
         self._root_height_min[env_ids] = float("inf")
-
-        resample_velocity_commands(self.commands, self._command_time_left, env_ids, self.cfg.commands)
 
         root_state = self.robot.data.default_root_state[env_ids].clone()
         root_state[:, :3] += self.scene.env_origins[env_ids]
@@ -246,8 +259,11 @@ class CompleteCarEnv(DirectRLEnv):
         self.robot.write_root_velocity_to_sim(root_state[:, 7:], env_ids)
         self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
 
+        resample_velocity_commands(self.commands, self._command_time_left, env_ids, self.cfg.commands)
+
         self.actions[env_ids] = 0.0
         self.last_actions[env_ids] = 0.0
+        self._policy_actions[env_ids] = 0.0
         self._processed_actions[env_ids] = 0.0
         self._joint_pos_targets[env_ids] = self.robot.data.default_joint_pos[env_ids]
         self._joint_vel_targets[env_ids] = self.robot.data.default_joint_vel[env_ids]
@@ -259,10 +275,6 @@ class CompleteCarEnv(DirectRLEnv):
                 (env_ids.numel(), self.cfg.action_space),
                 self.device,
             )
-
-        self._action_bias[env_ids] = 0.0
-        if self.cfg.randomization.action_bias_std > 0.0:
-            self._action_bias[env_ids] = torch.randn((env_ids.numel(), self.cfg.action_space), device=self.device) * self.cfg.randomization.action_bias_std
 
         if self._obs_history is not None:
             self._obs_history[env_ids] = 0.0

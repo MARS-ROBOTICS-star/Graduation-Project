@@ -49,7 +49,7 @@
 进入项目目录：
 
 ```bash
-cd /home/lbz/Graduation-Project/RL_Training
+cd /home/ubuntu/Graduation-Project/RL_Training
 ```
 
 在已激活的 `env_isaacLab` conda 环境中安装项目包：

@@ -11,13 +11,28 @@
 - 再给运行调用链
 - 最后逐个脚本/文件解释职责
 
+当前说明：
+
+- 当前仓库真正仍在运行的 RL 主线已经迁到 `RL_Training/`，并且已经切到 direct workflow。
+- 本文档中 `Graduation-Project` 这一部分主要保留“旧 manager-based 模板结构”的梳理价值，后续真正执行命令、找入口、定位当前主线时，应优先看：
+  - `README.md`
+  - `docs/current_status.md`
+  - `docs/isaaclab模板使用指南.md`
+  - `RL_Training/README.md`
+
 ---
 
 ## 一、Isaac Lab RL模板梳理：以 Graduation-Project 为例
 
 ### 1.1 整体架构
 
-当前主线 RL 工作区位于：
+当前仍在使用的 RL 工作区位于：
+
+```text
+RL_Training/
+```
+
+但本节下面为了说明旧模板到当前项目的演化关系，仍会引用一次早期 manager-based 结构：
 
 ```text
 src/rl_lab/complete_car_rl_training/
@@ -232,11 +247,8 @@ src/rl_lab/complete_car_rl_training/
 - `README.md`
   - 项目使用说明。
   - 说明如何安装、列任务、做 smoke test、训练、回放。
-- `docs/rl_training_route.md`
-  - 训练策略路线文档。
-  - 它不是程序入口，而是研究/工程路线说明，定义当前阶段优先级。
-- `docs/tensorboard_reading_guide.md`
-  - TensorBoard 标量的离线阅读与诊断说明。
+- `docs/training_workflow_and_tensorboard_guide.md`
+  - 当前训练工作流、TensorBoard 阅读和离线诊断说明。
   - 用于训练后分析，不参与运行时逻辑。
 
 #### 1.4.3 包入口层

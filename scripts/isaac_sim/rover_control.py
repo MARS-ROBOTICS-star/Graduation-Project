@@ -8,7 +8,7 @@ from omni.isaac.core.utils.types import ArticulationAction
 from omni.isaac.core.utils.prims import get_prim_at_path
 
 # ================= 用户配置 =================
-ROBOT_PATH = "/World/complete_car_alternative"
+ROBOT_PATH = "/World/complete_car_alternative/body_car_chassis"
 
 WHEEL_JOINTS = [
     "body_car_wheel_left_joint",

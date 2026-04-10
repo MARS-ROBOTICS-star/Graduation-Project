@@ -15,32 +15,29 @@ from isaaclab.assets import ArticulationCfg
 from isaaclab.envs import DirectRLEnvCfg, ViewerCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
+from isaaclab.utils.noise import GaussianNoiseCfg, NoiseModelCfg, NoiseModelWithAdditiveBiasCfg
 
 from .assets.robot_cfg import BALL_JOINT_NAMES, COMPLETE_CAR_CFG, CONTROLLED_JOINT_NAMES, WHEEL_JOINT_NAMES
+from .observations import PerComponentUniformNoiseCfg
 from .sensors.sensor_runtime import CompleteCarSensorRuntimeCfg
 from .terrain.terrain_runtime import CompleteCarTerrainRuntimeCfg
-from .utils import compute_policy_obs_dim
+from .utils import compute_policy_obs_dim, compute_policy_obs_noise_magnitudes
 
 
 @configclass
 class CompleteCarCommandRangesCfg:
     lin_vel_x: tuple[float, float] = (-2.0, 2.0)
     lin_vel_y: tuple[float, float] = (0.0, 0.0)
-    ang_vel_z: tuple[float, float] = (-1.0, 1.0)
+    ang_vel_yaw: tuple[float, float] = (-1.0, 1.0)
     heading: tuple[float, float] = (-math.pi, math.pi)
-    curvature: tuple[float, float] = (-0.5, 0.5)
 
 
 @configclass
 class CompleteCarCommandCfg:
-    num_commands: int = 3
+    num_commands: int = 4
     resampling_time: float = 4.0
-    heading_command: bool = False
     zero_command: bool = False
     rel_standing_envs: float = 0.0
-    rel_heading_envs: float = 0.0
-    debug_vis: bool = False
-    turn_lin_vel_threshold: float = 0.1
     ranges: CompleteCarCommandRangesCfg = CompleteCarCommandRangesCfg()
 
 
@@ -48,7 +45,8 @@ class CompleteCarCommandCfg:
 class CompleteCarControlCfg:
     decimation: int = 2
     ball_joint_action_scale: float = 0.25
-    wheel_velocity_action_scale: float = 8.0
+    wheel_drive_lin_vel_scale: float = 8.0
+    wheel_drive_yaw_rate_scale: float = 2.0
     ball_joint_stiffness: float = 100.0
     ball_joint_damping: float = 10.0
     ball_joint_effort_limit_sim: float = 120.0
@@ -61,26 +59,20 @@ class CompleteCarControlCfg:
 
 @configclass
 class CompleteCarObservationScalesCfg:
-    lin_vel: float = 2.0
-    ang_vel: float = 0.25
-    gravity: float = 1.0
+    attitude: float = 1.0
+    attitude_rate: float = 0.25
     ball_joint_pos: float = 1.0
     ball_joint_vel: float = 0.05
-    wheel_joint_vel: float = 0.05
     commands: float = 1.0
     last_action: float = 1.0
-    height_measurements: float = 5.0
 
 
 @configclass
 class CompleteCarObservationNoiseScalesCfg:
+    attitude: float = 0.02
+    attitude_rate: float = 0.2
     ball_joint_pos: float = 0.01
     ball_joint_vel: float = 0.05
-    wheel_joint_vel: float = 0.05
-    lin_vel: float = 0.1
-    ang_vel: float = 0.2
-    gravity: float = 0.05
-    height_measurements: float = 0.1
     commands: float = 0.0
 
 
@@ -101,6 +93,7 @@ class CompleteCarRewardScalesCfg:
     termination: float = -2.0
     tracking_lin_vel: float = 2.0
     tracking_ang_vel: float = 2.0
+    tracking_heading: float = 0.5
     lin_vel_z: float = -2.0
     ang_vel_xy: float = -1.0
     orientation: float = -5.0
@@ -115,10 +108,10 @@ class CompleteCarRewardCfg:
     only_positive_rewards: bool = False
     tracking_lin_vel_std: float = math.sqrt(0.5)
     tracking_ang_vel_std: float = math.sqrt(0.25)
+    tracking_heading_std: float = math.sqrt(0.25)
     ball_joint_target: float = 0.0
     soft_ball_joint_pos_limit: float = 0.8
     orientation_limit_deg: float = 45.0
-    base_height_target: float = 0.30
 
 
 @configclass
@@ -156,7 +149,7 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
     decimation: int = 2
     episode_length_s: float = 16.0
     action_space: int = len(CONTROLLED_JOINT_NAMES)
-    observation_space: int = 42
+    observation_space: int = 28
     state_space: int = 0
 
     sim: sim_utils.SimulationCfg = sim_utils.SimulationCfg()
@@ -181,6 +174,32 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
     terrain: CompleteCarTerrainRuntimeCfg = CompleteCarTerrainRuntimeCfg()
     sensors: CompleteCarSensorRuntimeCfg = CompleteCarSensorRuntimeCfg()
 
+    def _build_action_noise_model_cfg(self) -> NoiseModelWithAdditiveBiasCfg | None:
+        if self.randomization.action_noise_std <= 0.0 and self.randomization.action_bias_std <= 0.0:
+            return None
+        return NoiseModelWithAdditiveBiasCfg(
+            noise_cfg=GaussianNoiseCfg(mean=0.0, std=self.randomization.action_noise_std, operation="add"),
+            bias_noise_cfg=GaussianNoiseCfg(mean=0.0, std=self.randomization.action_bias_std, operation="abs"),
+        )
+
+    def _build_observation_noise_model_cfg(self) -> NoiseModelCfg | None:
+        if not self.observations.add_noise or self.observations.noise_level <= 0.0:
+            return None
+
+        magnitudes = compute_policy_obs_noise_magnitudes(self)
+        if self.observations.use_history and self.observations.history_length > 1:
+            magnitudes = magnitudes * self.observations.history_length
+        if not any(magnitude > 0.0 for magnitude in magnitudes):
+            return None
+
+        return NoiseModelCfg(
+            noise_cfg=PerComponentUniformNoiseCfg(
+                n_min=tuple(-magnitude for magnitude in magnitudes),
+                n_max=tuple(magnitudes),
+                operation="add",
+            )
+        )
+
     def __post_init__(self) -> None:
         super().__post_init__()
 
@@ -192,6 +211,8 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
         else:
             self.observation_space = base_obs_dim
         self.state_space = 0
+        self.action_noise_model = self._build_action_noise_model_cfg()
+        self.observation_noise_model = self._build_observation_noise_model_cfg()
 
         self.sim.dt = 1.0 / 120.0
         self.sim.render_interval = self.decimation

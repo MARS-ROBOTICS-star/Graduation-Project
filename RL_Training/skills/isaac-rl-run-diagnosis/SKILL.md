@@ -143,11 +143,11 @@ Use this exact high-level structure:
 
 For metric meaning and chart-reading rules, read this file when needed:
 
-- `/home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training/docs/tensorboard_reading_guide.md`
+- `/home/ubuntu/Graduation-Project/RL_Training/docs/training_workflow_and_tensorboard_guide.md`
 
 For exported TensorBoard files, use:
 
-- `/home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training/scripts/tensorboard_export.py`
+- `/home/ubuntu/Graduation-Project/RL_Training/scripts/tensorboard_export.py`
 
 ## Invocation example
 

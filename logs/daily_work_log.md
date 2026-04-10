@@ -3,6 +3,88 @@
 ## 2026-04-10
 
 已完成：
+- 按用户要求，处理 `complete_car.usd` 中 articulation root 迁移到 `/World/complete_car_alternative/body_car_chassis` 后的联动脚本。
+- direct RL 资产配置已显式对齐新的 articulation root：
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/assets/robot_cfg.py`
+  现在通过 `articulation_root_prim_path = "/body_car_chassis"` 指向新的根节点，而不是继续隐式依赖 USD 自动搜索。
+- 与车体挂点相关的默认 prim path 已同步修改：
+  - `sensors/sensor_runtime.py`
+    - IMU -> `.../body_car_chassis/IMU_body`
+    - camera -> `.../head_car_chassis/Stereo_rig/left_camera`
+    - lidar -> `.../head_car_chassis/Example_Rotary`
+  - `terrain/terrain_runtime.py`
+    - height scanner -> `.../body_car_chassis`
+- 直接打开 USD 并创建 articulation 的脚本已切到新的 articulation root：
+  - `scripts/isaac_sim/control_keyboard.py`
+  - `scripts/isaac_sim/rover_control.py`
+- `scripts/isaac_sim/check_isaaclab_asset.py` 已补充新的 root 检查，并在最小加载测试里显式写入 `articulation_root_prim_path="/body_car_chassis"`。
+
+修改文件：
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/assets/robot_cfg.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/sensors/sensor_runtime.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/terrain/terrain_runtime.py`
+- `scripts/isaac_sim/check_isaaclab_asset.py`
+- `scripts/isaac_sim/control_keyboard.py`
+- `scripts/isaac_sim/rover_control.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前项目已经明确区分：
+  - 资产挂载根
+  - articulation root
+- RL 主线继续挂载在 `.../Robot` 下，但 articulation API 会显式落到 `.../Robot/body_car_chassis`。
+- 已执行 `python3 -m py_compile`，本轮涉及文件静态校验通过。
+
+下一步：
+- 在 Isaac Sim / Isaac Lab 环境中优先验证：
+  - `scripts/isaac_sim/control_keyboard.py`
+  - `scripts/isaac_sim/check_isaaclab_asset.py`
+  - `python scripts/list_envs.py --keyword Complete-Car`
+
+已完成：
+- 按用户要求清理当前 direct 主线中的模板残余和未接线字段。
+- 收口训练与回放脚本：
+  - `RL_Training/scripts/rsl_rl/train.py`
+  - `RL_Training/scripts/rsl_rl/play.py`
+  现在不再保留 manager-based / MARL 模板类型联合，也移除了 `train.py` 中只对 manager-based 生效的 `--export_io_descriptors` 分支。
+- 收口 direct env 配置主干：
+  - 删除 `CompleteCarCommandCfg` 中未接线的 `heading_command`、`rel_heading_envs`、`debug_vis`
+  - 删除 `CompleteCarCommandRangesCfg` 中未接线的 `ang_vel_z`、`heading`
+  - 删除 `CompleteCarRewardCfg` 中未接线的 `base_height_target`
+- 将当前 direct 主线的噪声链路切回 Isaac Lab 基类能力：
+  - `DirectRLEnvCfg.action_noise_model`
+  - `DirectRLEnvCfg.observation_noise_model`
+  当前 `randomization.action_noise_std / action_bias_std` 与 `observations.add_noise / noise_level / noise_scales` 仍作为参数源保留，但不再由 `CompleteCarEnv` 和 `observations.py` 手写加噪。
+- 同步修正文档中“这些残余仍存在”的旧描述，并纠正架构文档实际路径为：
+  - `docs/complete_car_direct_workflow_architecture.md`
+
+修改文件：
+- `RL_Training/scripts/rsl_rl/train.py`
+- `RL_Training/scripts/rsl_rl/play.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/observations.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/utils.py`
+- `README.md`
+- `docs/complete_car_direct_workflow_architecture.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 direct 主线已经不再保留用户本轮点名的模板残余和未接线字段。
+- 噪声配置现在有了清晰边界：
+  - 本地 cfg 负责参数源
+  - Isaac Lab 基类负责运行时噪声注入
+- 当前默认 stage 仍是 `use_history = False`，因此观测噪声切回基类后不会影响现有主线的历史堆叠语义。
+- 已对本轮涉及的训练脚本与 direct 主线核心 Python 文件执行 `python3 -m py_compile`，静态校验通过。
+
+下一步：
+- 在具备 Isaac Lab 运行环境的机器上，优先做一次 Stage0 direct 冒烟。
+
+已完成：
 - 根据用户新的长期主线要求，将完整车 RL 项目从 Isaac Lab manager-based 架构彻底重构为 direct workflow。
 - 新增 direct task 主目录：
   - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/`
@@ -90,6 +172,67 @@
 - 在有 Isaac Lab 环境的机器上，优先执行：
   - `python scripts/list_envs.py --keyword Complete-Car`
   - `python scripts/rsl_rl/train.py --task Complete-Car-Stage0-Flat-Direct-v0 --headless --num_envs 100 --max_iterations 10`
+
+已完成：
+- GitHub 同步后，清理了本地未跟踪的旧 `src/` 残留目录，不再保留旧 `src/rl_lab/complete_car_rl_training/` 工作树副本。
+- 统一修正后续使用的命令入口和说明文件，明确当前所有可运行命令默认都应从：
+  - `/home/ubuntu/Graduation-Project/RL_Training`
+  执行。
+- 修正文档与技能中的旧路径或失效引用：
+  - `AGENTS.md`
+  - `RL_Training/README.md`
+  - `RL_Training/docs/training_workflow_and_tensorboard_guide.md`
+  - `RL_Training/skills/isaac-rl-run-diagnosis/SKILL.md`
+  - `docs/isaaclab模板使用指南.md`
+  - `docs/isaaclab_rl_template_and_mgdp_structure.md`
+  - `docs/current_status.md`
+
+修改文件：
+- `AGENTS.md`
+- `RL_Training/README.md`
+- `RL_Training/docs/training_workflow_and_tensorboard_guide.md`
+- `RL_Training/skills/isaac-rl-run-diagnosis/SKILL.md`
+- `docs/isaaclab模板使用指南.md`
+- `docs/isaaclab_rl_template_and_mgdp_structure.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前仓库已经不再保留本地旧 `src/` 运行入口。
+- 后续列环境、训练、回放、TensorBoard 导出等命令，默认都应在 `RL_Training/` 下执行。
+
+下一步：
+- 在具备 Isaac Lab 运行环境的机器上，从 `RL_Training/` 执行一次 `list_envs.py` 和 Stage0 小规模 `train.py` 冒烟。
+
+已完成：
+- 基于当前 direct workflow 真实代码，新增了完整车 RL 主线的长期架构说明文档：
+  - `docs/complete_car_direct_workflow_architecture.md`
+- 文档内容已系统整理：
+  - task 注册与入口机制
+  - env / cfg / terrain runtime / sensor runtime 的职责边界
+  - 训练调用链
+  - Stage0 / Stage1 / Stage2 的组织关系
+  - 后续修改观测、奖励、动作、命令、课程学习、terrain、传感器、stage、agent 配置时应优先修改的位置
+- 同步更新仓库说明与项目地图，使新文档可被后续会话直接发现：
+  - `README.md`
+  - `docs/project_file_map.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+
+修改文件：
+- `docs/complete_car_direct_workflow_architecture.md`
+- `README.md`
+- `docs/project_file_map.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前仓库已经有一份可长期保留、可反复检索的 direct workflow 架构说明，不再需要每次从聊天记录临时重建调用链和修改入口。
+
+下一步：
+- 如果后续 direct 主线继续演化，优先维护这份文档，而不是只在聊天记录里解释。
 
 ## 2026-04-10（GitHub 同步）
 
@@ -3452,3 +3595,61 @@
 
 下一步：
 - 在 `env_isaacLab` 中进入 `RL_Training/` 后，优先执行一次 `python scripts/list_envs.py --keyword Complete-Car` 或小规模 `train.py` 冒烟。
+
+## 2026-04-10
+
+已完成：
+- 以 `complete_car_env_cfg.py` 为入口，对当前 direct complete-car 主线完成一轮结构性迁移。
+- command 维度由旧设计改为 4 维：
+  - `lin_vel_x`
+  - `lin_vel_y`
+  - `ang_vel_yaw`
+  - `heading`
+- policy action 改为仅输出 6 个球铰姿态关节目标角，不再把车轮速度作为 policy action 输出。
+- 在 `complete_car_env.py` 中新增 env 侧车轮驱动映射：按 command 派生左右轮速度目标，避免 6 维 action 后训练主线失去前进驱动。
+- policy observation 重构为以姿态角和姿态角变化率为主的最小本体输入，并删除旧的：
+  - `lin_vel`
+  - `projected_gravity`
+  - `wheel_joint_vel`
+  - `height_measurements`
+  这些旧主线项不再进入 policy observation。
+- 当前基础 observation 拼接顺序改为：
+  - `roll, pitch, yaw`
+  - `roll_rate, pitch_rate, yaw_rate`
+  - `ball_joint_pos(6)`
+  - `ball_joint_vel(6)`
+  - `commands(4)`
+  - `last_action(6)`
+  当前基础 observation 总维度为 `28`。
+- 新增本地速度跟踪 reward kernel：
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/local_velocity_tracking_reward.py`
+  并在 `rewards.py` 中组合本地 tracking、heading、姿态惩罚、关节惩罚、action-rate 惩罚。
+- 新增本地 PPO 配置副本：
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/agents/local_rsl_rl_cfg.py`
+  `ppo_cfg.py` 不再直接继承外部 `RslRlOnPolicyRunnerCfg / RslRlPpoActorCriticCfg / RslRlPpoAlgorithmCfg`。
+- 当前 PPO 配置同步改成 `actor / critic / distribution_cfg` 结构，以适配当前机器上的 `rsl-rl-lib 5.0.1`。
+- 对本轮涉及的 direct-task 文件执行了 `python3 -m py_compile`，静态语法检查通过。
+
+修改文件：
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/assets/robot_cfg.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/commands.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/observations.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/utils.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/rewards.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/local_velocity_tracking_reward.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/agents/local_rsl_rl_cfg.py`
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/agents/ppo_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 direct 主线的动作、命令、观测、reward、PPO 配置已经切到新的结构，不再停留在旧的 12 维动作和旧 observation 语义上。
+- 这次改动的关键不是“单纯减 action 维度”，而是同步补上了 env 侧车轮驱动闭环，使 6 维姿态动作仍然具备速度跟踪训练所需的推进能力。
+- 当前仍缺少真实 Isaac Lab 运行态验证；下一步最应该先验证的是 Stage0 下新的 wheel-drive 映射和 28 维 observation 是否按预期工作。
+
+下一步：
+- 在 Isaac Lab 环境中优先运行 `python scripts/list_envs.py --keyword Complete-Car`。
+- 然后对 `Complete-Car-Stage0-Flat-Direct-v0` 做一次小规模 `train.py` 冒烟，重点检查 action space、observation dim 和车轮驱动效果。

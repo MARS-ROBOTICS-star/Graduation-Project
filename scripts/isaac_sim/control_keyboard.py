@@ -162,7 +162,8 @@ from isaacsim.core.utils.types import ArticulationAction
 # 1. 基本配置
 # =========================
 USD_PATH = str(PROJECT_ROOT / "USD" / "complete_car.usd")
-ROBOT_PRIM_PATH = "/World/complete_car_alternative"
+ROBOT_ASSET_ROOT_PATH = "/World/complete_car_alternative"
+ROBOT_ARTICULATION_ROOT_PATH = f"{ROBOT_ASSET_ROOT_PATH}/body_car_chassis"
 TERRAIN_ROOT_PATH = "/World/terrain_preview"
 TRAINING_TERRAIN_ROOT_PATH = "/World/terrain"
 TERRAIN_ORIGIN = (-1.0, 0.0, 0.0)
@@ -191,12 +192,12 @@ WHEEL_JOINT_NAMES = [
     "tail_car_wheel_right_joint",
 ]
 WHEEL_COLLISION_ROOTS = [
-    f"{ROBOT_PRIM_PATH}/body_car_wheel_left/collisions",
-    f"{ROBOT_PRIM_PATH}/body_car_wheel_right/collisions",
-    f"{ROBOT_PRIM_PATH}/head_car_wheel_left/collisions",
-    f"{ROBOT_PRIM_PATH}/head_car_wheel_right/collisions",
-    f"{ROBOT_PRIM_PATH}/tail_car_wheel_left/collisions",
-    f"{ROBOT_PRIM_PATH}/tail_car_wheel_right/collisions",
+    f"{ROBOT_ASSET_ROOT_PATH}/body_car_wheel_left/collisions",
+    f"{ROBOT_ASSET_ROOT_PATH}/body_car_wheel_right/collisions",
+    f"{ROBOT_ASSET_ROOT_PATH}/head_car_wheel_left/collisions",
+    f"{ROBOT_ASSET_ROOT_PATH}/head_car_wheel_right/collisions",
+    f"{ROBOT_ASSET_ROOT_PATH}/tail_car_wheel_left/collisions",
+    f"{ROBOT_ASSET_ROOT_PATH}/tail_car_wheel_right/collisions",
 ]
 
 # 两个球绞各 3 自由度
@@ -474,18 +475,18 @@ world = World(
 world.reset()
 
 # 检查 prim 是否存在
-target_prim = stage.GetPrimAtPath(ROBOT_PRIM_PATH)
+target_prim = stage.GetPrimAtPath(ROBOT_ARTICULATION_ROOT_PATH)
 
 print("\n===== CHECK ROBOT PRIM =====")
-print("ROBOT_PRIM_PATH =", ROBOT_PRIM_PATH)
+print("ROBOT_ARTICULATION_ROOT_PATH =", ROBOT_ARTICULATION_ROOT_PATH)
 print("Exists:", target_prim.IsValid())
 print("Type:", target_prim.GetTypeName() if target_prim.IsValid() else "INVALID")
 print("===== END CHECK =====\n")
 
 if not target_prim.IsValid():
-    raise RuntimeError(f"Robot prim not found: {ROBOT_PRIM_PATH}")
+    raise RuntimeError(f"Robot prim not found: {ROBOT_ARTICULATION_ROOT_PATH}")
 
-robot = SingleArticulation(prim_path=ROBOT_PRIM_PATH, name="my_car")
+robot = SingleArticulation(prim_path=ROBOT_ARTICULATION_ROOT_PATH, name="my_car")
 dof_names = []
 joint_name_to_index = {}
 wheel_indices = []

@@ -6,13 +6,13 @@
 """RSL-RL configs for the direct complete-car task family."""
 
 from isaaclab.utils import configclass
-from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
+
+from .local_rsl_rl_cfg import LocalGaussianDistributionCfg, LocalMlpModelCfg, LocalOnPolicyRunnerCfg, LocalPpoAlgorithmCfg
 
 
 @configclass
-class CompleteCarPPoCfg(RslRlOnPolicyRunnerCfg):
+class CompleteCarPPoCfg(LocalOnPolicyRunnerCfg):
     seed = 1
-    runner_class_name = "OnPolicyRunner"
 
     num_steps_per_env = 24
     max_iterations = 500
@@ -27,15 +27,19 @@ class CompleteCarPPoCfg(RslRlOnPolicyRunnerCfg):
     load_run = -1
     load_checkpoint = -1
 
-    policy = RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
-        actor_obs_normalization=True,
-        critic_obs_normalization=True,
-        actor_hidden_dims=[256, 128, 64],
-        critic_hidden_dims=[256, 128, 64],
+    actor = LocalMlpModelCfg(
+        hidden_dims=[256, 128, 64],
         activation="elu",
+        obs_normalization=True,
+        distribution_cfg=LocalGaussianDistributionCfg(init_std=1.0, std_type="scalar"),
     )
-    algorithm = RslRlPpoAlgorithmCfg(
+    critic = LocalMlpModelCfg(
+        hidden_dims=[256, 128, 64],
+        activation="elu",
+        obs_normalization=True,
+        distribution_cfg=None,
+    )
+    algorithm = LocalPpoAlgorithmCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,

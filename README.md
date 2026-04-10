@@ -34,6 +34,8 @@ The current research stage is:
   - Repository-level rules, project background, role boundary, and persistent-memory policy.
 - `docs/`
   - Project memory, workflow notes, and literature workspace.
+- `docs/complete_car_direct_workflow_architecture.md`
+  - Long-form architecture reference for the active direct-workflow RL mainline.
 - `docs/project_file_map.md`
   - Detailed Chinese map of the repository structure and the role of each major file group.
 - `logs/`
@@ -71,6 +73,8 @@ The current research stage is:
   - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/sensors/`
 - RL launch scripts:
   - `RL_Training/scripts/`
+- Architecture reference docs:
+  - `docs/complete_car_direct_workflow_architecture.md`
 - Isaac Sim validation and teleoperation:
   - `scripts/isaac_sim/`
 - Literature notes and PDFs:

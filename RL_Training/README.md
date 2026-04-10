@@ -51,7 +51,7 @@ layout under `complete_car_rl_training/`.
 Run from this directory:
 
 ```bash
-cd /home/lbz/Graduation-Project/RL_Training
+cd /home/ubuntu/Graduation-Project/RL_Training
 python -m pip install -e . --no-build-isolation
 ```
 
@@ -120,13 +120,7 @@ python scripts/tensorboard_export.py --run_dir logs/rsl_rl/complete_car_rl_train
 The project-level reading guide for TensorBoard and offline diagnosis is:
 
 ```bash
-docs/tensorboard_reading_guide.md
-```
-
-The staged RL migration note is:
-
-```bash
-docs/rl_training_route.md
+docs/training_workflow_and_tensorboard_guide.md
 ```
 
 ## Play

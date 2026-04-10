@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from .assets.robot_cfg import BALL_JOINT_NAMES, WHEEL_JOINT_NAMES
+from .assets.robot_cfg import BALL_JOINT_NAMES
 
 
 def sample_uniform_tensor(value_range: tuple[float, float], shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
@@ -14,6 +14,44 @@ def sample_uniform_tensor(value_range: tuple[float, float], shape: tuple[int, ..
 
 def wrap_to_pi_tensor(angles: torch.Tensor) -> torch.Tensor:
     return torch.atan2(torch.sin(angles), torch.cos(angles))
+
+
+def quaternion_to_rpy(quat_wxyz: torch.Tensor) -> torch.Tensor:
+    w, x, y, z = quat_wxyz.unbind(dim=-1)
+
+    sin_roll = 2.0 * (w * x + y * z)
+    cos_roll = 1.0 - 2.0 * (x * x + y * y)
+    roll = torch.atan2(sin_roll, cos_roll)
+
+    sin_pitch = 2.0 * (w * y - z * x)
+    sin_pitch = torch.clamp(sin_pitch, min=-1.0, max=1.0)
+    pitch = torch.asin(sin_pitch)
+
+    sin_yaw = 2.0 * (w * z + x * y)
+    cos_yaw = 1.0 - 2.0 * (y * y + z * z)
+    yaw = torch.atan2(sin_yaw, cos_yaw)
+
+    return torch.stack((roll, pitch, yaw), dim=-1)
+
+
+def body_ang_vel_to_rpy_rates(rpy: torch.Tensor, ang_vel_b: torch.Tensor) -> torch.Tensor:
+    roll = rpy[:, 0]
+    pitch = rpy[:, 1]
+    roll_rate_input = ang_vel_b[:, 0]
+    pitch_rate_input = ang_vel_b[:, 1]
+    yaw_rate_input = ang_vel_b[:, 2]
+
+    sin_roll = torch.sin(roll)
+    cos_roll = torch.cos(roll)
+    tan_pitch = torch.tan(pitch)
+    cos_pitch = torch.cos(pitch)
+    safe_cos_pitch = torch.where(cos_pitch >= 0.0, torch.full_like(cos_pitch, 1.0e-4), torch.full_like(cos_pitch, -1.0e-4))
+    cos_pitch = torch.where(torch.abs(cos_pitch) < 1.0e-4, safe_cos_pitch, cos_pitch)
+
+    roll_rate = roll_rate_input + sin_roll * tan_pitch * pitch_rate_input + cos_roll * tan_pitch * yaw_rate_input
+    pitch_rate = cos_roll * pitch_rate_input - sin_roll * yaw_rate_input
+    yaw_rate = (sin_roll * pitch_rate_input + cos_roll * yaw_rate_input) / cos_pitch
+    return torch.stack((roll_rate, pitch_rate, yaw_rate), dim=-1)
 
 
 def yaw_quaternion(yaw: torch.Tensor) -> torch.Tensor:
@@ -45,17 +83,33 @@ def update_history(history_buffer: torch.Tensor | None, current_obs: torch.Tenso
     return history_buffer.reshape(current_obs.shape[0], -1)
 
 
+def compute_policy_obs_noise_magnitudes(cfg) -> list[float]:
+    noise_level = cfg.observations.noise_level if cfg.observations.add_noise else 0.0
+    noise_scales = cfg.observations.noise_scales
+    magnitudes: list[float] = []
+
+    magnitudes.extend([noise_level * noise_scales.attitude] * 3)
+    magnitudes.extend([noise_level * noise_scales.attitude_rate] * 3)
+    magnitudes.extend([noise_level * noise_scales.ball_joint_pos] * len(BALL_JOINT_NAMES))
+    magnitudes.extend([noise_level * noise_scales.ball_joint_vel] * len(BALL_JOINT_NAMES))
+    magnitudes.extend([noise_level * noise_scales.commands] * cfg.commands.num_commands)
+    magnitudes.extend([0.0] * len(BALL_JOINT_NAMES))
+
+    magnitudes.extend([0.0] * cfg.sensors.policy_feature_dim)
+    return magnitudes
+
+
 def compute_policy_obs_dim(cfg) -> int:
-    proprio_dim = 3 + 3 + 3 + len(BALL_JOINT_NAMES) + len(BALL_JOINT_NAMES) + len(WHEEL_JOINT_NAMES) + 3 + (
-        len(BALL_JOINT_NAMES) + len(WHEEL_JOINT_NAMES)
-    )
-    height_dim = len(cfg.terrain.measured_points_x) * len(cfg.terrain.measured_points_y) if cfg.terrain.measure_heights else 0
-    return proprio_dim + height_dim + cfg.sensors.policy_feature_dim
+    proprio_dim = 3 + 3 + len(BALL_JOINT_NAMES) + len(BALL_JOINT_NAMES) + cfg.commands.num_commands + len(BALL_JOINT_NAMES)
+    return proprio_dim + cfg.sensors.policy_feature_dim
 
 
 __all__ = [
+    "body_ang_vel_to_rpy_rates",
     "compute_policy_obs_dim",
+    "compute_policy_obs_noise_magnitudes",
     "quat_mul",
+    "quaternion_to_rpy",
     "sample_uniform_tensor",
     "update_history",
     "wrap_to_pi_tensor",

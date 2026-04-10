@@ -14,7 +14,7 @@ from isaaclab.utils import configclass
 @configclass
 class CompleteCarImuSensorCfg:
     enabled: bool = False
-    prim_path: str = "{ENV_REGEX_NS}/Robot/body"
+    prim_path: str = "{ENV_REGEX_NS}/Robot/body_car_chassis/IMU_body"
     update_period: float = 0.0
     gravity_bias: tuple[float, float, float] = (0.0, 0.0, 0.0)
     debug_vis: bool = False
@@ -36,7 +36,7 @@ class CompleteCarImuSensorCfg:
 @configclass
 class CompleteCarCameraSensorCfg:
     enabled: bool = False
-    prim_path: str = "{ENV_REGEX_NS}/Robot/body/front_camera"
+    prim_path: str = "{ENV_REGEX_NS}/Robot/head_car_chassis/Stereo_rig/left_camera"
     update_period: float = 0.1
     height: int = 64
     width: int = 64
@@ -88,7 +88,7 @@ class CompleteCarCameraSensorCfg:
 @configclass
 class CompleteCarLidarSensorCfg:
     enabled: bool = False
-    prim_path: str = "{ENV_REGEX_NS}/Robot/body/lidar"
+    prim_path: str = "{ENV_REGEX_NS}/Robot/head_car_chassis/Example_Rotary"
     update_period: float = 0.1
     horizontal_fov_range: tuple[float, float] = (-60.0, 60.0)
     vertical_fov_range: tuple[float, float] = (-10.0, 10.0)

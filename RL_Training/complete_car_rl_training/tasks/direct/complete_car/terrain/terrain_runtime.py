@@ -57,7 +57,7 @@ class CompleteCarTerrainRuntimeCfg:
     measured_points_y: list[float] = field(
         default_factory=lambda: [-0.5, -0.4, -0.3, -0.2, -0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
     )
-    height_scanner_prim_path: str = "{ENV_REGEX_NS}/Robot/body"
+    height_scanner_prim_path: str = "{ENV_REGEX_NS}/Robot/body_car_chassis"
     height_scanner_update_period: float = 0.02
     height_scanner_offset: tuple[float, float, float] = (0.0, 0.0, 20.0)
     flat_only_reset: bool = False

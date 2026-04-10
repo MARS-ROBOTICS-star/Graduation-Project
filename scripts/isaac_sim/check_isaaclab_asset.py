@@ -39,7 +39,12 @@ def inspect_usd_file() -> None:
     print(f"  default_prim: {default_prim.GetPath().pathString if default_prim else None}")
     print(f"  top_level_children: {top_level_children}")
 
-    for prim_path in ["/World", "/World/complete_car", "/World/complete_car_alternative"]:
+    for prim_path in [
+        "/World",
+        "/World/complete_car",
+        "/World/complete_car_alternative",
+        "/World/complete_car_alternative/body_car_chassis",
+    ]:
         prim = stage.GetPrimAtPath(prim_path)
         print(f"  prim {prim_path}: valid={prim.IsValid()} type={prim.GetTypeName() if prim.IsValid() else None}")
 
@@ -61,6 +66,7 @@ class CarSceneCfg(InteractiveSceneCfg):
 
     robot = ArticulationCfg(
         prim_path="{ENV_REGEX_NS}/Robot",
+        articulation_root_prim_path="/body_car_chassis",
         spawn=sim_utils.UsdFileCfg(
             usd_path=str(USD_PATH),
             activate_contact_sensors=False,

@@ -19,17 +19,13 @@ def resample_velocity_commands(
     device = commands.device
     lin_vel_x = sample_uniform_tensor(cfg.ranges.lin_vel_x, (env_ids.numel(),), device)
     lin_vel_y = sample_uniform_tensor(cfg.ranges.lin_vel_y, (env_ids.numel(),), device)
-    curvature = sample_uniform_tensor(cfg.ranges.curvature, (env_ids.numel(),), device)
-    yaw_vel = lin_vel_x * curvature
-    yaw_vel = torch.where(
-        torch.abs(lin_vel_x) < cfg.turn_lin_vel_threshold,
-        torch.zeros_like(yaw_vel),
-        yaw_vel,
-    )
+    ang_vel_yaw = sample_uniform_tensor(cfg.ranges.ang_vel_yaw, (env_ids.numel(),), device)
+    heading = sample_uniform_tensor(cfg.ranges.heading, (env_ids.numel(),), device)
 
     commands[env_ids, 0] = lin_vel_x
     commands[env_ids, 1] = lin_vel_y
-    commands[env_ids, 2] = yaw_vel
+    commands[env_ids, 2] = ang_vel_yaw
+    commands[env_ids, 3] = heading
 
     if cfg.rel_standing_envs > 0.0:
         standing_mask = torch.rand(env_ids.numel(), device=device) < cfg.rel_standing_envs

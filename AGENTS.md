@@ -716,7 +716,7 @@ Use these files as the main project map instead of inferring from scattered arti
   - Isaac Sim validation and teleoperation scripts
 - `scripts/literature/`
   - literature conversion and indexing helpers
-- `src/rl_lab/`
+- `RL_Training/`
   - target location for the runnable Isaac Lab RL baseline
 - `results/`
   - generated outputs and validation artifacts

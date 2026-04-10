@@ -10,18 +10,16 @@
 - 训练结果本地保存位置
 - TensorBoard 图表读法
 
-当前 direct 任务 ID 为：
+当前任务 ID 为：
 
 ```text
-Complete-Car-Stage0-Flat-Direct-v0
-Complete-Car-Stage1-Terrain-Direct-v0
-Complete-Car-Stage2-Perception-Direct-v0
+Complete-Car-Rl-Training-v0
 ```
 
 当前训练项目根目录为：
 
 ```text
-/home/ubuntu/Graduation-Project/RL_Training
+/home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
 ```
 
 ---
@@ -32,7 +30,7 @@ Complete-Car-Stage2-Perception-Direct-v0
 
 ```bash
 conda activate env_isaacLab
-cd /home/ubuntu/Graduation-Project/RL_Training
+cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
 export OMNI_KIT_ACCEPT_EULA=YES
 ```
 
@@ -49,17 +47,17 @@ python -m pip install -e . --no-build-isolation
 ### 2.1 最常用训练指令
 
 ```bash
-cd /home/ubuntu/Graduation-Project/RL_Training
+cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
 python scripts/rsl_rl/train.py \
-  --task Complete-Car-Stage0-Flat-Direct-v0 \
+  --task Complete-Car-Rl-Training-v0 \
   --num_envs 100 \
   --headless
 ```
 
 含义：
 
-- `--task Complete-Car-Stage0-Flat-Direct-v0`
-  - 启动当前 direct Stage0 平地 baseline
+- `--task Complete-Car-Rl-Training-v0`
+  - 启动当前完整车 active task
 - `--headless`
   - 不开可视化窗口
 - `--device cuda:0`
@@ -70,7 +68,7 @@ python scripts/rsl_rl/train.py \
 如果只想先确认训练链路能否启动，不想直接跑满默认轮数：
 
 ```bash
-python scripts/rsl_rl/train.py --task Complete-Car-Stage0-Flat-Direct-v0 --headless --device cuda:0 --num_envs 100 --max_iterations 10
+python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --device cuda:0 --num_envs 100 --max_iterations 10
 ```
 
 ### 2.3 常用可调参数
@@ -103,7 +101,7 @@ python scripts/rsl_rl/train.py --help
 每次训练的本地结果默认保存在：
 
 ```text
-logs/rsl_rl/complete_car_stage0_flat_direct/YYYY-MM-DD_HH-MM-SS/
+logs/rsl_rl/complete_car_rl_training/YYYY-MM-DD_HH-MM-SS/
 ```
 
 一个典型 run 目录中常见文件如下：
@@ -141,7 +139,7 @@ logs/rsl_rl/complete_car_stage0_flat_direct/YYYY-MM-DD_HH-MM-SS/
 ### 4.1 最常用查看命令
 
 ```bash
-tensorboard --logdir /home/ubuntu/Graduation-Project/RL_Training/logs/rsl_rl/complete_car_stage0_flat_direct
+tensorboard --logdir /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training
 ```
 
 启动后浏览器通常访问：
@@ -155,7 +153,7 @@ http://localhost:6006
 如果需要从其他机器访问：
 
 ```bash
-tensorboard --logdir /home/ubuntu/Graduation-Project/RL_Training/logs/rsl_rl/complete_car_stage0_flat_direct --bind_all
+tensorboard --logdir /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training --bind_all
 ```
 
 ### 4.3 如果 TensorBoard 启动报 `pkg_resources` 错误
@@ -181,7 +179,7 @@ conda install -n env_isaacLab --offline -y /home/ubuntu/miniconda3/pkgs/setuptoo
 ### 5.1 最简单的回放命令
 
 ```bash
-python scripts/rsl_rl/play.py --task Complete-Car-Stage0-Flat-Direct-v0 
+python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0 
 ```
 
 这条命令适合快速验证当前任务的播放链路是否正常。
@@ -191,13 +189,13 @@ python scripts/rsl_rl/play.py --task Complete-Car-Stage0-Flat-Direct-v0
 例如回放一次指定 run 的最终模型：
 
 ```bash
-python scripts/rsl_rl/play.py --task Complete-Car-Stage0-Flat-Direct-v0 --load_run 2026-04-06_17-40-38 --checkpoint model_149.pt
+python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0  --load_run 2026-04-06_17-40-38 --checkpoint model_149.pt
 ```
 
 如果希望少开一些并行环境，便于观察：
 
 ```bash
-python scripts/rsl_rl/play.py --task Complete-Car-Stage0-Flat-Direct-v0 --num_envs 32 --load_run 2026-04-06_17-40-38 --checkpoint model_149.pt
+python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0  --num_envs 32 --load_run 2026-04-06_17-40-38 --checkpoint model_149.pt
 ```
 
 如需查看完整参数：
@@ -402,17 +400,17 @@ python scripts/isaac_sim/preview_stage1_last_six.py --list-terrains
 
 当前配置中：
 
-- `episode_length_s = 8.0`
+- `episode_length_s = 16`
 - `dt = 1/120`
 - `decimation = 2`
 
 所以单回合理论上限约为：
 
 ```text
-8 / (1/120 * 2) = 480 步
+8 / (1/120 * 2) = 960 步
 ```
 
-如果这条曲线接近 `480`，通常说明大部分 episode 已经能正常活到超时。
+如果这条曲线接近 `960`，通常说明大部分 episode 已经能正常活到超时。
 
 ### 9.3 `Episode_Termination/time_out`
 
@@ -520,21 +518,21 @@ python scripts/isaac_sim/preview_stage1_last_six.py --list-terrains
 
 ```bash
 conda activate env_isaacLab
-cd /home/ubuntu/Graduation-Project/RL_Training
+cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
 export OMNI_KIT_ACCEPT_EULA=YES
-python scripts/rsl_rl/train.py --task Complete-Car-Stage0-Flat-Direct-v0 --headless --device cuda:0
+python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --device cuda:0
 ```
 
 ### 11.2 开 TensorBoard
 
 ```bash
-tensorboard --logdir /home/ubuntu/Graduation-Project/RL_Training/logs/rsl_rl/complete_car_stage0_flat_direct
+tensorboard --logdir /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training
 ```
 
 ### 11.3 回放某次训练结果
 
 ```bash
-python scripts/rsl_rl/play.py --task Complete-Car-Stage0-Flat-Direct-v0 --device cuda:0 --num_envs 32 --load_run 2026-04-06_17-40-38 --checkpoint model_149.pt
+python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0 --device cuda:0 --num_envs 32 --load_run 2026-04-06_17-40-38 --checkpoint model_149.pt
 ```
 
 ### 11.4 用键盘控制做联调
@@ -568,4 +566,5 @@ python scripts/isaac_sim/preview_stage1_last_six.py --list-terrains
 
 ## 12. 相关文档
 
-- [训练工作流与 TensorBoard 指南](./training_workflow_and_tensorboard_guide.md)
+- [RL 训练策略](./rl_training_route.md)
+- [TensorBoard 读图说明](./tensorboard_reading_guide.md)

@@ -4,6 +4,118 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-10
 
+### Direct complete-car mainline completed a structural migration to 4D commands, 6D policy actions, and attitude-centric observations
+- Updated:
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/assets/robot_cfg.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/commands.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/observations.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/utils.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/rewards.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/local_velocity_tracking_reward.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/agents/local_rsl_rl_cfg.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/agents/ppo_cfg.py`
+- Durable implementation conclusion:
+  - the active command vector is now 4D:
+    - `lin_vel_x`
+    - `lin_vel_y`
+    - `ang_vel_yaw`
+    - `heading`
+  - the active policy action space is now 6D and only controls the 6 spherical-joint-related articulation joints
+  - wheel velocity is no longer emitted by the policy; the env now derives left/right wheel velocity targets from the sampled command
+  - the active base policy observation is now attitude-centric and ordered as:
+    - `roll, pitch, yaw`
+    - `roll_rate, pitch_rate, yaw_rate`
+    - `ball_joint_pos(6)`
+    - `ball_joint_vel(6)`
+    - `commands(4)`
+    - `last_action(6)`
+  - the resulting base proprioceptive observation dimension is:
+    - `28`
+  - Stage2 still appends optional sensor features after this 28D base observation instead of replacing it
+- PPO localization conclusion:
+  - the project no longer directly inherits the deprecated Isaac Lab PPO config template classes in `ppo_cfg.py`
+  - project-local runner / model / PPO config classes now live in:
+    - `tasks/direct/complete_car/agents/local_rsl_rl_cfg.py`
+  - the active PPO config was simultaneously migrated to the native `actor / critic / distribution_cfg` structure expected by modern `rsl-rl`
+- Reward localization conclusion:
+  - the command-tracking reward kernel is now explicitly isolated in the local file:
+    - `tasks/direct/complete_car/local_velocity_tracking_reward.py`
+  - `rewards.py` now composes the complete reward from that local tracking kernel plus posture / joint / action-rate penalties
+- Reason:
+  - the user explicitly requested a structural migration rather than partial compatibility edits, and required the complete-car task to stop carrying the previous 12D action semantics and old body-state observation layout
+- Impact:
+  - future task changes must treat wheel driving as env-side command-following logic unless the user explicitly restores wheel actions to the policy
+  - future observation changes should preserve the new 28D base ordering unless the task definition is intentionally changed again
+  - future PPO updates should start from the local config copy instead of reintroducing direct inheritance from Isaac Lab's deprecated config template classes
+- Status:
+  - code migration completed
+  - `python3 -m py_compile` passed for the touched direct-task files
+  - real Isaac Lab runtime validation still pending
+
+### complete_car.usd now uses body_car_chassis as the articulation root and related scripts were aligned
+- Updated:
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/assets/robot_cfg.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/sensors/sensor_runtime.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/terrain/terrain_runtime.py`
+  - `scripts/isaac_sim/check_isaaclab_asset.py`
+  - `scripts/isaac_sim/control_keyboard.py`
+  - `scripts/isaac_sim/rover_control.py`
+- Durable implementation conclusion:
+  - the active `complete_car.usd` now places its articulation root at:
+    - `/World/complete_car_alternative/body_car_chassis`
+  - the direct RL asset config now sets:
+    - `ArticulationCfg.articulation_root_prim_path = "/body_car_chassis"`
+    while keeping the spawned asset namespace at `.../Robot`
+  - scripts that directly instantiate the articulation from a USD stage now point to the new articulation root instead of the old parent prim
+  - complete-car sensor and height-scanner defaults were aligned to the current asset structure:
+    - IMU under `body_car_chassis`
+    - camera and lidar under `head_car_chassis`
+- Reason:
+  - the user moved the articulation root in `complete_car.usd` and requested that dependent scripts be updated accordingly
+- Impact:
+  - future asset-related changes should distinguish between:
+    - the asset namespace root, such as `/World/complete_car_alternative`
+    - the articulation root prim, now `/World/complete_car_alternative/body_car_chassis`
+  - when a script needs articulation APIs, it should target the articulation root, not just the parent asset prim
+- Status:
+  - code updates completed
+  - `python3 -m py_compile` passed for the touched files
+
+### Direct mainline template residue has been cleaned from the training entrypoints and env config trunk
+- Updated:
+  - `RL_Training/scripts/rsl_rl/train.py`
+  - `RL_Training/scripts/rsl_rl/play.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/observations.py`
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/utils.py`
+  - `docs/complete_car_direct_workflow_architecture.md`
+- Durable implementation conclusion:
+  - the active `train.py` and `play.py` no longer keep manager-based or MARL template unions from Isaac Lab's generic launcher template
+  - `train.py` no longer exposes the manager-based-only `--export_io_descriptors` branch
+  - the command config no longer keeps unused fields such as:
+    - `heading_command`
+    - `rel_heading_envs`
+    - `ranges.ang_vel_z`
+    - `ranges.heading`
+    - `debug_vis`
+  - the reward config no longer keeps the unused `base_height_target`
+  - action noise and observation noise are now routed through:
+    - `DirectRLEnvCfg.action_noise_model`
+    - `DirectRLEnvCfg.observation_noise_model`
+    instead of being manually injected inside `CompleteCarEnv` and `observations.py`
+- Reason:
+  - the user explicitly asked to process the remaining template residue and unconnected fields instead of leaving them documented as known leftovers
+- Impact:
+  - future direct-mainline maintenance should treat the current launcher scripts as single-agent direct-task entrypoints rather than generic Isaac Lab templates
+  - future noise-related changes should start from `CompleteCarEnvCfg.__post_init__()` because local noise parameters are now translated there into Isaac Lab base noise models
+  - if observation history is enabled later, the observation-noise semantics should be rechecked explicitly because the base observation-noise hook runs after observation assembly
+- Status:
+  - code cleanup completed
+  - `python3 -m py_compile` passed for the touched training and direct-task files
+
 ### Complete-car RL mainline has been fully refactored from manager-based to Isaac Lab direct workflow
 - Updated:
   - `RL_Training/complete_car_rl_training/__init__.py`
@@ -45,6 +157,30 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Status:
   - code refactor completed
   - real Isaac Lab runtime validation still pending on a machine with the environment installed
+
+### A standalone long-form architecture document now exists for the direct workflow mainline
+- Updated:
+  - `docs/complete_car_direct_workflow_architecture.md`
+  - `README.md`
+  - `docs/project_file_map.md`
+  - `docs/current_status.md`
+- Durable documentation conclusion:
+  - the repository now contains a standalone architecture reference under:
+    - `docs/complete_car_direct_workflow_architecture.md`
+  - this document is intended to be the long-form internal reference for:
+    - direct task registration
+    - env / cfg / runtime-helper responsibilities
+    - training call chain
+    - stage organization
+    - future modification entry points
+  - future sessions that need to explain or extend the direct workflow should prefer this document over reconstructing the architecture ad hoc from scattered chat context
+- Reason:
+  - the user explicitly requested a code-based architectural explanation of the new direct mainline and wanted it preserved as a long-lived Markdown document inside the repository
+- Impact:
+  - future documentation, onboarding, and refactor discussions can use this file as the default architecture reference
+  - the long-form architecture reference currently lives directly under `docs/` together with the project-memory files
+- Status:
+  - completed
 
 ## 2026-04-09
 
@@ -216,6 +352,35 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - the user requested a more teaching-oriented and less path-heavy code explanation style
 - Impact:
   - future teaching sessions should follow this explanation order by default instead of jumping straight to summaries
+- Status:
+  - completed
+
+### Old local `src/` residue has been removed and operational entrypoints are now standardized to `RL_Training/`
+- Updated:
+  - `AGENTS.md`
+  - `RL_Training/README.md`
+  - `RL_Training/docs/training_workflow_and_tensorboard_guide.md`
+  - `RL_Training/skills/isaac-rl-run-diagnosis/SKILL.md`
+  - `docs/isaaclab模板使用指南.md`
+  - `docs/isaaclab_rl_template_and_mgdp_structure.md`
+  - `docs/current_status.md`
+- Durable implementation conclusion:
+  - the untracked old local residue under:
+    - `src/`
+    has been removed from the working tree
+  - future operational commands should start from:
+    - `/home/ubuntu/Graduation-Project/RL_Training`
+  - current user-facing command and entrypoint docs now consistently point to:
+    - `RL_Training/`
+    instead of the deleted `src/rl_lab/complete_car_rl_training/`
+  - the repository-local Isaac RL diagnosis skill now reads its guide and export script from:
+    - `RL_Training/docs/training_workflow_and_tensorboard_guide.md`
+    - `RL_Training/scripts/tensorboard_export.py`
+- Reason:
+  - after the GitHub sync, the local repository still had an untracked legacy `src/` tree and a few active docs still referenced the old path, which could mislead later execution
+- Impact:
+  - future sessions should treat the old `src/` location as history only
+  - when giving runnable commands, default to `cd /home/ubuntu/Graduation-Project/RL_Training`
 - Status:
   - completed
 

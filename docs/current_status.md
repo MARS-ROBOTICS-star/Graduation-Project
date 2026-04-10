@@ -93,6 +93,7 @@
   - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
   已完成一次面向编译恢复的格式清理，移除了损坏的伪 Markdown / 伪公式标记，并统一改回合法 LaTeX 写法。
 - `chapter03.tex` 中“前后模块线速度推导”小节已进一步按“先引入惯性坐标系 ${W}$，再从绝对位置求导推出牵连速度项”的逻辑重写。
+- `chapter03.tex` 中 `3.1.10`“整车速度雅可比矩阵构造”小节已按新的长版推导内容整体替换，并完成 LaTeX 格式修正。
 - 当前前、后模块线速度表达式不再直接给出，而是通过：
   - 绝对位置关系
   - 乘积求导
@@ -103,6 +104,11 @@
 - 论文主入口：
   - `毕业论文/毕业论文模板/LaTeX/main.tex`
   当前已可重新通过 `latexmk -xelatex` 完整生成 `main.pdf`。
+- 当前 `3.1.10` 小节已经采用：
+  - `\mathbf K_1(\mathbf q), \mathbf K_2, \mathbf K_3(\mathbf q)`
+  - `\mathbf H_i`
+  - `\mathbf J_w(\mathbf q)`
+  这一套整车速度雅可比矩阵构造链条，并已通过 XeLaTeX 编译。
 
 ## 当前默认设计选择
 - 当前默认 runnable 起点：

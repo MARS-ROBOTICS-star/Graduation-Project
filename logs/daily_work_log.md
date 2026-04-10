@@ -85,6 +85,40 @@
 - 在具备 Isaac Lab 运行环境的机器上，优先做一次 Stage0 direct 冒烟。
 
 已完成：
+- 按用户要求，替换 `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex` 中 `3.1.10`“整车速度雅可比矩阵构造”部分，采用新的长版推导正文。
+- 将用户草稿里混入的非法格式全部改回合法 LaTeX，包括：
+  - 非法分隔符
+  - 损坏的矩阵换行
+  - 错误的公式对齐
+  - 非法符号拼接
+- 保留并整理了该小节的主要公式链：
+  - 整车广义速度 `\boldsymbol\xi`
+  - 反对称矩阵算子 `\mathbf S(\mathbf x)`
+  - 模块刚体速度映射 `\mathbf K_1(\mathbf q), \mathbf K_2, \mathbf K_3(\mathbf q)`
+  - 单模块轮速映射 `\mathbf H_i`
+  - 整车速度雅可比 `\mathbf J_w(\mathbf q)`
+- 在 `毕业论文/毕业论文模板/LaTeX/` 下重新执行：
+  - `latexmk -xelatex -interaction=nonstopmode -file-line-error main.tex`
+  编译成功，`main.pdf` 已更新。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `毕业论文/毕业论文模板/LaTeX/main.pdf`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `3.1.10` 小节已经从用户提供的损坏草稿替换为可编译、符号一致的 LaTeX 版本。
+- 当前论文主文档可继续通过 XeLaTeX 生成 PDF。
+- 当前仍只剩 2 条旧的非阻塞文献警告：
+  - `fang2015survey`
+  - `MATSUMURA2017566`
+
+下一步：
+- 若继续打磨 chapter03，可再针对这一节里过长的行公式做版面收缩，但这已经不影响编译通过。
+
+已完成：
 - 根据用户新的长期主线要求，将完整车 RL 项目从 Isaac Lab manager-based 架构彻底重构为 direct workflow。
 - 新增 direct task 主目录：
   - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/`

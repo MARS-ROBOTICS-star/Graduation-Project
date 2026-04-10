@@ -116,6 +116,30 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - code cleanup completed
   - `python3 -m py_compile` passed for the touched training and direct-task files
 
+### Thesis chapter03 section 3.1.10 has been replaced with a full clean Jacobian-construction derivation
+- Updated:
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- Durable writing conclusion:
+  - the subsection `3.1.10` "整车速度雅可比矩阵构造" was replaced as a whole using the user's longer derivation path instead of incremental local edits
+  - the rewritten subsection now explicitly organizes the derivation as:
+    - vehicle generalized velocity vector `\boldsymbol\xi`
+    - skew-symmetric operator `\mathbf S(\mathbf x)`
+    - rigid-body velocity mappings `\mathbf K_1(\mathbf q)`, `\mathbf K_2`, `\mathbf K_3(\mathbf q)`
+    - per-module wheel Jacobians `\mathbf H_i`
+    - full vehicle wheel-speed Jacobian `\mathbf J_w(\mathbf q)`
+  - malformed pseudo-markup inside the user-provided draft, such as separator lines and invalid equation formatting, was converted back into valid XeLaTeX math environments
+  - after the replacement, running:
+    - `latexmk -xelatex -interaction=nonstopmode -file-line-error main.tex`
+    succeeds again and regenerates:
+    - `毕业论文/毕业论文模板/LaTeX/main.pdf`
+- Reason:
+  - the user explicitly requested replacing the whole `3.1.10` subsection with the new text and fixing formatting until XeLaTeX compilation succeeds
+- Impact:
+  - future edits to the vehicle Jacobian subsection should continue from this clean expanded version instead of reusing the malformed draft text
+  - the current Jacobian discussion in chapter03 is now aligned with the existing notation chain for front/middle/rear module velocity mappings
+- Status:
+  - completed and recompiled successfully
+
 ### Complete-car RL mainline has been fully refactored from manager-based to Isaac Lab direct workflow
 - Updated:
   - `RL_Training/complete_car_rl_training/__init__.py`

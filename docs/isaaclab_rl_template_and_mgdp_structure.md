@@ -14,6 +14,18 @@
 当前说明：
 
 - 当前仓库真正仍在运行的 RL 主线已经迁到 `RL_Training/`，并且已经切到 direct workflow。
+- 当前 active direct 主线保留了项目内 vendored 的 PPO 本体，位置在：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/`
+- 原来 `RL_Training/scripts/` 下的辅助脚本已经迁到：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/`
+- 原来 `RL_Training/utils/` 下的 IK/FK 内容已经迁到：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/`
+  其中 active 接口是：
+  - `ik_solver.py`
+  - `fk_solver.py`
+  旧推导资料保留在：
+  - `legacy_ik/`
+  - `legacy_fk/`
 - 本文档中 `Graduation-Project` 这一部分主要保留“旧 manager-based 模板结构”的梳理价值，后续真正执行命令、找入口、定位当前主线时，应优先看：
   - `README.md`
   - `docs/current_status.md`
@@ -395,6 +407,685 @@ src/rl_lab/complete_car_rl_training/
 - `complete_car_stage1_env.py` 负责“维护 level/type/class 状态并在 reset 时更新”
 
 这比最初“只把 mesh 导进来，再调用 terrain importer 的默认 origin 更新”更接近 MGDP 的结构分层。
+
+### 1.6 当前 direct 主线：`complete_car/` 逐文件结构
+
+上面 1.1 到 1.5 主要是在解释早期 manager-based 模板的组织思想。  
+但当前仓库真正的 RL 主线已经换成：
+
+```text
+RL_Training/complete_car_rl_training/tasks/direct/complete_car/
+```
+
+这一套不再依赖 manager term manager 去拼装环境，而是采用 Isaac Lab 的 direct workflow：
+
+- 一个 direct env 主类统一负责 reset / observation / reward / done / command / terrain runtime / sensor runtime
+- `*_cfg.py` 负责 direct 环境配置和分阶段覆写
+- `commands.py`、`observations.py`、`rewards.py`、`terminations.py` 放纯函数 helper
+- `terrain/` 和 `sensors/` 保持为 runtime helper，而不是 manager term
+- `agents/ppo_cfg.py` 负责训练超参数
+
+#### 1.6.1 当前 direct 目录总览
+
+```text
+RL_Training/complete_car_rl_training/tasks/direct/complete_car/
+├── __init__.py
+├── commands.py
+├── complete_car_env.py
+├── complete_car_env_cfg.py
+├── local_velocity_tracking_reward.py
+├── observations.py
+├── rewards.py
+├── stage0_flat_cfg.py
+├── stage1_terrain_cfg.py
+├── stage2_perception_cfg.py
+├── terminations.py
+├── utils.py
+├── agents/
+│   ├── __init__.py
+│   ├── local_rsl_rl_cfg.py
+│   └── ppo_cfg.py
+├── assets/
+│   ├── __init__.py
+│   └── robot_cfg.py
+├── sensors/
+│   ├── __init__.py
+│   └── sensor_runtime.py
+└── terrain/
+    ├── __init__.py
+    ├── terrain_generator.py
+    └── terrain_runtime.py
+```
+
+#### 1.6.2 当前 direct 运行调用链
+
+当前 direct 主线的典型训练链可以理解为：
+
+```text
+RL_Training/scripts/rsl_rl/train.py
+    -> import complete_car_rl_training
+    -> complete_car_rl_training/tasks/direct/complete_car/__init__.py
+    -> gym.register(...)
+    -> 选择某个 task id
+       - Complete-Car-Stage0-Flat-Direct-v0
+       - Complete-Car-Stage1-Terrain-Direct-v0
+       - Complete-Car-Stage2-Perception-Direct-v0
+    -> env_cfg_entry_point
+       - Stage0FlatEnvCfg / Stage1TerrainEnvCfg / Stage2PerceptionEnvCfg
+    -> rsl_rl_cfg_entry_point
+       - Stage0FlatPPoCfg / Stage1TerrainPPoCfg / Stage2PerceptionPPoCfg
+    -> gym.make(...)
+    -> CompleteCarEnv
+    -> _setup_scene()
+       - robot_cfg
+       - terrain runtime
+       - sensor runtime
+    -> step()
+       -> _pre_physics_step()
+       -> _apply_action()
+       -> _get_observations()
+       -> _get_rewards()
+       -> _get_dones()
+       -> _reset_idx()
+```
+
+也就是说，当前主线最需要抓住的是 4 个入口：
+
+- `__init__.py`
+  - 注册 Gym task
+- `complete_car_env_cfg.py`
+  - 定义 direct 环境共享配置主干
+- `complete_car_env.py`
+  - 定义 direct 环境主类
+- `agents/ppo_cfg.py`
+  - 定义 RSL-RL 训练超参数
+
+#### 1.6.3 顶层入口文件
+
+- `__init__.py`
+  - 作用：
+    - 当前 direct 任务族的注册入口。
+    - 把 3 个 stage 的 env cfg 和 PPO cfg 绑定到 3 个 Gym task id。
+  - 本文件没有自定义类和函数。
+  - 关键行为：
+    - `gym.register(...)`
+      - 注册 `Complete-Car-Stage0-Flat-Direct-v0`
+      - 注册 `Complete-Car-Stage1-Terrain-Direct-v0`
+      - 注册 `Complete-Car-Stage2-Perception-Direct-v0`
+    - `entry_point`
+      - 都指向 `CompleteCarEnv`
+    - `env_cfg_entry_point`
+      - 分别指向 `Stage0FlatEnvCfg`、`Stage1TerrainEnvCfg`、`Stage2PerceptionEnvCfg`
+    - `rsl_rl_cfg_entry_point`
+      - 分别指向 `Stage0FlatPPoCfg`、`Stage1TerrainPPoCfg`、`Stage2PerceptionPPoCfg`
+
+#### 1.6.4 环境配置主干
+
+- `complete_car_env_cfg.py`
+  - 作用：
+    - 当前 direct env 的共享配置主干。
+    - 定义 command、control、observation、reward、reset、randomization、terrain、sensor、scene、sim 等全部任务配置。
+    - 它是“当前 complete_car 任务语义”最核心的装配文件。
+  - 类：
+    - `CompleteCarEnvCfg(DirectRLEnvCfg)`
+      - direct 环境的顶层配置类。
+      - 负责把 Isaac Lab 的 `DirectRLEnvCfg` 扩展成完整车任务自己的配置语义。
+    - `CompleteCarEnvCfg.CommandCfg`
+      - 高层命令采样配置。
+      - 规定命令维度、重采样时间、是否 heading mode、是否零命令、静止环境比例。
+    - `CompleteCarEnvCfg.CommandCfg.ranges`
+      - 命令采样范围。
+      - 规定 `lin_vel_x / lin_vel_y / ang_vel_yaw / heading` 的最小值和最大值。
+    - `CompleteCarEnvCfg.ControlCfg`
+      - 控制与执行器配置。
+      - 规定 decimation、球铰 action 缩放、球铰/车轮关节的 stiffness、damping、effort limit、velocity limit。
+    - `CompleteCarEnvCfg.ObservationCfg`
+      - policy observation 配置。
+      - 规定是否使用 history、history 长度、观测裁剪、动作裁剪、是否加噪、噪声总倍率。
+    - `CompleteCarEnvCfg.ObservationCfg.Scales`
+      - observation 各分量缩放系数。
+      - 规定 attitude、attitude_rate、ball_joint_pos、ball_joint_vel、commands、last_action 的缩放。
+    - `CompleteCarEnvCfg.ObservationCfg.noiseScales`
+      - observation 各分量噪声幅度配置。
+      - 规定 attitude、attitude_rate、ball_joint_pos、ball_joint_vel、commands 的噪声半幅。
+    - `CompleteCarEnvCfg.RewardCfg`
+      - reward 总配置。
+      - 规定 tracking kernel 的标准差、是否只保留正奖励、球铰软限位、姿态阈值等。
+    - `CompleteCarEnvCfg.RewardCfg.Scales`
+      - reward term 缩放系数。
+      - 规定 tracking、orientation、lin_vel_z、ang_vel_xy、ball_joint_deviation、action_rate、termination 等各项权重。
+    - `CompleteCarEnvCfg.ResetCfg`
+      - reset 配置。
+      - 规定 root 初始位姿、速度、随机平移/yaw、球铰/车轮关节初始状态和随机化范围。
+    - `CompleteCarEnvCfg.RandomizationCfg`
+      - domain randomization 配置。
+      - 规定 motor strength 随机化、关节位置噪声、action 噪声和 bias 噪声。
+  - 方法：
+    - `_build_action_noise_model_cfg()`
+      - 根据 `randomization.action_noise_std` 和 `action_bias_std` 动态构造 Isaac Lab 的 action noise model。
+    - `_build_observation_noise_model_cfg()`
+      - 根据 observation noise scales 构造 Isaac Lab 的 observation noise model。
+    - `__post_init__()`
+      - 统一收口配置后的联动逻辑。
+      - 主要做 4 件事：
+        - 根据 active cfg 重算 action/observation/state space
+        - 构建 action/observation noise model
+        - 把 terrain/control 参数写回 Isaac Lab sim cfg
+        - 把 reset 与 actuator 参数写回 `robot_cfg`
+
+- `stage0_flat_cfg.py`
+  - 作用：
+    - Stage0 平地 baseline 的 direct 环境配置。
+  - 类：
+    - `Stage0FlatEnvCfg(CompleteCarEnvCfg)`
+      - 在共享主干上做“平地、无传感器、无 terrain curriculum”的 stage 覆写。
+  - 方法：
+    - `_apply_stage_overrides()`
+      - 关闭 terrain generator，改为 plane。
+      - 关闭 imu、camera、lidar。
+    - `__post_init__()`
+      - 先执行 stage 覆写，再调用 `CompleteCarEnvCfg.__post_init__()` 完成联动。
+
+- `stage1_terrain_cfg.py`
+  - 作用：
+    - Stage1 terrain 训练配置。
+  - 类：
+    - `Stage1TerrainEnvCfg(Stage0FlatEnvCfg)`
+      - 在 Stage0 基础上开启生成式地形和 terrain curriculum。
+  - 方法：
+    - `_apply_stage_overrides()`
+      - 打开 terrain generator。
+      - 打开 terrain curriculum。
+      - 设置 `default_terrain_name`、`max_init_terrain_level` 等 terrain 运行参数。
+    - `__post_init__()`
+      - 先 stage override，再走共享主干联动。
+
+- `stage2_perception_cfg.py`
+  - 作用：
+    - Stage2 感知增强训练配置。
+  - 类：
+    - `Stage2PerceptionEnvCfg(Stage1TerrainEnvCfg)`
+      - 在 Stage1 基础上开启传感器并降低并行环境数。
+  - 方法：
+    - `_apply_stage_overrides()`
+      - 打开 imu、camera、lidar。
+      - 指定 camera 输出类型。
+      - 把 `scene.num_envs` 调小到 256。
+    - `__post_init__()`
+      - 先 stage override，再走共享主干联动。
+
+#### 1.6.5 direct 环境主类
+
+- `complete_car_env.py`
+  - 作用：
+    - 当前完整车 direct workflow 的唯一环境主类。
+    - 统一管理：
+      - scene 构造
+      - command 重采样
+      - 球铰 action 到 joint target 的映射
+      - wheel-speed allocator 调用
+      - observation 组装
+      - reward 计算
+      - done 判定
+      - reset 与 terrain curriculum
+  - 类：
+    - `CompleteCarEnv(DirectRLEnv)`
+      - 3 个 stage 共用的 direct env 实现。
+  - 方法：
+    - `__init__(...)`
+      - 初始化 terrain runtime、sensor runtime、wheel-speed allocator、joint id、commands buffer、obs history、episode 日志缓存等。
+    - `step(action)`
+      - 对 policy action 做裁剪。
+      - 调用父类 `step` 执行完整 direct RL 迭代。
+      - 对输出的 policy observation 再做裁剪。
+    - `_setup_scene()`
+      - 创建机器人 articulation。
+      - 创建 terrain runtime，对 plane 或 generator terrain 做场景挂载。
+      - 创建 sensor runtime 并把传感器实体挂入 scene。
+      - clone environments，初始化 env origins，补光照。
+    - `_pre_physics_step(actions)`
+      - 在物理步前处理动作和命令。
+      - 主要逻辑包括：
+        - 记录 `last_actions`
+        - 应用 motor strength
+        - 推进 command timer
+        - 对需要的 env 重采样 command
+        - 根据 6 维 policy action 写入球铰位置目标
+        - 根据实时球铰状态和 command 调 wheel-speed allocator，生成 6 个车轮速度目标
+    - `_apply_action()`
+      - 把球铰目标位置和车轮目标速度真正写给模拟器。
+    - `_get_observations()`
+      - 读取 height features 和其他 sensor features。
+      - 调 `compute_policy_observation(...)` 生成 policy observation。
+      - 如启用 history，则用 `update_history(...)` 叠帧。
+    - `_get_rewards()`
+      - 调 `compute_reward_terms(...)` 计算 reward 总值和各分项。
+      - 同时累计 episode 级统计量，例如各 reward term 和 root height。
+    - `_get_dones()`
+      - 调 `compute_dones(...)` 计算 `terminated` 和 `time_out`。
+    - `_collect_episode_logs(env_ids, terrain_metrics)`
+      - 在 reset 前把 reward 均值、root height、command 均值和 terrain curriculum 指标收集到 `extras["log"]`。
+    - `_reset_idx(env_ids)`
+      - 完成 direct env 的 reset 主流程。
+      - 主要包括：
+        - terrain curriculum 更新
+        - sensor reset
+        - root pose / root velocity 重新采样
+        - terrain class 对应的 spawn offset
+        - 球铰/车轮关节状态随机化
+        - command 重采样
+        - action / history / reward 缓冲清零
+        - motor strength 随机化
+
+#### 1.6.6 命令、观测、奖励、终止辅助脚本
+
+- `commands.py`
+  - 作用：
+    - 放 command 采样与 command timer 的纯函数 helper。
+  - 函数：
+    - `resample_velocity_commands(commands, command_time_left, env_ids, cfg)`
+      - 对指定 env 重采样 `lin_vel_x / lin_vel_y / ang_vel_yaw / heading`。
+      - 同时处理 standing env 比例和 zero-command 模式，并重置 command 剩余时间。
+    - `step_command_timer(command_time_left, step_dt)`
+      - 每个 step 递减 command 剩余时间。
+      - 返回需要重新采样 command 的 env id。
+
+- `observations.py`
+  - 作用：
+    - 放 observation 拼接与 observation noise helper。
+  - 类：
+    - `PerComponentUniformNoiseCfg(NoiseCfg)`
+      - 当前项目自定义的“按分量独立设置上下界”的噪声配置类。
+      - 用于给 Isaac Lab observation noise model 提供 per-component uniform noise。
+  - 函数：
+    - `per_component_uniform_noise(data, cfg)`
+      - 对输入张量逐分量施加均匀噪声。
+      - 支持 `add`、`scale`、`abs` 三种模式。
+    - `compute_policy_observation(cfg, robot, ball_joint_ids, commands, last_actions, sensor_features)`
+      - 构造 policy observation 主向量。
+      - 当前主要拼接：
+        - `roll, pitch, yaw`
+        - `roll_rate, pitch_rate, yaw_rate`
+        - `ball_joint_pos`
+        - `ball_joint_vel`
+        - `commands`
+        - `last_action`
+        - 可选 sensor features
+
+- `local_velocity_tracking_reward.py`
+  - 作用：
+    - 放本地化的 command tracking reward kernel。
+  - 函数：
+    - `compute_velocity_tracking_terms(cfg, robot, commands)`
+      - 计算：
+        - `tracking_lin_vel`
+        - `tracking_ang_vel`
+        - `tracking_heading`
+      - 使用指数核把速度误差和 heading 误差映射成 reward 分量。
+
+- `rewards.py`
+  - 作用：
+    - 放 reward 聚合逻辑。
+  - 常量：
+    - `REWARD_TERM_NAMES`
+      - 规定当前 env 需要维护 episode 累积统计的 reward term 名称列表。
+  - 函数：
+    - `compute_reward_terms(cfg, robot, ball_joint_ids, commands, actions, last_actions, reset_terminated)`
+      - 计算每一项 reward term。
+      - 把 tracking、姿态惩罚、竖直速度惩罚、球铰偏离惩罚、action_rate、termination 等项按权重聚合成总 reward。
+
+- `terminations.py`
+  - 作用：
+    - 放终止判定逻辑。
+  - 函数：
+    - `compute_dones(cfg, robot, ball_joint_ids, episode_length_buf, max_episode_length)`
+      - 判定两类 done：
+        - `terminated`
+        - `time_out`
+      - 当前 failure 主要来自：
+        - 姿态倾倒过大
+        - 球铰角超过软限位
+        - root 高度低于最小阈值
+
+- `utils.py`
+  - 作用：
+    - 放 direct env 各模块都会复用的小型 tensor / 姿态 / 维度辅助函数。
+  - 函数：
+    - `sample_uniform_tensor(...)`
+      - 在指定范围内采样张量。
+    - `wrap_to_pi_tensor(angles)`
+      - 把角度包到 `[-pi, pi]`。
+    - `quaternion_to_rpy(quat_wxyz)`
+      - 把四元数转成 `roll, pitch, yaw`。
+    - `body_ang_vel_to_rpy_rates(rpy, ang_vel_b)`
+      - 把 body frame 角速度转成欧拉角变化率。
+    - `yaw_quaternion(yaw)`
+      - 根据 yaw 构造纯 yaw 四元数。
+    - `quat_mul(q0, q1)`
+      - 四元数乘法。
+    - `update_history(history_buffer, current_obs)`
+      - 维护 observation history buffer，并输出展平后的 history observation。
+    - `compute_policy_obs_noise_magnitudes(cfg)`
+      - 从 `observations.noise_scales` 推导当前 observation 每个分量对应的噪声幅度。
+    - `compute_policy_obs_dim(cfg)`
+      - 根据基础 proprioception 维度和 sensor feature 维度，计算最终 policy observation 维度。
+
+#### 1.6.7 资产配置
+
+- `assets/__init__.py`
+  - 作用：
+    - 统一导出机器人资产配置相关常量。
+  - 本文件没有自定义类和函数。
+
+- `assets/robot_cfg.py`
+  - 作用：
+    - 定义 direct complete-car 任务共享的机器人 articulation 配置。
+  - 本文件没有自定义类和函数。
+  - 关键内容：
+    - `BALL_JOINT_NAMES`
+      - 6 个球铰相关关节名列表。
+    - `WHEEL_JOINT_NAMES`
+      - 6 个轮关节名列表。
+    - `LEFT_WHEEL_JOINT_NAMES` / `RIGHT_WHEEL_JOINT_NAMES`
+      - 左右轮子分组。
+    - `CONTROLLED_JOINT_NAMES`
+      - 当前 policy 直接控制的关节集合，等于球铰关节。
+    - `COMPLETE_CAR_ARTICULATION_ROOT_PRIM_PATH`
+      - articulation root 对应的 prim path。
+    - `COMPLETE_CAR_CFG`
+      - 当前完整车资产的 `ArticulationCfg`。
+      - 里面定义：
+        - USD 路径
+        - rigid/articulation 属性
+        - joint 初始状态
+        - `ball_joints` actuator
+        - `wheel_joints` actuator
+
+#### 1.6.8 传感器运行时模块
+
+- `sensors/__init__.py`
+  - 作用：
+    - 对外导出 sensor runtime 相关类。
+  - 本文件没有自定义类和函数。
+
+- `sensors/sensor_runtime.py`
+  - 作用：
+    - 管理 imu、camera、lidar 以及可选 height scanner 的运行时实例。
+    - 把原始传感器输出转成 policy 可以直接拼接的 feature。
+  - 类：
+    - `CompleteCarImuSensorCfg`
+      - IMU 配置类。
+      - 负责描述 IMU prim path、update period、gravity bias、是否进 policy。
+    - `CompleteCarCameraSensorCfg`
+      - Camera 配置类。
+      - 负责描述相机分辨率、输出类型、光学参数、相对位姿、是否进 policy。
+    - `CompleteCarLidarSensorCfg`
+      - Lidar 配置类。
+      - 负责描述 FOV、分辨率、量程、offset、policy pooling bin 数。
+    - `CompleteCarSensorRuntimeCfg`
+      - 传感器总配置。
+      - 只是把 imu、camera、lidar 三组 cfg 聚合起来，并提供总 `policy_feature_dim`。
+    - `CompleteCarSensorRuntime`
+      - 传感器运行时管理器。
+      - 负责在 scene 中真正创建传感器对象、reset 传感器、读取 raw output、提取 policy features。
+  - 方法：
+    - `CompleteCarImuSensorCfg.build_cfg()`
+      - 构造 Isaac Lab `ImuCfg`。
+    - `CompleteCarImuSensorCfg.policy_feature_dim`
+      - 返回 IMU 为 policy 提供的特征维度。
+    - `CompleteCarCameraSensorCfg.build_cfg()`
+      - 构造 Isaac Lab `CameraCfg`。
+    - `CompleteCarCameraSensorCfg.policy_feature_dim`
+      - 根据输出类型估算 camera 最终进入 policy 的特征维度。
+    - `CompleteCarLidarSensorCfg.build_cfg(ground_prim_path)`
+      - 构造 Isaac Lab `RayCasterCfg`。
+    - `CompleteCarLidarSensorCfg.policy_feature_dim`
+      - 返回 lidar 进入 policy 的特征维度。
+    - `CompleteCarSensorRuntimeCfg.policy_feature_dim`
+      - 汇总 imu + camera + lidar 的 policy 特征总维度。
+    - `CompleteCarSensorRuntime.build_scene_entities(scene)`
+      - 按配置把 imu、camera、lidar、height scanner 创建出来并挂到 scene。
+    - `CompleteCarSensorRuntime.reset(env_ids)`
+      - reset 所有已经启用的传感器。
+    - `CompleteCarSensorRuntime.get_height_features()`
+      - 读取 height scanner 的 ray hit 结果并转换成相对高度特征。
+    - `CompleteCarSensorRuntime.get_policy_features()`
+      - 读取 imu、camera、lidar 数据，并提取出适合直接拼进 observation 的低维特征。
+    - `CompleteCarSensorRuntime.get_raw_output()`
+      - 返回当前缓存的原始传感器输出，方便 debug 或日志使用。
+
+#### 1.6.9 Terrain 生成与运行时模块
+
+- `terrain/__init__.py`
+  - 作用：
+    - 统一导出 terrain generator 和 terrain runtime 的关键符号。
+  - 本文件没有自定义类和函数。
+
+- `terrain/terrain_runtime.py`
+  - 作用：
+    - 管理 direct env 里 terrain 的运行时状态。
+    - 包括：
+      - 生成 terrain mesh
+      - 管理 env origins
+      - 管理 terrain level / type / class
+      - terrain curriculum
+      - 按 terrain class 调整 reset spawn offset
+  - 类：
+    - `CompleteCarTerrainRuntimeCfg`
+      - terrain runtime 的配置类。
+      - 规定 terrain 是否启用、模式是 plane 还是 generator、摩擦参数、height scanner 参数、curriculum 参数、spawn offset 参数，以及底层 `Stage1TerrainCfg`。
+    - `CompleteCarTerrainRuntime`
+      - terrain 运行时管理器。
+      - 负责真正持有 terrain map、origin、curriculum 状态。
+  - 函数：
+    - `_offset_mesh_to_world_frame(terrain_cfg, terrain_mesh)`
+      - 把生成出的 terrain mesh 从局部地图坐标平移到世界坐标。
+    - `_sample_uniform(value_range, shape, device)`
+      - terrain runtime 内部使用的均匀采样 helper。
+  - 方法：
+    - `CompleteCarTerrainRuntimeCfg.build_height_scanner_cfg(ground_prim_path)`
+      - 构造 height scanner 的 `RayCasterCfg`。
+    - `CompleteCarTerrainRuntime.generator_enabled`
+      - 判断当前是否启用生成式 terrain。
+    - `CompleteCarTerrainRuntime.setup_scene()`
+      - 若启用 generator，则构造 terrain mesh 并创建 prim。
+      - 同时缓存 terrain origins、terrain type map、terrain class map。
+    - `CompleteCarTerrainRuntime.initialize_after_scene_clone(scene)`
+      - 在 generator terrain 场景下初始化每个 env 的 level/type/class，并同步 env origins。
+    - `CompleteCarTerrainRuntime.initialize_plane_after_scene_clone(scene)`
+      - 在 plane 模式下初始化 terrain 相关状态。
+    - `CompleteCarTerrainRuntime._build_initial_terrain_levels()`
+      - 生成初始 terrain level 分配。
+    - `CompleteCarTerrainRuntime._build_initial_terrain_types()`
+      - 生成初始 terrain type 分配。
+    - `CompleteCarTerrainRuntime.sync_env_origins(scene, env_ids=None)`
+      - 把 terrain map 中当前 level/type 对应的 origin 同步回 scene。
+    - `CompleteCarTerrainRuntime.update_curriculum(scene, robot, env_ids, commands, episode_length_s)`
+      - 按当前 episode 末位移与 command 的关系，决定 terrain level 是升级还是降级。
+    - `CompleteCarTerrainRuntime.apply_spawn_offsets(root_state, env_ids)`
+      - 针对不同 terrain class，在 reset 时附加不同的 root spawn 偏移。
+
+- `terrain/terrain_generator.py`
+  - 作用：
+    - 负责 Stage1 terrain 的离线生成逻辑。
+    - 它回答的是：
+      - 地图怎么铺
+      - 每个 tile 是什么地形
+      - 每个 tile 对应哪个 terrain class
+      - origin 放在哪里
+      - heightfield 怎么转 mesh
+  - 类：
+    - `Stage1TerrainCfg`
+      - Stage1 地形生成参数总配置。
+      - 规定地图行列数、tile 尺寸、边界、比例尺、地形类型分布、roughness、障碍参数等。
+    - `Stage1TerrainData`
+      - terrain 生成结果的数据容器。
+      - 保存：
+        - heightfield
+        - env_origins
+        - terrain_type
+        - terrain_class
+        - vertices
+        - faces
+    - `_SubTerrain`
+      - 单个 tile 的临时高程图容器。
+  - 函数：
+    - `create_empty_stage1_terrain_data(cfg=None)`
+      - 创建空的 terrain 数据容器。
+    - `_tile_seed(cfg, row, col, terrain_idx)`
+      - 为单个 tile 生成稳定随机种子。
+    - `_make_subterrain(cfg)`
+      - 根据 cfg 创建单 tile 尺寸的 `_SubTerrain`。
+    - `get_terrain_class_from_name(terrain_name)`
+      - 把 terrain 名称映射成更粗粒度的 terrain class。
+    - `_random_uniform_terrain(...)`
+      - 生成随机 rough 高程。
+    - `_pyramid_sloped_terrain(...)`
+      - 生成金字塔坡地。
+    - `_pyramid_stairs_terrain(...)`
+      - 生成金字塔楼梯地形。
+    - `_discrete_obstacles_terrain(...)`
+      - 生成离散障碍块地形。
+    - `_parkour_step_terrain(...)`
+      - 生成台阶/step 类障碍。
+    - `_parkour_step_gap_terrain(...)`
+      - 生成带 gap 的台阶地形。
+    - `_half_sloped_terrain(...)`
+      - 生成半边斜坡地形。
+    - `_stepping_beams_terrain(...)`
+      - 生成窄梁/beam 地形。
+    - `_pit_terrain(...)`
+      - 生成坑洞地形。
+    - `_maybe_add_roughness(...)`
+      - 按 cfg 决定是否给 tile 叠加 roughness。
+    - `make_flat_tile(cfg)`
+      - 生成平地 tile。
+    - `make_slope_tile(cfg, difficulty, descending=False)`
+      - 生成坡地 tile。
+    - `make_slope_down_tile(cfg, difficulty)`
+      - 生成下坡 tile。
+    - `make_slope_up_tile(cfg, difficulty)`
+      - 生成上坡 tile。
+    - `make_pyramid_tile(cfg, difficulty, seed)`
+      - 生成金字塔坡/台地 tile。
+    - `make_stairs_tile(...)`
+      - 生成楼梯 tile。
+    - `make_discrete_obstacles_tile(cfg, difficulty, seed)`
+      - 生成离散障碍 tile。
+    - `make_hurdle_tile(cfg, difficulty, seed)`
+      - 生成 hurdle/step 类 tile。
+    - `make_gap_tile(cfg, difficulty, seed)`
+      - 生成沟壑/gap tile。
+    - `make_ramp_tile(cfg, difficulty, seed)`
+      - 生成斜坡+平台类 tile。
+    - `make_beam_tile(cfg, difficulty, seed)`
+      - 生成窄梁 tile。
+    - `make_new_stairs_down_tile(cfg, difficulty)`
+      - 生成新的下楼梯 tile 版本。
+    - `make_pit_tile(cfg, difficulty)`
+      - 生成坑洞 tile。
+    - `get_terrain_idx_from_choice(cfg, choice)`
+      - 根据采样 choice 把 tile 分配到某个 terrain index。
+    - `get_terrain_name_from_idx(cfg, terrain_idx)`
+      - 根据 terrain index 返回 terrain name。
+    - `make_tile_by_name(cfg, terrain_name, difficulty, choice, seed)`
+      - 按 terrain name 构建 tile。
+    - `make_tile_by_col(cfg, row, col)`
+      - 按地图列索引规则生成当前 tile，并返回 tile 和 terrain_idx。
+    - `get_origin_patch_center(cfg, terrain_name)`
+      - 给某类 tile 选 reset origin patch 的中心区域。
+    - `get_origin_patch_radius(cfg, terrain_name)`
+      - 给某类 tile 选 reset origin patch 的半径/范围。
+    - `write_tile_to_map(data, tile, row, col, terrain_idx, cfg)`
+      - 把单 tile 写入整张 heightfield 大图。
+    - `set_tile_origin(data, row, col, terrain_name, cfg)`
+      - 计算并写入当前 tile 对应的 env origin。
+    - `set_tile_class(data, row, col, terrain_name)`
+      - 写入当前 tile 的 terrain class。
+    - `build_stage1_map(cfg=None)`
+      - 生成完整的 Stage1 heightfield map、terrain_type、terrain_class、env_origins。
+    - `convert_heightfield_to_trimesh(...)`
+      - 把 heightfield 转成三角网格顶点和面片。
+    - `convert_heightfield_to_mesh(data, cfg)`
+      - 把 `Stage1TerrainData` 中的 heightfield 转成 mesh 数据。
+    - `build_stage1_terrain_data(cfg=None)`
+      - Stage1 地形生成总入口。
+      - 先建 map，再转 mesh，最后返回完整的 `Stage1TerrainData`。
+
+#### 1.6.10 Agent 配置模块
+
+- `agents/__init__.py`
+  - 作用：
+    - 对外导出当前 direct task 使用的 PPO cfg。
+  - 本文件没有自定义类和函数。
+
+- `agents/local_rsl_rl_cfg.py`
+  - 作用：
+    - 放项目本地化的 RSL-RL 配置类定义。
+    - 它们本身不是训练逻辑，只是给本地 vendored `rsl_rl` 提供结构化 config。
+  - 类：
+    - `LocalGaussianDistributionCfg`
+      - 高斯策略分布配置。
+    - `LocalMlpModelCfg`
+      - MLP actor/critic 网络配置。
+    - `LocalPpoAlgorithmCfg`
+      - PPO 算法超参数配置。
+    - `LocalOnPolicyRunnerCfg`
+      - on-policy runner 顶层配置。
+      - 里面统一挂 `actor / critic / algorithm / logging / resume` 等字段。
+  - 本文件没有额外函数。
+
+- `agents/ppo_cfg.py`
+  - 作用：
+    - 定义 complete-car 当前 direct 任务真正使用的 PPO runner 配置。
+  - 类：
+    - `CompleteCarPPoCfg(LocalOnPolicyRunnerCfg)`
+      - complete-car 任务族共享的 PPO 顶层配置。
+      - 里面定义：
+        - 全局 seed
+        - `num_steps_per_env`
+        - `max_iterations`
+        - `save_interval`
+        - `experiment_name`
+        - `obs_groups`
+        - `resume/load_run/load_checkpoint`
+        - actor 网络
+        - critic 网络
+        - PPO algorithm 超参数
+    - `Stage0FlatPPoCfg(CompleteCarPPoCfg)`
+      - Stage0 的 PPO 配置，只覆写 `experiment_name`。
+    - `Stage1TerrainPPoCfg(CompleteCarPPoCfg)`
+      - Stage1 的 PPO 配置，只覆写 `experiment_name`。
+    - `Stage2PerceptionPPoCfg(CompleteCarPPoCfg)`
+      - Stage2 的 PPO 配置，只覆写 `experiment_name`。
+
+#### 1.6.11 如何阅读当前 `complete_car/` 主线
+
+如果你现在要真正理解当前 direct 任务，而不是回看旧模板，建议按这个顺序读：
+
+1. `__init__.py`
+   - 先确认 task id、env cfg、ppo cfg 的绑定关系。
+2. `complete_car_env_cfg.py`
+   - 先弄清楚 command、action、observation、reward、reset、terrain、sensor 的配置语义。
+3. `complete_car_env.py`
+   - 再看 step/reset 主循环到底怎么把这些 cfg 用起来。
+4. `commands.py`、`observations.py`、`rewards.py`、`terminations.py`
+   - 最后再分别拆开看 command、obs、reward、done 的具体计算。
+5. `terrain/`、`sensors/`
+   - 如果问题和 terrain curriculum、传感器特征有关，再深入 runtime helper。
+6. `agents/ppo_cfg.py`
+   - 最后看训练超参数，而不是一开始就盯 PPO。
+
+这样读的原因是：
+
+- 先看 `__init__.py`
+  - 才知道当前到底注册了哪些 task
+- 先看 `complete_car_env_cfg.py`
+  - 才知道 env 的语义约定是什么
+- 再看 `complete_car_env.py`
+  - 才能看懂这些配置如何进入 step/reset 闭环
+- 最后看各 helper
+  - 才不会在局部函数里迷路
 
 ---
 
@@ -788,3 +1479,74 @@ legged_gym/
    - terrain curriculum
 2. 再决定哪些部分保留 Isaac Lab 模板写法
 3. 只迁 MGDP 中真正必要的项目逻辑，而不是把整套自定义 PPO 和脚本布局硬搬过来
+
+
+
+```Text
+complete_car_rl_training/
+├── README.md
+├── pyproject.toml
+├── scripts/
+│   ├── train.py
+│   └── play.py
+└── source/
+    └── complete_car_lab/
+        ├── config/
+        │   └── extension.toml
+        ├── setup.py
+        └── complete_car_lab/
+            ├── __init__.py
+            └── tasks/
+                └── direct/
+                    └── complete_car/
+                        ├── __init__.py
+                        ├── base/
+                        │   ├── env.py
+                        │   └── complete_car_cfg.py
+                        ├── baseline/
+                        │   ├── complete_car_stage0_cfg.py
+                        │   └── complete_car_stage1_cfg.py
+                        ├── environment_adaptive/
+                        │   └── complete_car_stage2_cfg.py
+                        ├── assets/
+                        │   ├── __init__.py
+                        │   ├── robot_cfg.py
+                        │   └── actuators_cfg.py
+                        ├── mdp/
+                        │   ├── __init__.py
+                        │   ├── commands.py
+                        │   ├── actions.py
+                        │   ├── observations.py
+                        │   ├── rewards.py
+                        │   ├── terminations.py
+                        │   ├── resets.py
+                        │   └── randomization.py
+                        ├── terrain/
+                        │   ├── __init__.py
+                        │   ├── terrain_cfg.py
+                        │   ├── terrain_builder.py
+                        │   └── terrain_runtime.py
+                        ├── sensors/
+                        │   ├── __init__.py
+                        │   ├── sensor_cfg.py
+                        │   ├── imu.py
+                        │   ├── lidar.py
+                        │   └── stereo_camera.py
+                        ├── kinematics/
+                        │   ├── __init__.py
+                        │   ├── fk_solver.py
+                        │   ├── wheel_speed_allocator.py
+                        │   └── ik_solver.py
+                        ├── utils/
+                        │   ├── __init__.py
+                        │   ├── math_utils.py
+                        │   ├── debug_draw.py
+                        │   └── io_descriptors.py
+                        └── agents/
+                            ├── __init__.py
+                            └── rsl_rl_ppo_cfg.py
+```
+注册任务名称：
+CompleteCar-Stage0
+CompleteCar-Stage1
+CompleteCar-Stage2

@@ -1,0 +1,18 @@
+[package]
+version = "0.2.0"
+category = "isaaclab"
+readme = "README.md"
+title = "Complete Car Lab"
+author = "Graduation Project"
+maintainer = "Graduation Project"
+description = "Direct-workflow Isaac Lab task package for the articulated complete car."
+repository = "local"
+keywords = ["isaaclab", "direct-workflow", "reinforcement-learning", "complete-car"]
+
+[dependencies]
+"isaaclab" = {}
+"isaaclab_rl" = {}
+"isaaclab_tasks" = {}
+
+[[python.module]]
+name = "complete_car_lab"

@@ -2,6 +2,312 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-11
+
+### Stage-specific terrain and sensor defaults are no longer bound in the base env cfg
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/environment_adaptive/complete_car_stage2_cfg.py`
+- Durable implementation conclusion:
+  - the helper method:
+    - `_bind_stage_defaults()`
+    has been removed from `CompleteCarEnvCfg`
+  - `CompleteCarEnvCfg.__post_init__()` no longer auto-selects terrain and sensor defaults based on `stage_name`
+  - the explicit per-stage defaults now live in the stage cfg files themselves:
+    - `CompleteCarStage0EnvCfg`
+    - `CompleteCarStage1EnvCfg`
+    - `CompleteCarStage2EnvCfg`
+  - this means terrain mode, curriculum, sensor enable flags, and stage-specific camera data types are now defined at the stage-config layer instead of being hidden in the base cfg
+- Reason:
+  - the user explicitly requested removing stage default binding from the base cfg and keeping stage differences directly in the stage config files
+- Impact:
+  - future stage-specific terrain/sensor changes should be made in the stage cfg files, not by reintroducing a central stage-binding helper in `base/complete_car_cfg.py`
+  - `stage_name` may still be kept as a label, but it is no longer the switch that implicitly mutates terrain/sensor defaults in the base cfg
+- Status:
+  - implementation completed
+  - targeted `python3 -m py_compile` check passed
+
+### Default proprioceptive observation no longer uses body Euler attitude; it now uses base linear velocity, angular velocity, and projected gravity
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+- Durable implementation conclusion:
+  - the direct complete-car proprioceptive observation has been changed from:
+    - body attitude Euler angles
+    - attitude Euler-angle rates
+    to:
+    - `root_com_lin_vel_b`
+    - `root_com_ang_vel_b`
+    - `projected_gravity_b`
+  - the observation descriptor order now starts with:
+    - `base_lin_vel_b` (3)
+    - `base_ang_vel_b` (3)
+    - `projected_gravity_b` (3)
+    instead of:
+    - `attitude_rpy`
+    - `attitude_rate_rpy`
+  - the observation scale and noise config field names were updated accordingly:
+    - `base_lin_vel`
+    - `base_ang_vel`
+    - `projected_gravity`
+  - the proprioceptive observation dimension therefore increased by 3 compared with the older attitude-based variant
+- Reason:
+  - the user explicitly required removing body attitude from the policy observation and replacing it with base velocity and projected-gravity terms
+- Impact:
+  - future observation discussions, tuning, and ablations should use the velocity/gravity-based interpretation as the default
+  - future code or documentation should not describe the active observation as Euler attitude plus attitude-rate anymore
+- Status:
+  - implementation completed
+  - targeted `python3 -m py_compile` check passed
+
+### Correction: user-requested legacy IK/FK, vendored `rsl_rl`, and helper scripts are now preserved inside the new `complete_car` package
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/`
+  - `RL_Training/README.md`
+  - `README.md`
+- Durable implementation conclusion:
+  - the older root-level locations:
+    - `RL_Training/rsl_rl/`
+    - `RL_Training/utils/`
+    - `RL_Training/scripts/export_training_stage.py`
+    - `RL_Training/scripts/list_envs.py`
+    - `RL_Training/scripts/random_agent.py`
+    - `RL_Training/scripts/tensorboard_export.py`
+    - `RL_Training/scripts/validate_wheel_speed_allocator.py`
+    - `RL_Training/scripts/zero_agent.py`
+    are no longer the active locations, but their requested contents were not discarded
+  - the vendored PPO/runtime implementation is now preserved under:
+    - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/`
+  - `RL_Training/scripts/train.py` and `RL_Training/scripts/play.py` now prepend:
+    - `.../tasks/direct/complete_car/`
+    to `sys.path` so runtime imports resolve to the local vendored `rsl_rl` package first
+  - the helper scripts were preserved and moved under:
+    - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/`
+    including:
+    - `list_envs.py`
+    - `random_agent.py`
+    - `zero_agent.py`
+    - `export_training_stage.py`
+    - `tensorboard_export.py`
+    - `validate_wheel_speed_allocator.py`
+  - those helper scripts now use the new package name:
+    - `complete_car_lab`
+    and the new task prefix:
+    - `CompleteCar-`
+  - legacy IK/FK content from the removed `RL_Training/utils/` tree is now preserved under:
+    - `kinematics/legacy_ik/`
+    - `kinematics/legacy_fk/`
+  - the active inverse-kinematics interface:
+    - `kinematics/ik_solver.py`
+    now contains the migrated spherical 3RRR solver logic from the old:
+    - `IK_model.py`
+  - the active forward-kinematics interface:
+    - `kinematics/fk_solver.py`
+    now exposes the serial spherical-joint interpretation used by the current direct env, while the older MATLAB derivation files remain in `legacy_fk/`
+- Reason:
+  - the user explicitly required keeping these legacy-but-still-useful components inside the new architecture instead of deleting them with the old tree
+- Impact:
+  - future PPO/runtime edits should target:
+    - `tasks/direct/complete_car/rsl_rl/`
+    instead of the removed root-level `RL_Training/rsl_rl/`
+  - future IK/FK work should start from:
+    - `kinematics/ik_solver.py`
+    - `kinematics/fk_solver.py`
+    and use `legacy_ik/` / `legacy_fk/` only as reference material
+  - future helper-script maintenance should target:
+    - `tasks/direct/complete_car/utils/`
+    and not reintroduce them into root-level `RL_Training/scripts/`
+- Status:
+  - structure migration completed
+  - `python3 -m py_compile $(find RL_Training -name '*.py' | sort)` passed
+
+### Active RL refactor mainline moved to `complete_car_rl_training/` with Isaac Lab extension-style source layout
+- Updated:
+  - `complete_car_rl_training/`
+  - `README.md`
+  - `docs/current_status.md`
+- Durable implementation conclusion:
+  - the active runnable RL refactor mainline is no longer described by the older flat `RL_Training/...` package layout
+  - a new top-level project now exists at:
+    - `complete_car_rl_training/`
+  - the new project uses the extension-style structure requested by the user:
+    - `scripts/train.py`
+    - `scripts/play.py`
+    - `source/complete_car_lab/config/extension.toml`
+    - `source/complete_car_lab/setup.py`
+    - `source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/`
+  - the complete-car task family is now registered only from:
+    - `source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/__init__.py`
+    with exactly three task ids:
+    - `CompleteCar-Stage0`
+    - `CompleteCar-Stage1`
+    - `CompleteCar-Stage2`
+  - all three task ids now point to the same direct env main class:
+    - `base/env.py:CompleteCarDirectEnv`
+    and bind different env cfg entry points:
+    - `baseline/complete_car_stage0_cfg.py`
+    - `baseline/complete_car_stage1_cfg.py`
+    - `environment_adaptive/complete_car_stage2_cfg.py`
+  - the shared env cfg trunk has been rebuilt around file-level config classes instead of nested-in-one-block stage logic:
+    - `CommandRangesCfg`
+    - `CommandCfg`
+    - `ControlCfg`
+    - `ObservationScalesCfg`
+    - `ObservationNoiseCfg`
+    - `ObservationCfg`
+    - `RewardScalesCfg`
+    - `RewardCfg`
+    - `TerminationCfg`
+    - `ResetCfg`
+    - `RandomizationCfg`
+    - `TerrainBindingCfg`
+    - `SensorBindingCfg`
+    - `DebugCfg`
+    - `SceneCfg`
+    - `CompleteCarEnvCfg`
+  - the env main class has been reduced to orchestration and now delegates concrete logic to:
+    - `mdp/commands.py`
+    - `mdp/actions.py`
+    - `mdp/observations.py`
+    - `mdp/rewards.py`
+    - `mdp/terminations.py`
+    - `mdp/resets.py`
+    - `mdp/randomization.py`
+    - `terrain/terrain_runtime.py`
+    - `sensors/*.py`
+    - `kinematics/*.py`
+  - the new project no longer uses the old direct task ids:
+    - `Complete-Car-Stage0-Flat-Direct-v0`
+    - `Complete-Car-Stage1-Terrain-Direct-v0`
+    - `Complete-Car-Stage2-Perception-Direct-v0`
+    inside the active refactor mainline
+- Reason:
+  - the user explicitly required a full project-level refactor to a new architecture, not an incremental patch on top of the older `RL_Training/...` tree
+- Impact:
+  - future runnable RL work should default to `complete_car_rl_training/`
+  - future code edits for the active refactor mainline should not introduce imports from the older `RL_Training/complete_car_rl_training/...` package tree
+  - if runtime validation is performed later, it should start from:
+    - `complete_car_rl_training/scripts/train.py`
+    - `complete_car_rl_training/scripts/play.py`
+- Status:
+  - structure migration completed
+  - `python3 -m py_compile $(find complete_car_rl_training -name '*.py' | sort)` passed
+
+### Correction: the active refactor mainline was then migrated back in-place to `RL_Training/`
+- Updated:
+  - `RL_Training/`
+  - `README.md`
+  - `docs/current_status.md`
+- Durable implementation conclusion:
+  - the temporary top-level parallel directory:
+    - `complete_car_rl_training/`
+    was removed
+  - the requested new architecture now lives in-place under:
+    - `RL_Training/`
+  - `RL_Training/` root has been cleaned down to the new project shape:
+    - `README.md`
+    - `pyproject.toml`
+    - `scripts/train.py`
+    - `scripts/play.py`
+    - `source/complete_car_lab/...`
+  - the older root-level trees under `RL_Training/` were deleted by user request, including:
+    - `complete_car_rl_training/`
+    - `config/`
+    - `docs/`
+    - `kinematics/`
+    - `rsl_rl/`
+    - `scripts/rsl_rl/`
+    - `setup.py`
+    - `skills/`
+    - `utils/`
+  - the active task registration still remains:
+    - `CompleteCar-Stage0`
+    - `CompleteCar-Stage1`
+    - `CompleteCar-Stage2`
+    from:
+    - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/__init__.py`
+- Reason:
+  - the user explicitly rejected keeping the refactor in a parallel directory and required in-place restructuring of the existing `RL_Training/`
+- Impact:
+  - future RL refactor work must target `RL_Training/` only
+  - references to the removed temporary directory `complete_car_rl_training/` should no longer be treated as active paths
+- Status:
+  - in-place migration completed
+  - `python3 -m py_compile $(find RL_Training -name '*.py' | sort)` passed
+
+### isaaclab_rl_template_and_mgdp_structure.md now includes the current direct `complete_car` file map with per-file class/function meanings
+- Updated:
+  - `docs/isaaclab_rl_template_and_mgdp_structure.md`
+- Durable documentation conclusion:
+  - the Isaac Lab structure note no longer stops at the old manager-based template explanation
+  - it now also contains a dedicated section for the active direct mainline at:
+    - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/`
+  - the new section records, file by file:
+    - what each script is responsible for
+    - which classes it defines
+    - which functions it defines
+    - what those classes/functions mean in the current direct workflow
+  - the documented scope covers:
+    - task registration entry
+    - shared env cfg trunk
+    - stage cfg overrides
+    - direct env main class
+    - command / observation / reward / termination helpers
+    - asset cfg
+    - sensor runtime
+    - terrain generator and terrain runtime
+    - PPO and local RSL-RL config files
+- Reason:
+  - the user explicitly required updating the structure note so future reading of the active `complete_car` direct folder does not depend on rediscovering each script manually
+- Impact:
+  - future code walkthroughs for the active direct mainline should treat this document as the high-level index before diving into source files
+  - future additions under `tasks/direct/complete_car/` should keep this document in sync when the file map or core responsibilities change materially
+- Status:
+  - completed
+
+### complete_car_env_cfg.py now uses nested config classes instead of file-level helper config classes
+- Updated:
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+- Durable implementation conclusion:
+  - the shared direct-task config trunk is now organized around nested config classes under:
+    - `CompleteCarEnvCfg`
+  - command-related ranges are now defined as:
+    - `CompleteCarEnvCfg.CommandCfg.ranges`
+    and the instantiated field is also written as:
+    - `ranges: ranges = ranges()`
+    instead of a separate top-level `CompleteCarCommandRangesCfg`
+  - observation and reward subordinate config groups are now likewise nested:
+    - `CompleteCarEnvCfg.ObservationCfg.scales`
+    - `CompleteCarEnvCfg.ObservationCfg.noise_scales`
+    - `CompleteCarEnvCfg.RewardCfg.scales`
+  - the previous file-level top classes:
+    - `CompleteCarCommandCfg`
+    - `CompleteCarControlCfg`
+    - `CompleteCarObservationCfg`
+    - `CompleteCarRewardCfg`
+    - `CompleteCarResetCfg`
+    - `CompleteCarRandomizationCfg`
+    have been folded into nested classes under `CompleteCarEnvCfg`
+  - the active field wiring is now:
+    - `commands: CommandCfg`
+    - `control: ControlCfg`
+    - `observations: ObservationCfg`
+    - `rewards: RewardCfg`
+    - `reset: ResetCfg`
+    - `randomization: RandomizationCfg`
+- Reason:
+  - the user explicitly requested converting `complete_car_env_cfg.py` to a nested-subclass organization so related config groups live directly under their logical parent
+- Impact:
+  - future edits should use the nested paths under `CompleteCarEnvCfg` instead of reintroducing new top-level helper config classes in this file
+  - future searches for command/observation/reward sub-configs should start from `CompleteCarEnvCfg` and not from the old `CompleteCar*Cfg` top-level names
+- Status:
+  - completed
+  - `python3 -m py_compile` passed for `complete_car_env_cfg.py` and the three stage cfg files
+
 ## 2026-04-10
 
 ### The active training mainline now vendors the RSL-RL runtime implementation into the repository

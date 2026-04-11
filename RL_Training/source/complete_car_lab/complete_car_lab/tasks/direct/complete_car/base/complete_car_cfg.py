@@ -1,0 +1,292 @@
+"""Complete-car direct env 的共享基础配置主干。"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import field
+
+import isaaclab.sim as sim_utils
+from isaaclab.assets import ArticulationCfg
+from isaaclab.envs import DirectRLEnvCfg, ViewerCfg
+from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.utils import configclass
+from isaaclab.utils.noise import GaussianNoiseCfg, NoiseModelCfg, NoiseModelWithAdditiveBiasCfg
+
+from ..assets.robot_cfg import BALL_JOINT_NAMES, CONTROLLED_JOINT_NAMES, WHEEL_JOINT_NAMES, build_complete_car_robot_cfg
+from ..mdp.observations import PerComponentUniformNoiseCfg
+from ..sensors.sensor_cfg import CompleteCarSensorSuiteCfg
+from ..terrain.terrain_cfg import CompleteCarTerrainRuntimeCfg
+from ..utils.io_descriptors import build_action_descriptor, build_observation_descriptor, build_state_descriptor, total_dim
+from ..utils.math_utils import compute_policy_obs_noise_magnitudes
+
+
+@configclass
+class CommandRangesCfg:
+    """高层速度指令采样范围。"""
+
+    lin_vel_x: tuple[float, float] = (-1.0, 1.0)
+    lin_vel_y: tuple[float, float] = (0.0, 0.0)
+    ang_vel_yaw: tuple[float, float] = (-1.0, 1.0)
+    heading: tuple[float, float] = (-math.pi, math.pi)
+
+
+@configclass
+class CommandCfg:
+    """命令采样器配置。"""
+
+    num_commands: int = 4
+    resampling_time: float = 4.0
+    heading_command: bool = False  # 是否启用“按 heading 间接生成角速度”的命令解释模式。
+    zero_command: bool = False  # 为 True 时，本次采样出的整组命令会被强制清零。
+    rel_standing_envs: float = 0.0  # 每次重采样后，被随机指定为静止环境的比例。
+    ranges: CommandRangesCfg = CommandRangesCfg()
+
+
+@configclass
+class ControlCfg:
+    """动作语义和驱动参数。"""
+
+    sim_dt: float = 1.0 / 120.0  # 仿真底层步长，单位：s。
+    decimation: int = 2  # 每执行多少个 sim step 才更新一次 RL 控制。
+    control_dt: float = 1.0 / 60.0  # 控制周期，单位：s。
+
+    ball_joint_names: tuple[str, ...] = tuple(BALL_JOINT_NAMES)
+    wheel_joint_names: tuple[str, ...] = tuple(WHEEL_JOINT_NAMES)
+
+    ball_joint_action_scale: float = 0.25  # policy 输出映射到球铰目标角时的缩放，单位：rad。
+    ball_joint_stiffness: float = 100.0  # 球铰位置控制刚度，单位：N*m/rad。
+    ball_joint_damping: float = 10.0  # 球铰位置控制阻尼，单位：N*m*s/rad。
+    ball_joint_effort_limit_sim: float = 120.0  # 球铰驱动器力矩上限，单位：N*m。
+    ball_joint_velocity_limit_sim: float = 6.0  # 球铰驱动器速度上限，单位：rad/s。
+
+    wheel_joint_stiffness: float = 0.0  # 车轮位置刚度，单位：N*m/rad。
+    wheel_joint_damping: float = 1.0e3  # 车轮速度控制阻尼，单位：N*m*s/rad。
+    wheel_joint_effort_limit_sim: float = 80.0  # 车轮驱动器力矩上限，单位：N*m。
+    wheel_joint_velocity_limit_sim: float = 20.0  # 车轮驱动器速度上限，单位：rad/s。
+
+
+@configclass
+class ObservationScalesCfg:
+    """各观测分量的缩放。"""
+
+    base_lin_vel: float = 1.0
+    base_ang_vel: float = 0.25
+    projected_gravity: float = 1.0
+    ball_joint_pos: float = 1.0
+    ball_joint_vel: float = 0.05
+    commands: float = 1.0
+    last_action: float = 1.0
+
+
+@configclass
+class ObservationNoiseCfg:
+    """观测噪声幅值。"""
+
+    enabled: bool = False
+    level: float = 1.0
+    base_lin_vel: float = 0.1
+    base_ang_vel: float = 0.2
+    projected_gravity: float = 0.02
+    ball_joint_pos: float = 0.01
+    ball_joint_vel: float = 0.05
+    commands: float = 0.0
+
+
+@configclass
+class ObservationCfg:
+    """观测拼接与裁剪配置。"""
+
+    use_history: bool = False
+    history_length: int = 1
+    clip_observations: float = 100.0
+    clip_actions: float = 100.0
+    scales: ObservationScalesCfg = ObservationScalesCfg()
+    noise: ObservationNoiseCfg = ObservationNoiseCfg()
+
+
+@configclass
+class RewardScalesCfg:
+    """奖励项缩放。"""
+
+    termination: float = -2.0
+    tracking_lin_vel: float = 2.0
+    tracking_ang_vel: float = 2.0
+    tracking_heading: float = 0.5
+    lin_vel_z: float = -2.0
+    ang_vel_xy: float = -1.0
+    orientation: float = -5.0
+    ball_joint_deviation: float = -0.2
+    ball_joint_swing: float = -0.1
+    action_rate: float = -0.01
+
+
+@configclass
+class RewardCfg:
+    """奖励核参数。"""
+
+    scales: RewardScalesCfg = RewardScalesCfg()
+    only_positive_rewards: bool = False
+    tracking_lin_vel_std: float = math.sqrt(0.5)
+    tracking_ang_vel_std: float = math.sqrt(0.25)
+    tracking_heading_std: float = math.sqrt(0.25)
+    ball_joint_target: float = 0.0
+
+
+@configclass
+class TerminationCfg:
+    """终止条件阈值。"""
+
+    orientation_limit_deg: float = 45.0
+    soft_ball_joint_pos_limit: float = 0.8
+    minimum_root_height: float | None = None
+
+
+@configclass
+class ResetCfg:
+    """reset 初值与扰动范围。"""
+
+    root_pos: tuple[float, float, float] = (0.0, 0.0, 0.30)
+    root_lin_vel: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    root_ang_vel: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    root_x_range: tuple[float, float] = (-0.25, 0.25)
+    root_y_range: tuple[float, float] = (-0.25, 0.25)
+    root_yaw_range: tuple[float, float] = (-0.25 * math.pi, 0.25 * math.pi)
+
+    default_ball_joint_angles: dict[str, float] = field(default_factory=lambda: {name: 0.0 for name in BALL_JOINT_NAMES})
+    default_wheel_joint_pos: dict[str, float] = field(default_factory=lambda: {name: 0.0 for name in WHEEL_JOINT_NAMES})
+    default_ball_joint_vel: dict[str, float] = field(default_factory=lambda: {name: 0.0 for name in BALL_JOINT_NAMES})
+    default_wheel_joint_vel: dict[str, float] = field(default_factory=lambda: {name: 0.0 for name in WHEEL_JOINT_NAMES})
+
+    ball_joint_pos_range: tuple[float, float] = (0.0, 0.0)
+    ball_joint_vel_range: tuple[float, float] = (0.0, 0.0)
+    wheel_joint_pos_range: tuple[float, float] = (0.0, 0.0)
+    wheel_joint_vel_range: tuple[float, float] = (0.0, 0.0)
+
+
+@configclass
+class RandomizationCfg:
+    """域随机化配置。"""
+
+    randomize_motor_strength: bool = False
+    motor_strength_range: tuple[float, float] = (0.9, 1.1)
+    joint_position_noise_scale: float = 0.0
+    action_noise_std: float = 0.0
+    action_bias_std: float = 0.0
+
+
+@configclass
+class TerrainBindingCfg(CompleteCarTerrainRuntimeCfg):
+    """terrain runtime 绑定配置。"""
+
+
+@configclass
+class SensorBindingCfg(CompleteCarSensorSuiteCfg):
+    """sensor suite 绑定配置。"""
+
+
+@configclass
+class DebugCfg:
+    """调试辅助配置。"""
+
+    enable_debug_draw: bool = False
+    log_sensor_outputs: bool = True
+
+
+@configclass
+class SceneCfg(InteractiveSceneCfg):
+    """场景克隆配置。"""
+
+    num_envs: int = 512
+    env_spacing: float = 2.0 #不同环境之间的间距 m
+    replicate_physics: bool = True
+    clone_in_fabric: bool = True
+
+
+@configclass
+class CompleteCarEnvCfg(DirectRLEnvCfg):
+    """总装配配置类，所有阶段都从这里派生。"""
+
+    stage_name: str = "stage0"
+    episode_length_s: float = 16.0 #control_dt = 1/60 s 理论最大控制步数：16 × 60 = 960 步
+    action_space: int = len(CONTROLLED_JOINT_NAMES)
+    observation_space: int = 0
+    state_space: int = 0 #critic state 或 privileged state 的维度
+    decimation: int = 2
+
+    sim: sim_utils.SimulationCfg = sim_utils.SimulationCfg()
+    viewer: ViewerCfg = ViewerCfg(eye=(-53.885, 43.696, 64.903), lookat=(-53.054, 43.698, 64.346))
+    scene: SceneCfg = SceneCfg()
+    robot: ArticulationCfg = build_complete_car_robot_cfg()
+
+    commands: CommandCfg = CommandCfg()
+    control: ControlCfg = ControlCfg()
+    observations: ObservationCfg = ObservationCfg()
+    rewards: RewardCfg = RewardCfg()
+    terminations: TerminationCfg = TerminationCfg()
+    resets: ResetCfg = ResetCfg()
+    randomization: RandomizationCfg = RandomizationCfg()
+    terrain: TerrainBindingCfg = TerrainBindingCfg()
+    sensors: SensorBindingCfg = SensorBindingCfg()
+    debug: DebugCfg = DebugCfg()
+
+    def _build_action_noise_model_cfg(self) -> NoiseModelWithAdditiveBiasCfg | None:
+        if self.randomization.action_noise_std <= 0.0 and self.randomization.action_bias_std <= 0.0:
+            return None
+        return NoiseModelWithAdditiveBiasCfg(
+            noise_cfg=GaussianNoiseCfg(mean=0.0, std=self.randomization.action_noise_std, operation="add"),
+            bias_noise_cfg=GaussianNoiseCfg(mean=0.0, std=self.randomization.action_bias_std, operation="abs"),
+        )
+
+    def _build_observation_noise_model_cfg(self) -> NoiseModelCfg | None:
+        if not self.observations.noise.enabled or self.observations.noise.level <= 0.0:
+            return None
+
+        magnitudes = compute_policy_obs_noise_magnitudes(self)
+        if self.observations.use_history and self.observations.history_length > 1:
+            magnitudes = magnitudes * self.observations.history_length
+        if not any(magnitude > 0.0 for magnitude in magnitudes):
+            return None
+
+        return NoiseModelCfg(
+            noise_cfg=PerComponentUniformNoiseCfg(
+                n_min=tuple(-magnitude for magnitude in magnitudes),
+                n_max=tuple(magnitude for magnitude in magnitudes),
+                operation="add",
+            )
+        )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.control.control_dt = self.control.sim_dt * self.control.decimation
+        self.decimation = self.control.decimation
+
+        self.action_space = total_dim(build_action_descriptor(self))
+        base_obs_dim = total_dim(build_observation_descriptor(self))
+        self.observation_space = (
+            base_obs_dim * self.observations.history_length
+            if self.observations.use_history and self.observations.history_length > 1
+            else base_obs_dim
+        )
+        self.state_space = total_dim(build_state_descriptor(self))
+
+        self.action_noise_model = self._build_action_noise_model_cfg()
+        self.observation_noise_model = self._build_observation_noise_model_cfg()
+
+        self.sim.dt = self.control.sim_dt
+        self.sim.render_interval = self.decimation
+        self.sim.gravity = (0.0, 0.0, -9.81)
+        self.sim.use_fabric = True
+        self.sim.physics_material.static_friction = self.terrain.static_friction
+        self.sim.physics_material.dynamic_friction = self.terrain.dynamic_friction
+        self.sim.physics_material.restitution = self.terrain.restitution
+        self.sim.physx.solver_type = 1
+        self.sim.physx.max_position_iteration_count = 8
+        self.sim.physx.max_velocity_iteration_count = 0
+        self.sim.physx.bounce_threshold_velocity = 0.2
+        self.sim.physx.friction_offset_threshold = 0.04
+        self.sim.physx.friction_correlation_distance = 0.025
+        self.sim.physx.enable_stabilization = True
+
+        # 机器人配置在 __post_init__ 统一重建，避免 stage 覆写后出现旧 actuator 残留。
+        self.robot = build_complete_car_robot_cfg(self.control, self.resets)

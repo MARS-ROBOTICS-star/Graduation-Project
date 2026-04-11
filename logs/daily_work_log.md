@@ -1,5 +1,330 @@
 # 每日工作日志
 
+## 2026-04-11
+
+已完成：
+- 按用户要求新增顶层 RL 重构工程：
+  - `complete_car_rl_training/`
+- 新工程已改成 Isaac Lab 扩展式目录：
+  - `scripts/train.py`
+  - `scripts/play.py`
+  - `source/complete_car_lab/config/extension.toml`
+  - `source/complete_car_lab/setup.py`
+  - `source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/...`
+- 当前 direct task 已按新要求拆分为：
+  - `base/env.py`
+  - `base/complete_car_cfg.py`
+  - `baseline/complete_car_stage0_cfg.py`
+  - `baseline/complete_car_stage1_cfg.py`
+  - `environment_adaptive/complete_car_stage2_cfg.py`
+- `mdp/` 已拆分出：
+  - `commands.py`
+  - `actions.py`
+  - `observations.py`
+  - `rewards.py`
+  - `terminations.py`
+  - `resets.py`
+  - `randomization.py`
+- `terrain/`、`sensors/`、`kinematics/`、`utils/` 也已按新结构补齐。
+- 新 Gym task id 已统一为：
+  - `CompleteCar-Stage0`
+  - `CompleteCar-Stage1`
+  - `CompleteCar-Stage2`
+- 已执行：
+  - `python3 -m py_compile $(find complete_car_rl_training -name '*.py' | sort)`
+  静态语法检查通过。
+
+修改文件：
+- `complete_car_rl_training/README.md`
+- `complete_car_rl_training/pyproject.toml`
+- `complete_car_rl_training/scripts/train.py`
+- `complete_car_rl_training/scripts/play.py`
+- `complete_car_rl_training/source/complete_car_lab/config/extension.toml`
+- `complete_car_rl_training/source/complete_car_lab/setup.py`
+- `complete_car_rl_training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/...`
+- `README.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前活跃 RL 重构主线已经从旧的 `RL_Training/...` 逻辑树迁到新的 `complete_car_rl_training/`。
+- 新主线的任务注册、配置主干、stage 配置、训练脚本、回放脚本、模块边界已经统一到同一套 direct workflow 架构下。
+
+下一步：
+- 在带 Isaac Lab 环境的机器上优先验证：
+  - `python scripts/train.py --task CompleteCar-Stage0 --headless`
+  - `python scripts/play.py --task CompleteCar-Stage0 --checkpoint <model.pt>`
+
+已完成：
+- 按用户进一步要求，把上一轮错误新建的平行目录重构结果迁回现有：
+  - `RL_Training/`
+  做原地替换。
+- 当前 `RL_Training/` 根目录已清理为：
+  - `README.md`
+  - `pyproject.toml`
+  - `scripts/train.py`
+  - `scripts/play.py`
+  - `source/complete_car_lab/...`
+- 已删除旧结构与残留目录：
+  - `RL_Training/complete_car_rl_training/`
+  - `RL_Training/config/`
+  - `RL_Training/docs/`
+  - `RL_Training/kinematics/`
+  - `RL_Training/rsl_rl/`
+  - `RL_Training/scripts/rsl_rl/`
+  - `RL_Training/setup.py`
+  - `RL_Training/skills/`
+  - `RL_Training/utils/`
+- 已删除错误创建的平行目录：
+  - `complete_car_rl_training/`
+- 已执行：
+  - `python3 -m py_compile $(find RL_Training -name '*.py' | sort)`
+  静态语法检查通过。
+
+修改文件：
+- `RL_Training/README.md`
+- `RL_Training/pyproject.toml`
+- `RL_Training/scripts/train.py`
+- `RL_Training/scripts/play.py`
+- `RL_Training/source/complete_car_lab/...`
+- `README.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 这次重构已经不是平行新建项目，而是把现有 `RL_Training/` 原地替换成新架构。
+- 后续检查项目时，只需要看 `RL_Training/`，不应再寻找已删除的 `complete_car_rl_training/`。
+
+下一步：
+- 在 Isaac Lab 环境中从 `RL_Training/` 根目录执行：
+  - `python scripts/train.py --task CompleteCar-Stage0 --headless`
+  - `python scripts/play.py --task CompleteCar-Stage0 --checkpoint <model.pt>`
+
+已完成：
+- 按用户要求，更新 `docs/isaaclab_rl_template_and_mgdp_structure.md`，为当前 active direct 主线
+  - `RL_Training/complete_car_rl_training/tasks/direct/complete_car/`
+  增补了一整节逐文件结构说明。
+- 新增内容不再只停留在旧 manager-based 模板梳理，而是补齐了 current `complete_car` 目录下各脚本的：
+  - 文件职责
+  - 包含的类
+  - 包含的函数
+  - 类与函数在当前 direct workflow 中的功能含义
+- 本轮文档覆盖了：
+  - `__init__.py`
+  - `complete_car_env_cfg.py`
+  - `stage0_flat_cfg.py`
+  - `stage1_terrain_cfg.py`
+  - `stage2_perception_cfg.py`
+  - `complete_car_env.py`
+  - `commands.py`
+  - `observations.py`
+  - `local_velocity_tracking_reward.py`
+  - `rewards.py`
+  - `terminations.py`
+  - `utils.py`
+  - `assets/`
+  - `sensors/`
+  - `terrain/`
+  - `agents/`
+- 同步更新项目记忆文件，使后续会话能直接继承这次文档化结论。
+
+修改文件：
+- `docs/isaaclab_rl_template_and_mgdp_structure.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `docs/isaaclab_rl_template_and_mgdp_structure.md` 现在已经可以作为当前 direct `complete_car` 主线的结构化索引使用，后续阅读时可以先按文档确认“哪个脚本负责什么、类和函数分别做什么”，再进入源码细读。
+
+下一步：
+- 若继续补教学文档，可再把 `RL_Training/scripts/rsl_rl/train.py`、`play.py` 以及 `RL_Training/rsl_rl/` 的关键调用链按相同粒度补到结构文档里。
+
+已完成：
+- 按用户要求，将 `complete_car_env_cfg.py` 从“文件级多个并列配置类”改为“以 `CompleteCarEnvCfg` 为中心的嵌套配置类”组织。
+- 当前嵌套结构包括：
+  - `CommandCfg -> ranges`
+  - `ObservationCfg -> scales / noise_scales`
+  - `RewardCfg -> scales`
+  - `ControlCfg / ResetCfg / RandomizationCfg`
+  均作为 `CompleteCarEnvCfg` 的内部配置类存在。
+- 按用户进一步要求，`CommandCfg`、`ObservationCfg`、`RewardCfg` 的子配置类名已统一改成与字段同名的小写形式，例如：
+  - `ranges: ranges = ranges()`
+  - `scales: scales = scales()`
+  - `noise_scales: noise_scales = noise_scales()`
+- 已检查仓库内对旧顶层配置类名的引用，当前 `RL_Training/` 中没有残留外部依赖这些旧类型名的位置。
+- 已执行：
+  - `python3 -m py_compile RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py RL_Training/complete_car_rl_training/tasks/direct/complete_car/stage0_flat_cfg.py RL_Training/complete_car_rl_training/tasks/direct/complete_car/stage1_terrain_cfg.py RL_Training/complete_car_rl_training/tasks/direct/complete_car/stage2_perception_cfg.py`
+  静态校验通过。
+
+修改文件：
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `complete_car_env_cfg.py` 当前已经改为更内聚的嵌套配置结构，后续阅读和维护时应从 `CompleteCarEnvCfg` 向下展开，而不是继续把各组配置类视为文件级平铺对象。
+
+下一步：
+- 若继续统一风格，可考虑把 `stage0_flat_cfg.py`、`stage1_terrain_cfg.py`、`stage2_perception_cfg.py` 中针对 `terrain/sensors/scene` 的 stage 覆写也进一步补成更显式的局部说明。
+
+已完成：
+- 按用户要求，参考 `complete_car_env_cfg.py` 前两个配置类的注释风格，为其余配置类补齐字段说明与少量方法级说明。
+- 本轮注释补充覆盖了：
+  - `CompleteCarControlCfg`
+  - `CompleteCarObservationScalesCfg`
+  - `CompleteCarObservationNoiseScalesCfg`
+  - `CompleteCarObservationCfg`
+  - `CompleteCarRewardScalesCfg`
+  - `CompleteCarRewardCfg`
+  - `CompleteCarResetCfg`
+  - `CompleteCarRandomizationCfg`
+  - `CompleteCarEnvCfg`
+- 同步补充了 `CompleteCarEnvCfg` 中噪声模型构建和 `__post_init__` 主流程的简短说明，未改动任何配置值或运行逻辑。
+- 已执行：
+  - `python3 -m py_compile RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+  静态校验通过。
+
+修改文件：
+- `RL_Training/complete_car_rl_training/tasks/direct/complete_car/complete_car_env_cfg.py`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `complete_car_env_cfg.py` 中共享 direct cfg 主干的主要字段都已有与现有风格一致的英文注释，后续讲解和维护时不必再反复对照运行逻辑猜字段含义。
+
+下一步：
+- 若继续做可读性维护，可按相同风格补齐 `stage0_flat_cfg.py`、`stage1_terrain_cfg.py`、`stage2_perception_cfg.py` 中仍偏稀疏的配置注释。
+
+已完成：
+- 按用户最新要求，把上一轮被删掉但仍需保留的旧内容重新迁入当前 `RL_Training/` 新架构内部。
+- 已恢复并重定位本地 PPO 本体：
+  - 旧位置：`RL_Training/rsl_rl/`
+  - 新位置：`RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/`
+- 已修改：
+  - `RL_Training/scripts/train.py`
+  - `RL_Training/scripts/play.py`
+  让训练和回放优先导入项目内的 `complete_car/rsl_rl/`，不再默认依赖外部环境里的 `rsl_rl`。
+- 已把旧辅助脚本迁入：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/`
+  包括：
+  - `list_envs.py`
+  - `random_agent.py`
+  - `zero_agent.py`
+  - `export_training_stage.py`
+  - `tensorboard_export.py`
+  - `validate_wheel_speed_allocator.py`
+- 这些辅助脚本的导入已同步改成：
+  - `complete_car_lab`
+  - `CompleteCar-Stage0/1/2`
+- 已把旧 `RL_Training/utils/` 中的 IK/FK 内容迁入：
+  - `kinematics/ik_solver.py`
+  - `kinematics/fk_solver.py`
+  - `kinematics/legacy_ik/`
+  - `kinematics/legacy_fk/`
+- `IK_model.py` 的 3RRR 球面并联逆解逻辑已经并入 `ik_solver.py`，并保留旧推导资料作为参考文件。
+- 已执行：
+  - `python3 -m py_compile $(find RL_Training -name '*.py' | sort)`
+  静态校验通过。
+
+修改文件：
+- `RL_Training/scripts/train.py`
+- `RL_Training/scripts/play.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/...`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/...`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/ik_solver.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/fk_solver.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/legacy_ik/...`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/legacy_fk/...`
+- `README.md`
+- `RL_Training/README.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前新架构并没有丢掉旧 PPO 本体、旧 IK/FK、旧辅助脚本，而是把它们统一收口到了 `tasks/direct/complete_car/` 之下。
+- 顶层 `RL_Training/scripts/` 现只保留训练和回放入口，其余辅助脚本已迁入包内 `utils/`。
+
+下一步：
+- 在 Isaac Lab 环境中验证：
+  - `python scripts/train.py --task CompleteCar-Stage0 --headless`
+  - `python scripts/play.py --task CompleteCar-Stage0 --checkpoint <model.pt>`
+  - `python -m complete_car_lab.tasks.direct.complete_car.utils.list_envs`
+
+已完成：
+- 按用户要求，为 `base/complete_car_cfg.py` 中的 `CommandCfg` 补充了以下字段的中文注释：
+  - `heading_command`
+  - `zero_command`
+  - `rel_standing_envs`
+- 同时为 `ControlCfg` 中时间步长、控制周期、球铰/车轮刚度阻尼、力矩上限、速度上限等字段补充了单位注释。
+- 本轮未改动任何配置值与运行逻辑，仅提升配置文件可读性。
+- 已执行：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `complete_car_cfg.py` 里命令语义和控制参数单位已经更明确，后续阅读和讲解时不需要再额外口头说明这些字段的物理含义。
+
+已完成：
+- 按用户要求，修改当前 direct 主线的本体观测定义，不再把车体姿态欧拉角和姿态角速率作为 policy observation。
+- 新的基础本体观测改为：
+  - `base_lin_vel_b`
+  - `base_ang_vel_b`
+  - `projected_gravity_b`
+  - `ball_joint_pos`
+  - `ball_joint_vel`
+  - `commands`
+  - `last_action`
+- 同步修改了：
+  - `ObservationScalesCfg`
+  - `ObservationNoiseCfg`
+  - observation descriptor
+  - observation 维度与噪声幅值计算
+- 已执行：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 active observation 已经从“姿态角 + 姿态角速度”切换成“base 线速度 + base 角速度 + 重力投影”，后续解释环境时应以这套定义为准。
+
+已完成：
+- 按用户要求，删除 `CompleteCarEnvCfg` 中按 `stage_name` 自动绑定 terrain / sensor 默认值的 `_bind_stage_defaults()`。
+- 同步把原先 Stage0 / Stage1 / Stage2 的 terrain 和 sensor 开关配置，下放到各自的 stage cfg 文件中显式定义：
+  - `complete_car_stage0_cfg.py`
+  - `complete_car_stage1_cfg.py`
+  - `complete_car_stage2_cfg.py`
+- `CompleteCarEnvCfg.__post_init__()` 不再隐式修改阶段差异，base cfg 现在只负责共享骨架和统一装配。
+- 已执行：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/environment_adaptive/complete_car_stage2_cfg.py`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/environment_adaptive/complete_car_stage2_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 stage 差异已经真正下沉到分阶段配置文件中，后续用户可直接在各 stage cfg 内继续定义 terrain / sensor 方案，而不需要修改 base cfg 中的集中绑定逻辑。
+
 ## 2026-04-10
 
 已完成：

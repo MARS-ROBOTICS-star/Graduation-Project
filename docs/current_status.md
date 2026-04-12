@@ -114,6 +114,7 @@
 - 当前 `RL_Training/` 下全部 Python 文件已通过：
   - `python3 -m py_compile $(find RL_Training -name '*.py' | sort)`
 - 最近已补充 `base/complete_car_cfg.py` 中 `CommandCfg` 与 `ControlCfg` 的中文工程注释，便于后续阅读配置语义与单位。
+- 毕业论文 `chapter_03` 的速度雅可比推导已统一为由单一标量 `b` 定义的前后镜像偏置 `${}^{1}\mathbf b=[-b,0,0]^T`、`${}^{3}\mathbf b=[b,0,0]^T`，即仅保留 `x` 分量且 `y=z=0`，LaTeX 已完成通过式编译验证。
 
 ## 当前默认设计选择
 - 当前默认 runnable 起点：

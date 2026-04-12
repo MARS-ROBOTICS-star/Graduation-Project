@@ -2,6 +2,37 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-12
+
+### Thesis Chapter 3 wheel-speed Jacobian derivation now uses one scalar `b` and x-axis-only mirrored offsets
+- Updated:
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- Durable documentation conclusion:
+  - the Chapter 3 velocity-Jacobian derivation no longer models the front and rear module fixed offsets as two independent vectors:
+    - `${}^{1}\mathbf b_1`
+    - `${}^{3}\mathbf b_3`
+  - the active thesis notation now uses one scalar geometric parameter:
+    - `b`
+  - the front and rear local offset vectors are now defined from that single scalar as:
+    - `${}^{1}\mathbf b=[-b,0,0]^T`
+    - `${}^{3}\mathbf b=[b,0,0]^T`
+  - this means:
+    - only the local `x` component is retained
+    - `y=z=0`
+    - front and rear symmetry is represented only by the sign of the `x` component
+  - the related position, velocity-propagation, Jacobian, and chapter-summary text in `chapter03.tex` has been aligned to that x-axis-only symmetric formulation
+  - the explicit wheel-speed row Jacobians were also simplified using:
+    - `\mathbf e_x^T\mathbf S({}^{1}\mathbf b)=0`
+    - `\mathbf e_x^T\mathbf S({}^{3}\mathbf b)=0`
+- Reason:
+  - the user explicitly clarified that the side-module offset should be represented by one scalar `b` only, with no `y` or `z` component, so the previous same-day `y / z`-retained symmetric wording was still incorrect
+- Impact:
+  - future thesis writing, formula adjustments, and code/document cross-checks should use the x-axis-only single-parameter offset interpretation as the default
+  - later derivations should not reintroduce `b_1 / b_3`, nor reintroduce nonzero `y / z` components, unless the geometric assumption itself is explicitly changed
+- Status:
+  - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex` passed
+  - remaining warnings are unrelated citation/font/layout warnings, not caused by this notation update
+
 ## 2026-04-11
 
 ### Stage-specific terrain and sensor defaults are no longer bound in the base env cfg

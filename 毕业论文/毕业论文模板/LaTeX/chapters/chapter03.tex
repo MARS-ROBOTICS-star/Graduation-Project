@@ -3,7 +3,7 @@
 \label{cha:chap3}
 \section{整车运动学速度雅可比分析}
 
-为建立三模块六轮小车在给定构型与主模块瞬时刚体速度条件下的车轮角速度分配关系，本节在统一符号体系下推导主模块瞬时刚体速度、模块相对构型变化以及各轮滚动速度之间的映射关系。考虑到前后连接中心关于中模块参考点仍呈镜像分布，故将整车主坐标系设置于中模块参考点处；但前后模块参考点相对各自连接中心的固定偏置不再统一为同一个向量，而分别记为 ${}^{1}\mathbf b_1$ 与 ${}^{3}\mathbf b_3$。该处理方式既保留了整车连接中心几何骨架的统一表达，又将前后模块安装偏置的不对称性直接纳入位姿关系、速度传播关系以及轮速分配关系的推导中，从而为后续控制分配与雅可比矩阵构造提供清晰基础。
+为建立三模块六轮小车在给定构型与主模块瞬时刚体速度条件下的车轮角速度分配关系，本节在统一符号体系下推导主模块瞬时刚体速度、模块相对构型变化以及各轮滚动速度之间的映射关系。考虑到前后连接中心关于中模块参考点呈镜像分布，故将整车主坐标系设置于中模块参考点处；同时，将前后模块参考点相对各自连接中心的固定偏置统一由单一标量 $b$ 表征，并写成沿侧模块局部 $x$ 轴的对称向量 ${}^{i}\mathbf b$。在该定义下，前后模块偏置仅具有 $x$ 分量，且前后模块对应分量互为相反数，$y$、$z$ 分量均为零。该处理方式既保留了整车连接中心几何骨架的统一表达，又使位姿关系、速度传播关系以及轮速分配关系能够在同一镜像对称框架下展开，从而为后续控制分配与雅可比矩阵构造提供清晰基础。
 
 \subsection{坐标系与几何参数定义}
 
@@ -26,29 +26,29 @@ a_x\\
 \end{equation}
 该向量表征中模块参考点与两侧连接中心之间沿 $x_2$ 轴的固定几何关系。
 
-进一步地，在侧模块局部坐标系中分别定义前后连接中心到模块参考点的固定偏置向量为
+进一步地，在侧模块局部坐标系中定义连接中心到模块参考点的固定偏置仅沿各自局部 $x$ 轴，记其标量长度为 $b$，则
 \begin{equation}
-{}^{1}\mathbf b_1=
+{}^{1}\mathbf b=
 \begin{bmatrix}
-b_{1x}\\
+-b\\
 0\\
-b_{1z}
+0
 \end{bmatrix},
 \qquad
-{}^{3}\mathbf b_3=
+{}^{3}\mathbf b=
 \begin{bmatrix}
-b_{3x}\\
+b\\
 0\\
-b_{3z}
+0
 \end{bmatrix}.
 \end{equation}
 于是有
 \begin{equation}
-{}^{1}\overrightarrow{J_fO_1}={}^{1}\mathbf b_1,
+{}^{1}\overrightarrow{J_fO_1}={}^{1}\mathbf b,
 \qquad
-{}^{3}\overrightarrow{J_rO_3}={}^{3}\mathbf b_3.
+{}^{3}\overrightarrow{J_rO_3}={}^{3}\mathbf b.
 \end{equation}
-其中，${}^{1}\mathbf b_1$ 与 ${}^{3}\mathbf b_3$ 分别刻画前后侧模块参考点相对于各自连接中心的固定安装偏置。采用该定义后，前后模块共享同一中模块参考点到连接中心的几何骨架，但连接中心到模块参考点的局部安装偏置允许保持不对称。
+其中，标量 $b$ 表征连接中心与侧模块参考点之间沿模块局部 $x$ 轴的固定距离。采用该定义后，前后模块不仅共享同一中模块参考点到连接中心的几何骨架，而且连接中心到模块参考点的局部偏置也由同一参数 $b$ 在前后模块上取相反符号得到。
 
 \subsection{构型变量与相对姿态矩阵}
 
@@ -123,16 +123,16 @@ b_{3z}
 \begin{equation}
 {}^{2}\overrightarrow{O_2J_f}={}^{2}\mathbf a,
 \qquad
-{}^{2}\overrightarrow{J_fO_1}={}^{2}\mathbf R_1\,{}^{1}\mathbf b_1,
+{}^{2}\overrightarrow{J_fO_1}={}^{2}\mathbf R_1\,{}^{1}\mathbf b,
 \end{equation}
 因此有
 \begin{equation}
 {}^{2}\mathbf p_1
 =
-{}^{2}\mathbf a+{}^{2}\mathbf R_1\,{}^{1}\mathbf b_1.
+{}^{2}\mathbf a+{}^{2}\mathbf R_1\,{}^{1}\mathbf b.
 \label{eq:p1}
 \end{equation}
-该式表明，前模块参考点的位置由中模块到前连接中心的固定偏置与前模块相对姿态作用下的局部安装偏置 ${}^{1}\mathbf b_1$ 共同决定。
+该式表明，前模块参考点的位置由中模块到前连接中心的固定偏置与前模块相对姿态作用下的局部安装偏置 ${}^{1}\mathbf b$ 共同决定。
 
 同理，后模块参考点 $O_3$ 相对中模块参考点 $O_2$ 的位置向量为
 \begin{equation}
@@ -148,20 +148,20 @@ b_{3z}
 \begin{equation}
 {}^{2}\overrightarrow{O_2J_r}=-{}^{2}\mathbf a,
 \qquad
-{}^{2}\overrightarrow{J_rO_3}={}^{2}\mathbf R_3\,{}^{3}\mathbf b_3,
+{}^{2}\overrightarrow{J_rO_3}={}^{2}\mathbf R_3\,{}^{3}\mathbf b,
 \end{equation}
 故后模块参考点位置为
 \begin{equation}
 {}^{2}\mathbf p_3
 =
--{}^{2}\mathbf a+{}^{2}\mathbf R_3\,{}^{3}\mathbf b_3.
+-{}^{2}\mathbf a+{}^{2}\mathbf R_3\,{}^{3}\mathbf b.
 \label{eq:p3}
 \end{equation}
 中模块参考点即主坐标系原点，因此有
 \begin{equation}
 {}^{2}\mathbf p_2=\mathbf 0.
 \end{equation}
-式 \eqref{eq:p1} 与式 \eqref{eq:p3} 表明，前后模块的位置关系共享同一连接中心骨架 ${}^{2}\mathbf a$，但连接中心到模块参考点的局部偏置需要分别通过 ${}^{1}\mathbf b_1$ 与 ${}^{3}\mathbf b_3$ 描述。
+式 \eqref{eq:p1} 与式 \eqref{eq:p3} 表明，前后模块的位置关系共享同一连接中心骨架 ${}^{2}\mathbf a$，而连接中心到模块参考点的局部偏置则由同一标量 $b$ 在前后模块上的镜像取值构成。
 
 \subsection{中模块瞬时刚体速度与广义速度定义}
 
@@ -285,7 +285,7 @@ V_z
 \begin{equation}
 {}^{2}\mathbf p_1
 =
-{}^{2}\mathbf a+{}^{2}\mathbf R_1\,{}^{1}\mathbf b_1.
+{}^{2}\mathbf a+{}^{2}\mathbf R_1\,{}^{1}\mathbf b.
 \end{equation}
 将其写成惯性坐标系 ${W}$ 中的绝对位置关系，可得
 \begin{equation}
@@ -341,13 +341,13 @@ V_z
 \end{equation}
 式 \eqref{eq:v1_start} 表明，前模块线速度由三部分组成：中模块参考点平动速度、主坐标系转动引起的牵连速度，以及前模块相对中模块运动引起的局部相对速度。接下来只需展开 ${}^{2}\dot{\mathbf p}_1$ 即可得到最终表达式。
 
-由于 ${}^{2}\mathbf a$ 为固定几何向量，故 $\frac{\mathrm d}{\mathrm dt}({}^{2}\mathbf a)=\mathbf 0$。同时 ${}^{1}\mathbf b_1$ 在 ${B_1}$ 中为常向量，因此有
+由于 ${}^{2}\mathbf a$ 为固定几何向量，故 $\frac{\mathrm d}{\mathrm dt}({}^{2}\mathbf a)=\mathbf 0$。同时 ${}^{1}\mathbf b$ 在 ${B_1}$ 中为常向量，因此有
 \begin{equation}
 {}^{2}\dot{\mathbf p}_1
 =
-\frac{\mathrm d}{\mathrm dt}\left({}^{2}\mathbf R_1\,{}^{1}\mathbf b_1\right)
+\frac{\mathrm d}{\mathrm dt}\left({}^{2}\mathbf R_1\,{}^{1}\mathbf b\right)
 =
-{}^{2}\boldsymbol\omega_{1/2}\times\left({}^{2}\mathbf R_1\,{}^{1}\mathbf b_1\right).
+{}^{2}\boldsymbol\omega_{1/2}\times\left({}^{2}\mathbf R_1\,{}^{1}\mathbf b\right).
 \label{eq:p1dot}
 \end{equation}
 式 \eqref{eq:p1dot} 表明，前模块相对位置导数项完全由前模块相对中模块的姿态变化引起。将式 \eqref{eq:middle_twist}、式 \eqref{eq:p1} 及式 \eqref{eq:p1dot} 代入式 \eqref{eq:v1_start}，得
@@ -356,20 +356,20 @@ V_z
 &=
 {}^{2}\mathbf v_c
 +
-{}^{2}\boldsymbol\omega_c\times\left({}^{2}\mathbf a+{}^{2}\mathbf R_1\,{}^{1}\mathbf b_1\right)
+{}^{2}\boldsymbol\omega_c\times\left({}^{2}\mathbf a+{}^{2}\mathbf R_1\,{}^{1}\mathbf b\right)
 +
-{}^{2}\boldsymbol\omega_{1/2}\times\left({}^{2}\mathbf R_1\,{}^{1}\mathbf b_1\right) \nonumber\\
+{}^{2}\boldsymbol\omega_{1/2}\times\left({}^{2}\mathbf R_1\,{}^{1}\mathbf b\right) \nonumber\\
 &=
 {}^{2}\mathbf v_c
 +
 {}^{2}\boldsymbol\omega_c\times {}^{2}\mathbf a
 +
-{}^{2}\boldsymbol\omega_c\times\left({}^{2}\mathbf R_1\,{}^{1}\mathbf b_1\right)
+{}^{2}\boldsymbol\omega_c\times\left({}^{2}\mathbf R_1\,{}^{1}\mathbf b\right)
 +
-{}^{2}\boldsymbol\omega_{1/2}\times\left({}^{2}\mathbf R_1\,{}^{1}\mathbf b_1\right).
+{}^{2}\boldsymbol\omega_{1/2}\times\left({}^{2}\mathbf R_1\,{}^{1}\mathbf b\right).
 \label{eq:v1_space}
 \end{align}
-式 \eqref{eq:v1_space} 中，第一项为中模块平动贡献，第二项为中模块绕 $O_2$ 转动在前连接侧形成的牵连速度，第三项与第四项分别对应主模块瞬时角速度和相对角速度在前模块偏置 ${}^{1}\mathbf b_1$ 处产生的附加速度。
+式 \eqref{eq:v1_space} 中，第一项为中模块平动贡献，第二项为中模块绕 $O_2$ 转动在前连接侧形成的牵连速度，第三项与第四项分别对应主模块瞬时角速度和相对角速度在前模块偏置 ${}^{1}\mathbf b$ 处产生的附加速度。
 
 为了与轮速表达式统一，将式 \eqref{eq:v1_space} 变换到前模块局部坐标系。左乘 ${}^{1}\mathbf R_2$，并利用旋转变换与叉乘运算的交换关系，可得
 \begin{align}
@@ -377,24 +377,24 @@ V_z
 &=
 {}^{1}\mathbf R_2\left({}^{2}\mathbf v_c+{}^{2}\boldsymbol\omega_c\times {}^{2}\mathbf a\right)
 +
-\left({}^{1}\mathbf R_2\,{}^{2}\boldsymbol\omega_c\right)\times {}^{1}\mathbf b_1
+\left({}^{1}\mathbf R_2\,{}^{2}\boldsymbol\omega_c\right)\times {}^{1}\mathbf b
 +
-{}^{1}\boldsymbol\omega_{1/2}\times {}^{1}\mathbf b_1 \nonumber\\
+{}^{1}\boldsymbol\omega_{1/2}\times {}^{1}\mathbf b \nonumber\\
 &=
 {}^{1}\mathbf R_2\left({}^{2}\mathbf v_c+{}^{2}\boldsymbol\omega_c\times {}^{2}\mathbf a\right)
 +
-{}^{1}\boldsymbol\omega_1\times {}^{1}\mathbf b_1.
+{}^{1}\boldsymbol\omega_1\times {}^{1}\mathbf b.
 \label{eq:v1_body}
 \end{align}
 式 \eqref{eq:v1_body} 是前模块参考点线速度的最终形式，其中 ${}^{1}\boldsymbol\omega_1$ 已包含主模块瞬时角速度和构型变化率的耦合作用。
 
 \subsubsection{后模块线速度}
 
-后模块的推导与前模块完全同构，只是后模块参考点相对后连接中心的固定偏置需要单独保留为 ${}^{3}\mathbf b_3$。由式 \eqref{eq:p3}，后模块参考点相对中模块参考点的位移在 ${B_2}$ 中为
+后模块的推导与前模块完全同构，只是此时需要使用与前模块镜像对应的后模块固定偏置 ${}^{3}\mathbf b$。由式 \eqref{eq:p3}，后模块参考点相对中模块参考点的位移在 ${B_2}$ 中为
 \begin{equation}
 {}^{2}\mathbf p_3
 =
--{}^{2}\mathbf a+{}^{2}\mathbf R_3\,{}^{3}\mathbf b_3.
+-{}^{2}\mathbf a+{}^{2}\mathbf R_3\,{}^{3}\mathbf b.
 \end{equation}
 对应的惯性坐标系绝对位置关系可写为
 \begin{equation}
@@ -420,27 +420,27 @@ V_z
 \begin{equation}
 {}^{2}\dot{\mathbf p}_3
 =
-\frac{\mathrm d}{\mathrm dt}\left({}^{2}\mathbf R_3\,{}^{3}\mathbf b_3\right)
+\frac{\mathrm d}{\mathrm dt}\left({}^{2}\mathbf R_3\,{}^{3}\mathbf b\right)
 =
-{}^{2}\boldsymbol\omega_{3/2}\times\left({}^{2}\mathbf R_3\,{}^{3}\mathbf b_3\right).
+{}^{2}\boldsymbol\omega_{3/2}\times\left({}^{2}\mathbf R_3\,{}^{3}\mathbf b\right).
 \label{eq:p3dot}
 \end{equation}
-该式表明，后模块相对位置导数项同样完全由后模块相对中模块的姿态变化引起，只是作用的局部固定偏置改为 ${}^{3}\mathbf b_3$。将式 \eqref{eq:middle_twist}、式 \eqref{eq:p3} 及式 \eqref{eq:p3dot} 代入式 \eqref{eq:v3_start}，得
+该式表明，后模块相对位置导数项同样完全由后模块相对中模块的姿态变化引起，只是作用的局部固定偏置改为后模块镜像偏置 ${}^{3}\mathbf b$。将式 \eqref{eq:middle_twist}、式 \eqref{eq:p3} 及式 \eqref{eq:p3dot} 代入式 \eqref{eq:v3_start}，得
 \begin{align}
 {}^{2}\mathbf v_3
 &=
 {}^{2}\mathbf v_c
 +
-{}^{2}\boldsymbol\omega_c\times\left(-{}^{2}\mathbf a+{}^{2}\mathbf R_3\,{}^{3}\mathbf b_3\right)
-+{}^{2}\boldsymbol\omega_{3/2}\times\left({}^{2}\mathbf R_3\,{}^{3}\mathbf b_3\right) \nonumber\\
+{}^{2}\boldsymbol\omega_c\times\left(-{}^{2}\mathbf a+{}^{2}\mathbf R_3\,{}^{3}\mathbf b\right)
++{}^{2}\boldsymbol\omega_{3/2}\times\left({}^{2}\mathbf R_3\,{}^{3}\mathbf b\right) \nonumber\\
 &=
 {}^{2}\mathbf v_c
 -{}^{2}\boldsymbol\omega_c\times {}^{2}\mathbf a
-+{}^{2}\boldsymbol\omega_c\times\left({}^{2}\mathbf R_3\,{}^{3}\mathbf b_3\right)
-+{}^{2}\boldsymbol\omega_{3/2}\times\left({}^{2}\mathbf R_3\,{}^{3}\mathbf b_3\right).
++{}^{2}\boldsymbol\omega_c\times\left({}^{2}\mathbf R_3\,{}^{3}\mathbf b\right)
++{}^{2}\boldsymbol\omega_{3/2}\times\left({}^{2}\mathbf R_3\,{}^{3}\mathbf b\right).
 \label{eq:v3_space}
 \end{align}
-式 \eqref{eq:v3_space} 的各项物理意义与前模块完全对应，只是中模块到后连接中心的传播方向与后模块局部固定偏置 ${}^{3}\mathbf b_3$ 的作用位置不同。
+式 \eqref{eq:v3_space} 的各项物理意义与前模块完全对应，只是中模块到后连接中心的传播方向与后模块镜像偏置 ${}^{3}\mathbf b$ 的作用位置不同。
 
 同样将其变换到后模块局部坐标系，得
 \begin{align}
@@ -448,12 +448,12 @@ V_z
 &=
 {}^{3}\mathbf R_2\left({}^{2}\mathbf v_c-{}^{2}\boldsymbol\omega_c\times {}^{2}\mathbf a\right)
 +
-\left({}^{3}\mathbf R_2\,{}^{2}\boldsymbol\omega_c\right)\times {}^{3}\mathbf b_3
+\left({}^{3}\mathbf R_2\,{}^{2}\boldsymbol\omega_c\right)\times {}^{3}\mathbf b
 +
-{}^{3}\boldsymbol\omega_{3/2}\times {}^{3}\mathbf b_3 \nonumber\\
+{}^{3}\boldsymbol\omega_{3/2}\times {}^{3}\mathbf b \nonumber\\
 &=
 {}^{3}\mathbf R_2\left({}^{2}\mathbf v_c-{}^{2}\boldsymbol\omega_c\times {}^{2}\mathbf a\right)
-+{}^{3}\boldsymbol\omega_3\times {}^{3}\mathbf b_3.
++{}^{3}\boldsymbol\omega_3\times {}^{3}\mathbf b.
 \label{eq:v3_body}
 \end{align}
 式 \eqref{eq:v3_body} 给出了后模块参考点的局部线速度表达式。
@@ -708,10 +708,10 @@ x_3 & 0 & -x_1\\
 =
 {}^{1}\mathbf R_2\,{}^{2}\mathbf v_c
 -{}^{1}\mathbf R_2\mathbf S({}^{2}\mathbf a)\,{}^{2}\boldsymbol\omega_c
--\mathbf S({}^{1}\mathbf b_1)\,{}^{1}\boldsymbol\omega_1.
+-\mathbf S({}^{1}\mathbf b)\,{}^{1}\boldsymbol\omega_1.
 \label{eq:v1_for_jacobian}
 \end{equation}
-式 \eqref{eq:v1_for_jacobian} 中，第一项表示主模块瞬时线速度经过坐标变换后对前模块参考点线速度的直接贡献；第二项表示中模块绕参考点 $O_2$ 转动时，由于前连接点与 $O_2$ 之间存在几何偏置 ${}^{2}\mathbf a$，从而在前模块参考点处产生牵连速度；第三项则表示由于前模块参考点相对前连接点存在局部偏置 ${}^{1}\mathbf b_1$，当前模块具有角速度时，该偏置进一步引起附加线速度。
+式 \eqref{eq:v1_for_jacobian} 中，第一项表示主模块瞬时线速度经过坐标变换后对前模块参考点线速度的直接贡献；第二项表示中模块绕参考点 $O_2$ 转动时，由于前连接点与 $O_2$ 之间存在几何偏置 ${}^{2}\mathbf a$，从而在前模块参考点处产生牵连速度；第三项则表示由于前模块参考点相对前连接点存在局部偏置 ${}^{1}\mathbf b$，当前模块具有角速度时，该偏置进一步引起附加线速度。
 
 将式 \eqref{eq:omega1_for_jacobian} 代入式 \eqref{eq:v1_for_jacobian}，可得
 \begin{equation}
@@ -719,9 +719,9 @@ x_3 & 0 & -x_1\\
 =
 {}^{1}\mathbf R_2\,{}^{2}\mathbf v_c
 -\left(
-{}^{1}\mathbf R_2\mathbf S({}^{2}\mathbf a)+\mathbf S({}^{1}\mathbf b_1)\,{}^{1}\mathbf R_2
+{}^{1}\mathbf R_2\mathbf S({}^{2}\mathbf a)+\mathbf S({}^{1}\mathbf b)\,{}^{1}\mathbf R_2
 \right){}^{2}\boldsymbol\omega_c
--\mathbf S({}^{1}\mathbf b_1)\mathbf T(\phi_f,\theta_f)\dot{\mathbf q}_f.
+-\mathbf S({}^{1}\mathbf b)\mathbf T(\phi_f,\theta_f)\dot{\mathbf q}_f.
 \label{eq:v1_expanded}
 \end{equation}
 将式 \eqref{eq:v1_expanded} 与式 \eqref{eq:omega1_for_jacobian} 联立，可将前模块刚体速度整理为关于整车广义速度向量 $\boldsymbol\xi$ 的线性映射：
@@ -739,8 +739,8 @@ x_3 & 0 & -x_1\\
 \mathbf K_1(\mathbf q)=
 \begin{bmatrix}
 {}^{1}\mathbf R_2 &
--\left({}^{1}\mathbf R_2\mathbf S({}^{2}\mathbf a)+\mathbf S({}^{1}\mathbf b_1)\,{}^{1}\mathbf R_2\right) &
--\mathbf S({}^{1}\mathbf b_1)\mathbf T(\phi_f,\theta_f) &
+-\left({}^{1}\mathbf R_2\mathbf S({}^{2}\mathbf a)+\mathbf S({}^{1}\mathbf b)\,{}^{1}\mathbf R_2\right) &
+-\mathbf S({}^{1}\mathbf b)\mathbf T(\phi_f,\theta_f) &
 \mathbf 0_{3\times 3}\\[4pt]
 \mathbf 0_{3\times 3} &
 {}^{1}\mathbf R_2 &
@@ -799,7 +799,7 @@ x_3 & 0 & -x_1\\
 {}^{3}\mathbf R_2\,{}^{2}\mathbf v_c
 +
 {}^{3}\mathbf R_2\mathbf S({}^{2}\mathbf a)\,{}^{2}\boldsymbol\omega_c
--\mathbf S({}^{3}\mathbf b_3)\,{}^{3}\boldsymbol\omega_3.
+-\mathbf S({}^{3}\mathbf b)\,{}^{3}\boldsymbol\omega_3.
 \label{eq:v3_for_jacobian}
 \end{equation}
 将式 \eqref{eq:omega3_for_jacobian} 代入式 \eqref{eq:v3_for_jacobian}，可得
@@ -809,9 +809,9 @@ x_3 & 0 & -x_1\\
 {}^{3}\mathbf R_2\,{}^{2}\mathbf v_c
 +
 \left(
-{}^{3}\mathbf R_2\mathbf S({}^{2}\mathbf a)-\mathbf S({}^{3}\mathbf b_3)\,{}^{3}\mathbf R_2
+{}^{3}\mathbf R_2\mathbf S({}^{2}\mathbf a)-\mathbf S({}^{3}\mathbf b)\,{}^{3}\mathbf R_2
 \right){}^{2}\boldsymbol\omega_c
--\mathbf S({}^{3}\mathbf b_3)\mathbf T(\phi_r,\theta_r)\dot{\mathbf q}_r.
+-\mathbf S({}^{3}\mathbf b)\mathbf T(\phi_r,\theta_r)\dot{\mathbf q}_r.
 \label{eq:v3_expanded}
 \end{equation}
 进一步可得后模块刚体速度映射
@@ -829,9 +829,9 @@ x_3 & 0 & -x_1\\
 \mathbf K_3(\mathbf q)=
 \begin{bmatrix}
 {}^{3}\mathbf R_2 &
-{}^{3}\mathbf R_2\mathbf S({}^{2}\mathbf a)-\mathbf S({}^{3}\mathbf b_3)\,{}^{3}\mathbf R_2 &
+{}^{3}\mathbf R_2\mathbf S({}^{2}\mathbf a)-\mathbf S({}^{3}\mathbf b)\,{}^{3}\mathbf R_2 &
 \mathbf 0_{3\times 3} &
--\mathbf S({}^{3}\mathbf b_3)\mathbf T(\phi_r,\theta_r)\\[4pt]
+-\mathbf S({}^{3}\mathbf b)\mathbf T(\phi_r,\theta_r)\\[4pt]
 \mathbf 0_{3\times 3} &
 {}^{3}\mathbf R_2 &
 \mathbf 0_{3\times 3} &
@@ -943,6 +943,13 @@ x_3 & 0 & -x_1\\
 \end{bmatrix}.
 \label{eq:unit_row_vectors}
 \end{equation}
+又由于侧模块固定偏置仅沿局部 $x$ 轴，故有
+\begin{equation}
+\mathbf e_x^T\mathbf S({}^{1}\mathbf b)=\mathbf 0_{1\times 3},
+\qquad
+\mathbf e_x^T\mathbf S({}^{3}\mathbf b)=\mathbf 0_{1\times 3}.
+\label{eq:ex_skew_b_zero}
+\end{equation}
 由式 \eqref{eq:Hi_repeat} 可知，左右轮角速度均由模块刚体速度中的纵向线速度分量 $v_{ix}$、绕 $y_i$ 轴角速度分量 $\omega_{iy}$ 与绕 $z_i$ 轴角速度分量 $\omega_{iz}$ 共同决定。因此，整车速度雅可比矩阵的每一行均对应一个车轮角速度关于 $\boldsymbol\xi$ 的线性映射。
 
 前模块左轮角速度可写为
@@ -960,9 +967,9 @@ x_3 & 0 & -x_1\\
 \begin{aligned}[t]
 \Bigl[
 &\mathbf e_x^T{}^{1}\mathbf R_2,\;
--\mathbf e_x^T\!\left({}^{1}\mathbf R_2\mathbf S({}^{2}\mathbf a)+\mathbf S({}^{1}\mathbf b_1)\,{}^{1}\mathbf R_2\right)
+-\mathbf e_x^T{}^{1}\mathbf R_2\mathbf S({}^{2}\mathbf a)
 +\left(h_1\mathbf e_y^T-\frac{d_1}{2}\mathbf e_z^T\right){}^{1}\mathbf R_2,\;\\
-&\left(-\mathbf e_x^T\mathbf S({}^{1}\mathbf b_1)+h_1\mathbf e_y^T-\frac{d_1}{2}\mathbf e_z^T\right)\mathbf T(\phi_f,\theta_f),\;
+&\left(h_1\mathbf e_y^T-\frac{d_1}{2}\mathbf e_z^T\right)\mathbf T(\phi_f,\theta_f),\;
 \mathbf 0_{1\times 3}
 \Bigr].
 \end{aligned}
@@ -983,15 +990,15 @@ x_3 & 0 & -x_1\\
 \begin{aligned}[t]
 \Bigl[
 &\mathbf e_x^T{}^{1}\mathbf R_2,\;
--\mathbf e_x^T\!\left({}^{1}\mathbf R_2\mathbf S({}^{2}\mathbf a)+\mathbf S({}^{1}\mathbf b_1)\,{}^{1}\mathbf R_2\right)
+-\mathbf e_x^T{}^{1}\mathbf R_2\mathbf S({}^{2}\mathbf a)
 +\left(h_1\mathbf e_y^T+\frac{d_1}{2}\mathbf e_z^T\right){}^{1}\mathbf R_2,\;\\
-&\left(-\mathbf e_x^T\mathbf S({}^{1}\mathbf b_1)+h_1\mathbf e_y^T+\frac{d_1}{2}\mathbf e_z^T\right)\mathbf T(\phi_f,\theta_f),\;
+&\left(h_1\mathbf e_y^T+\frac{d_1}{2}\mathbf e_z^T\right)\mathbf T(\phi_f,\theta_f),\;
 \mathbf 0_{1\times 3}
 \Bigr].
 \end{aligned}
 \label{eq:j1R}
 \end{equation}
-式 \eqref{eq:j1L} 与式 \eqref{eq:j1R} 仅在与轮距有关的项上符号相反，这反映了前模块左右轮相对参考点关于 $y_1$ 轴方向的镜像对称关系。
+式 \eqref{eq:j1L} 与式 \eqref{eq:j1R} 仅在与轮距有关的项上符号相反，这反映了前模块左右轮相对参考点关于 $y_1$ 轴方向的镜像对称关系。与此同时，由于式 \eqref{eq:ex_skew_b_zero} 成立，前模块行雅可比中原本与 $\mathbf e_x^T\mathbf S({}^{1}\mathbf b)$ 有关的项可直接消去。
 
 对于中模块，由于其刚体速度直接等于主模块瞬时刚体速度变量，因此中模块左右轮角速度可写为
 \begin{equation}
@@ -1046,10 +1053,10 @@ h_2\mathbf e_y^T+\frac{d_2}{2}\mathbf e_z^T,\;
 \begin{aligned}[t]
 \Bigl[
 &\mathbf e_x^T{}^{3}\mathbf R_2,\;
-\mathbf e_x^T\!\left({}^{3}\mathbf R_2\mathbf S({}^{2}\mathbf a)-\mathbf S({}^{3}\mathbf b_3)\,{}^{3}\mathbf R_2\right)
+\mathbf e_x^T{}^{3}\mathbf R_2\mathbf S({}^{2}\mathbf a)
 +\left(h_3\mathbf e_y^T-\frac{d_3}{2}\mathbf e_z^T\right){}^{3}\mathbf R_2,\;\\
 &\mathbf 0_{1\times 3},\;
-\left(-\mathbf e_x^T\mathbf S({}^{3}\mathbf b_3)+h_3\mathbf e_y^T-\frac{d_3}{2}\mathbf e_z^T\right)\mathbf T(\phi_r,\theta_r)
+\left(h_3\mathbf e_y^T-\frac{d_3}{2}\mathbf e_z^T\right)\mathbf T(\phi_r,\theta_r)
 \Bigr].
 \end{aligned}
 \label{eq:j3L}
@@ -1069,15 +1076,15 @@ h_2\mathbf e_y^T+\frac{d_2}{2}\mathbf e_z^T,\;
 \begin{aligned}[t]
 \Bigl[
 &\mathbf e_x^T{}^{3}\mathbf R_2,\;
-\mathbf e_x^T\!\left({}^{3}\mathbf R_2\mathbf S({}^{2}\mathbf a)-\mathbf S({}^{3}\mathbf b_3)\,{}^{3}\mathbf R_2\right)
+\mathbf e_x^T{}^{3}\mathbf R_2\mathbf S({}^{2}\mathbf a)
 +\left(h_3\mathbf e_y^T+\frac{d_3}{2}\mathbf e_z^T\right){}^{3}\mathbf R_2,\;\\
 &\mathbf 0_{1\times 3},\;
-\left(-\mathbf e_x^T\mathbf S({}^{3}\mathbf b_3)+h_3\mathbf e_y^T+\frac{d_3}{2}\mathbf e_z^T\right)\mathbf T(\phi_r,\theta_r)
+\left(h_3\mathbf e_y^T+\frac{d_3}{2}\mathbf e_z^T\right)\mathbf T(\phi_r,\theta_r)
 \Bigr].
 \end{aligned}
 \label{eq:j3R}
 \end{equation}
-式 \eqref{eq:j3L} 与式 \eqref{eq:j3R} 与前模块对应关系在整体结构上仍然保持一致，但其中涉及固定偏置的项需要显式保留为 ${}^{3}\mathbf b_3$，从而将后模块局部安装偏置的不对称性直接带入轮速雅可比。
+式 \eqref{eq:j3L} 与式 \eqref{eq:j3R} 与前模块对应关系在整体结构上仍然保持一致。由于后模块固定偏置同样仅沿局部 $x$ 轴，故其中与 $\mathbf e_x^T\mathbf S({}^{3}\mathbf b)$ 有关的项也可直接消去，从而将由单一标量 $b$ 所定义的前后对称关系直接带入轮速雅可比。
 
 综合式 \eqref{eq:j1L_mapping}--\eqref{eq:j3R_mapping}，整车轮速向量可进一步显式写成
 \begin{equation}
@@ -1100,8 +1107,8 @@ h_2\mathbf e_y^T+\frac{d_2}{2}\mathbf e_z^T,\;
 
 \subsection{本节小结}
 
-通过将整车主坐标系设置于中模块参考点 $O_2$，并保留前后连接中心关于 $O_2$ 的统一几何骨架，可将前后模块的位置、角速度与线速度传播关系统一到同一建模框架内。同时，通过分别引入前模块固定偏置 ${}^{1}\mathbf b_1$ 与后模块固定偏置 ${}^{3}\mathbf b_3$，进一步把前后模块安装偏置的不对称性纳入整车运动学模型。基于轮心位置向量与刚体速度传播关系，进一步建立了轮心纵向速度与模块刚体速度之间的明确映射，并基于滚动方向无滑移条件推导得到六个车轮角速度表达式。最终构造的整车速度雅可比矩阵 $\mathbf J_w(\mathbf q)$ 将主模块瞬时刚体速度 ${}^{2}\mathbf v_c$、${}^{2}\boldsymbol\omega_c$ 与构型变化率 $\dot{\mathbf q}$ 统一映射到六轮角速度空间，为后续的轮速控制分配、构型协调控制以及强化学习动作接口设计提供了直接的运动学基础。
+通过将整车主坐标系设置于中模块参考点 $O_2$，并保留前后连接中心关于 $O_2$ 的统一几何骨架，可将前后模块的位置、角速度与线速度传播关系统一到同一建模框架内。同时，通过引入由单一标量 $b$ 定义的前后对称固定偏置 ${}^{1}\mathbf b$ 与 ${}^{3}\mathbf b$，并令其仅沿各自局部 $x$ 轴分布，进一步将侧模块安装偏置的对称关系纳入整车运动学模型。基于轮心位置向量与刚体速度传播关系，进一步建立了轮心纵向速度与模块刚体速度之间的明确映射，并基于滚动方向无滑移条件推导得到六个车轮角速度表达式。最终构造的整车速度雅可比矩阵 $\mathbf J_w(\mathbf q)$ 将主模块瞬时刚体速度 ${}^{2}\mathbf v_c$、${}^{2}\boldsymbol\omega_c$ 与构型变化率 $\dot{\mathbf q}$ 统一映射到六轮角速度空间，为后续的轮速控制分配、构型协调控制以及强化学习动作接口设计提供了直接的运动学基础。
 
 \section{Summary}
 
-This chapter derives the wheel-speed Jacobian of the three-module six-wheel vehicle. By using the middle module as the main reference frame, keeping a unified connection-center skeleton, and separately modeling the front and rear fixed offsets as ${}^{1}\mathbf b_1$ and ${}^{3}\mathbf b_3$, the kinematic relations are written in a consistent form while preserving the offset asymmetry. The resulting mapping from the generalized vehicle velocity to the six wheel angular velocities provides a direct basis for wheel-speed allocation and later controller design.
+This chapter derives the wheel-speed Jacobian of the three-module six-wheel vehicle. By using the middle module as the main reference frame, keeping a unified connection-center skeleton, and defining the front and rear fixed offsets from one scalar parameter $b$ as the mirrored vectors ${}^{1}\mathbf b=[-b,0,0]^T$ and ${}^{3}\mathbf b=[b,0,0]^T$, the kinematic relations are written in a consistent symmetric form. The resulting mapping from the generalized vehicle velocity to the six wheel angular velocities provides a direct basis for wheel-speed allocation and later controller design.

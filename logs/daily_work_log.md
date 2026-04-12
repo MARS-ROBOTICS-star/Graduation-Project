@@ -1,5 +1,28 @@
 # 每日工作日志
 
+## 2026-04-12
+
+已完成：
+- 修改毕业论文 `chapter_03` 中速度雅可比矩阵模型推导，将前后侧模块固定偏置从 `${}^{1}\mathbf b_1 / {}^{3}\mathbf b_3` 改为由单一标量 `b` 定义的镜像偏置 `${}^{1}\mathbf b=[-b,0,0]^T`、`${}^{3}\mathbf b=[b,0,0]^T`。
+- 按用户更正，明确偏置向量仅保留 `x` 分量，且 `y=z=0`。
+- 同步修正文中几何定义、位置关系、速度传播、雅可比展开、章节小结与英文 `Summary` 的相关表述。
+- 进一步利用 `\mathbf e_x^T\mathbf S({}^{i}\mathbf b)=0` 对显式轮速行雅可比中的相关项做了化简。
+- 使用 `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex` 完成论文主文档编译验证。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `chapter03.tex` 内与该推导相关的公式已统一到单一参数 `b` 的对称偏置建模，不再保留 `b_1 / b_3` 的旧记号，也不再保留 `b_z` 或非零 `y/z` 分量。
+- LaTeX 编译通过，输出文件为 `毕业论文/毕业论文模板/LaTeX/main.pdf`。
+- 当前仍有未定义引用与排版类 warning，但与本次公式修改无直接关系。
+
+下一步：
+- 如需继续收口论文第三章，可进一步统一图注、变量说明表和前后章节中对偏置向量的文字描述。
+
 ## 2026-04-11
 
 已完成：

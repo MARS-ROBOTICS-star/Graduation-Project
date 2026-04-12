@@ -45,15 +45,15 @@ PAPER_TO_OUTPUT_ROW_INDICES = (2, 3, 0, 1, 4, 5)
 class CompleteCarWheelAllocatorGeometry:
     """Measured complete-car geometry used by the wheel-speed allocator."""
 
-    a: tuple[float, float, float] = (0.25632, 0.0, 0.0)
-    b1: tuple[float, float, float] = (-0.29665, 0.0, 0.00481)
-    b3: tuple[float, float, float] = (0.29665, 0.0, 0.00951)
-    r1L: tuple[float, float, float] = (0.0, 0.22362, -0.03265)
-    r1R: tuple[float, float, float] = (0.0, -0.22362, -0.03265)
-    r2L: tuple[float, float, float] = (0.0, 0.22369, -0.03703)
-    r2R: tuple[float, float, float] = (0.0, -0.22369, -0.03703)
-    r3L: tuple[float, float, float] = (0.0, 0.22375, -0.02704)
-    r3R: tuple[float, float, float] = (0.0, -0.22375, -0.02704)
+    a: tuple[float, float, float] = (0.25633374, -0.00614478, 0.01121736)
+    b1: tuple[float, float, float] = (-0.30654739 , -0.00428771, -0.00608413)
+    b3: tuple[float, float, float] = (0.30633826, -0.00426448, -0.00610151)
+    r1L: tuple[float, float, float] = (-0.00989449, 0.21932649, -0.04353780)
+    r1R: tuple[float, float, float] = (-0.00989449, -0.22805226, -0.04262877)
+    r2L: tuple[float, float, float] = (0.00000932, 0.21754506, -0.02578188)
+    r2R: tuple[float, float, float] = (0.00000932, -0.22983462, -0.02578188)
+    r3L: tuple[float, float, float] = (0.00968251, 0.21950007, -0.04264614)
+    r3R: tuple[float, float, float] = (0.00968251, -0.22787868, -0.04355517)
     r_wheel: float = 0.19
     ball_joint_names: tuple[str, ...] = BALL_JOINT_NAMES
     wheel_joint_names: tuple[str, ...] = OUTPUT_WHEEL_JOINT_NAMES

@@ -3,6 +3,39 @@
 ## 2026-04-11
 
 已完成：
+- 清理并重写 `docs/RL环境设计.md` 中的 LaTeX 公式与符号渲染格式。
+- 删除文档内残留的私有区引用乱码字符：
+  - `filecite...`
+- 将原来的：
+  - `\\(...\\)`
+  - `\\[...\\]`
+  数学写法统一改为更适合 Markdown 渲染器的：
+  - `$...$`
+  - `$$...$$`
+- 同步修正了公式内少量文本符号写法，例如：
+  - `heading`
+  - `command`
+  - `body collision`
+  以避免被数学渲染器错误当作变量串。
+- 已使用 `pandoc` 实际导出验证：
+  - `pandoc docs/RL环境设计.md -f markdown+tex_math_dollars -t html5 -s --mathjax -o /tmp/RL环境设计_mathjax.html`
+  导出成功。
+- 已确认文档内不再存在：
+  - 旧 LaTeX 定界符
+  - 私有区乱码字符
+  - Unicode 替换字符 `�`
+
+修改文件：
+- `docs/RL环境设计.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `docs/RL环境设计.md` 现在已经改成统一的 Markdown 数学公式格式，后续在支持数学渲染的 Markdown 预览器中应能正常显示，不再夹杂引用乱码。
+
+下一步：
+- 若还需要，可继续把同类数学格式清洗规则应用到 `docs/` 下其他含公式文档。
+
+已完成：
 - 按用户要求新增顶层 RL 重构工程：
   - `complete_car_rl_training/`
 - 新工程已改成 Isaac Lab 扩展式目录：

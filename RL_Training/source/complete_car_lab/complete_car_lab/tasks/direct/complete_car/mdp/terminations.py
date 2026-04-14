@@ -16,8 +16,14 @@ def compute_dones(cfg, robot, ball_joint_ids, episode_length_buf: torch.Tensor, 
     bad_orientation = tilt_angle > torch.deg2rad(
         torch.full_like(tilt_angle, cfg.terminations.orientation_limit_deg, dtype=torch.float)
     )
+    lower_limits = ball_joint_pos.new_tensor(cfg.terminations.ball_joint_pos_lower_limits)
+    upper_limits = ball_joint_pos.new_tensor(cfg.terminations.ball_joint_pos_upper_limits)
+    if lower_limits.numel() != ball_joint_pos.shape[1] or upper_limits.numel() != ball_joint_pos.shape[1]:
+        raise ValueError(
+            "Termination ball-joint limit dimensions do not match the number of controlled ball joints."
+        )
     ball_joint_out_of_bounds = torch.any(
-        torch.abs(ball_joint_pos) > cfg.terminations.soft_ball_joint_pos_limit,
+        (ball_joint_pos < lower_limits) | (ball_joint_pos > upper_limits),
         dim=1,
     )
 

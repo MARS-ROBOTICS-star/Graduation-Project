@@ -12,7 +12,10 @@ EXTENSION_SOURCE = PROJECT_ROOT / "source" / "complete_car_lab"
 if str(EXTENSION_SOURCE) not in sys.path:
     sys.path.insert(0, str(EXTENSION_SOURCE))
 
-from complete_car_lab.tasks.direct.complete_car.kinematics.wheel_speed_allocator import NumpyWheelSpeedAllocator
+from complete_car_lab.tasks.direct.complete_car.kinematics.wheel_speed_allocator import (
+    NumpyWheelSpeedAllocator,
+    transform_planar_command_numpy,
+)
 
 
 def main() -> None:
@@ -25,24 +28,41 @@ def main() -> None:
     print("Jacobian shape:", jacobian.shape)
     print("Output wheel-joint order:", allocator.geometry.wheel_joint_names)
 
-    zero_command = np.zeros(4, dtype=np.float64)
-    zero_targets = allocator.compute_wheel_speed_targets_from_planar_command(ball_joint_pos, ball_joint_vel, zero_command)
+    zero_command = np.zeros(2, dtype=np.float64)
+    zero_targets = allocator.compute_wheel_speed_targets_from_planar_command(
+        ball_joint_pos,
+        ball_joint_vel,
+        transform_planar_command_numpy(zero_command),
+    )
     print("Zero-command wheel targets:", np.round(zero_targets, 8).tolist())
     np.testing.assert_allclose(zero_targets, np.zeros(6, dtype=np.float64), atol=1.0e-10)
 
-    forward_command = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+    forward_command = np.array([1.0, 0.0], dtype=np.float64)
+    transformed_forward_command = transform_planar_command_numpy(forward_command)
+    print("Forward-command transformed planar command:", np.round(transformed_forward_command, 8).tolist())
     forward_targets = allocator.compute_wheel_speed_targets_from_planar_command(
         ball_joint_pos,
         ball_joint_vel,
-        forward_command,
+        transformed_forward_command,
     )
     expected_forward = np.full(6, 1.0 / allocator.geometry.r_wheel, dtype=np.float64)
     print("Forward-command wheel targets:", np.round(forward_targets, 8).tolist())
     np.testing.assert_allclose(forward_targets, expected_forward, atol=1.0e-10)
 
-    yaw_command = np.array([0.0, 0.0, 0.5, 0.0], dtype=np.float64)
-    yaw_targets = allocator.compute_wheel_speed_targets_from_planar_command(ball_joint_pos, ball_joint_vel, yaw_command)
+    yaw_command = np.array([0.0, 0.5], dtype=np.float64)
+    transformed_yaw_command = transform_planar_command_numpy(yaw_command)
+    print("Yaw-command transformed planar command:", np.round(transformed_yaw_command, 8).tolist())
+    yaw_targets = allocator.compute_wheel_speed_targets_from_planar_command(
+        ball_joint_pos,
+        ball_joint_vel,
+        transformed_yaw_command,
+    )
     print("Yaw-command wheel targets:", np.round(yaw_targets, 8).tolist())
+    np.testing.assert_allclose(
+        transformed_yaw_command,
+        np.array([-0.003072390813202485, 0.5], dtype=np.float64),
+        atol=1.0e-12,
+    )
 
     print("Validation checks passed.")
 

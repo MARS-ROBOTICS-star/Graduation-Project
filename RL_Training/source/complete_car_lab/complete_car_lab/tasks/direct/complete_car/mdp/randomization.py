@@ -9,7 +9,7 @@ from ..utils.math_utils import sample_uniform_tensor
 
 def sample_motor_strength(cfg, env_ids: torch.Tensor, action_dim: int, device: torch.device) -> torch.Tensor:
     strength = torch.ones((env_ids.numel(), action_dim), device=device)
-    if cfg.randomization.randomize_motor_strength:
+    if cfg.randomization.enable_action_randomization and cfg.randomization.randomize_motor_strength:
         strength = sample_uniform_tensor(cfg.randomization.motor_strength_range, (env_ids.numel(), action_dim), device)
     return strength
 

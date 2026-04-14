@@ -13,8 +13,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.scene.num_envs = 512
         self.terrain.enabled = False
         self.terrain.mode = "plane"
-        self.terrain.curriculum = False
-        self.terrain.flat_only_reset = True
+        self.curriculum.enabled = False
         self.terrain.measure_heights = False
 
         self.sensors.imu.enabled = False

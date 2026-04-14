@@ -731,3 +731,7 @@ When repository organization changes, update `README.md`.
 When research direction, constraints, thesis priorities, or role boundaries change, update `AGENTS.md`.  
 When a session yields durable conclusions, update `docs/conversation_history.md`.  
 When a session completes concrete work, append to `logs/daily_work_log.md` in Chinese.
+
+Additional rule for the active RL mainline:
+
+- if Stage0 RL environment design or Stage0 training-parameter configuration changes materially, `docs/RL阶段训练参数一览表.md` must be updated in the same session

@@ -1,6 +1,588 @@
 # 每日工作日志
 
+## 2026-04-13
+
+已完成：
+- 按用户要求把当前 Stage0 命令主线从 4 维收口为单一 2 维模式：
+  - `lin_vel_x`
+  - `ang_vel_yaw`
+- 删除 active direct workflow 中的：
+  - `lin_vel_y`
+  - `heading`
+  命令配置入口与对应运行时使用点。
+- 修改 `base/complete_car_cfg.py`：
+  - `CommandCfg.num_commands` 由 `4` 改为 `2`
+  - 删除 `CommandRangesCfg` 中的：
+    - `lin_vel_y`
+    - `heading`
+  - 删除奖励配置中的：
+    - `tracking_heading`
+    - `tracking_heading_std`
+- 修改 `mdp/commands.py`：
+  - 命令重采样改为只采样 `Vx / Wz`
+  - 当前将二维命令先扩成虚拟三维向量 `[Vx, 0, Wz]`，左乘固定变换矩阵后，再收口回 `[Vx', Wz']`
+- 修改 `kinematics/wheel_speed_allocator.py`：
+  - allocator 的平面命令入口统一改为 2 维 `[Vx, Wz]`
+- 修改 `mdp/rewards.py`：
+  - 删除 `tracking_heading`
+  - `tracking_lin_vel` 改为只跟踪 `Vx`
+- 修改 `base/env.py`：
+  - episode 日志移除 `command_heading`
+  - `command_ang_vel_yaw` 的索引改为新的二维命令索引
+- 修改 `utils/validate_wheel_speed_allocator.py`：
+  - 数值验证入口改为使用二维命令
+- 更新文档：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `AGENTS.md`
+- 在 `AGENTS.md` 中新增维护规则：
+  - 之后只要 Stage0 RL 环境设计或训练参数配置发生实质变化，必须同步更新 `docs/RL阶段训练参数一览表.md`
+- 使用：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+  完成静态编译检查，检查通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `AGENTS.md`
+
+产出/结论：
+- 当前 Stage0 active command 语义已经正式收口为二维：
+  - `Vx`
+  - `Wz`
+- 当前 Stage0 单帧 actor/critic 观测维度由 `47` 变为 `45`
+- 当前 reward 集合已进一步收口为 5 项，不再包含 `tracking_heading`
+
+已完成：
+- 对 `docs/RL阶段训练参数一览表.md` 做了一轮数学公式统一整理。
+- 当前该文档不再混用：
+  - `\[\]`
+  - `\(\)`
+  两套 LaTeX 分隔符。
+- 现统一为：
+  - 显示公式使用 `$$ ... $$`
+  - 行内公式使用 `$ ... $`
+- 已覆盖的部分包括：
+  - reset 公式
+  - command 变换矩阵
+  - observation 拼接公式
+  - action 映射公式
+  - reward 公式
+  - termination 公式
+  - PPO / GAE 公式
+- 使用 `rg -n '\\\\\\[|\\\\\\]|\\\\\\(|\\\\\\)' docs/RL阶段训练参数一览表.md` 做残留检查，已无旧公式分隔符残留。
+
+修改文件：
+- `docs/RL阶段训练参数一览表.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 参数总表的数学公式标记已经统一成更适合 Markdown 渲染的写法。
+- 后续继续编辑这份文档时，应保持同一套 `$$ / $` 约定。
+
+已完成：
+- 按用户要求删除当前 direct workflow 中的：
+  - `terrain.flat_only_reset`
+- 修改代码位置：
+  - `terrain/terrain_cfg.py`
+  - `mdp/curriculum.py`
+  - `baseline/complete_car_stage0_cfg.py`
+  - `baseline/complete_car_stage1_cfg.py`
+  - `environment_adaptive/complete_car_stage2_cfg.py`
+- 当前 generator 模式下的初始 terrain type 分配不再通过 `flat_only_reset` 固定到默认地形列，而是统一走 `mdp/curriculum.py` 中的按列分布初始化逻辑。
+- 同时修正 `docs/RL阶段训练参数一览表.md` 中两处会导致公式/符号渲染不正确的问题：
+  - root reset 位置公式中缺失的两个 `+`
+  - command 变换矩阵中的 `\times 10^{-5}` 写法
+- 使用：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/environment_adaptive/complete_car_stage2_cfg.py`
+  完成静态编译检查，检查通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/environment_adaptive/complete_car_stage2_cfg.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 active direct workflow 已不再保留 `flat_only_reset` 这个 reset/terrain 特殊开关。
+- Stage0 参数总表中的相关数学公式已修正为可正常渲染的写法。
+
+已完成：
+- 在 `docs/` 下新增：
+  - `RL阶段训练参数一览表.md`
+- 该文档当前按 `CompleteCar-Stage0` 的实际代码配置整理了一份完整训练参数总表，内容覆盖：
+  - 仿真与 scene
+  - 地形
+  - 机器人与 actuator
+  - reset
+  - command
+  - observation
+  - action
+  - reward
+  - termination
+  - randomization
+  - curriculum
+  - PPO 超参数
+- 文档顺序按 RL 训练流程组织，并补充了当前代码口径下的：
+  - Actor / Critic / Action 维度
+  - command 变换矩阵
+  - 观测拼接公式
+  - 逐轴动作映射公式
+  - 奖励公式
+  - 终止公式
+  - GAE / PPO 核心公式
+- 同步在 `docs/current_status.md` 中登记了这份 Stage0 参数总表文档。
+
+修改文件：
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 已经有一份可以直接用于查参数、写实验记录和论文任务定义回填的集中式文档。
+- 后续只要 Stage0 的 reward、observation、action、命令或 PPO 配置有实质变化，这份文档也需要同步更新。
+
+已完成：
+- 按用户要求从当前 direct workflow 奖励主线中删除以下 4 项：
+  - `lin_vel_z`
+  - `ang_vel_xy`
+  - `ball_joint_deviation`
+  - `ball_joint_swing`
+- 修改 `mdp/rewards.py`：
+  - 从 `REWARD_TERM_NAMES` 中移除上述 4 项
+  - 从 `compute_reward_terms(...)` 中删除对应张量计算与加权拼接
+- 修改 `base/complete_car_cfg.py`：
+  - 从 `RewardScalesCfg` 中删除上述 4 个 scale 参数
+  - 从 `RewardCfg` 中删除已失效的：
+    - `ball_joint_target`
+- 保留的当前奖励集合为：
+  - `tracking_lin_vel`
+  - `tracking_ang_vel`
+  - `tracking_heading`
+  - `orientation`
+  - `action_rate`
+  - `termination`
+- 使用：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  完成静态编译检查，检查通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 direct workflow 奖励集合已经显式简化，不再包含垂向速度、横滚/俯仰角速度和球铰正则项。
+- 后续奖励调参与日志分析应以新的 6 项 reward 集合为准。
+
+已完成：
+- 按用户要求把 terrain curriculum 从 terrain runtime 中拆出，单独建立：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+- 在 `base/complete_car_cfg.py` 中新增：
+  - `CurriculumCfg`
+  用于统一保存课程学习参数：
+  - `enabled`
+  - `max_init_terrain_level`
+  - `default_terrain_name`
+  - `move_up_distance_ratio`
+  - `move_down_command_ratio`
+- 在 `terrain/terrain_cfg.py` 中移除了原先混在 terrain runtime 配置里的 curriculum 参数，保留 terrain 自身参数与 spawn offset 参数。
+- 修改 `terrain/terrain_runtime.py`：
+  - 不再内置初始 terrain level/type 采样逻辑
+  - 不再内置 `update_curriculum(...)`
+  - 当前只负责 terrain 数据、env origin 同步和 spawn offset
+- 修改 `base/env.py`：
+  - 在 `_setup_scene()` 中显式调用 `mdp/curriculum.py` 完成 terrain curriculum 初始化
+  - 在 `_reset_idx()` 中显式调用 `mdp/curriculum.py` 更新 terrain curriculum
+- 修改各 stage 配置：
+  - `Stage0` 改为 `self.curriculum.enabled = False`
+  - `Stage1` 改为 `self.curriculum.enabled = True`
+  - `Stage2` 改为 `self.curriculum.enabled = True`
+- 本轮额外发现并修正一个旧的运行时问题：
+  - `Stage1` 中的 `default_terrain_name = "mix"` 并不是 `terrain_builder.py` 中的合法地形名
+  - 当前已改为 `"flat"`
+- 使用：
+  - `python3 -m py_compile $(find RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car -name '*.py' | sort)`
+  完成静态编译检查，检查通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/__init__.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_runtime.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/environment_adaptive/complete_car_stage2_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 terrain curriculum 的参数入口和执行入口已经分离：
+  - 参数入口：`CurriculumCfg`
+  - 执行入口：`mdp/curriculum.py`
+- 当前 `terrain_runtime.py` 已经从“terrain + curriculum 混合文件”收口为纯 terrain runtime 文件。
+- 当前 stage 覆写 curriculum 时应统一改：
+  - `self.curriculum.*`
+  而不是再改：
+  - `self.terrain.curriculum`
+
+下一步：
+- 在真实 Isaac Lab 环境中检查 curriculum 重构后：
+  - `_setup_scene()` 是否能正常初始化 terrain levels / terrain types
+  - `_reset_idx()` 是否能正常更新 terrain level
+  - Stage1 / Stage2 的 terrain origin 是否随课程学习正确变化
+
+已完成：
+- 对最近动作映射改造做了一轮残留检查，发现 `actions.py` 和 `env.py` 已经改成依赖：
+  - `ball_joint_action_lower_limits`
+  - `ball_joint_action_upper_limits`
+  但 `ControlCfg` 中一度残留旧的：
+  - `ball_joint_action_scale`
+  且缺失新的逐轴动作范围字段。
+- 已在 `base/complete_car_cfg.py` 中删除旧的统一动作缩放字段，并补齐逐轴动作上下界配置，使运行时动作映射与当前 `actions.py` 的实现一致。
+- 当前动作上下界与用户最新修改后的终止上下界保持一致：
+  - `yaw in [-0.7, 0.7]`
+  - `pitch in [-1.6, 0.5]`
+  - `roll in [-0.5, 0.5]`
+- 同步更新 `docs/current_status.md`，避免默认设计说明仍停留在旧的 pitch 范围。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前动作映射主线不再残留旧的统一 `ball_joint_action_scale` 配置。
+- 当前 `ControlCfg`、`actions.py`、`env.py`、`terminations.py` 四处对球铰动作/范围的口径已经重新对齐。
+
+已完成：
+- 按用户要求取消“统一 `ball_joint_action_scale + 统一 clip_actions`”的旧动作映射方式。
+- 在 `base/complete_car_cfg.py` 的 `ControlCfg` 中新增逐轴动作上下界：
+  - `ball_joint_action_lower_limits`
+  - `ball_joint_action_upper_limits`
+  当前顺序按 `z, y, x, z, y, x` 对应：
+  - `yaw in [-0.7, 0.7]`
+  - `pitch in [-1.57, 0.4]`
+  - `roll in [-0.5, 0.5]`
+- 在 `mdp/actions.py` 中重写 `apply_ball_joint_targets(...)`：
+  - policy 动作先按标准化区间 `[-1, 1]` 解释
+  - 采用相对于默认关节角的非对称映射
+  - 保证：
+    - `action = 0` 对应默认位姿
+    - `action = 1` 对应上界
+    - `action = -1` 对应下界
+- 在 `base/env.py` 中移除对统一 `ball_joint_action_scale` 的调用，改为向 `actions.py` 传入逐轴上下界。
+- 在 `agents/rsl_rl_ppo_cfg.py` 中把 PPO wrapper 的 `clip_actions` 同步改为 `1.0`，与当前标准化动作语义一致。
+- 使用 `python3 -m py_compile` 对相关文件完成静态编译检查，检查通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前动作映射已经和逐轴球铰范围联动起来，不再依赖统一物理 scale。
+- 当前动作语义已经从“统一增量控制”变为“按每个关节独立范围归一化控制”。
+- 其中 pitch 的非对称范围现在能够被正确表达，且 `action=0` 不会把目标直接推到区间中心。
+
+下一步：
+- 在真实 Isaac Lab 环境中验证 6 个球铰目标是否都严格落在各自上下界内
+- 观察策略初期是否更容易学出稳定的 pitch 控制
+
+已完成：
+- 按用户要求把球铰终止条件从统一阈值改为按 `yaw / pitch / roll` 分别判断。
+- 在 `base/complete_car_cfg.py` 的 `TerminationCfg` 中删除了统一的：
+  - `soft_ball_joint_pos_limit`
+  并改为显式上下界：
+  - `ball_joint_pos_lower_limits`
+  - `ball_joint_pos_upper_limits`
+- 当前 6 维球铰顺序按：
+  - `z, y, x, z, y, x`
+  解释为：
+  - `yaw, pitch, roll, yaw, pitch, roll`
+- 当前启用的关节范围为：
+  - `yaw in [-0.7, 0.7]`
+  - `pitch in [-1.57, 0.4]`
+  - `roll in [-0.5, 0.5]`
+  前后两组球铰目前使用同一套范围。
+- 在 `mdp/terminations.py` 中把统一的绝对值比较改为逐维上下界比较，并增加了维度不匹配时报错的检查。
+- 使用 `python3 -m py_compile` 对相关文件完成静态编译检查，检查通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前终止条件中的球铰角约束已经不再是一概而论的单一标量阈值。
+- 当前任务主线已经开始按轴使用非对称、分维度的球铰角终止范围。
+
+下一步：
+- 把 `clip_actions` / `ball_joint_action_scale` 的设计也和这套逐轴角度范围联动起来，避免动作目标轻易推到 pitch 上界附近
+
+已完成：
+- 按用户要求为动作随机化增加统一总开关，并保持现阶段默认关闭。
+- 在 `base/complete_car_cfg.py` 的 `RandomizationCfg` 中新增：
+  - `enable_action_randomization: bool = False`
+- 修改 `_build_action_noise_model_cfg()`：
+  - 当总开关为 `False` 时直接返回 `None`
+  - 因此当前不会启用 action noise / action bias
+- 修改 `mdp/randomization.py` 中 `sample_motor_strength(...)`：
+  - 只有在：
+    - `enable_action_randomization == True`
+    - 且 `randomize_motor_strength == True`
+    时才会采样随机 `motor_strength`
+  - 否则始终返回全 1
+- 使用 `python3 -m py_compile` 对相关文件完成静态编译检查，检查通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/randomization.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前动作随机化已经有统一总开关。
+- 当前默认配置下：
+  - `enable_action_randomization = False`
+  - 不使用动作噪声
+  - 不使用动作 bias
+  - 不使用 motor strength 动作随机化
+
+下一步：
+- 若后续需要做域随机化实验，再在对应 stage cfg 中显式打开 `enable_action_randomization`
+
+已完成：
+- 对用户完成的 MGDP 风格显式地形高度 patch 全部 6 步实现做了一轮全链路静态检查，覆盖：
+  - `terrain/terrain_cfg.py`
+  - `terrain/terrain_runtime.py`
+  - `base/env.py`
+  - `mdp/observations.py`
+  - `base/complete_car_cfg.py`
+  - `utils/io_descriptors.py`
+  - `utils/math_utils.py`
+  - `baseline/complete_car_stage1_cfg.py`
+  - `environment_adaptive/complete_car_stage2_cfg.py`
+  - `agents/rsl_rl_ppo_cfg.py`
+- 发现并修正一个会导致“功能虽然写完但默认不生效”的配置问题：
+  - `CompleteCarStage1EnvCfg` 中仍写着 `self.terrain.measure_heights = False`
+  - 已改为 `True`
+- 结合当前 patch 几何参数重新核对默认网格尺寸：
+  - `measured_points_x = 28`
+  - `measured_points_y = 7`
+  - `num_height_points = 196`
+- 因此在当前代码口径下：
+  - 单帧 `actor` 观测维度为 `47`
+  - 单帧 `critic` 观测维度在 Stage1 中为 `243`
+  - Stage0 / Stage2 当前仍为 `47`
+- 使用 `python3 -m py_compile` 对上述相关文件完成静态编译检查，检查通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 6 步主线代码在静态层面已打通。
+- 当前真正启用显式高度 patch 的阶段是 `Stage1`。
+- 当前 Stage1 观测维度为：
+  - `actor = 47`
+  - `critic = 243`
+
+下一步：
+- 在真实 Isaac Lab 环境中验证 `critic` 张量末尾 196 维是否随 terrain 起伏变化
+- 检查 PPO 运行时是否正确接收 `actor/critic` 两组不同维度的观测
+
+已完成：
+- 检查并修复 MGDP 风格显式地形高度 patch 迁移中的第三步实现，重点核对：
+  - `base/env.py`
+  - `mdp/observations.py`
+  - `base/complete_car_cfg.py`
+- 修正了 `env.py` 中 `_compute_critic_height_patch()` 被错误粘贴到 `_reset_idx()` 内部且语法损坏的问题；当前该函数已恢复为环境类的正式成员方法。
+- 在 `env.py` 中补齐了第三步完整链路：
+  - 从 `terrain_cfg.py` 生成的局部 patch 点展开到所有环境
+  - 只按中车 `yaw` 做旋转
+  - 加上中车世界位置得到 patch 世界坐标
+  - 调用 `terrain_runtime.sample_heights_world_xy(...)` 查询地形高度
+  - 构造相对高度 `base_z - terrain_height`
+- 在 `mdp/observations.py` 中新增 `compute_critic_observation(...)`，使当前 critic 观测能在 actor 基础上追加显式高度 patch。
+- 在 `base/complete_car_cfg.py` 中把 `observation_space` 恢复为：
+  - `{"actor": ..., "critic": ...}`
+  以匹配当前 env 与 PPO 的双观测组接口，并使 critic 维度在启用 `measure_heights` 时自动增加 `num_height_points`。
+- 使用 `python3 -m py_compile` 对上述 3 个文件完成静态编译检查，检查通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前第三步“中车 yaw 对齐 patch 世界点生成 + 相对高度构造”已经在 env 主线中落地。
+- 当前 critic 观测链路已经具备拼接显式高度 patch 的能力，actor 仍保持原 47 维主观测不变。
+- 当前 Stage1 配置仍把 `terrain.measure_heights` 设为 `False`，因此运行时默认还不会真正启用这张 critic 高度图；这属于启用配置问题，不是第三步实现错误。
+
+下一步：
+- 在阶段配置中显式打开 `terrain.measure_heights`
+- 验证 `critic` 维度是否大于 `actor`
+- 在真实 Isaac Lab 环境里检查相对高度 patch 数值是否符合 terrain 起伏
+
+已完成：
+- 检查用户为 MGDP 风格显式地形高度 patch 所做的前两步修改，重点核对：
+  - `terrain/terrain_cfg.py`
+  - `terrain/terrain_runtime.py`
+- 确认当前迁移主线已经从旧的 `RayCaster height_scanner` 思路切到：
+  - patch 几何参数配置
+  - 局部采样点生成
+  - `height_field_raw` 运行时缓存
+  - 世界坐标高度查询接口
+  这条 MGDP 风格链路。
+- 直接修正了两处会破坏后续链路的简单错误：
+  - `terrain_cfg.py` 中 `num_height_points` 对 `measured_points_y` 的拼写错误
+  - `terrain_runtime.py` 中在 `initialize_after_scene_clone()` 错误清空 `_height_field_raw` 的问题
+- 同步整理了 `terrain_cfg.py` 中 patch 几何辅助函数与局部 patch 点生成函数的格式与注释，使其更适合后续教学和继续扩展。
+- 使用 `python3 -m py_compile` 对上述两个 terrain 文件完成静态编译检查，检查通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_runtime.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前方案一 patch 的几何定义和局部网格生成接口已经落在 `terrain_cfg.py`。
+- 当前训练地形的大高度表已经能在 `terrain_runtime.py` 中保留并提供世界坐标查询入口，不再依赖旧的 `height_scanner` 作为主路线。
+- 当前仍未把显式高度 patch 真正拼入 `critic` 观测，下一步应进入 `env.py`。
+
+下一步：
+- 在 `env.py` 中实现：
+  - 中车 yaw 对齐的 patch 世界点生成
+  - 调用 `sample_heights_world_xy(...)`
+  - 构造相对高度 patch
+  - 只先拼入 `critic`
+
+已完成：
+- 检查并修复完整车 RL 主线中 Actor/Critic 观测分组修改后的连锁问题，重点核对了：
+  - `base/complete_car_cfg.py`
+  - `base/env.py`
+  - `mdp/observations.py`
+  - `utils/io_descriptors.py`
+  - `utils/math_utils.py`
+  - `agents/rsl_rl_ppo_cfg.py`
+- 修正了 `mdp/observations.py` 中多处因手动改名产生的变量引用错误，包括：
+  - `robto`
+  - `front_body_id / rear_body_id`
+  - `whell_joint_ids`
+  - `command`
+  这些不一致命名已统一到可运行版本。
+- 在 `base/env.py` 中补齐：
+  - `head_car_chassis`
+  - `tail_car_chassis`
+  的 `find_bodies()` 查询，并把环境输出从旧的单组：
+  - `policy`
+  改为显式双组：
+  - `actor`
+  - `critic`
+- 在 `agents/rsl_rl_ppo_cfg.py` 中将 PPO 输入组映射从：
+  - `{"actor": ["policy"], "critic": ["policy"]}`
+  改为：
+  - `{"actor": ["actor"], "critic": ["critic"]}`
+- 在配置和维度计算侧补齐了新增观测项对应的：
+  - scale
+  - noise
+  - descriptor
+  - observation_space
+  使 actor/critic 单帧观测维度统一为 `47`。
+- 使用 `python3 -m py_compile` 对修改后的关键文件以及整个：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/`
+  Python 树完成静态编译检查，检查通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前观测主线已不再依赖旧的单组 `policy` 观测，而是显式区分：
+  - `actor`
+  - `critic`
+- 当前 `critic` 仍与 `actor` 保持完全一致，后续若做 privileged critic，可直接在现有 `critic` 组上扩展。
+- Stage2 传感器运行时链路仍保留，但当前默认不再拼入 actor/critic 主观测主干。
+
+下一步：
+- 在真实 Isaac Lab 环境中优先做一轮 `CompleteCar-Stage0` 冒烟，确认：
+  - actor/critic 双组观测能被 env wrapper 与 PPO 正常接收
+  - 观测维度与运行时实际返回张量一致
+
 ## 2026-04-12
+
+已完成：
+- 按用户要求，为完整车 RL 主线中的 `Vx / Vy / Wz` 命令语义加入固定左乘变换矩阵：
+  - `[[1, 0, -0.00614478162640497], [0, 1, -1.07379532542362e-5], [0, 0, 1]]`
+- 在 `wheel_speed_allocator.py` 中保留 NumPy 版命令变换 helper：
+  - `transform_planar_command_numpy`
+- 按用户进一步要求，将 `transform_planar_command_torch` 的实现移动到 `mdp/commands.py` 内部，使 Torch 命令语义逻辑直接放在命令模块中。
+- 在 `mdp/commands.py` 的命令重采样出口统一对 `commands[:, :3]` 应用该变换，使 env 内保存的命令直接变成变换后的语义。
+- 同步更新 `utils/validate_wheel_speed_allocator.py`，使独立验证脚本与训练主线使用同一命令变换逻辑，并增加对纯 `yaw` 命令变换结果的数值断言。
+- 使用 `python3 -m py_compile` 对本轮修改的 Python 文件完成静态语法检查，检查通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `commands` 张量在 env 内已经不是原始采样值，而是对 `Vx,Vy,Wz` 左乘固定矩阵后的结果；因此观测、奖励、terrain curriculum、轮速分配和日志现在都共享同一套命令语义。
+- 当前命令变换逻辑按使用层拆分为：
+  - `mdp/commands.py` 中的 Torch 实现，供 env 主线调用
+  - `wheel_speed_allocator.py` 中的 NumPy 实现，供独立验证脚本调用
+- 当前终端环境中的 `python3` 缺少 `numpy`，因此本轮无法在这里直接跑通 `validate_wheel_speed_allocator.py`，但静态编译已通过。
+
+下一步：
+- 在带 `numpy` 的 Python 环境中运行：
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+- 在真实 Isaac Lab 环境中继续做 `CompleteCar-Stage0` 冒烟，确认训练主线下该命令变换不会引入新的运行态问题。
 
 已完成：
 - 修改毕业论文 `chapter_03` 中速度雅可比矩阵模型推导，将前后侧模块固定偏置从 `${}^{1}\mathbf b_1 / {}^{3}\mathbf b_3` 改为由单一标量 `b` 定义的镜像偏置 `${}^{1}\mathbf b=[-b,0,0]^T`、`${}^{3}\mathbf b=[b,0,0]^T`。
@@ -4260,3 +4842,32 @@
 下一步：
 - 在真实 Isaac Lab 环境中跑一次 `Stage0` 冒烟，确认训练启动时加载的确实是仓库内 `RL_Training/rsl_rl/`。
 - 然后把本轮 vendored `rsl_rl` 改动与训练主线改动一起提交并推送到 GitHub。
+
+## 2026-04-14
+
+已完成：
+- 按用户要求调整 GitHub 同步范围：
+  - 保留所有当前代码与文档改动进入本轮同步
+  - 排除 `.~lock*` 临时锁文件
+  - 将 `URDF/complete_car_alternative/vehicle_dimensions_axles_tracks.xlsx` 纳入本轮提交
+- 修改根 `.gitignore`：
+  - 新增 `.~lock*`
+  - 新增 `docs/literature/`
+  - 新增 `毕业论文/`
+- 明确仓库同步策略：
+  - `docs/literature/` 与 `毕业论文/` 仅保留为本地资料目录
+  - 本轮同步时会从 Git 索引中移除它们，使 GitHub 远端仓库同步删除对应内容，但不删除本地文件
+- 同步更新项目记忆文件：
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `.gitignore`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 后续 GitHub 远端仓库将不再保存论文正文目录与文献资料目录。
+- 这两个目录今后默认只作为本地研究工作区保留。

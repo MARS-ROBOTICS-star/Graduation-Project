@@ -6,10 +6,10 @@ import torch
 
 
 def preprocess_policy_actions(actions: torch.Tensor, clip_actions: float, motor_strength: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """返回裁剪后的 policy 动作与施加随机化后的实际动作。"""
+    """返回限幅后的标准化动作与施加随机化后的实际动作。"""
 
     policy_actions = actions.clone().clamp(-clip_actions, clip_actions)
-    processed_actions = policy_actions * motor_strength
+    processed_actions = (policy_actions * motor_strength).clamp(-clip_actions, clip_actions)
     return policy_actions, processed_actions
 
 
@@ -18,9 +18,28 @@ def apply_ball_joint_targets(
     joint_pos_targets: torch.Tensor,
     ball_joint_ids,
     processed_actions: torch.Tensor,
-    action_scale: float,
+    lower_limits: tuple[float, ...],
+    upper_limits: tuple[float, ...],
 ) -> torch.Tensor:
-    joint_pos_targets[:, ball_joint_ids] = robot.data.default_joint_pos[:, ball_joint_ids] + processed_actions * action_scale
+    default_targets = robot.data.default_joint_pos[:, ball_joint_ids]
+    lower = processed_actions.new_tensor(lower_limits).unsqueeze(0)
+    upper = processed_actions.new_tensor(upper_limits).unsqueeze(0)
+
+    if lower.shape[1] != processed_actions.shape[1] or upper.shape[1] != processed_actions.shape[1]:
+        raise ValueError("Ball-joint action limit dimensions do not match the number of controlled joints.")
+
+    positive_span = upper - default_targets
+    negative_span = default_targets - lower
+    if torch.any(positive_span < 0.0) or torch.any(negative_span < 0.0):
+        raise ValueError("Default ball-joint targets must lie within the configured action lower/upper limits.")
+
+    positive_actions = torch.clamp(processed_actions, min=0.0, max=1.0)
+    negative_actions = torch.clamp(processed_actions, min=-1.0, max=0.0)
+    joint_pos_targets[:, ball_joint_ids] = (
+        default_targets
+        + positive_actions * positive_span
+        + negative_actions * negative_span
+    )
     return joint_pos_targets
 
 

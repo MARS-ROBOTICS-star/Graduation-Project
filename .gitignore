@@ -8,3 +8,6 @@ __pycache__/
 .obsidian/
 .codex
 results/training_stage_num_envs10.usda
+.~lock*
+docs/literature/
+毕业论文/

@@ -25,18 +25,15 @@ class CommandRangesCfg:
     """高层速度指令采样范围。"""
 
     lin_vel_x: tuple[float, float] = (-1.0, 1.0)
-    lin_vel_y: tuple[float, float] = (0.0, 0.0)
     ang_vel_yaw: tuple[float, float] = (-1.0, 1.0)
-    heading: tuple[float, float] = (-math.pi, math.pi)
 
 
 @configclass
 class CommandCfg:
     """命令采样器配置。"""
 
-    num_commands: int = 4
+    num_commands: int = 2
     resampling_time: float = 4.0
-    heading_command: bool = False  # 是否启用“按 heading 间接生成角速度”的命令解释模式。
     zero_command: bool = False  # 为 True 时，本次采样出的整组命令会被强制清零。
     rel_standing_envs: float = 0.0  # 每次重采样后，被随机指定为静止环境的比例。
     ranges: CommandRangesCfg = CommandRangesCfg()
@@ -53,7 +50,8 @@ class ControlCfg:
     ball_joint_names: tuple[str, ...] = tuple(BALL_JOINT_NAMES)
     wheel_joint_names: tuple[str, ...] = tuple(WHEEL_JOINT_NAMES)
 
-    ball_joint_action_scale: float = 0.25  # policy 输出映射到球铰目标角时的缩放，单位：rad。
+    ball_joint_action_lower_limits: tuple[float, ...] = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)
+    ball_joint_action_upper_limits: tuple[float, ...] = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
     ball_joint_stiffness: float = 100.0  # 球铰位置控制刚度，单位：N*m/rad。
     ball_joint_damping: float = 10.0  # 球铰位置控制阻尼，单位：N*m*s/rad。
     ball_joint_effort_limit_sim: float = 120.0  # 球铰驱动器力矩上限，单位：N*m。
@@ -74,6 +72,9 @@ class ObservationScalesCfg:
     projected_gravity: float = 1.0
     ball_joint_pos: float = 1.0
     ball_joint_vel: float = 0.05
+    ball_joint_target_error: float =1.0
+    module_roll_pitch: float =1.0
+    wheel_joint_vel: float =0.05
     commands: float = 1.0
     last_action: float = 1.0
 
@@ -89,6 +90,9 @@ class ObservationNoiseCfg:
     projected_gravity: float = 0.02
     ball_joint_pos: float = 0.01
     ball_joint_vel: float = 0.05
+    ball_joint_target_error: float =0.01
+    module_roll_pitch: float =0.02
+    wheel_joint_vel: float =0.05
     commands: float = 0.0
 
 
@@ -99,7 +103,7 @@ class ObservationCfg:
     use_history: bool = False
     history_length: int = 1
     clip_observations: float = 100.0
-    clip_actions: float = 100.0
+    clip_actions: float = 1.0 #action的裁切量
     scales: ObservationScalesCfg = ObservationScalesCfg()
     noise: ObservationNoiseCfg = ObservationNoiseCfg()
 
@@ -111,12 +115,7 @@ class RewardScalesCfg:
     termination: float = -2.0
     tracking_lin_vel: float = 2.0
     tracking_ang_vel: float = 2.0
-    tracking_heading: float = 0.5
-    lin_vel_z: float = -2.0
-    ang_vel_xy: float = -1.0
-    orientation: float = -5.0
-    ball_joint_deviation: float = -0.2
-    ball_joint_swing: float = -0.1
+    orientation: float = -2.0
     action_rate: float = -0.01
 
 
@@ -126,18 +125,17 @@ class RewardCfg:
 
     scales: RewardScalesCfg = RewardScalesCfg()
     only_positive_rewards: bool = False
-    tracking_lin_vel_std: float = math.sqrt(0.5)
+    tracking_lin_vel_std: float = math.sqrt(0.25)
     tracking_ang_vel_std: float = math.sqrt(0.25)
-    tracking_heading_std: float = math.sqrt(0.25)
-    ball_joint_target: float = 0.0
 
 
 @configclass
 class TerminationCfg:
     """终止条件阈值。"""
 
-    orientation_limit_deg: float = 45.0
-    soft_ball_joint_pos_limit: float = 0.8
+    orientation_limit_deg: float = 45.0 #整车最大侧倾角
+    ball_joint_pos_lower_limits: tuple[float, ...] = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)#球铰yaw,pitch,roll的限制
+    ball_joint_pos_upper_limits: tuple[float, ...] = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
     minimum_root_height: float | None = None
 
 
@@ -167,11 +165,23 @@ class ResetCfg:
 class RandomizationCfg:
     """域随机化配置。"""
 
+    enable_action_randomization: bool = False
     randomize_motor_strength: bool = False
     motor_strength_range: tuple[float, float] = (0.9, 1.1)
     joint_position_noise_scale: float = 0.0
     action_noise_std: float = 0.0
     action_bias_std: float = 0.0
+
+
+@configclass
+class CurriculumCfg:
+    """地形课程学习参数。"""
+
+    enabled: bool = False
+    max_init_terrain_level: int = 0
+    default_terrain_name: str = "flat"
+    move_up_distance_ratio: float = 0.5
+    move_down_command_ratio: float = 0.5
 
 
 @configclass
@@ -209,7 +219,7 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
     stage_name: str = "stage0"
     episode_length_s: float = 16.0 #control_dt = 1/60 s 理论最大控制步数：16 × 60 = 960 步
     action_space: int = len(CONTROLLED_JOINT_NAMES)
-    observation_space: int = 0
+    observation_space: dict[str, int] | int = 0
     state_space: int = 0 #critic state 或 privileged state 的维度
     decimation: int = 2
 
@@ -225,11 +235,14 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
     terminations: TerminationCfg = TerminationCfg()
     resets: ResetCfg = ResetCfg()
     randomization: RandomizationCfg = RandomizationCfg()
+    curriculum: CurriculumCfg = CurriculumCfg()
     terrain: TerrainBindingCfg = TerrainBindingCfg()
     sensors: SensorBindingCfg = SensorBindingCfg()
     debug: DebugCfg = DebugCfg()
 
     def _build_action_noise_model_cfg(self) -> NoiseModelWithAdditiveBiasCfg | None:
+        if not self.randomization.enable_action_randomization:
+            return None
         if self.randomization.action_noise_std <= 0.0 and self.randomization.action_bias_std <= 0.0:
             return None
         return NoiseModelWithAdditiveBiasCfg(
@@ -263,11 +276,16 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
 
         self.action_space = total_dim(build_action_descriptor(self))
         base_obs_dim = total_dim(build_observation_descriptor(self))
-        self.observation_space = (
+        actor_obs_dim = (
             base_obs_dim * self.observations.history_length
             if self.observations.use_history and self.observations.history_length > 1
             else base_obs_dim
         )
+        critic_obs_dim = actor_obs_dim + (self.terrain.num_height_points if self.terrain.measure_heights else 0)
+        self.observation_space = {
+            "actor": actor_obs_dim,
+            "critic": critic_obs_dim,
+        }
         self.state_space = total_dim(build_state_descriptor(self))
 
         self.action_noise_model = self._build_action_noise_model_cfg()

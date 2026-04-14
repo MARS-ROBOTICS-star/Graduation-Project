@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import torch
 
-from ..assets.robot_cfg import BALL_JOINT_NAMES
+from ..assets.robot_cfg import BALL_JOINT_NAMES, WHEEL_JOINT_NAMES
 
 
 def sample_uniform_tensor(value_range: tuple[float, float], shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
     low, high = value_range
     return torch.empty(shape, device=device).uniform_(low, high)
 
-
+#角度归整到[-pi,pi]
 def wrap_to_pi_tensor(angles: torch.Tensor) -> torch.Tensor:
     return torch.atan2(torch.sin(angles), torch.cos(angles))
 
-
+# 四元数转换为欧拉角
 def quaternion_to_rpy(quat_wxyz: torch.Tensor) -> torch.Tensor:
     w, x, y, z = quat_wxyz.unbind(dim=-1)
 
@@ -93,25 +93,27 @@ def compute_policy_obs_noise_magnitudes(cfg) -> list[float]:
     magnitudes.extend([noise_level * noise_cfg.projected_gravity] * 3)
     magnitudes.extend([noise_level * noise_cfg.ball_joint_pos] * len(BALL_JOINT_NAMES))
     magnitudes.extend([noise_level * noise_cfg.ball_joint_vel] * len(BALL_JOINT_NAMES))
+    magnitudes.extend([noise_level * noise_cfg.ball_joint_target_error] * len(BALL_JOINT_NAMES))
+    magnitudes.extend([noise_level * noise_cfg.module_roll_pitch] * 4)
+    magnitudes.extend([noise_level * noise_cfg.wheel_joint_vel] * len(WHEEL_JOINT_NAMES))
     magnitudes.extend([noise_level * noise_cfg.commands] * cfg.commands.num_commands)
     magnitudes.extend([0.0] * len(BALL_JOINT_NAMES))
 
-    magnitudes.extend([0.0] * cfg.sensors.policy_feature_dim)
     return magnitudes
 
 
 def compute_policy_obs_dim(cfg) -> int:
     proprio_dim = (
-        3
-        + 3
-        + 3
+        3+ 3+ 3
         + len(BALL_JOINT_NAMES)
         + len(BALL_JOINT_NAMES)
+        + len(BALL_JOINT_NAMES)
+        + 2 + 2
+        + len(WHEEL_JOINT_NAMES)
         + cfg.commands.num_commands
         + len(BALL_JOINT_NAMES)
     )
-    return proprio_dim + cfg.sensors.policy_feature_dim
-
+    return proprio_dim
 
 __all__ = [
     "body_ang_vel_to_rpy_rates",

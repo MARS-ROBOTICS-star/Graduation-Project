@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..assets.robot_cfg import BALL_JOINT_NAMES
+from ..assets.robot_cfg import BALL_JOINT_NAMES, WHEEL_JOINT_NAMES
 
 
 def build_action_descriptor(cfg) -> list[tuple[str, int]]:
@@ -16,12 +16,20 @@ def build_observation_descriptor(cfg) -> list[tuple[str, int]]:
         ("projected_gravity_b", 3),
         ("ball_joint_pos", len(BALL_JOINT_NAMES)),
         ("ball_joint_vel", len(BALL_JOINT_NAMES)),
+        ("ball_joint_target_error",len(BALL_JOINT_NAMES)),
+        ("head_car_abs_rp",2),
+        ("tail_car_abs_rp",2),
+        ("wheel_joint_vel",len(WHEEL_JOINT_NAMES)),
         ("commands", cfg.commands.num_commands),
         ("last_action", len(BALL_JOINT_NAMES)),
     ]
-    descriptor.extend(cfg.sensors.policy_descriptor())
     return descriptor
 
+def build_critic_observation_descriptor(cfg) -> list[tuple[str, int]]:
+      descriptor = build_observation_descriptor(cfg).copy()
+      if cfg.terrain.measure_heights:
+          descriptor.append(("terrain_height_patch", cfg.terrain.num_height_points))
+      return descriptor
 
 def build_state_descriptor(_cfg) -> list[tuple[str, int]]:
     return []

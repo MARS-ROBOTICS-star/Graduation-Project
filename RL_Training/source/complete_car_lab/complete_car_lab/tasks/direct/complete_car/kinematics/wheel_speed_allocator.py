@@ -3,12 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
 import numpy as np
-
-if TYPE_CHECKING:
-    import torch
 
 
 BALL_JOINT_NAMES = (
@@ -40,6 +35,15 @@ OUTPUT_WHEEL_JOINT_NAMES = (
 
 PAPER_TO_OUTPUT_ROW_INDICES = (2, 3, 0, 1, 4, 5)
 
+PLANAR_COMMAND_TRANSFORM = np.array(
+    (
+        (1.0, 0.0, -0.00614478162640497),
+        (0.0, 1.0, -1.07379532542362e-5),
+        (0.0, 0.0, 1.0),
+    ),
+    dtype=np.float64,
+)
+
 
 @dataclass(frozen=True)
 class CompleteCarWheelAllocatorGeometry:
@@ -63,6 +67,27 @@ class CompleteCarWheelAllocatorGeometry:
 DEFAULT_COMPLETE_CAR_GEOMETRY = CompleteCarWheelAllocatorGeometry()
 
 
+def transform_planar_command_numpy(planar_command) -> np.ndarray:
+    """Apply the measured left-multiplication transform to [vx, wz]."""
+
+    planar_command = np.asarray(planar_command, dtype=np.float64)
+    if planar_command.ndim == 1:
+        if planar_command.shape[0] != 2:
+            raise ValueError("planar_command must have shape (2,).")
+        planar_command_2d = planar_command.reshape(1, -1)
+        squeeze_output = True
+    elif planar_command.ndim == 2 and planar_command.shape[1] == 2:
+        planar_command_2d = planar_command
+        squeeze_output = False
+    else:
+        raise ValueError("planar_command must have shape (N, 2).")
+
+    planar_command_xyz = np.zeros((planar_command_2d.shape[0], 3), dtype=np.float64)
+    planar_command_xyz[:, 0] = planar_command_2d[:, 0]
+    planar_command_xyz[:, 2] = planar_command_2d[:, 1]
+    transformed_xyz = planar_command_xyz @ PLANAR_COMMAND_TRANSFORM.T
+    transformed = np.stack((transformed_xyz[:, 0], transformed_xyz[:, 2]), axis=1)
+    return transformed.reshape(-1) if squeeze_output else transformed
 def _numpy_skew_single(vector: np.ndarray) -> np.ndarray:
     x, y, z = vector.tolist()
     return np.array(
@@ -214,27 +239,26 @@ class NumpyWheelSpeedAllocator:
         ball_joint_vel,
         planar_command,
     ) -> np.ndarray:
-        """Build xi from qdot and planar command [vx, vy, yaw_rate, heading?]."""
+        """Build xi from qdot and planar command [vx, yaw_rate]."""
 
         ball_joint_vel, squeeze_vel = self._ensure_2d(ball_joint_vel, 6, "ball_joint_vel")
         planar_command = np.asarray(planar_command, dtype=np.float64)
         if planar_command.ndim == 1:
-            if planar_command.shape[0] not in (3, 4):
-                raise ValueError("planar_command must have shape (3,) or (4,).")
+            if planar_command.shape[0] != 2:
+                raise ValueError("planar_command must have shape (2,).")
             planar_command = planar_command.reshape(1, -1)
             squeeze_cmd = True
-        elif planar_command.ndim == 2 and planar_command.shape[1] in (3, 4):
+        elif planar_command.ndim == 2 and planar_command.shape[1] == 2:
             squeeze_cmd = False
         else:
-            raise ValueError("planar_command must have shape (N, 3) or (N, 4).")
+            raise ValueError("planar_command must have shape (N, 2).")
 
         (ball_joint_vel, planar_command), _ = self._broadcast_batch(ball_joint_vel, planar_command)
 
         batch_size = planar_command.shape[0]
         spatial_twist = np.zeros((batch_size, 6), dtype=np.float64)
         spatial_twist[:, 0] = planar_command[:, 0]
-        spatial_twist[:, 1] = planar_command[:, 1]
-        spatial_twist[:, 5] = planar_command[:, 2]
+        spatial_twist[:, 5] = planar_command[:, 1]
         generalized_velocity = np.concatenate(
             (
                 spatial_twist[:, :3],
@@ -525,22 +549,21 @@ class TorchWheelSpeedAllocator:
         )
         planar_command = planar_command.to(device=self.device, dtype=self.dtype)
         if planar_command.ndim == 1:
-            if planar_command.shape[0] not in (3, 4):
-                raise ValueError("planar_command must have shape (3,) or (4,).")
+            if planar_command.shape[0] != 2:
+                raise ValueError("planar_command must have shape (2,).")
             planar_command = planar_command.reshape(1, -1)
             squeeze_cmd = True
-        elif planar_command.ndim == 2 and planar_command.shape[1] in (3, 4):
+        elif planar_command.ndim == 2 and planar_command.shape[1] == 2:
             squeeze_cmd = False
         else:
-            raise ValueError("planar_command must have shape (N, 3) or (N, 4).")
+            raise ValueError("planar_command must have shape (N, 2).")
 
         (ball_joint_vel, planar_command), _ = self._broadcast_batch(ball_joint_vel, planar_command)
 
         batch_size = planar_command.shape[0]
         spatial_twist = torch.zeros((batch_size, 6), device=self.device, dtype=self.dtype)
         spatial_twist[:, 0] = planar_command[:, 0]
-        spatial_twist[:, 1] = planar_command[:, 1]
-        spatial_twist[:, 5] = planar_command[:, 2]
+        spatial_twist[:, 5] = planar_command[:, 1]
         generalized_velocity = torch.cat(
             (
                 spatial_twist[:, :3],
@@ -634,7 +657,9 @@ __all__ = [
     "BALL_JOINT_NAMES",
     "DEFAULT_COMPLETE_CAR_GEOMETRY",
     "OUTPUT_WHEEL_JOINT_NAMES",
+    "PLANAR_COMMAND_TRANSFORM",
     "CompleteCarWheelAllocatorGeometry",
     "NumpyWheelSpeedAllocator",
     "TorchWheelSpeedAllocator",
+    "transform_planar_command_numpy",
 ]

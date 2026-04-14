@@ -7,7 +7,7 @@
 ## 当前阶段
 - 已完成 `RL_Training/` 原地重构。
 - 已按用户要求把旧 `IK/FK`、本地 `rsl_rl` 本体、旧辅助脚本重新迁入新架构内部。
-- 当前进入“等待真实 Isaac Lab 环境做运行态冒烟验证”的阶段。
+- 当前进入“等待真实 Isaac Lab 环境做运行态冒烟验证，并继续接入 MGDP 风格显式地形高度 patch 到 critic 观测”的阶段。
 
 ## 当前 RL 主线位置
 - 当前活跃 RL 工作区：
@@ -19,6 +19,8 @@
 - 当前训练 / 回放脚本：
   - `RL_Training/scripts/train.py`
   - `RL_Training/scripts/play.py`
+- 当前 Stage0 训练参数总表文档：
+  - `docs/RL阶段训练参数一览表.md`
 
 ## 当前代码结构
 - 共享 direct 环境主类：
@@ -32,6 +34,7 @@
   - terrain / sensor 的阶段差异已下放到各 stage cfg 内部显式定义，不再由 base cfg 自动绑定
 - MDP 拆分：
   - `mdp/commands.py`
+  - `mdp/curriculum.py`
   - `mdp/actions.py`
   - `mdp/observations.py`
   - `mdp/rewards.py`
@@ -65,6 +68,11 @@
   - `utils/validate_wheel_speed_allocator.py`
 
 ## 本轮已确认
+- 仓库同步策略已调整为：
+  - `毕业论文/` 与 `docs/literature/` 仅保留为本地研究资料目录
+  - 根 `.gitignore` 已忽略上述两个目录
+  - 根 `.gitignore` 已忽略 `.~lock*` 临时锁文件
+  - 本轮同步到 GitHub 时会删除远端仓库中这两个目录的已跟踪副本
 - `RL_Training/` 已不再保留旧的：
   - `complete_car_rl_training/`
   - `config/`
@@ -106,6 +114,7 @@
   - `TerminationCfg`
   - `ResetCfg`
   - `RandomizationCfg`
+  - `CurriculumCfg`
   - `TerrainBindingCfg`
   - `SensorBindingCfg`
   - `DebugCfg`
@@ -114,22 +123,119 @@
 - 当前 `RL_Training/` 下全部 Python 文件已通过：
   - `python3 -m py_compile $(find RL_Training -name '*.py' | sort)`
 - 最近已补充 `base/complete_car_cfg.py` 中 `CommandCfg` 与 `ControlCfg` 的中文工程注释，便于后续阅读配置语义与单位。
+- 最近已完成 terrain curriculum 重构：
+  - 参数入口改为 `CurriculumCfg`
+  - env 在 `_setup_scene()` / `_reset_idx()` 中调用 `mdp/curriculum.py`
+  - 旧的 `self.terrain.curriculum`、`self.terrain.max_init_terrain_level` 不再作为主入口
+- 最近已修正一个旧配置问题：
+  - `Stage1` 中的 `default_terrain_name = "mix"` 不是合法 terrain 名称
+  - 当前已改为 `"flat"`
 - 毕业论文 `chapter_03` 的速度雅可比推导已统一为由单一标量 `b` 定义的前后镜像偏置 `${}^{1}\mathbf b=[-b,0,0]^T`、`${}^{3}\mathbf b=[b,0,0]^T`，即仅保留 `x` 分量且 `y=z=0`，LaTeX 已完成通过式编译验证。
 
 ## 当前默认设计选择
 - 当前默认 runnable 起点：
   - `CompleteCar-Stage0`
+- 当前默认课程学习语义：
+  - terrain curriculum 的参数已从 `terrain/terrain_cfg.py` 抽离到 `base/complete_car_cfg.py` 中的 `CurriculumCfg`
+  - terrain curriculum 的初始化、升级、降级逻辑已抽离到 `mdp/curriculum.py`
+  - `terrain/terrain_runtime.py` 当前只保留 terrain 数据缓存、env origin 同步和 spawn offset，不再定义课程学习规则
+  - 当前已删除旧的 `terrain.flat_only_reset` 字段，初始 terrain type 不再通过该开关单独固定到默认地形列
+  - Stage0：
+    - `curriculum.enabled = False`
+  - Stage1：
+    - `curriculum.enabled = True`
+    - `curriculum.max_init_terrain_level = 5`
+    - `curriculum.default_terrain_name = "flat"`
+  - Stage2：
+    - `curriculum.enabled = True`
+    - `curriculum.max_init_terrain_level = 5`
 - 当前默认动作语义：
   - policy 输出 6 维球铰目标
   - 车轮轮速由 env 内部依据 command 和 wheel allocator 自动生成
+  - 球铰动作当前不再使用统一的 `ball_joint_action_scale`
+  - 当前球铰动作解释为标准化动作 `[-1, 1]`
+  - 每个关节按自己的上下界做非对称映射，且：
+    - `action = 0` 对应默认关节角
+    - `action = 1` 对应该关节上界
+    - `action = -1` 对应该关节下界
+  - 当前逐轴动作范围按关节顺序 `z, y, x, z, y, x` 为：
+    - `yaw in [-0.7, 0.7]`
+    - `pitch in [-1.6, 0.5]`
+    - `roll in [-0.5, 0.5]`
+  - 当前新增动作随机化总开关：
+    - `randomization.enable_action_randomization = False`
+  - 因此当前默认不使用：
+    - action noise
+    - action bias
+    - motor strength 动作随机化
 - 当前默认命令语义：
-  - `lin_vel_x / lin_vel_y / ang_vel_yaw / heading`
+  - 当前仅保留 2 维命令：
+    - `lin_vel_x / ang_vel_yaw`
+  - 原 `Vy` 与 `heading` 命令已从 active Stage0 主线移除
+  - 对 `Vx,Wz` 的实际执行语义，当前在命令重采样出口先扩成虚拟三维向量 `[Vx, 0, Wz]`，再左乘固定变换矩阵：
+    - `[[1, 0, -0.00614478162640497], [0, 1, -1.07379532542362e-5], [0, 0, 1]]`
+  - 其中 env 内实际保存、观测、奖励、日志使用的是收口后的 2 维变换命令：
+    - `[Vx', Wz']`
 - 当前默认观测语义：
-  - base 线速度 + base 角速度 + 重力投影 + 球铰位置/速度 + commands + last_action
-  - Stage2 在此基础上追加 `imu / stereo_camera / lidar` 特征
+  - env 当前显式返回两组观测：
+    - `actor`
+    - `critic`
+  - 当前 `critic` 观测先与 `actor` 保持一致
+  - 当前 actor/critic 观测内容为：
+    - 中车 body-frame 线速度
+    - 中车 body-frame 角速度
+    - 中车重力投影
+    - 6 个球铰角
+    - 6 个球铰角速度
+    - 6 个球铰目标跟踪误差
+    - 前车绝对 roll/pitch
+    - 后车绝对 roll/pitch
+    - 6 个车轮轮速
+    - command
+    - 上一时刻动作
+  - 当前单帧 actor/critic 观测维度均为：
+    - 45
+  - Stage2 传感器当前仍保留在 scene/runtime 侧，但不再默认拼入 actor/critic 观测主干
+- 当前默认终止条件语义：
+  - 姿态倾角超过 `45 deg` 提前终止
+  - 6 个球铰不再共用单一角度阈值
+  - 当前按关节顺序 `z, y, x, z, y, x` 使用逐轴上下界：
+    - `yaw in [-0.7, 0.7]`
+    - `pitch in [-1.6, 0.5]`
+    - `roll in [-0.5, 0.5]`
+  - 前后两组球铰当前使用相同范围
+  - `minimum_root_height` 当前仍未启用
+- 当前默认奖励语义：
+  - 当前 reward 集合已收口为：
+    - `tracking_lin_vel`
+    - `tracking_ang_vel`
+    - `orientation`
+    - `action_rate`
+    - `termination`
+  - 当前已从 `rewards.py` 和 `RewardScalesCfg` 中删除：
+    - `lin_vel_z`
+    - `ang_vel_xy`
+    - `ball_joint_deviation`
+    - `ball_joint_swing`
+    - `tracking_heading`
+- 当前显式地形高度 patch 迁移方向：
+  - 采用方案一
+  - patch 参考系绑定在中车
+  - patch 先只跟随中车 yaw
+  - patch 使用长条形局部网格覆盖整车占地，并在车头前方保留 preview
+  - 当前已在 `terrain_cfg.py` 中加入 patch 几何参数与局部采样点生成接口
+  - 当前已在 `terrain_runtime.py` 中加入运行时高度表缓存与世界坐标高度查询接口
+  - 当前已在 `env.py` 中加入中车 yaw 对齐的 patch 世界点生成、地形高度查询与相对高度构造
+  - 当前 `critic` 观测已支持在 `actor` 基础上追加显式高度 patch
+  - 当前 Stage1 已显式打开 `terrain.measure_heights = True`
+  - 因此当前 Stage1 运行时默认应为：
+    - `actor = 45`
+    - `critic = 45 + num_height_points`
 
 ## 当前阻塞 / 风险
 - 当前机器没有 Isaac Lab 运行环境，因此本轮只能完成代码重构和静态语法检查。
+- 当前终端的 `python3` 也缺少 `numpy`，因此本轮无法在这里直接跑通：
+  - `utils/validate_wheel_speed_allocator.py`
 - 尚未在真实 Isaac Lab 环境中验证：
   - 任务注册能否被 Isaac Lab 正常发现
   - `scripts/train.py` 能否正常启动 `CompleteCar-Stage0` 并优先导入项目内 `complete_car/rsl_rl`
@@ -137,6 +243,11 @@
 - 当前 `RL_Training/` 结构已切换为新架构，后续不要再把旧的历史路径当作默认入口。
 
 ## 下一步优先级
+- 继续把显式地形高度 patch 从 terrain runtime 接到 env / critic 观测：
+  - 验证 `critic` 维度大于 `actor`
+  - 在真实 Isaac Lab 环境里检查 patch 数值是否随 terrain 起伏变化
+- 在真实 Isaac Lab 环境中确认：
+  - 当前 `enable_action_randomization = False` 时训练入口不会引入动作噪声或 motor strength 随机化
 - 在有 Isaac Lab 环境的机器上进入：
   - `/home/ubuntu/Graduation-Project/RL_Training`
 - 先做一轮 Stage0 冒烟：

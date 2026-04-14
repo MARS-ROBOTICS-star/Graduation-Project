@@ -68,22 +68,22 @@ class LocalOnPolicyRunnerCfg:
 @configclass
 class CompleteCarBasePPORunnerCfg(LocalOnPolicyRunnerCfg):
     seed = 1
-    num_steps_per_env = 24
-    max_iterations = 1000
+    num_steps_per_env = 48
+    max_iterations = 600
     save_interval = 100
     experiment_name = "complete_car_direct"
     run_name = ""
-    obs_groups = {"actor": ["policy"], "critic": ["policy"]}
+    obs_groups = {"actor": ["actor"], "critic": ["critic"]}
     resume = False
     load_run = -1
     load_checkpoint = -1
-    clip_actions = 100.0
+    clip_actions = 1.0
 
     actor = LocalMlpModelCfg(
         hidden_dims=[256, 128, 64],
         activation="elu",
         obs_normalization=True,
-        distribution_cfg=LocalGaussianDistributionCfg(init_std=1.0, std_type="scalar"),
+        distribution_cfg=LocalGaussianDistributionCfg(init_std=0.7, std_type="scalar"),
     )
     critic = LocalMlpModelCfg(
         hidden_dims=[256, 128, 64],

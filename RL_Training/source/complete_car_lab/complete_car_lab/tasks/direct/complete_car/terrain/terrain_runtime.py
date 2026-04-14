@@ -32,13 +32,14 @@ def _sample_uniform(value_range: tuple[float, float], shape: tuple[int, ...], de
 class CompleteCarTerrainRuntime:
     """运行时只负责场景构建、curriculum 和 reset spawn 偏移。"""
 
-    def __init__(self, cfg: CompleteCarTerrainRuntimeCfg, device: torch.device | str, num_envs: int):
-        self.cfg = cfg
+    def __init__(self, terrain_cfg: CompleteCarTerrainRuntimeCfg, curriculum_cfg, device: torch.device | str, num_envs: int):
+        self.cfg = terrain_cfg
+        self.curriculum_cfg = curriculum_cfg
         self.device = torch.device(device)
         self.num_envs = num_envs
         self.curriculum_ready = False
 
-        self._terrain_cfg = cfg.generator
+        self._terrain_cfg = terrain_cfg.generator
         self._terrain_origins: torch.Tensor | None = None
         self._terrain_type_map: torch.Tensor | None = None
         self._terrain_class_map: torch.Tensor | None = None
@@ -49,6 +50,11 @@ class CompleteCarTerrainRuntime:
         self.max_terrain_level = 0
         self.ground_prim_path = "/World/ground"
 
+        self._height_field_raw: torch.Tensor | None = None
+        self._horizontal_scale: float = float(self._terrain_cfg.horizontal_scale)
+        self._vertical_scale: float = float(self._terrain_cfg.vertical_scale)
+        self._border_size: float = float(self._terrain_cfg.border_size)
+
     @property
     def generator_enabled(self) -> bool:
         return bool(self.cfg.enabled and self.cfg.mode == "generator")
@@ -57,14 +63,15 @@ class CompleteCarTerrainRuntime:
         if not self.generator_enabled:
             return self.ground_prim_path
 
-        default_terrain_name = self.cfg.default_terrain_name
+        default_terrain_name = self.curriculum_cfg.default_terrain_name
         if default_terrain_name not in self._terrain_cfg.terrain_names:
             raise ValueError(
                 f"Unknown default terrain name '{default_terrain_name}'. Expected one of {self._terrain_cfg.terrain_names}."
             )
 
         self.default_terrain_type = self._terrain_cfg.terrain_names.index(default_terrain_name)
-        terrain_data = build_stage1_terrain_data(self._terrain_cfg)
+        terrain_data = build_stage1_terrain_data(self._terrain_cfg) #生成完整训练地形的数据结构
+        self._height_field_raw = torch.from_numpy(terrain_data.height_field_raw).to(self.device, dtype=torch.float32) #转为tensor,放到device
         terrain_mesh = trimesh.Trimesh(vertices=terrain_data.vertices, faces=terrain_data.faces)
         terrain_mesh = _offset_mesh_to_world_frame(self._terrain_cfg, terrain_mesh)
 
@@ -91,34 +98,14 @@ class CompleteCarTerrainRuntime:
         self.ground_prim_path = self.cfg.prim_path
         return self.ground_prim_path
 
-    def initialize_after_scene_clone(self, scene) -> None:
-        if not self.generator_enabled:
-            return
-        self.terrain_levels = self._build_initial_terrain_levels()
-        self.terrain_types = self._build_initial_terrain_types()
-        self.terrain_classes = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
-        self.sync_env_origins(scene)
-
     def initialize_plane_after_scene_clone(self, scene) -> None:
         if self.generator_enabled:
             return
+        self._height_field_raw = None
         self.terrain_levels = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.terrain_types = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.terrain_classes = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._terrain_origins = scene.env_origins.clone()
-
-    def _build_initial_terrain_levels(self) -> torch.Tensor:
-        max_init_level = min(self.cfg.max_init_terrain_level, self._terrain_cfg.num_rows - 1)
-        if not self.cfg.curriculum:
-            max_init_level = self._terrain_cfg.num_rows - 1
-        return torch.randint(0, max_init_level + 1, (self.num_envs,), device=self.device, dtype=torch.long)
-
-    def _build_initial_terrain_types(self) -> torch.Tensor:
-        if self.cfg.flat_only_reset:
-            return torch.full((self.num_envs,), self.default_terrain_type, device=self.device, dtype=torch.long)
-        env_ids = torch.arange(self.num_envs, device=self.device, dtype=torch.long)
-        terrain_types = env_ids * self._terrain_cfg.num_cols // self.num_envs
-        return terrain_types.clamp_(max=self._terrain_cfg.num_cols - 1)
 
     def sync_env_origins(self, scene, env_ids: torch.Tensor | None = None) -> None:
         if not self.generator_enabled:
@@ -129,32 +116,6 @@ class CompleteCarTerrainRuntime:
             return
         self.terrain_classes[env_ids] = self._terrain_class_map[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
         scene.env_origins[env_ids] = self._terrain_origins[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
-
-    def update_curriculum(self, scene, robot, env_ids: torch.Tensor, commands: torch.Tensor, episode_length_s: float):
-        if not self.generator_enabled or not self.cfg.curriculum or not self.curriculum_ready or env_ids.numel() == 0:
-            return None
-
-        root_pos = robot.data.root_link_pos_w[env_ids]
-        env_origins = scene.env_origins[env_ids]
-        distance = torch.norm(root_pos[:, :2] - env_origins[:, :2], dim=1)
-        required_distance = torch.norm(commands[env_ids, :2], dim=1) * episode_length_s * self.cfg.move_down_command_ratio
-
-        move_up = distance > self._terrain_cfg.terrain_length * self.cfg.move_up_distance_ratio
-        move_down = (distance < required_distance) & ~move_up
-
-        self.terrain_levels[env_ids] += move_up.to(torch.long) - move_down.to(torch.long)
-        self.terrain_levels[env_ids] = torch.where(
-            self.terrain_levels[env_ids] >= self.max_terrain_level,
-            torch.randint_like(self.terrain_levels[env_ids], self.max_terrain_level),
-            self.terrain_levels[env_ids].clamp_(min=0),
-        )
-        self.sync_env_origins(scene, env_ids)
-
-        return {
-            "terrain_level": float(torch.mean(self.terrain_levels.float()).item()),
-            "move_up_ratio": float(torch.mean(move_up.float()).item()),
-            "move_down_ratio": float(torch.mean(move_down.float()).item()),
-        }
 
     def apply_spawn_offsets(self, root_state: torch.Tensor, env_ids: torch.Tensor) -> torch.Tensor:
         if not self.generator_enabled or env_ids.numel() == 0:
@@ -178,6 +139,37 @@ class CompleteCarTerrainRuntime:
                 self.cfg.other_spawn_xy_range, (int(other_mask.sum().item()), 2), self.device
             )
         return root_state
+    
+    # 输入世界坐标系下的一批二维点，在height_field_raw做双线性插值，输出点对应的地形高度
+    def sample_heights_world_xy(self, points_xy_w: torch.Tensor) -> torch.Tensor:
+        if self._height_field_raw is None:
+            return torch.zeros(points_xy_w.shape[:-1], device=self.device, dtype=torch.float32)
+        hf = self._height_field_raw
+        max_x_index = hf.shape[0] - 1
+        max_y_index = hf.shape[1] - 1
 
+        x_index = (points_xy_w[..., 0] + self._border_size) / self._horizontal_scale
+        y_index = (points_xy_w[..., 1] + self._border_size) / self._horizontal_scale
+
+        x0 = torch.floor(x_index).long().clamp(0, max_x_index - 1)
+        y0 = torch.floor(y_index).long().clamp(0, max_y_index - 1)
+        x1 = (x0 + 1).clamp(max=max_x_index)
+        y1 = (y0 + 1).clamp(max=max_y_index)
+
+        wx = (x_index - x0.float()).clamp(0.0, 1.0)
+        wy = (y_index - y0.float()).clamp(0.0, 1.0)
+
+        h00 = hf[x0, y0]
+        h01 = hf[x0, y1]
+        h10 = hf[x1, y0]
+        h11 = hf[x1, y1]
+
+        height_raw = (
+            (1.0 - wx) * (1.0 - wy) * h00
+            + (1.0 - wx) * wy * h01
+            + wx * (1.0 - wy) * h10
+            + wx * wy * h11
+        )
+        return height_raw * self._vertical_scale
 
 __all__ = ["CompleteCarTerrainRuntime"]

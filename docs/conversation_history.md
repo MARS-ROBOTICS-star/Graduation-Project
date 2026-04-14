@@ -4,6 +4,40 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-12
 
+### `Vx / Vy / Wz` command semantics now apply a fixed left-multiplication transform before env-wide use
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+  - `docs/current_status.md`
+- Durable implementation conclusion:
+  - the planar command triplet:
+    - `[Vx, Vy, Wz]^T`
+    now uses the fixed transform:
+    - `[[1, 0, -0.00614478162640497], [0, 1, -1.07379532542362e-5], [0, 0, 1]]`
+    via left multiplication before entering the active env command path
+  - the current implementation applies this transform at the command-resampling出口, so the stored `commands` tensor is already the transformed command
+  - this means the transformed command is now used consistently by:
+    - policy observation
+    - reward tracking terms
+    - terrain curriculum distance estimation
+    - wheel-speed allocation input
+    - episode logging
+  - the command transform implementation is now split by usage layer:
+    - `mdp/commands.py`
+      for Torch env/runtime usage
+    - `wheel_speed_allocator.py`
+      for NumPy validation usage
+  - the standalone wheel-speed validation script was also aligned to this same transform semantics
+- Reason:
+  - the user explicitly required that when the command vector uses `Vx, Vy, Wz`, it must first be left-multiplied by the given fixed transform matrix
+- Impact:
+  - future command-range interpretation, debugging, and result reading should treat the env-side `commands` tensor as the transformed command, not the raw pre-transform sample
+  - if later scripts construct planar commands outside the env resampling path, they should reuse the shared transform helper instead of duplicating or skipping the matrix
+- Status:
+  - targeted `python3 -m py_compile` check passed
+  - local numerical validation script could not be executed in the current shell because `python3` here does not have `numpy`
+
 ### Thesis Chapter 3 wheel-speed Jacobian derivation now uses one scalar `b` and x-axis-only mirrored offsets
 - Updated:
   - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
@@ -32,6 +66,463 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Status:
   - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex` passed
   - remaining warnings are unrelated citation/font/layout warnings, not caused by this notation update
+
+## 2026-04-13
+
+### Stage0 command semantics now use only a 2D `Vx / Wz` command, and the Stage0 parameter handbook must be kept in sync
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `AGENTS.md`
+- Durable implementation conclusion:
+  - the active Stage0 command path no longer uses:
+    - `lin_vel_y`
+    - `heading`
+  - the active command tensor is now:
+    - `[lin_vel_x, ang_vel_yaw]`
+    with:
+    - `num_commands = 2`
+  - the previous fixed planar transform is still used, but the active path now expands the 2D command to a virtual 3D vector:
+    - `[Vx, 0, Wz]`
+    applies the measured transform, and then stores only:
+    - `[Vx', Wz']`
+  - the active Stage0 reward set no longer includes:
+    - `tracking_heading`
+  - `tracking_lin_vel` now tracks only forward velocity:
+    - `Vx`
+    instead of the previous planar `Vx / Vy` pair
+  - env logging now records only:
+    - `episode/command_lin_x`
+    - `episode/command_ang_vel_yaw`
+  - the resulting default single-frame observation sizes are now:
+    - `Stage0 actor = 45`
+    - `Stage0 critic = 45`
+    - `Stage1 actor = 45`
+    - `Stage1 critic = 45 + num_height_points`
+  - `AGENTS.md` now explicitly requires:
+    - any material Stage0 RL env or Stage0 training-parameter change must update `docs/RL阶段训练参数一览表.md` in the same session
+- Reason:
+  - the user explicitly required collapsing the command semantics to one mode only:
+    - `Vx + Wz`
+    while removing `Vy` and `heading`, and also asked that the Stage0 parameter handbook be maintained as the synchronized reference
+- Impact:
+  - future command, observation-dimension, reward, and logging discussions should treat Stage0 as a 2D-command task by default
+  - future Stage0 config edits should not be considered complete unless `docs/RL阶段训练参数一览表.md` is updated at the same time
+- Status:
+  - targeted `python3 -m py_compile` check passed for the modified command / reward / env / allocator files
+
+### MGDP-style explicit terrain height patch migration now uses a terrain-sample path instead of the existing RayCaster height scanner
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_runtime.py`
+  - `docs/current_status.md`
+- Durable implementation conclusion:
+  - the active migration route for explicit terrain heights is no longer based on the existing:
+    - `sensors/sensor_cfg.py:get_height_features()`
+    RayCaster hit path
+  - the chosen route now follows the MGDP-style logic:
+    - define local patch points in `terrain_cfg.py`
+    - preserve the generated `height_field_raw` in `terrain_runtime.py`
+    - provide a runtime world-xy height query API from that height field
+    - later connect the resulting relative height patch only into `critic`
+  - `CompleteCarTerrainRuntimeCfg` now contains the stage-independent patch geometry parameters for scheme one, including:
+    - front extent
+    - rear extent
+    - half width
+    - preview length
+    - margins
+    - x/y resolutions
+    - local patch point generation
+  - `CompleteCarTerrainRuntime` now stores:
+    - `_height_field_raw`
+    - `_horizontal_scale`
+    - `_vertical_scale`
+    - `_border_size`
+    for later height lookup
+  - a runtime bilinear interpolation entry point now exists at:
+    - `sample_heights_world_xy(points_xy_w)`
+  - during this check round, two blocking issues were fixed:
+    - the `num_height_points` typo in `terrain_cfg.py`
+    - the incorrect clearing of `_height_field_raw` during `initialize_after_scene_clone()`, which would have broken generator terrain lookup immediately after setup
+- Reason:
+  - the user explicitly required mimicking the MGDP explicit height-map path for a single long patch referenced to the middle body, not reusing the current RayCaster hit sensor as the main design
+- Impact:
+  - future explicit-height work should continue from:
+    - `terrain_cfg.py`
+    - `terrain_runtime.py`
+    - `env.py`
+    and not from the old height-scanner sensor branch
+  - future critic observation integration should reuse `num_height_points` and `build_patch_local_points(...)` instead of duplicating patch geometry logic elsewhere
+- Status:
+  - targeted `python3 -m py_compile` check passed for the two modified terrain files
+
+### MGDP-style explicit terrain height patch is now wired from env runtime into the critic observation path
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `docs/current_status.md`
+- Durable implementation conclusion:
+  - the env runtime now contains a dedicated helper:
+    - `_compute_critic_height_patch()`
+    that:
+    - expands the local patch points
+    - rotates them by the middle-body yaw only
+    - translates them by the middle-body world position
+    - queries terrain height through `sample_heights_world_xy(...)`
+    - builds relative height as:
+      - `base_z - terrain_height`
+  - the main observation path now uses:
+    - `actor = current actor observation`
+    - `critic = actor + height_patch` when `terrain.measure_heights` is enabled
+  - `compute_critic_observation(actor_obs, height_patch)` was added to keep the actor and critic concatenation logic explicit
+  - `CompleteCarEnvCfg.observation_space` was restored to an explicit dictionary shape so the env history buffer and PPO wrapper can distinguish:
+    - `actor`
+    - `critic`
+    dimensions again
+  - a broken earlier paste in `env.py` had placed `_compute_critic_height_patch()` inside `_reset_idx()` with invalid syntax; this blocking issue was removed in this round
+- Reason:
+  - the user asked to check and correct the third MGDP-migration step, which is the yaw-aligned patch world transform and relative-height construction inside the env runtime
+- Impact:
+  - future work on explicit terrain heights should now branch from the critic path rather than reworking the env structure again
+  - to actually activate this path at runtime, a stage cfg still needs to set:
+    - `terrain.measure_heights = True`
+- Status:
+  - targeted `python3 -m py_compile` check passed for the modified env / observation / cfg files
+
+### Stage1 now explicitly enables the critic terrain-height patch path
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+  - `docs/current_status.md`
+- Durable implementation conclusion:
+  - `CompleteCarStage1EnvCfg` now sets:
+    - `self.terrain.measure_heights = True`
+  - this means the MGDP-style explicit terrain patch path is no longer only wired in code; it is now actually enabled by default in Stage1
+  - with the current patch geometry parameters in `terrain_cfg.py`, the generated local patch grid size is:
+    - `28 x 7 = 196` points
+  - therefore the default single-frame Stage1 observation sizes are now:
+    - `actor = 47`
+    - `critic = 243`
+- Reason:
+  - the previous code path was structurally complete, but Stage1 still left `measure_heights` disabled, so the critic height patch would not have been active at runtime
+- Impact:
+  - future Stage1 training/debugging should expect critic tensors to be larger than actor tensors
+  - Stage0 and Stage2 still keep `measure_heights = False` unless changed explicitly later
+- Status:
+  - targeted static check passed after this enablement fix
+
+### Action randomization now has a single explicit master switch and is currently disabled
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/randomization.py`
+  - `docs/current_status.md`
+- Durable implementation conclusion:
+  - `RandomizationCfg` now contains:
+    - `enable_action_randomization: bool = False`
+    as the master switch for action-side randomization
+  - when this switch is `False`:
+    - action noise / bias config is ignored by `_build_action_noise_model_cfg()`
+    - `sample_motor_strength(...)` always returns ones, even if `randomize_motor_strength` is set elsewhere
+  - this means the current default training path uses deterministic action preprocessing with no action-side randomization
+- Reason:
+  - the user explicitly required adding a switch for action randomization and keeping it disabled at the current stage
+- Impact:
+  - future enabling of action randomization should first set:
+    - `enable_action_randomization = True`
+    and then configure the specific sub-mechanisms such as motor-strength randomization or action noise
+- Status:
+  - targeted `python3 -m py_compile` check passed
+
+### Ball-joint termination limits are now axis-specific instead of using one shared scalar threshold
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+  - `docs/current_status.md`
+- Durable implementation conclusion:
+  - `TerminationCfg` no longer uses one shared:
+    - `soft_ball_joint_pos_limit`
+    scalar for all six ball-joint coordinates
+  - the active termination configuration now uses explicit lower and upper bounds aligned to the controlled-joint order:
+    - `spm1_platform_joint_z`
+    - `spm1_platform_joint_y`
+    - `spm1_platform_joint_x`
+    - `spm2_platform_joint_z`
+    - `spm2_platform_joint_y`
+    - `spm2_platform_joint_x`
+  - the current bounds are:
+    - yaw: `[-0.7, 0.7]`
+    - pitch: `[-1.57, 0.4]`
+    - roll: `[-0.5, 0.5]`
+    and the same triplet is applied to both front and rear modules
+  - `compute_dones(...)` now wraps ball-joint angles to `[-pi, pi]` and checks each dimension against its own lower/upper bound
+- Reason:
+  - the user explicitly clarified that yaw, pitch, and roll have different allowable ranges and must not share one scalar joint-limit threshold
+- Impact:
+  - future changes to ball-joint task limits should update the per-axis lower/upper tuples, not reintroduce a one-size-fits-all scalar bound
+  - later action-range tuning should also respect these asymmetric pitch limits
+- Status:
+  - targeted `python3 -m py_compile` check passed
+
+### Terrain curriculum config and execution logic are now split between `CurriculumCfg` and `mdp/curriculum.py`
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_runtime.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/environment_adaptive/complete_car_stage2_cfg.py`
+- Durable structure conclusion:
+  - terrain curriculum parameters no longer live in `terrain/terrain_cfg.py`
+  - the active parameter entry is now:
+    - `base/complete_car_cfg.py:CurriculumCfg`
+  - the active execution logic no longer lives inside `terrain_runtime.py:update_curriculum(...)`
+  - the active execution logic is now:
+    - `mdp/curriculum.py`
+      for:
+      - initial terrain-level sampling
+      - initial terrain-type sampling
+      - per-reset move-up / move-down updates
+  - `env.py` now calls curriculum functions explicitly in:
+    - `_setup_scene()`
+    - `_reset_idx()`
+  - `terrain_runtime.py` now only keeps:
+    - terrain mesh / height-field runtime data
+    - env-origin synchronization
+    - spawn-offset helpers
+  - stage cfg files now use:
+    - `self.curriculum.enabled`
+    - `self.curriculum.max_init_terrain_level`
+    - `self.curriculum.default_terrain_name`
+    instead of `self.terrain.curriculum` and related fields
+  - during this refactor, one blocking runtime bug was also fixed:
+    - Stage1 had `default_terrain_name = "mix"`
+    - `mix` is not a legal terrain name in `terrain_builder.py`
+    - the active Stage1 default is now:
+      - `default_terrain_name = "flat"`
+- Reason:
+  - the user explicitly required extracting curriculum logic into `mdp/curriculum.py` and moving curriculum parameters into a dedicated class inside `complete_car_cfg.py`
+- Impact:
+  - future curriculum changes should modify `CurriculumCfg` and `mdp/curriculum.py` first
+  - future terrain cfg changes should not reintroduce curriculum policy parameters into `terrain/terrain_cfg.py`
+  - future stage overrides should use `self.curriculum.*` as the single active curriculum interface
+- Status:
+  - full direct-task tree `python3 -m py_compile` check passed after refactor
+
+### Reward set has been simplified by removing vertical-speed, roll/pitch-rate, and ball-joint regularization terms
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- Durable implementation conclusion:
+  - the active reward set no longer includes:
+    - `lin_vel_z`
+    - `ang_vel_xy`
+    - `ball_joint_deviation`
+    - `ball_joint_swing`
+  - the active `REWARD_TERM_NAMES` now contains only:
+    - `tracking_lin_vel`
+    - `tracking_ang_vel`
+    - `tracking_heading`
+    - `orientation`
+    - `action_rate`
+    - `termination`
+  - `RewardScalesCfg` has been aligned to that reduced set
+  - `RewardCfg.ball_joint_target` has also been removed because no active reward term depends on it anymore
+- Reason:
+  - the user explicitly required deleting those four reward terms instead of merely zeroing their weights
+- Impact:
+  - future reward tuning should start from the reduced set above rather than assuming vertical-speed or ball-joint regularization penalties still exist
+  - later analyses of reward logs should not expect per-episode outputs for the removed terms
+- Status:
+  - targeted `python3 -m py_compile` check passed after removal
+
+### A Stage0 RL training parameter handbook now exists under `docs/`
+- Updated:
+  - `docs/RL阶段训练参数一览表.md`
+- Durable documentation conclusion:
+  - a dedicated Stage0 training-parameter handbook now exists and records the active code-defined setup in one place
+  - the document is organized by RL runtime order and includes:
+    - sim / scene
+    - terrain
+    - robot and actuators
+    - reset
+    - commands
+    - observations
+    - actions
+    - rewards
+    - terminations
+    - randomization
+    - curriculum
+    - PPO hyperparameters
+  - it also records active dimensions and core mathematical formulas, including:
+    - command transform
+    - observation concatenation
+    - asymmetric action-to-joint mapping
+    - reward equations
+    - termination equations
+    - PPO / GAE equations
+- Reason:
+  - the user explicitly required a single Chinese document summarizing the entire Stage0 RL environment and PPO setup with dimensions and formulas
+- Impact:
+  - future Stage0 discussions should prefer this document as the first parameter checklist instead of rediscovering values from scattered config files
+  - when Stage0 parameters change materially, this document should be updated together with the code
+- Status:
+  - documentation file created
+
+### `terrain.flat_only_reset` has been removed from the active direct-workflow terrain/curriculum path
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/environment_adaptive/complete_car_stage2_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+- Durable implementation conclusion:
+  - the active direct-workflow code no longer defines or uses:
+    - `terrain.flat_only_reset`
+  - initial terrain-type assignment in generator mode now always follows the distributed per-column initialization implemented in:
+    - `mdp/curriculum.py:_build_initial_terrain_types(...)`
+  - stage cfg files no longer override `flat_only_reset`
+- Reason:
+  - the user explicitly required deleting `flat_only_reset` instead of keeping it as an inactive compatibility field
+- Impact:
+  - future terrain/curriculum changes should not rely on a flat-only-reset toggle
+  - if a later experiment needs "spawn only on one terrain type", that behavior should be redesigned explicitly instead of reviving this removed field
+- Status:
+  - targeted `py_compile` check passed
+
+### The Stage0 parameter handbook math notation was corrected after two rendering/compilation issues were found
+- Updated:
+  - `docs/RL阶段训练参数一览表.md`
+- Durable documentation conclusion:
+  - the Stage0 handbook no longer contains the malformed root-position reset formula that had dropped the two `+` terms
+  - the command-transform matrix notation was also corrected to use a clean:
+    - `\times 10^{-5}`
+    form instead of the broken tab-containing expression
+- Reason:
+  - the user explicitly requested fixing formulas and symbols in the handbook that did not compile/render successfully
+- Impact:
+  - future edits to the handbook should keep formulas in renderer-safe LaTeX form and avoid hidden control characters in math blocks
+- Status:
+  - affected sections updated
+
+### The Stage0 parameter handbook now uses one consistent Markdown math style
+- Updated:
+  - `docs/RL阶段训练参数一览表.md`
+- Durable documentation conclusion:
+  - the Stage0 handbook no longer mixes:
+    - `\[\]`
+    - `\(\)`
+    styles with other math markers
+  - the active convention is now:
+    - display math uses `$$ ... $$`
+    - inline math uses `$ ... $`
+  - this normalization was applied across:
+    - reset formulas
+    - command transform
+    - observation formulas
+    - action mapping formulas
+    - reward formulas
+    - termination formulas
+    - PPO / GAE formulas
+- Reason:
+  - the user explicitly required rechecking the handbook and unifying all math notation into a Markdown-friendlier style
+- Impact:
+  - future edits to this handbook should follow the same `$$ / $` convention instead of reintroducing mixed LaTeX delimiters
+- Status:
+  - no remaining `\[\]` or `\(\)` delimiters in the file after the cleanup
+
+### Ball-joint action mapping now uses per-joint lower/upper bounds instead of one shared action scale
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+  - `docs/current_status.md`
+- Durable implementation conclusion:
+  - the ball-joint target mapping no longer uses one shared:
+    - `ball_joint_action_scale`
+    with:
+    - `target = default + action * scale`
+  - the active action semantics now interpret policy outputs as normalized actions in:
+    - `[-1, 1]`
+  - for each joint, the target is now mapped relative to its own configured lower/upper limits, while preserving:
+    - `action = 0 -> default joint position`
+    - `action = 1 -> joint upper limit`
+    - `action = -1 -> joint lower limit`
+  - this mapping is asymmetric when the allowed joint range is asymmetric, which is especially important for:
+    - pitch: `[-1.57, 0.4]`
+  - the PPO-side clip passed to the wrapper was also aligned to:
+    - `clip_actions = 1.0`
+    so the policy and env now share the same normalized-action domain
+- Reason:
+  - the user explicitly required removing the old shared action-scale mapping and replacing it with per-joint normalized mapping based on each joint's own limits
+- Impact:
+  - future action-range tuning should update the per-joint lower/upper limit tuples instead of reintroducing one global physical action scale
+  - the task now has consistent semantics between:
+    - action preprocessing
+    - joint-target mapping
+    - per-axis termination limits
+- Status:
+  - targeted `python3 -m py_compile` check passed
+
+### Actor / Critic observation groups are now explicit, and critic currently mirrors actor
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+- Durable implementation conclusion:
+  - the env no longer exposes the main proprioceptive input only as a single:
+    - `policy`
+    observation group
+  - the active observation interface is now:
+    - `actor`
+    - `critic`
+  - the PPO runner config now maps:
+    - actor -> `["actor"]`
+    - critic -> `["critic"]`
+  - the current `critic` observation is intentionally the same tensor as the current `actor` observation
+  - the current actor/critic observation content is:
+    - `base_lin_vel_b`
+    - `base_ang_vel_b`
+    - `projected_gravity_b`
+    - `ball_joint_pos`
+    - `ball_joint_vel`
+    - `ball_joint_target_error`
+    - `head_car_abs_rp`
+    - `tail_car_abs_rp`
+    - `wheel_joint_vel`
+    - `commands`
+    - `last_action`
+  - the ball-joint tracking term is implemented as:
+    - wrapped `(target - current_position)`
+    for the six controlled spherical-joint coordinates
+  - the head/tail absolute roll-pitch terms are now read from:
+    - `head_car_chassis`
+    - `tail_car_chassis`
+    world quaternions through `robot.find_bodies(...)` and `robot.data.body_quat_w`
+  - the single-frame actor/critic observation dimension is now:
+    - `47`
+  - `CompleteCarEnvCfg.observation_space` is now described explicitly as:
+    - `{"actor": 47-or-history-expanded, "critic": 47-or-history-expanded}`
+    instead of a single flat observation size
+- Reason:
+  - the user required splitting the observation path into actor and critic groups, and expanding the policy-visible state with joint-target error, module absolute roll/pitch, and wheel-speed terms
+- Impact:
+  - future observation changes should edit the explicit actor/critic path rather than reintroducing a single `policy`-only mainline
+  - future training/debugging should treat Stage2 sensors as runtime side channels unless they are explicitly re-added into the actor/critic observation descriptor
+  - future critic-specific privileged-observation work can now branch cleanly from the existing `critic` group without restructuring the runner again
+- Status:
+  - targeted and package-wide `python3 -m py_compile` checks passed for the current `complete_car` task tree
 
 ## 2026-04-11
 
@@ -3162,6 +3653,29 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - new helper functions, custom command classes, and env runtime code should be added to sibling files under `envs/base/`, not back into `complete_car_config.py`
 - Status:
   - static `py_compile` validation passed
+
+## 2026-04-14
+
+### GitHub tracking scope now excludes the local thesis workspace and literature corpus
+- Updated:
+  - `.gitignore`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable repository conclusion:
+  - the repository root `.gitignore` now ignores:
+    - `毕业论文/`
+    - `docs/literature/`
+    - `.~lock*`
+  - `毕业论文/` and `docs/literature/` remain local project resources, but they are no longer intended to be tracked in GitHub
+  - the active sync strategy is to remove any already tracked remote copies of those two directories through Git index deletion while preserving the local files
+- Reason:
+  - the user explicitly required keeping thesis-writing materials and literature assets local-only while continuing to sync the engineering mainline to GitHub
+- Impact:
+  - future pushes should not re-add `毕业论文/` or `docs/literature/` unless the repository-scope decision is explicitly changed
+  - future temporary office lock files matching `.~lock*` should stay out of version control by default
+- Status:
+  - repository sync preparation updated
 
 ### RL mainline has been simplified again: `baseline/` now keeps only one override file, and terrain generation moved to `utils/terrain.py`
 - Date:

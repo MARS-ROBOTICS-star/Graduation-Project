@@ -13,9 +13,8 @@ class CompleteCarStage2EnvCfg(CompleteCarEnvCfg):
         self.scene.num_envs = 256
         self.terrain.enabled = True
         self.terrain.mode = "generator"
-        self.terrain.curriculum = True
-        self.terrain.flat_only_reset = False
-        self.terrain.max_init_terrain_level = 5
+        self.curriculum.enabled = True
+        self.curriculum.max_init_terrain_level = 5
 
         self.sensors.imu.enabled = True
         self.sensors.stereo_camera.enabled = True

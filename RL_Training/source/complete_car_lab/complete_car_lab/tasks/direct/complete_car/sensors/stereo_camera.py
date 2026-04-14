@@ -12,7 +12,7 @@ from isaaclab.utils import configclass
 @configclass
 class StereoCameraSensorCfg:
     enabled: bool = False
-    prim_path: str = "{ENV_REGEX_NS}/Robot/head_car_chassis/Stereo_rig/left_camera"
+    prim_path: str = "{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis/Stereo_Vision_Camera/Camera_left"
     update_period: float = 0.1
     height: int = 64
     width: int = 64
@@ -26,8 +26,7 @@ class StereoCameraSensorCfg:
     offset_convention: str = "ros"
     include_in_policy: bool = True
 
-    @property
-    def policy_feature_dim(self) -> int:
+    def get_policy_feature_dim(self) -> int:
         if not self.enabled or not self.include_in_policy:
             return 0
         dim = 0

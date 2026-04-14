@@ -7,7 +7,11 @@
 ## 当前阶段
 - 已完成 `RL_Training/` 原地重构。
 - 已按用户要求把旧 `IK/FK`、本地 `rsl_rl` 本体、旧辅助脚本重新迁入新架构内部。
-- 当前进入“等待真实 Isaac Lab 环境做运行态冒烟验证，并继续接入 MGDP 风格显式地形高度 patch 到 critic 观测”的阶段。
+- 已完成一轮真实训练入口冒烟，已清除启动链路中的 `configclass` / Hydra 配置阻塞。
+- 已完成 `Stage0` 在真实 GPU 环境下的最小训练启动验证。
+- 已完成一次真实 `Stage0` run 的日志诊断，并补齐训练日志 / TensorBoard 指标埋点。
+- 已完成一轮 Stage0 奖励收敛实验串行搜索，并确定当前最优已验证配置。
+- 当前进入“固定当前最优 Stage0 配置，并继续接入 MGDP 风格显式地形高度 patch 到 critic 观测”的阶段。
 
 ## 当前 RL 主线位置
 - 当前活跃 RL 工作区：
@@ -130,6 +134,114 @@
 - 最近已修正一个旧配置问题：
   - `Stage1` 中的 `default_terrain_name = "mix"` 不是合法 terrain 名称
   - 当前已改为 `"flat"`
+- 最近已修正 direct workflow 训练启动链路中的一组配置类阻塞：
+  - `TerrainBindingCfg` 不再继承只读 `num_height_points` property
+  - `SensorBindingCfg` 不再继承只读 `policy_feature_dim` property
+  - `terrain.generator` 使用的 `Stage1TerrainCfg` 不再是 `frozen dataclass`
+  - 真实训练入口已可越过 Hydra 配置注册与 `env_cfg` 构建阶段，进入 Isaac Lab 仿真上下文创建
+- 最近已修正 direct workflow 资产 prim 路径与 USD 实际层级不一致的问题：
+  - articulation root 真实位于 `complete_car_alternative/body_car_chassis`
+  - IMU 真实 prim 为 `Imu_Sensor`
+  - 双目左相机真实 prim 为 `Stereo_Vision_Camera/Camera_left`
+  - LiDAR 真实 prim 为 `Example_Rotary`
+  - 当前 `Stage0` 已通过：
+    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 1 --max_iterations 1`
+    的真实 GPU 最小训练启动测试，并完成 1 次学习迭代
+- 最近已完成 Stage0 日志与 TensorBoard 指标补强：
+  - 已分析：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_12-48-16`
+  - 该次 run 当前只有 21 个 scalar tag
+  - 原因已确认是：
+    - env 只在 reset 时写少量 `episode/...` 项
+    - logger 未持续聚合当前观测 / 动作 / 跟踪误差 / 终止分解
+  - 当前已在代码中补入以下指标分组：
+    - `Reward/...`
+    - `Tracking/...`
+    - `Action/...`
+    - `Command/...`
+    - `Observation/...`
+    - `Termination/...`
+    - `episode_per_step/...`
+    - `episode_reset/...`
+  - 当前 `tensorboard_export.py` 已补充导出：
+    - `group_summary.csv`
+    - 带 `group / first / last / delta / min / max / mean` 列的 `latest_values.csv`
+- 最近已修正一次回放链路断点：
+  - `python scripts/play.py --task CompleteCar-Stage0 --load_run 2026-04-14_12-48-16 --num_envs 2`
+    原先会因 `load_checkpoint = -1` 被传入 Isaac Lab `get_checkpoint_path()` 而报：
+    - `TypeError: first argument must be string or compiled pattern`
+  - 当前已修正：
+    - `agents/rsl_rl_ppo_cfg.py` 中默认 `load_run / load_checkpoint` 改为字符串正则
+    - `scripts/train.py` / `scripts/play.py` 在调用 `get_checkpoint_path()` 前会再做一次类型归一化
+- 最近已修正一次回放链路版本判断断点：
+  - 本地 vendored `rsl_rl.__version__` 原先是：
+    - `5.0.1-local`
+  - `play.py` 用 `packaging.version.parse()` 解析时会报：
+    - `InvalidVersion: '5.0.1-local'`
+  - 当前已修正：
+    - vendored 版本号改为合法写法 `5.0.1+local`
+    - `scripts/play.py` 的版本解析增加了 `-local -> +local` 的兼容归一化
+- 最近已完成对真实 Stage0 run：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-07-32`
+    的首轮结果分析
+  - 当前已确认：
+    - 新增日志链路已生效，scalar tag 数量由旧 run 的 `21` 增至 `64`
+    - 当前高层训练曲线与上一轮 `2026-04-14_12-48-16` 数值一致，说明在相同 seed 与配置下复现实验结果稳定
+    - 当前 last50 均值大致为：
+      - `Train/mean_reward ≈ 2196`
+      - `Train/mean_episode_length ≈ 716`
+      - `Tracking/lin_vel_x_abs_error ≈ 0.084`
+      - `Tracking/ang_vel_yaw_abs_error ≈ 0.388`
+      - `Reward/total ≈ 3.107`
+      - `Observation/tilt_deg ≈ 3.11`
+    - 当前主要剩余终止来源不是：
+      - `bad_orientation`
+      - `root_too_low`
+    - 而是：
+      - `ball_joint_limit`
+  - 当前日志还显示：
+    - `Action/policy_abs_mean ≈ 0.886`
+    - `Action/policy_std ≈ 0.815`
+    - policy 动作整体较频繁逼近动作边界
+    - 这与当前球铰越界终止仍占较大比例相一致
+- 最近已按用户确认新增球铰软约束惩罚，并完成真实 GPU 对比训练：
+  - 新增奖励项：
+    - `ball_joint_limit_soft`
+  - 当前实现语义：
+    - 仅当球铰使用率超过各自可用范围的 `80%` 后开始激活
+    - 对 6 个球铰取均值后施加二次惩罚
+    - 当前 scale：
+      - `-0.2`
+  - 对比 run：
+    - baseline：
+      - `2026-04-14_13-07-32`
+    - soft limit：
+      - `2026-04-14_13-36-38_soft_limit_v1`
+  - 当前 last50 均值对比显示：
+    - `Train/mean_reward`：
+      - `2196 -> 2387`
+    - `Train/mean_episode_length`：
+      - `716 -> 743`
+    - `Tracking/ang_vel_yaw_abs_error`：
+      - `0.388 -> 0.310`
+    - `episode_reset/ball_joint_limit_rate`：
+      - `0.395 -> 0.344`
+    - `episode_reset/time_out_rate`：
+      - `0.605 -> 0.656`
+  - 但同时出现明显 tradeoff：
+    - `Observation/tilt_deg`：
+      - `3.11 -> 6.85`
+    - `Reward/orientation` 更负
+    - `Action/policy_abs_mean` 仅小幅下降：
+      - `0.886 -> 0.876`
+    - `Action/policy_std` 反而上升：
+      - `0.815 -> 0.895`
+  - 当前 `Policy/mean_std` 已下降：
+    - `0.722 -> 0.641`
+    说明分布参数层面的探索强度在下降
+  - 但 runtime 动作分布仍偏激进，说明当前更多是 policy 均值输出在逼近大动作，而不只是采样噪声过大
+  - 当前 `Loss/value` 仍明显波动，不可视为严格收敛
+  - 但结合 reward、tracking、episode length 的改善，当前不能把“value loss 未单调下降”直接解释为训练失败
 - 毕业论文 `chapter_03` 的速度雅可比推导已统一为由单一标量 `b` 定义的前后镜像偏置 `${}^{1}\mathbf b=[-b,0,0]^T`、`${}^{3}\mathbf b=[b,0,0]^T`，即仅保留 `x` 分量且 `y=z=0`，LaTeX 已完成通过式编译验证。
 
 ## 当前默认设计选择
@@ -211,7 +323,29 @@
     - `tracking_ang_vel`
     - `orientation`
     - `action_rate`
+    - `ball_joint_limit_soft`
     - `termination`
+  - 当前新增球铰软约束惩罚：
+    - 只在球铰使用率超过各自可用范围的 `80%` 后开始生效
+    - 当前按 6 个球铰均值计算二次惩罚
+    - 当前 scale：
+      - `ball_joint_limit_soft = -0.2`
+  - 当前 Stage0 局部覆写为：
+    - `orientation = -3.0`
+  - 当前最优已验证 run：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-48-25_soft_limit_v1_orient3`
+  - 当前 last50 结果大致为：
+    - `Train/mean_reward ≈ 2779`
+    - `Train/mean_episode_length ≈ 893`
+    - `Tracking/lin_vel_x_abs_error ≈ 0.141`
+    - `Tracking/ang_vel_yaw_abs_error ≈ 0.344`
+    - `Observation/tilt_deg ≈ 2.03`
+    - `episode_reset/terminated_rate ≈ 0.085`
+    - `episode_reset/time_out_rate ≈ 0.915`
+  - 本轮继续尝试过：
+    - `orientation = -2.5`
+    - `orientation = -3.0 + tracking_lin_vel = 2.2`
+    均未超过当前最优配置
   - 当前已从 `rewards.py` 和 `RewardScalesCfg` 中删除：
     - `lin_vel_z`
     - `ang_vel_xy`
@@ -233,16 +367,23 @@
     - `critic = 45 + num_height_points`
 
 ## 当前阻塞 / 风险
-- 当前机器没有 Isaac Lab 运行环境，因此本轮只能完成代码重构和静态语法检查。
+- 当前对话终端本身不是可直接反复长时间试错 Isaac Lab 训练的 shell，因此后续每一轮训练修改仍应尽量保持单变量。
+- 当前 Stage0 的“稳定性更强”与“前向误差更小”之间仍有 tradeoff：
+  - `orientation = -3.0` 版本显著更稳
+  - 但 `Tracking/lin_vel_x_abs_error` 仍高于 baseline
 - 当前终端的 `python3` 也缺少 `numpy`，因此本轮无法在这里直接跑通：
   - `utils/validate_wheel_speed_allocator.py`
 - 尚未在真实 Isaac Lab 环境中验证：
-  - 任务注册能否被 Isaac Lab 正常发现
-  - `scripts/train.py` 能否正常启动 `CompleteCar-Stage0` 并优先导入项目内 `complete_car/rsl_rl`
-  - `scripts/play.py` 能否正常加载 checkpoint 并优先导入项目内 `complete_car/rsl_rl`
+  - `scripts/play.py` 是否已在当前这批修复后继续稳定加载 checkpoint、通过版本判断分支，并优先导入项目内 `complete_car/rsl_rl`
 - 当前 `RL_Training/` 结构已切换为新架构，后续不要再把旧的历史路径当作默认入口。
 
 ## 下一步优先级
+- 先以当前最优 Stage0 配置作为默认起点继续：
+  - `ball_joint_limit_soft = -0.2`
+  - `orientation = -3.0`
+- 后续若继续做 Stage0 奖励搜索，应继续保持单变量，并优先考虑：
+  - 是否需要略提高 `tracking_lin_vel` 的同时补更强的动作约束，而不是直接削弱姿态惩罚
+  - 是否需要改 `action_rate` 而不是继续扫 `orientation`
 - 继续把显式地形高度 patch 从 terrain runtime 接到 env / critic 观测：
   - 验证 `critic` 维度大于 `actor`
   - 在真实 Isaac Lab 环境里检查 patch 数值是否随 terrain 起伏变化

@@ -9,7 +9,7 @@ from isaaclab.utils import configclass
 @configclass
 class LidarSensorCfg:
     enabled: bool = False
-    prim_path: str = "{ENV_REGEX_NS}/Robot/head_car_chassis/Example_Rotary"
+    prim_path: str = "{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis/Example_Rotary"
     update_period: float = 0.1
     horizontal_fov_range: tuple[float, float] = (-60.0, 60.0)
     vertical_fov_range: tuple[float, float] = (-10.0, 10.0)
@@ -23,8 +23,7 @@ class LidarSensorCfg:
     policy_num_bins: int = 16
     include_in_policy: bool = True
 
-    @property
-    def policy_feature_dim(self) -> int:
+    def get_policy_feature_dim(self) -> int:
         return self.policy_num_bins if self.enabled and self.include_in_policy else 0
 
     def build_cfg(self, ground_prim_path: str) -> RayCasterCfg:

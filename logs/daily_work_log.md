@@ -4846,6 +4846,93 @@
 ## 2026-04-14
 
 已完成：
+- 继续处理 `RL_Training/scripts/train.py` 在真实 GPU 训练启动阶段的 articulation 创建失败问题。
+- 使用最小 Isaac Sim headless 检查脚本读取 `USD/complete_car.usd` 的真实 prim 层级，确认：
+  - 资产根在 `/World/complete_car_alternative`
+  - articulation root 在 `/World/complete_car_alternative/body_car_chassis`
+  - IMU 实际 prim 名为 `Imu_Sensor`
+  - 双目左相机实际 prim 名为 `Stereo_Vision_Camera/Camera_left`
+  - LiDAR 实际 prim 名为 `Example_Rotary`
+- 修改 `assets/robot_cfg.py`：
+  - `COMPLETE_CAR_ARTICULATION_ROOT_PRIM_PATH` 改为 `/complete_car_alternative/body_car_chassis`
+- 修改传感器与 height scanner 路径：
+  - `sensors/imu.py`
+  - `sensors/lidar.py`
+  - `sensors/stereo_camera.py`
+  - `terrain/terrain_cfg.py`
+  统一补上 `complete_car_alternative` 中间层，并改为 USD 中真实存在的传感器 prim 名称
+- 使用：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
+  完成静态编译检查，检查通过。
+- 在沙箱外 GPU 环境执行最小训练命令：
+  - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 1 --max_iterations 1`
+- 实测结果：
+  - articulation 创建成功
+  - 仿真启动成功
+  - actor/critic 网络构建成功
+  - 完成 1 次 PPO 学习迭代
+  - `Training time: 0.83 seconds`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前用户这次遇到的训练启动失败已经解决。
+- 根因是代码中的 articulation root 与传感器 prim 路径没有对齐 USD 内部的 `complete_car_alternative` 根层级及真实传感器命名。
+- 当前 `Stage0` 已恢复为可在真实 GPU 环境中正常完成最小训练启动与 1 次学习迭代的状态。
+
+已完成：
+- 处理 `RL_Training/scripts/train.py` 启动时报错的配置类阻塞问题。
+- 修改 `terrain/terrain_cfg.py`：
+  - 删除会被 Isaac Lab `configclass` 误当作可写成员的只读 `num_height_points` property
+  - 改为通过 `get_num_height_points()` 与内部即时采样点解析逻辑计算 patch 点数
+- 修改 `base/complete_car_cfg.py` 与 `utils/io_descriptors.py`：
+  - 调整为调用 `terrain.get_num_height_points()`
+- 修改 `sensors/imu.py`、`sensors/lidar.py`、`sensors/stereo_camera.py`、`sensors/sensor_cfg.py`：
+  - 删除 `policy_feature_dim` 只读 property
+  - 改为统一使用 `get_policy_feature_dim()`
+- 修改 `terrain/terrain_builder.py`：
+  - 将 `Stage1TerrainCfg` 从 `frozen dataclass` 改为普通 dataclass
+  - 使 Hydra 可以回写 terrain generator 嵌套配置
+- 使用：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
+  完成静态编译检查，检查通过。
+- 使用：
+  - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cpu --num_envs 1 --max_iterations 1`
+  做真实训练入口冒烟验证。
+- 结果：
+  - 已确认原始启动报错链路不再出现
+  - 训练入口已越过 Hydra 配置注册与 `env_cfg` 构建，进入 Isaac Lab 仿真上下文创建
+  - 当前继续看到的是环境级问题：
+    - 无 CUDA 驱动 / 无可用 GPU
+    - Isaac Sim `user.config.json` 与 cache 目录写入受限
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 direct workflow 的配置树中，不应再用继承只读 property 来表示可推导配置量。
+- 当前 terrain generator 嵌套配置必须保持可写，不能继续使用 `frozen dataclass`。
+- 用户本次贴出的训练启动报错已经解决；若后续仍无法跑通，应转而排查本机 Isaac Sim 运行环境而不是继续回到这组配置类问题。
+
+已完成：
 - 按用户要求调整 GitHub 同步范围：
   - 保留所有当前代码与文档改动进入本轮同步
   - 排除 `.~lock*` 临时锁文件
@@ -4871,3 +4958,338 @@
 产出/结论：
 - 后续 GitHub 远端仓库将不再保存论文正文目录与文献资料目录。
 - 这两个目录今后默认只作为本地研究工作区保留。
+
+已完成：
+- 按用户要求更新并精简 `docs/training_workflow_and_tensorboard_guide.md`。
+- 删除文档中已失效的旧工程路径与旧 task id：
+  - `src/rl_lab/complete_car_rl_training`
+  - `Complete-Car-Rl-Training-v0`
+- 文档现已统一改为当前有效主线：
+  - `RL_Training/`
+  - `scripts/train.py`
+  - `scripts/play.py`
+  - `CompleteCar-Stage0/1/2`
+- 文档内容已收口为最小工作流：
+  - 环境准备
+  - 训练命令
+  - 回放命令
+  - 日志与 checkpoint 目录
+  - TensorBoard 查看命令
+  - 离线导出 TensorBoard 标量命令
+
+修改文件：
+- `docs/training_workflow_and_tensorboard_guide.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前训练流程说明文档已与现有代码结构一致，可直接作为 `RL_Training/` 主线的简明操作入口使用。
+
+已完成：
+- 分析真实 Stage0 run：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_12-48-16`
+- 已确认该次 run 的 TensorBoard 当前只有 21 个 scalar tag，不是 TensorBoard 故障，而是训练日志覆盖面不足。
+- 已根据当前 active 语义补强训练日志链路：
+  - `env.py` 现可输出当前步的：
+    - `Reward/...`
+    - `Tracking/...`
+    - `Action/...`
+    - `Command/...`
+    - `Observation/...`
+    - `Termination/...`
+  - 终止逻辑已拆成显式分项：
+    - `bad_orientation`
+    - `ball_joint_out_of_bounds`
+    - `root_too_low`
+    - `time_out`
+  - episode 侧新增：
+    - `episode/return`
+    - `episode/return_per_step`
+    - `episode_per_step/...`
+    - `episode_reset/...`
+- 已修改 TensorBoard 离线导出脚本：
+  - 新增 `group_summary.csv`
+  - `latest_values.csv` 新增：
+    - `group`
+    - `first_value`
+    - `last_value`
+    - `delta`
+    - `min_value`
+    - `max_value`
+    - `mean_value`
+- 已执行：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py`
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py --run_dir RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_12-48-16`
+  均已通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前代码已经补齐新一轮训练应当输出的大部分核心运行指标。
+- 旧 run `2026-04-14_12-48-16` 的 event 文件不会自动长出新 tag；需要重新跑一次训练才能验证新增指标是否进入 TensorBoard。
+
+已完成：
+- 定位并修正一次回放链路报错。
+- 用户执行：
+  - `python scripts/play.py --task CompleteCar-Stage0 --load_run 2026-04-14_12-48-16 --num_envs 2`
+  时，原先会报：
+  - `TypeError: first argument must be string or compiled pattern`
+- 根因已确认：
+  - `agents/rsl_rl_ppo_cfg.py` 中默认：
+    - `load_run = -1`
+    - `load_checkpoint = -1`
+  - 但 Isaac Lab 的 `get_checkpoint_path()` 需要的是正则字符串，而不是整数哨兵值。
+- 当前已修正：
+  - `agents/rsl_rl_ppo_cfg.py`
+    - 改为：
+      - `load_run = ".*"`
+      - `load_checkpoint = "model_.*.pt"`
+  - `scripts/train.py`
+  - `scripts/play.py`
+    - 在调用 `get_checkpoint_path()` 前新增类型归一化，避免旧整数值再次导致崩溃
+- 已执行：
+  - `python3 -m py_compile RL_Training/scripts/train.py RL_Training/scripts/play.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+  - 并做了本地选择器归一化检查，确认：
+    - `load_run='2026-04-14_12-48-16', load_checkpoint=-1`
+    会被转换为：
+    - `('2026-04-14_12-48-16', 'model_.*.pt')`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+- `RL_Training/scripts/train.py`
+- `RL_Training/scripts/play.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前回放命令在只指定 `--load_run` 时，逻辑上应会自动选择该 run 下最新的 `model_*.pt`，不应再因为 `-1` 类型错误崩溃。
+
+已完成：
+- 继续修正同一回放链路中的下一处报错。
+- 用户再次执行回放时，原先会报：
+  - `packaging.version.InvalidVersion: '5.0.1-local'`
+- 根因已确认：
+  - 本地 vendored `rsl_rl/__init__.py` 中版本号写成了：
+    - `5.0.1-local`
+  - `scripts/play.py` 中使用 `packaging.version.parse()` 做版本分支判断，这个字符串不符合 PEP 440。
+- 当前已修正：
+  - `rsl_rl/__init__.py`
+    - 改为：
+      - `5.0.1+local`
+  - `scripts/play.py`
+    - 增加版本兼容解析函数，若遇到旧的 `-local` 后缀会先归一化再解析
+- 已执行：
+  - `python3 -m py_compile RL_Training/scripts/play.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/__init__.py`
+  - 本地纯 Python 验证：
+    - `5.0.1-local`
+    - `5.0.1+local`
+    均可被当前回放辅助函数归一化并通过比较
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/__init__.py`
+- `RL_Training/scripts/play.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前回放链路已连续修掉：
+  - checkpoint 选择器类型错误
+  - vendored 版本号解析错误
+- 还需要在真实 Isaac Lab 环境里继续执行一次回放，确认后续运行时链路没有新的阻塞。
+
+已完成：
+- 分析真实 Stage0 run：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-07-32`
+- 已确认本次 run 的新增日志链路已实际写入 event 文件：
+  - scalar tag 数量为 `64`
+  - 分组已包含：
+    - `Action`
+    - `Command`
+    - `Reward`
+    - `Tracking`
+    - `Observation`
+    - `Termination`
+    - `episode_per_step`
+    - `episode_reset`
+- 当前 run 的高层训练结果与上一轮：
+  - `2026-04-14_12-48-16`
+  在旧共有指标上数值一致，说明相同 seed / 配置下复现稳定。
+- 本次 run 的 last50 结果大致为：
+  - `Train/mean_reward ≈ 2196`
+  - `Train/mean_episode_length ≈ 716`
+  - `Tracking/lin_vel_x_abs_error ≈ 0.084`
+  - `Tracking/ang_vel_yaw_abs_error ≈ 0.388`
+  - `Reward/total ≈ 3.107`
+  - `Observation/tilt_deg ≈ 3.11`
+- 当前主要剩余终止来源不是：
+  - `bad_orientation`
+  - `root_too_low`
+  而是：
+  - `ball_joint_limit`
+- 同时当前动作指标显示：
+  - `Action/policy_abs_mean ≈ 0.886`
+  - `Action/policy_std ≈ 0.815`
+  说明 policy 动作整体较激进，和球铰越界终止现象一致。
+- 已执行：
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py --run_dir RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-07-32`
+  并完成 event 标量统计与上一轮 run 对比。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 新日志体系已经在真实 run 中验证生效。
+- 当前 Stage0 下一轮更应该优先处理球铰越界终止，而不是姿态倾覆或车体高度问题。
+
+已完成：
+- 按用户确认执行方案一，新增球铰软约束惩罚：
+  - `ball_joint_limit_soft`
+- 当前实现位置：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- 当前实现语义：
+  - 仅当球铰利用率超过可用范围的 `80%` 后激活
+  - 按默认位姿到硬 limit 的相对使用率计算
+  - 对 6 个球铰取均值
+  - 使用二次惩罚
+  - 当前 scale 为：
+    - `-0.2`
+- 同步更新：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+- 已执行真实 GPU 训练：
+  - `cd /home/ubuntu/Graduation-Project/RL_Training`
+  - `source /home/ubuntu/miniconda3/etc/profile.d/conda.sh && conda activate env_isaacLab`
+  - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 64 --run_name soft_limit_v1`
+- 本轮新 run：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-36-38_soft_limit_v1`
+- 已执行离线导出：
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py --run_dir RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-36-38_soft_limit_v1`
+- 与 baseline：
+  - `2026-04-14_13-07-32`
+  的 last50 对比结果：
+  - `Train/mean_reward`：
+    - `2196 -> 2387`
+  - `Train/mean_episode_length`：
+    - `716 -> 743`
+  - `Tracking/ang_vel_yaw_abs_error`：
+    - `0.388 -> 0.310`
+  - `episode_reset/ball_joint_limit_rate`：
+    - `0.395 -> 0.344`
+  - `episode_reset/time_out_rate`：
+    - `0.605 -> 0.656`
+  - 但 `Observation/tilt_deg`：
+    - `3.11 -> 6.85`
+    出现明显上升
+- 额外结论：
+  - `Loss/value` 仍明显波动，不是单调收敛
+  - 但结合奖励、tracking、episode length 的改善，当前不能把 value loss 波动直接解释成训练失败
+  - 当前问题已从“球铰越界明显”变成“软约束改善 joint-limit reset，但带来了更大的姿态倾角”
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 方案一已真实跑通并完成结果对比。
+- 当前 soft limit 方向有效，但下一轮应围绕“压回姿态倾角”做单变量修正，而不是回退这个软约束项。
+
+已完成：
+- 按用户要求进入自动奖励优化循环，对 Stage0 又连续执行了 2 轮真实 GPU 单变量训练，并在每轮结束后导出 TensorBoard 标量做后 50 次均值对比。
+- 第 1 轮：
+  - 将 `Stage0` 的 `orientation` 权重从 `-3.0` 回调到 `-2.5`
+  - 训练命令：
+    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 64 --run_name soft_limit_v1_orient25`
+  - run：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-57-08_soft_limit_v1_orient25`
+  - 导出命令：
+    - `python source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py --run_dir logs/rsl_rl/complete_car_stage0/2026-04-14_13-57-08_soft_limit_v1_orient25`
+- 第 2 轮：
+  - 以当前最稳的 `orientation = -3.0` 版本为底座，临时把 `tracking_lin_vel` 提高到 `2.2`
+  - 训练命令：
+    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 64 --run_name soft_limit_v1_orient3_lin22`
+  - run：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_14-04-19_soft_limit_v1_orient3_lin22`
+  - 导出命令：
+    - `python source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py --run_dir logs/rsl_rl/complete_car_stage0/2026-04-14_14-04-19_soft_limit_v1_orient3_lin22`
+- 已将 `Stage0` 当前代码恢复到本轮验证后的最优已知配置：
+  - `orientation = -3.0`
+  - 保留 `ball_joint_limit_soft = -0.2`
+- 已同步更新：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 5 个可比 run 中，最优已验证配置仍然是：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-48-25_soft_limit_v1_orient3`
+- 其 last50 关键结果大致为：
+  - `Train/mean_reward ≈ 2779`
+  - `Train/mean_episode_length ≈ 893`
+  - `Tracking/lin_vel_x_abs_error ≈ 0.141`
+  - `Tracking/ang_vel_yaw_abs_error ≈ 0.344`
+  - `Observation/tilt_deg ≈ 2.03`
+  - `episode_reset/terminated_rate ≈ 0.085`
+  - `episode_reset/time_out_rate ≈ 0.915`
+- `orientation = -2.5` 虽然比 `-3.0` 更像折中，但稳定性明显退化：
+  - `episode_reset/terminated_rate ≈ 0.191`
+  - `tilt_deg ≈ 4.02`
+- `tracking_lin_vel = 2.2` 虽然把 `Reward/tracking_lin_vel` 提高到约 `1.91`，但真实前向误差并没有改善，反而恶化到：
+  - `Tracking/lin_vel_x_abs_error ≈ 0.163`
+  同时：
+  - `Tracking/ang_vel_yaw_abs_error ≈ 0.449`
+  - `tilt_deg ≈ 4.84`
+  - `episode_reset/terminated_rate ≈ 0.177`
+- 因此本轮自动优化已经收口到一个“当前较为理想”的结果：
+  - 保留软约束惩罚
+  - Stage0 使用更强的姿态惩罚 `orientation = -3.0`
+  - 不继续保留 `orientation = -2.5` 或 `tracking_lin_vel = 2.2` 这两条临时实验分支
+
+下一步：
+- 若继续做 Stage0 调优，应优先围绕动作正则或 reward 耦合做新的单变量设计，而不是继续直接削弱姿态惩罚。
+
+已完成：
+- 确认本次训练 `2026-04-14_20-52-07` 的实际结果目录为：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_20-52-07/`
+- 检查该目录下当前已有：
+  - `events.out.tfevents.*`
+  - `model_0.pt` 到 `model_599.pt`
+  - `params/env.yaml`
+  - `params/agent.yaml`
+  - `git/Graduation-Project.diff`
+- 更新 `docs/training_workflow_and_tensorboard_guide.md`：
+  - 补充每次训练结果的固定保存规则
+  - 补充绝对路径写法
+  - 补充 `run_dir` 的时间戳命名方式
+  - 补充本次训练的实际示例路径
+
+修改文件：
+- `docs/training_workflow_and_tensorboard_guide.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前训练结果统一保存在：
+  - `RL_Training/logs/rsl_rl/<experiment_name>/<run_dir>/`
+- 对于当前这次 Stage0 训练，对应目录就是：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_20-52-07/`

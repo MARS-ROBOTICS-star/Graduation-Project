@@ -23,18 +23,24 @@ class CompleteCarSensorSuiteCfg:
     enable_height_scanner: bool = False
     height_scanner_debug_vis: bool = False
 
-    @property
-    def policy_feature_dim(self) -> int:
-        return self.imu.policy_feature_dim + self.stereo_camera.policy_feature_dim + self.lidar.policy_feature_dim
+    def get_policy_feature_dim(self) -> int:
+        return (
+            self.imu.get_policy_feature_dim()
+            + self.stereo_camera.get_policy_feature_dim()
+            + self.lidar.get_policy_feature_dim()
+        )
 
     def policy_descriptor(self) -> list[tuple[str, int]]:
         descriptor: list[tuple[str, int]] = []
-        if self.imu.policy_feature_dim:
-            descriptor.append(("imu", self.imu.policy_feature_dim))
-        if self.stereo_camera.policy_feature_dim:
-            descriptor.append(("stereo_camera", self.stereo_camera.policy_feature_dim))
-        if self.lidar.policy_feature_dim:
-            descriptor.append(("lidar", self.lidar.policy_feature_dim))
+        imu_dim = self.imu.get_policy_feature_dim()
+        stereo_dim = self.stereo_camera.get_policy_feature_dim()
+        lidar_dim = self.lidar.get_policy_feature_dim()
+        if imu_dim:
+            descriptor.append(("imu", imu_dim))
+        if stereo_dim:
+            descriptor.append(("stereo_camera", stereo_dim))
+        if lidar_dim:
+            descriptor.append(("lidar", lidar_dim))
         return descriptor
 
 

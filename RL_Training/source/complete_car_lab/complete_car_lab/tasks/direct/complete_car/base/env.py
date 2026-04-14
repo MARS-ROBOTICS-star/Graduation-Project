@@ -20,11 +20,11 @@ from ..mdp import randomization as mdp_randomization
 from ..mdp import resets as mdp_resets
 from ..mdp.observations import compute_actor_observation, compute_critic_observation
 from ..mdp.rewards import REWARD_TERM_NAMES, compute_reward_terms
-from ..mdp.terminations import compute_dones
+from ..mdp.terminations import compute_done_terms
 from ..sensors.sensor_cfg import CompleteCarSensorSuiteRuntime
 from ..terrain.terrain_runtime import CompleteCarTerrainRuntime
 from ..utils.debug_draw import CompleteCarDebugDraw
-from ..utils.math_utils import update_history, quaternion_to_rpy
+from ..utils.math_utils import quaternion_to_rpy, update_history, wrap_to_pi_tensor
 from .complete_car_cfg import CompleteCarEnvCfg
 
 
@@ -58,8 +58,17 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._joint_pos_targets = self.robot.data.default_joint_pos.clone()
         self._joint_vel_targets = self.robot.data.default_joint_vel.clone()
         self._episode_sums = {name: torch.zeros(self.num_envs, device=self.device) for name in REWARD_TERM_NAMES}
+        self._last_reward_components = {name: torch.zeros(self.num_envs, device=self.device) for name in REWARD_TERM_NAMES}
+        self._last_total_reward = torch.zeros(self.num_envs, device=self.device)
+        self._last_done_terms = {
+            "bad_orientation": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
+            "ball_joint_out_of_bounds": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
+            "root_too_low": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
+            "time_out": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
+        }
         self._root_height_sum = torch.zeros(self.num_envs, device=self.device)
         self._root_height_min = torch.full((self.num_envs,), float("inf"), device=self.device)
+        self._last_critic_height_patch: torch.Tensor | None = None
 
         self._obs_history = None
         if self.cfg.observations.use_history and self.cfg.observations.history_length > 1:
@@ -85,6 +94,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 -self.cfg.observations.clip_observations,
                 self.cfg.observations.clip_observations,
             )
+        extras["metrics"] = self._collect_step_metrics()
         return observations, rewards, terminated, time_outs, extras
 
     def _setup_scene(self) -> None:
@@ -162,6 +172,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         )
         actor_obs = update_history(self._obs_history, current_actor_obs)
         critic_height_patch = self._compute_critic_height_patch()
+        self._last_critic_height_patch = critic_height_patch
         critic_obs = compute_critic_observation(actor_obs, critic_height_patch)
         if self._sensor_runtime is not None and self.cfg.debug.log_sensor_outputs:
             self.extras["sensors"] = self._sensor_runtime.get_raw_output()
@@ -179,14 +190,30 @@ class CompleteCarDirectEnv(DirectRLEnv):
         )
         for name, value in components.items():
             self._episode_sums[name] += value
+            self._last_reward_components[name].copy_(value)
 
         root_height = self.robot.data.root_link_pos_w[:, 2]
         self._root_height_sum += root_height
         self._root_height_min = torch.minimum(self._root_height_min, root_height)
+        self._last_total_reward.copy_(total_reward)
         return total_reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
-        return compute_dones(self.cfg, self.robot, self._ball_joint_ids, self.episode_length_buf, self.max_episode_length)
+        done_terms = compute_done_terms(
+            self.cfg,
+            self.robot,
+            self._ball_joint_ids,
+            self.episode_length_buf,
+            self.max_episode_length,
+        )
+        for key, value in done_terms.items():
+            self._last_done_terms[key].copy_(value)
+        terminated = (
+            done_terms["bad_orientation"]
+            | done_terms["ball_joint_out_of_bounds"]
+            | done_terms["root_too_low"]
+        )
+        return terminated, done_terms["time_out"]
 
     def _compute_critic_height_patch(self) -> torch.Tensor | None:
         if not self.cfg.terrain.measure_heights or self._terrain_runtime is None:
@@ -225,16 +252,105 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._root_height_min[env_ids],
             current_root_height,
         )
+        total_episode_reward = torch.zeros_like(episode_lengths)
 
         for name, buffer in self._episode_sums.items():
             extras[f"episode/{name}"] = float(torch.mean(buffer[env_ids]).item())
+            extras[f"episode_per_step/{name}"] = float(torch.mean(buffer[env_ids] / episode_lengths).item())
+            total_episode_reward += buffer[env_ids]
+        extras["episode/return"] = float(torch.mean(total_episode_reward).item())
+        extras["episode/return_per_step"] = float(torch.mean(total_episode_reward / episode_lengths).item())
         extras["episode/root_height_mean"] = float(torch.mean(root_height_mean).item())
         extras["episode/root_height_min"] = float(torch.mean(root_height_min).item())
         extras["episode/command_lin_x"] = float(torch.mean(self.commands[env_ids, 0]).item())
         extras["episode/command_ang_vel_yaw"] = float(torch.mean(self.commands[env_ids, 1]).item())
+        terminated = (
+            self._last_done_terms["bad_orientation"][env_ids]
+            | self._last_done_terms["ball_joint_out_of_bounds"][env_ids]
+            | self._last_done_terms["root_too_low"][env_ids]
+        )
+        extras["episode_reset/terminated_rate"] = float(torch.mean(terminated.float()).item())
+        extras["episode_reset/time_out_rate"] = float(torch.mean(self._last_done_terms["time_out"][env_ids].float()).item())
+        extras["episode_reset/bad_orientation_rate"] = float(
+            torch.mean(self._last_done_terms["bad_orientation"][env_ids].float()).item()
+        )
+        extras["episode_reset/ball_joint_limit_rate"] = float(
+            torch.mean(self._last_done_terms["ball_joint_out_of_bounds"][env_ids].float()).item()
+        )
+        extras["episode_reset/root_too_low_rate"] = float(
+            torch.mean(self._last_done_terms["root_too_low"][env_ids].float()).item()
+        )
         if terrain_metrics is not None:
             extras.update({f"terrain/{key}": value for key, value in terrain_metrics.items()})
         return extras
+
+    def _collect_step_metrics(self) -> dict[str, float]:
+        base_lin_vel = self.robot.data.root_com_lin_vel_b
+        base_ang_vel = self.robot.data.root_com_ang_vel_b
+        projected_gravity = self.robot.data.projected_gravity_b
+        ball_joint_pos = wrap_to_pi_tensor(self.robot.data.joint_pos[:, self._ball_joint_ids])
+        ball_joint_vel = self.robot.data.joint_vel[:, self._ball_joint_ids]
+        ball_joint_target_error = wrap_to_pi_tensor(self._joint_pos_targets[:, self._ball_joint_ids] - ball_joint_pos)
+        wheel_joint_vel = self.robot.data.joint_vel[:, self._wheel_joint_ids]
+        head_roll_pitch = quaternion_to_rpy(self.robot.data.body_quat_w[:, self._head_car_body_id])[:, :2]
+        tail_roll_pitch = quaternion_to_rpy(self.robot.data.body_quat_w[:, self._tail_car_body_id])[:, :2]
+        tilt_deg = torch.rad2deg(torch.acos(torch.clamp(-projected_gravity[:, 2], -1.0, 1.0)))
+        lin_vel_error_abs = torch.abs(self.commands[:, 0] - base_lin_vel[:, 0])
+        yaw_rate_error_abs = torch.abs(self.commands[:, 1] - base_ang_vel[:, 2])
+
+        metrics = {
+            "Reward/total": float(torch.mean(self._last_total_reward).item()),
+            "Reward/tracking_lin_vel": float(torch.mean(self._last_reward_components["tracking_lin_vel"]).item()),
+            "Reward/tracking_ang_vel": float(torch.mean(self._last_reward_components["tracking_ang_vel"]).item()),
+            "Reward/orientation": float(torch.mean(self._last_reward_components["orientation"]).item()),
+            "Reward/action_rate": float(torch.mean(self._last_reward_components["action_rate"]).item()),
+            "Reward/termination": float(torch.mean(self._last_reward_components["termination"]).item()),
+            "Tracking/lin_vel_x_abs_error": float(torch.mean(lin_vel_error_abs).item()),
+            "Tracking/ang_vel_yaw_abs_error": float(torch.mean(yaw_rate_error_abs).item()),
+            "Action/policy_abs_mean": float(torch.mean(torch.abs(self.actions)).item()),
+            "Action/processed_abs_mean": float(torch.mean(torch.abs(self._processed_actions)).item()),
+            "Action/policy_std": float(self.actions.std(unbiased=False).item()),
+            "Action/processed_std": float(self._processed_actions.std(unbiased=False).item()),
+            "Action/motor_strength_mean": float(torch.mean(self._motor_strength).item()),
+            "Command/lin_vel_x": float(torch.mean(self.commands[:, 0]).item()),
+            "Command/ang_vel_yaw": float(torch.mean(self.commands[:, 1]).item()),
+            "Observation/base_lin_vel_x": float(torch.mean(base_lin_vel[:, 0]).item()),
+            "Observation/base_ang_vel_yaw": float(torch.mean(base_ang_vel[:, 2]).item()),
+            "Observation/tilt_deg": float(torch.mean(tilt_deg).item()),
+            "Observation/projected_gravity_xy_norm": float(
+                torch.mean(torch.linalg.vector_norm(projected_gravity[:, :2], dim=1)).item()
+            ),
+            "Observation/ball_joint_pos_abs_mean": float(torch.mean(torch.abs(ball_joint_pos)).item()),
+            "Observation/ball_joint_vel_abs_mean": float(torch.mean(torch.abs(ball_joint_vel)).item()),
+            "Observation/ball_joint_target_error_abs_mean": float(torch.mean(torch.abs(ball_joint_target_error)).item()),
+            "Observation/wheel_joint_vel_abs_mean": float(torch.mean(torch.abs(wheel_joint_vel)).item()),
+            "Observation/head_roll_pitch_abs_mean": float(torch.mean(torch.abs(head_roll_pitch)).item()),
+            "Observation/tail_roll_pitch_abs_mean": float(torch.mean(torch.abs(tail_roll_pitch)).item()),
+            "Observation/root_height": float(torch.mean(self.robot.data.root_link_pos_w[:, 2]).item()),
+            "Termination/terminated_rate": float(
+                torch.mean(
+                    (
+                        self._last_done_terms["bad_orientation"]
+                        | self._last_done_terms["ball_joint_out_of_bounds"]
+                        | self._last_done_terms["root_too_low"]
+                    ).float()
+                ).item()
+            ),
+            "Termination/time_out_rate": float(torch.mean(self._last_done_terms["time_out"].float()).item()),
+            "Termination/bad_orientation_rate": float(
+                torch.mean(self._last_done_terms["bad_orientation"].float()).item()
+            ),
+            "Termination/ball_joint_limit_rate": float(
+                torch.mean(self._last_done_terms["ball_joint_out_of_bounds"].float()).item()
+            ),
+            "Termination/root_too_low_rate": float(torch.mean(self._last_done_terms["root_too_low"].float()).item()),
+        }
+        if self._last_critic_height_patch is not None:
+            metrics["Critic/height_patch_mean"] = float(torch.mean(self._last_critic_height_patch).item())
+            metrics["Critic/height_patch_max"] = float(
+                torch.mean(torch.max(self._last_critic_height_patch, dim=1).values).item()
+            )
+        return metrics
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
         if env_ids is None:

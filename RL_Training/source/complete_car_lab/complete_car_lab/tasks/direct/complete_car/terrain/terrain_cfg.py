@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from dataclasses import field
 
+import torch
 from isaaclab.sensors import RayCasterCfg, patterns
 from isaaclab.utils import configclass
 
 from .terrain_builder import STAGE1_TERRAIN_CLASS_GAP, STAGE1_TERRAIN_CLASS_OTHER, STAGE1_TERRAIN_CLASS_STEP, Stage1TerrainCfg
-
-import torch
 
 # 输入轴范围和目标分辨率，输出该轴采样点列表
 def _build_axis_points(min_value: float, max_value: float, target_resolution: float) -> list[float]:
@@ -46,7 +45,7 @@ class CompleteCarTerrainRuntimeCfg:
     measured_points_x: list[float] = field(default_factory=list)
     measured_points_y: list[float] = field(default_factory=list)  # 最终生成后的采样坐标。
 
-    height_scanner_prim_path: str = "{ENV_REGEX_NS}/Robot/body_car_chassis"
+    height_scanner_prim_path: str = "{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis"
     height_scanner_update_period: float = 0.02
     height_scanner_offset: tuple[float, float, float] = (0.0, 0.0, 20.0)
     step_spawn_back_range: tuple[float, float] = (2.0, 3.0)
@@ -54,11 +53,30 @@ class CompleteCarTerrainRuntimeCfg:
     other_spawn_xy_range: tuple[float, float] = (-0.5, 0.5)
     generator: Stage1TerrainCfg = Stage1TerrainCfg()
 
+    def _get_measured_points_x(self) -> list[float]:
+        if self.measured_points_x:
+            return self.measured_points_x
+        x_min = -(self.patch_rear_extent + self.patch_rear_margin)
+        x_max = self.patch_front_extent + self.patch_preview_length
+        return _build_axis_points(x_min, x_max, self.patch_resolution_x)
+
+    def _get_measured_points_y(self) -> list[float]:
+        if self.measured_points_y:
+            return self.measured_points_y
+        y_min = -(self.patch_half_width + self.patch_side_margin)
+        y_max = self.patch_half_width + self.patch_side_margin
+        return _build_axis_points(y_min, y_max, self.patch_resolution_y)
+
+    def get_num_height_points(self) -> int:
+        return len(self._get_measured_points_x()) * len(self._get_measured_points_y())
+
     def build_height_scanner_cfg(self, ground_prim_path: str) -> RayCasterCfg:
-        size_x = max(self.measured_points_x) - min(self.measured_points_x)
-        size_y = max(self.measured_points_y) - min(self.measured_points_y)
-        resolution_x = size_x / max(len(self.measured_points_x) - 1, 1)
-        resolution_y = size_y / max(len(self.measured_points_y) - 1, 1)
+        measured_points_x = self._get_measured_points_x()
+        measured_points_y = self._get_measured_points_y()
+        size_x = max(measured_points_x) - min(measured_points_x)
+        size_y = max(measured_points_y) - min(measured_points_y)
+        resolution_x = size_x / max(len(measured_points_x) - 1, 1)
+        resolution_y = size_y / max(len(measured_points_y) - 1, 1)
         resolution = min(resolution_x, resolution_y)
         return RayCasterCfg(
             prim_path=self.height_scanner_prim_path,
@@ -70,29 +88,11 @@ class CompleteCarTerrainRuntimeCfg:
             mesh_prim_paths=[ground_prim_path],
         )
 
-    def __post_init__(self):
-        if not self.measured_points_x:
-            x_min = -(self.patch_rear_extent + self.patch_rear_margin)
-            x_max = self.patch_front_extent + self.patch_preview_length
-            self.measured_points_x = _build_axis_points(x_min, x_max, self.patch_resolution_x)
-
-        if not self.measured_points_y:
-            y_min = -(self.patch_half_width + self.patch_side_margin)
-            y_max = self.patch_half_width + self.patch_side_margin
-            self.measured_points_y = _build_axis_points(y_min, y_max, self.patch_resolution_y)
-
-
-    @property
-    def num_height_points(self) -> int:
-        """返回 patch 中总采样点数。"""
-
-        return len(self.measured_points_x) * len(self.measured_points_y)
-
     def build_patch_local_points(self, device, dtype):
         """返回中车局部坐标系下的 patch 采样点张量。"""
 
-        x = torch.tensor(self.measured_points_x, device=device, dtype=dtype)
-        y = torch.tensor(self.measured_points_y, device=device, dtype=dtype)
+        x = torch.tensor(self._get_measured_points_x(), device=device, dtype=dtype)
+        y = torch.tensor(self._get_measured_points_y(), device=device, dtype=dtype)
         grid_x, grid_y = torch.meshgrid(x, y, indexing="ij")
         points = torch.stack((grid_x.reshape(-1), grid_y.reshape(-1)), dim=-1)
         offset = torch.tensor(self.patch_origin_offset_xy, device=device, dtype=dtype)

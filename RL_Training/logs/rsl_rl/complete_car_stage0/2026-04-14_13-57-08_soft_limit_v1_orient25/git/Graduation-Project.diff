@@ -1,0 +1,2638 @@
+--- git commit ---
+3ff50eb8dd0df09e48725c3ee74a082a12f58eac
+
+
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   RL_Training/scripts/play.py
+	modified:   RL_Training/scripts/train.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/__init__.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py
+	modified:   "docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
+	modified:   docs/conversation_history.md
+	modified:   docs/current_status.md
+	modified:   docs/training_workflow_and_tensorboard_guide.md
+	modified:   logs/daily_work_log.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	RL_Training/logs/
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/RL_Training/scripts/play.py b/RL_Training/scripts/play.py
+index 9984159..80d8e3c 100644
+--- a/RL_Training/scripts/play.py
++++ b/RL_Training/scripts/play.py
+@@ -46,6 +46,7 @@ simulation_app = app_launcher.app
+ 
+ import gymnasium as gym
+ from packaging import version
++from packaging.version import InvalidVersion
+ import torch
+ import rsl_rl
+ from rsl_rl.runners import OnPolicyRunner
+@@ -71,6 +72,21 @@ def _update_agent_cfg(agent_cfg):
+     return agent_cfg
+ 
+ 
++def _resolve_checkpoint_lookup_args(agent_cfg) -> tuple[str, str]:
++    """Normalize run/checkpoint selectors for Isaac Lab checkpoint lookup."""
++    run_pattern = agent_cfg.load_run if isinstance(agent_cfg.load_run, str) else ".*"
++    checkpoint_pattern = agent_cfg.load_checkpoint if isinstance(agent_cfg.load_checkpoint, str) else "model_.*.pt"
++    return run_pattern, checkpoint_pattern
++
++
++def _parse_rsl_rl_version(version_str: str):
++    """Parse vendored rsl_rl versions robustly."""
++    try:
++        return version.parse(version_str)
++    except InvalidVersion:
++        return version.parse(version_str.replace("-local", "+local"))
++
++
+ @hydra_task_config(args_cli.task, args_cli.agent)
+ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
+     agent_cfg = _update_agent_cfg(agent_cfg)
+@@ -82,7 +98,8 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
+     if args_cli.checkpoint:
+         resume_path = retrieve_file_path(args_cli.checkpoint)
+     else:
+-        resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
++        run_pattern, checkpoint_pattern = _resolve_checkpoint_lookup_args(agent_cfg)
++        resume_path = get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
+     log_dir = os.path.dirname(resume_path)
+     env_cfg.log_dir = log_dir
+ 
+@@ -104,7 +121,8 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
+ 
+     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
+     installed_version = getattr(rsl_rl, "__version__", "0.0.0")
+-    if version.parse(installed_version) >= version.parse("4.0.0"):
++    parsed_rsl_rl_version = _parse_rsl_rl_version(installed_version)
++    if parsed_rsl_rl_version >= version.parse("4.0.0"):
+         runner.export_policy_to_jit(path=export_model_dir, filename="policy.pt")
+         runner.export_policy_to_onnx(path=export_model_dir, filename="policy.onnx")
+         policy_nn = None
+@@ -122,7 +140,7 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
+         with torch.inference_mode():
+             actions = policy(obs)
+             obs, _, dones, _ = env.step(actions)
+-            if version.parse(installed_version) >= version.parse("4.0.0"):
++            if parsed_rsl_rl_version >= version.parse("4.0.0"):
+                 policy.reset(dones)
+             elif policy_nn is not None:
+                 policy_nn.reset(dones)
+diff --git a/RL_Training/scripts/train.py b/RL_Training/scripts/train.py
+index a07a866..971ebc6 100644
+--- a/RL_Training/scripts/train.py
++++ b/RL_Training/scripts/train.py
+@@ -94,6 +94,13 @@ def _update_agent_cfg(agent_cfg):
+     return agent_cfg
+ 
+ 
++def _resolve_checkpoint_lookup_args(agent_cfg) -> tuple[str, str]:
++    """Normalize run/checkpoint selectors for Isaac Lab checkpoint lookup."""
++    run_pattern = agent_cfg.load_run if isinstance(agent_cfg.load_run, str) else ".*"
++    checkpoint_pattern = agent_cfg.load_checkpoint if isinstance(agent_cfg.load_checkpoint, str) else "model_.*.pt"
++    return run_pattern, checkpoint_pattern
++
++
+ @hydra_task_config(args_cli.task, args_cli.agent)
+ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
+     agent_cfg = _update_agent_cfg(agent_cfg)
+@@ -112,7 +119,8 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
+ 
+     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+     if agent_cfg.resume:
+-        resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
++        run_pattern, checkpoint_pattern = _resolve_checkpoint_lookup_args(agent_cfg)
++        resume_path = get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
+     else:
+         resume_path = None
+ 
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py
+index f6ba914..6f8a610 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py
+@@ -75,8 +75,8 @@ class CompleteCarBasePPORunnerCfg(LocalOnPolicyRunnerCfg):
+     run_name = ""
+     obs_groups = {"actor": ["actor"], "critic": ["critic"]}
+     resume = False
+-    load_run = -1
+-    load_checkpoint = -1
++    load_run = ".*"
++    load_checkpoint = "model_.*.pt"
+     clip_actions = 1.0
+ 
+     actor = LocalMlpModelCfg(
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py
+index a0c2319..e84db91 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py
+@@ -42,7 +42,7 @@ RIGHT_WHEEL_JOINT_NAMES = [
+ 
+ ALL_JOINT_NAMES = BALL_JOINT_NAMES + WHEEL_JOINT_NAMES
+ CONTROLLED_JOINT_NAMES = BALL_JOINT_NAMES
+-COMPLETE_CAR_ARTICULATION_ROOT_PRIM_PATH = "/body_car_chassis"
++COMPLETE_CAR_ARTICULATION_ROOT_PRIM_PATH = "/complete_car_alternative/body_car_chassis"
+ 
+ 
+ def _find_repo_root(start: Path) -> Path:
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
+index 8286b3c..918ee81 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
+@@ -117,6 +117,7 @@ class RewardScalesCfg:
+     tracking_ang_vel: float = 2.0
+     orientation: float = -2.0
+     action_rate: float = -0.01
++    ball_joint_limit_soft: float = -0.2
+ 
+ 
+ @configclass
+@@ -127,6 +128,8 @@ class RewardCfg:
+     only_positive_rewards: bool = False
+     tracking_lin_vel_std: float = math.sqrt(0.25)
+     tracking_ang_vel_std: float = math.sqrt(0.25)
++    ball_joint_limit_soft_start_ratio: float = 0.8
++    ball_joint_limit_soft_power: float = 2.0
+ 
+ 
+ @configclass
+@@ -206,8 +209,8 @@ class DebugCfg:
+ class SceneCfg(InteractiveSceneCfg):
+     """场景克隆配置。"""
+ 
+-    num_envs: int = 512
+-    env_spacing: float = 2.0 #不同环境之间的间距 m
++    num_envs: int = 64
++    env_spacing: float = 4.0 #不同环境之间的间距 m
+     replicate_physics: bool = True
+     clone_in_fabric: bool = True
+ 
+@@ -281,7 +284,7 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
+             if self.observations.use_history and self.observations.history_length > 1
+             else base_obs_dim
+         )
+-        critic_obs_dim = actor_obs_dim + (self.terrain.num_height_points if self.terrain.measure_heights else 0)
++        critic_obs_dim = actor_obs_dim + (self.terrain.get_num_height_points() if self.terrain.measure_heights else 0)
+         self.observation_space = {
+             "actor": actor_obs_dim,
+             "critic": critic_obs_dim,
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+index 7b9272f..1528e96 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+@@ -20,11 +20,11 @@ from ..mdp import randomization as mdp_randomization
+ from ..mdp import resets as mdp_resets
+ from ..mdp.observations import compute_actor_observation, compute_critic_observation
+ from ..mdp.rewards import REWARD_TERM_NAMES, compute_reward_terms
+-from ..mdp.terminations import compute_dones
++from ..mdp.terminations import compute_done_terms
+ from ..sensors.sensor_cfg import CompleteCarSensorSuiteRuntime
+ from ..terrain.terrain_runtime import CompleteCarTerrainRuntime
+ from ..utils.debug_draw import CompleteCarDebugDraw
+-from ..utils.math_utils import update_history, quaternion_to_rpy
++from ..utils.math_utils import quaternion_to_rpy, update_history, wrap_to_pi_tensor
+ from .complete_car_cfg import CompleteCarEnvCfg
+ 
+ 
+@@ -58,8 +58,17 @@ class CompleteCarDirectEnv(DirectRLEnv):
+         self._joint_pos_targets = self.robot.data.default_joint_pos.clone()
+         self._joint_vel_targets = self.robot.data.default_joint_vel.clone()
+         self._episode_sums = {name: torch.zeros(self.num_envs, device=self.device) for name in REWARD_TERM_NAMES}
++        self._last_reward_components = {name: torch.zeros(self.num_envs, device=self.device) for name in REWARD_TERM_NAMES}
++        self._last_total_reward = torch.zeros(self.num_envs, device=self.device)
++        self._last_done_terms = {
++            "bad_orientation": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
++            "ball_joint_out_of_bounds": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
++            "root_too_low": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
++            "time_out": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
++        }
+         self._root_height_sum = torch.zeros(self.num_envs, device=self.device)
+         self._root_height_min = torch.full((self.num_envs,), float("inf"), device=self.device)
++        self._last_critic_height_patch: torch.Tensor | None = None
+ 
+         self._obs_history = None
+         if self.cfg.observations.use_history and self.cfg.observations.history_length > 1:
+@@ -85,6 +94,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
+                 -self.cfg.observations.clip_observations,
+                 self.cfg.observations.clip_observations,
+             )
++        extras["metrics"] = self._collect_step_metrics()
+         return observations, rewards, terminated, time_outs, extras
+ 
+     def _setup_scene(self) -> None:
+@@ -162,6 +172,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
+         )
+         actor_obs = update_history(self._obs_history, current_actor_obs)
+         critic_height_patch = self._compute_critic_height_patch()
++        self._last_critic_height_patch = critic_height_patch
+         critic_obs = compute_critic_observation(actor_obs, critic_height_patch)
+         if self._sensor_runtime is not None and self.cfg.debug.log_sensor_outputs:
+             self.extras["sensors"] = self._sensor_runtime.get_raw_output()
+@@ -179,14 +190,30 @@ class CompleteCarDirectEnv(DirectRLEnv):
+         )
+         for name, value in components.items():
+             self._episode_sums[name] += value
++            self._last_reward_components[name].copy_(value)
+ 
+         root_height = self.robot.data.root_link_pos_w[:, 2]
+         self._root_height_sum += root_height
+         self._root_height_min = torch.minimum(self._root_height_min, root_height)
++        self._last_total_reward.copy_(total_reward)
+         return total_reward
+ 
+     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
+-        return compute_dones(self.cfg, self.robot, self._ball_joint_ids, self.episode_length_buf, self.max_episode_length)
++        done_terms = compute_done_terms(
++            self.cfg,
++            self.robot,
++            self._ball_joint_ids,
++            self.episode_length_buf,
++            self.max_episode_length,
++        )
++        for key, value in done_terms.items():
++            self._last_done_terms[key].copy_(value)
++        terminated = (
++            done_terms["bad_orientation"]
++            | done_terms["ball_joint_out_of_bounds"]
++            | done_terms["root_too_low"]
++        )
++        return terminated, done_terms["time_out"]
+ 
+     def _compute_critic_height_patch(self) -> torch.Tensor | None:
+         if not self.cfg.terrain.measure_heights or self._terrain_runtime is None:
+@@ -225,17 +252,106 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             self._root_height_min[env_ids],
+             current_root_height,
+         )
++        total_episode_reward = torch.zeros_like(episode_lengths)
+ 
+         for name, buffer in self._episode_sums.items():
+             extras[f"episode/{name}"] = float(torch.mean(buffer[env_ids]).item())
++            extras[f"episode_per_step/{name}"] = float(torch.mean(buffer[env_ids] / episode_lengths).item())
++            total_episode_reward += buffer[env_ids]
++        extras["episode/return"] = float(torch.mean(total_episode_reward).item())
++        extras["episode/return_per_step"] = float(torch.mean(total_episode_reward / episode_lengths).item())
+         extras["episode/root_height_mean"] = float(torch.mean(root_height_mean).item())
+         extras["episode/root_height_min"] = float(torch.mean(root_height_min).item())
+         extras["episode/command_lin_x"] = float(torch.mean(self.commands[env_ids, 0]).item())
+         extras["episode/command_ang_vel_yaw"] = float(torch.mean(self.commands[env_ids, 1]).item())
++        terminated = (
++            self._last_done_terms["bad_orientation"][env_ids]
++            | self._last_done_terms["ball_joint_out_of_bounds"][env_ids]
++            | self._last_done_terms["root_too_low"][env_ids]
++        )
++        extras["episode_reset/terminated_rate"] = float(torch.mean(terminated.float()).item())
++        extras["episode_reset/time_out_rate"] = float(torch.mean(self._last_done_terms["time_out"][env_ids].float()).item())
++        extras["episode_reset/bad_orientation_rate"] = float(
++            torch.mean(self._last_done_terms["bad_orientation"][env_ids].float()).item()
++        )
++        extras["episode_reset/ball_joint_limit_rate"] = float(
++            torch.mean(self._last_done_terms["ball_joint_out_of_bounds"][env_ids].float()).item()
++        )
++        extras["episode_reset/root_too_low_rate"] = float(
++            torch.mean(self._last_done_terms["root_too_low"][env_ids].float()).item()
++        )
+         if terrain_metrics is not None:
+             extras.update({f"terrain/{key}": value for key, value in terrain_metrics.items()})
+         return extras
+ 
++    def _collect_step_metrics(self) -> dict[str, float]:
++        base_lin_vel = self.robot.data.root_com_lin_vel_b
++        base_ang_vel = self.robot.data.root_com_ang_vel_b
++        projected_gravity = self.robot.data.projected_gravity_b
++        ball_joint_pos = wrap_to_pi_tensor(self.robot.data.joint_pos[:, self._ball_joint_ids])
++        ball_joint_vel = self.robot.data.joint_vel[:, self._ball_joint_ids]
++        ball_joint_target_error = wrap_to_pi_tensor(self._joint_pos_targets[:, self._ball_joint_ids] - ball_joint_pos)
++        wheel_joint_vel = self.robot.data.joint_vel[:, self._wheel_joint_ids]
++        head_roll_pitch = quaternion_to_rpy(self.robot.data.body_quat_w[:, self._head_car_body_id])[:, :2]
++        tail_roll_pitch = quaternion_to_rpy(self.robot.data.body_quat_w[:, self._tail_car_body_id])[:, :2]
++        tilt_deg = torch.rad2deg(torch.acos(torch.clamp(-projected_gravity[:, 2], -1.0, 1.0)))
++        lin_vel_error_abs = torch.abs(self.commands[:, 0] - base_lin_vel[:, 0])
++        yaw_rate_error_abs = torch.abs(self.commands[:, 1] - base_ang_vel[:, 2])
++
++        metrics = {
++            "Reward/total": float(torch.mean(self._last_total_reward).item()),
++            "Reward/tracking_lin_vel": float(torch.mean(self._last_reward_components["tracking_lin_vel"]).item()),
++            "Reward/tracking_ang_vel": float(torch.mean(self._last_reward_components["tracking_ang_vel"]).item()),
++            "Reward/orientation": float(torch.mean(self._last_reward_components["orientation"]).item()),
++            "Reward/action_rate": float(torch.mean(self._last_reward_components["action_rate"]).item()),
++            "Reward/termination": float(torch.mean(self._last_reward_components["termination"]).item()),
++            "Tracking/lin_vel_x_abs_error": float(torch.mean(lin_vel_error_abs).item()),
++            "Tracking/ang_vel_yaw_abs_error": float(torch.mean(yaw_rate_error_abs).item()),
++            "Action/policy_abs_mean": float(torch.mean(torch.abs(self.actions)).item()),
++            "Action/processed_abs_mean": float(torch.mean(torch.abs(self._processed_actions)).item()),
++            "Action/policy_std": float(self.actions.std(unbiased=False).item()),
++            "Action/processed_std": float(self._processed_actions.std(unbiased=False).item()),
++            "Action/motor_strength_mean": float(torch.mean(self._motor_strength).item()),
++            "Command/lin_vel_x": float(torch.mean(self.commands[:, 0]).item()),
++            "Command/ang_vel_yaw": float(torch.mean(self.commands[:, 1]).item()),
++            "Observation/base_lin_vel_x": float(torch.mean(base_lin_vel[:, 0]).item()),
++            "Observation/base_ang_vel_yaw": float(torch.mean(base_ang_vel[:, 2]).item()),
++            "Observation/tilt_deg": float(torch.mean(tilt_deg).item()),
++            "Observation/projected_gravity_xy_norm": float(
++                torch.mean(torch.linalg.vector_norm(projected_gravity[:, :2], dim=1)).item()
++            ),
++            "Observation/ball_joint_pos_abs_mean": float(torch.mean(torch.abs(ball_joint_pos)).item()),
++            "Observation/ball_joint_vel_abs_mean": float(torch.mean(torch.abs(ball_joint_vel)).item()),
++            "Observation/ball_joint_target_error_abs_mean": float(torch.mean(torch.abs(ball_joint_target_error)).item()),
++            "Observation/wheel_joint_vel_abs_mean": float(torch.mean(torch.abs(wheel_joint_vel)).item()),
++            "Observation/head_roll_pitch_abs_mean": float(torch.mean(torch.abs(head_roll_pitch)).item()),
++            "Observation/tail_roll_pitch_abs_mean": float(torch.mean(torch.abs(tail_roll_pitch)).item()),
++            "Observation/root_height": float(torch.mean(self.robot.data.root_link_pos_w[:, 2]).item()),
++            "Termination/terminated_rate": float(
++                torch.mean(
++                    (
++                        self._last_done_terms["bad_orientation"]
++                        | self._last_done_terms["ball_joint_out_of_bounds"]
++                        | self._last_done_terms["root_too_low"]
++                    ).float()
++                ).item()
++            ),
++            "Termination/time_out_rate": float(torch.mean(self._last_done_terms["time_out"].float()).item()),
++            "Termination/bad_orientation_rate": float(
++                torch.mean(self._last_done_terms["bad_orientation"].float()).item()
++            ),
++            "Termination/ball_joint_limit_rate": float(
++                torch.mean(self._last_done_terms["ball_joint_out_of_bounds"].float()).item()
++            ),
++            "Termination/root_too_low_rate": float(torch.mean(self._last_done_terms["root_too_low"].float()).item()),
++        }
++        if self._last_critic_height_patch is not None:
++            metrics["Critic/height_patch_mean"] = float(torch.mean(self._last_critic_height_patch).item())
++            metrics["Critic/height_patch_max"] = float(
++                torch.mean(torch.max(self._last_critic_height_patch, dim=1).values).item()
++            )
++        return metrics
++
+     def _reset_idx(self, env_ids: Sequence[int] | None):
+         if env_ids is None:
+             env_ids = self.robot._ALL_INDICES
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
+index 651e05d..9ce1d8e 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
+@@ -10,7 +10,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
+     stage_name: str = "stage0"
+ 
+     def __post_init__(self) -> None:
+-        self.scene.num_envs = 512
++        self.scene.num_envs = 64
+         self.terrain.enabled = False
+         self.terrain.mode = "plane"
+         self.curriculum.enabled = False
+@@ -20,4 +20,5 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
+         self.sensors.stereo_camera.enabled = False
+         self.sensors.lidar.enabled = False
+         self.sensors.enable_height_scanner = False
++        self.rewards.scales.orientation = -2.5
+         super().__post_init__()
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py
+index efe665d..ad467e2 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py
+@@ -4,11 +4,14 @@ from __future__ import annotations
+ 
+ import torch
+ 
++from ..utils.math_utils import wrap_to_pi_tensor
++
+ REWARD_TERM_NAMES = (
+     "tracking_lin_vel",
+     "tracking_ang_vel",
+     "orientation",
+     "action_rate",
++    "ball_joint_limit_soft",
+     "termination",
+ )
+ 
+@@ -28,6 +31,33 @@ def compute_tracking_terms(cfg, robot, commands: torch.Tensor) -> dict[str, torc
+     }
+ 
+ 
++def compute_ball_joint_limit_soft_penalty(cfg, robot, ball_joint_ids) -> torch.Tensor:
++    """Penalize only the last margin near the configured hard joint limits.
++
++    The penalty stays at zero in the safe zone and rises smoothly only when a joint
++    uses more than ``ball_joint_limit_soft_start_ratio`` of its available range from
++    the default pose toward either the lower or upper hard limit.
++    """
++
++    ball_joint_pos = wrap_to_pi_tensor(robot.data.joint_pos[:, ball_joint_ids])
++    default_joint_pos = robot.data.default_joint_pos[:, ball_joint_ids]
++
++    lower_limits = ball_joint_pos.new_tensor(cfg.terminations.ball_joint_pos_lower_limits).unsqueeze(0)
++    upper_limits = ball_joint_pos.new_tensor(cfg.terminations.ball_joint_pos_upper_limits).unsqueeze(0)
++
++    positive_span = torch.clamp(upper_limits - default_joint_pos, min=1.0e-6)
++    negative_span = torch.clamp(default_joint_pos - lower_limits, min=1.0e-6)
++
++    positive_utilization = torch.clamp((ball_joint_pos - default_joint_pos) / positive_span, min=0.0)
++    negative_utilization = torch.clamp((default_joint_pos - ball_joint_pos) / negative_span, min=0.0)
++    utilization = positive_utilization + negative_utilization
++
++    start_ratio = cfg.rewards.ball_joint_limit_soft_start_ratio
++    active_margin = max(1.0 - start_ratio, 1.0e-6)
++    normalized_overuse = torch.clamp((utilization - start_ratio) / active_margin, min=0.0)
++    return torch.mean(normalized_overuse.pow(cfg.rewards.ball_joint_limit_soft_power), dim=1)
++
++
+ def compute_reward_terms(
+     cfg,
+     robot,
+@@ -44,6 +74,7 @@ def compute_reward_terms(
+     tracking_terms = compute_tracking_terms(cfg, robot, commands)
+     orientation = torch.sum(torch.square(projected_gravity[:, :2]), dim=1)
+     action_rate = torch.sum(torch.square(actions - last_actions), dim=1)
++    ball_joint_limit_soft = compute_ball_joint_limit_soft_penalty(cfg, robot, ball_joint_ids)
+     termination = reset_terminated.float()
+ 
+     components = {
+@@ -51,6 +82,7 @@ def compute_reward_terms(
+         "tracking_ang_vel": scales.tracking_ang_vel * tracking_terms["tracking_ang_vel"],
+         "orientation": scales.orientation * orientation,
+         "action_rate": scales.action_rate * action_rate,
++        "ball_joint_limit_soft": scales.ball_joint_limit_soft * ball_joint_limit_soft,
+         "termination": scales.termination * termination,
+     }
+     total_reward = torch.stack(tuple(components.values()), dim=0).sum(dim=0)
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py
+index 0587923..46fb0e6 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py
+@@ -7,7 +7,13 @@ import torch
+ from ..utils.math_utils import wrap_to_pi_tensor
+ 
+ 
+-def compute_dones(cfg, robot, ball_joint_ids, episode_length_buf: torch.Tensor, max_episode_length: int) -> tuple[torch.Tensor, torch.Tensor]:
++def compute_done_terms(
++    cfg,
++    robot,
++    ball_joint_ids,
++    episode_length_buf: torch.Tensor,
++    max_episode_length: int,
++) -> dict[str, torch.Tensor]:
+     projected_gravity = robot.data.projected_gravity_b
+     ball_joint_pos = wrap_to_pi_tensor(robot.data.joint_pos[:, ball_joint_ids])
+ 
+@@ -31,4 +37,19 @@ def compute_dones(cfg, robot, ball_joint_ids, episode_length_buf: torch.Tensor,
+     if cfg.terminations.minimum_root_height is not None:
+         root_too_low = robot.data.root_link_pos_w[:, 2] < cfg.terminations.minimum_root_height
+ 
+-    return bad_orientation | ball_joint_out_of_bounds | root_too_low, time_out
++    return {
++        "bad_orientation": bad_orientation,
++        "ball_joint_out_of_bounds": ball_joint_out_of_bounds,
++        "root_too_low": root_too_low,
++        "time_out": time_out,
++    }
++
++
++def compute_dones(cfg, robot, ball_joint_ids, episode_length_buf: torch.Tensor, max_episode_length: int) -> tuple[torch.Tensor, torch.Tensor]:
++    done_terms = compute_done_terms(cfg, robot, ball_joint_ids, episode_length_buf, max_episode_length)
++    terminated = (
++        done_terms["bad_orientation"]
++        | done_terms["ball_joint_out_of_bounds"]
++        | done_terms["root_too_low"]
++    )
++    return terminated, done_terms["time_out"]
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/__init__.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/__init__.py
+index 37b9950..6d90e0c 100755
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/__init__.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/__init__.py
+@@ -7,4 +7,4 @@
+ 
+ # Vendored into this project from rsl-rl-lib 5.0.1 so the training mainline no longer
+ # depends on the external package implementation at runtime.
+-__version__ = "5.0.1-local"
++__version__ = "5.0.1+local"
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py
+index d7b51b7..440682a 100755
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py
+@@ -44,6 +44,7 @@ class Logger:
+ 
+         # Create buffers
+         self.ep_extras = []
++        self.step_extras = []
+         self.rewbuffer = deque(maxlen=100)
+         self.lenbuffer = deque(maxlen=100)
+         self.cur_reward_sum = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+@@ -107,6 +108,8 @@ class Logger:
+                 self.ep_extras.append(extras["episode"])
+             elif "log" in extras:
+                 self.ep_extras.append(extras["log"])
++            if "metrics" in extras:
++                self.step_extras.append(extras["metrics"])
+ 
+             # Update rewards and episode length
+             if intrinsic_rewards is not None:
+@@ -157,20 +160,7 @@ class Logger:
+             # Log episode extras
+             extras_string = ""
+             if self.ep_extras:
+-                # Iterate over all keys in the episode info dictionary
+-                for key in self.ep_extras[0]:
+-                    infotensor = torch.tensor([], device=self.device)
+-                    # Iterate over all steps
+-                    for ep_info in self.ep_extras:
+-                        # Handle missing, scalar, and zero dimensional tensors
+-                        if key not in ep_info:
+-                            continue
+-                        if not isinstance(ep_info[key], torch.Tensor):
+-                            ep_info[key] = torch.Tensor([ep_info[key]])
+-                        if len(ep_info[key].shape) == 0:
+-                            ep_info[key] = ep_info[key].unsqueeze(0)
+-                        infotensor = torch.cat((infotensor, ep_info[key].to(self.device)))
+-                    value = torch.mean(infotensor)
++                for key, value in self._aggregate_scalar_dicts(self.ep_extras).items():
+                     if "/" in key:
+                         self.writer.add_scalar(key, value, it)  # type: ignore
+                         extras_string += f"""{f"{key}:":>{pad}} {value:.4f}\n"""
+@@ -178,6 +168,12 @@ class Logger:
+                         self.writer.add_scalar("Episode/" + key, value, it)  # type: ignore
+                         extras_string += f"""{f"Mean episode {key}:":>{pad}} {value:.4f}\n"""
+ 
++            if self.step_extras:
++                for key, value in self._aggregate_scalar_dicts(self.step_extras).items():
++                    self.writer.add_scalar(key, value, it)  # type: ignore
++                    if not print_minimal:
++                        extras_string += f"""{f"{key}:":>{pad}} {value:.4f}\n"""
++
+             # Log losses
+             for key, value in loss_dict.items():
+                 self.writer.add_scalar(f"Loss/{key}", value, it)
+@@ -262,6 +258,7 @@ class Logger:
+ 
+             # Clear extras buffer
+             self.ep_extras.clear()
++            self.step_extras.clear()
+ 
+     def save_model(self, path: str, it: int) -> None:
+         """Save the model to external logging services if specified."""
+@@ -306,3 +303,24 @@ class Logger:
+                 # Add the file path to the list of files to be uploaded
+                 files_to_upload.append(diff_file_name)
+         return files_to_upload
++
++    def _aggregate_scalar_dicts(self, info_dicts: list[dict]) -> dict[str, float]:
++        """Aggregate a list of scalar dictionaries into per-key means."""
++        aggregated: dict[str, float] = {}
++        all_keys = sorted({key for info in info_dicts for key in info})
++        for key in all_keys:
++            values = []
++            for info in info_dicts:
++                if key not in info:
++                    continue
++                value = info[key]
++                if not isinstance(value, torch.Tensor):
++                    value = torch.tensor([value], device=self.device, dtype=torch.float32)
++                else:
++                    value = value.to(self.device, dtype=torch.float32)
++                if value.ndim == 0:
++                    value = value.unsqueeze(0)
++                values.append(value.reshape(-1))
++            if values:
++                aggregated[key] = float(torch.mean(torch.cat(values)).item())
++        return aggregated
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py
+index d9d7433..bf2c82f 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py
+@@ -11,14 +11,13 @@ from isaaclab.utils import configclass
+ @configclass
+ class ImuSensorCfg:
+     enabled: bool = False
+-    prim_path: str = "{ENV_REGEX_NS}/Robot/body_car_chassis/IMU_body"
++    prim_path: str = "{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis/Imu_Sensor"
+     update_period: float = 0.0
+     gravity_bias: tuple[float, float, float] = (0.0, 0.0, 0.0)
+     debug_vis: bool = False
+     include_in_policy: bool = True
+ 
+-    @property
+-    def policy_feature_dim(self) -> int:
++    def get_policy_feature_dim(self) -> int:
+         return 12 if self.enabled and self.include_in_policy else 0
+ 
+     def build_cfg(self) -> ImuCfg:
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py
+index 939beeb..b8e2454 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py
+@@ -9,7 +9,7 @@ from isaaclab.utils import configclass
+ @configclass
+ class LidarSensorCfg:
+     enabled: bool = False
+-    prim_path: str = "{ENV_REGEX_NS}/Robot/head_car_chassis/Example_Rotary"
++    prim_path: str = "{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis/Example_Rotary"
+     update_period: float = 0.1
+     horizontal_fov_range: tuple[float, float] = (-60.0, 60.0)
+     vertical_fov_range: tuple[float, float] = (-10.0, 10.0)
+@@ -23,8 +23,7 @@ class LidarSensorCfg:
+     policy_num_bins: int = 16
+     include_in_policy: bool = True
+ 
+-    @property
+-    def policy_feature_dim(self) -> int:
++    def get_policy_feature_dim(self) -> int:
+         return self.policy_num_bins if self.enabled and self.include_in_policy else 0
+ 
+     def build_cfg(self, ground_prim_path: str) -> RayCasterCfg:
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+index 10e55fc..de39753 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+@@ -23,18 +23,24 @@ class CompleteCarSensorSuiteCfg:
+     enable_height_scanner: bool = False
+     height_scanner_debug_vis: bool = False
+ 
+-    @property
+-    def policy_feature_dim(self) -> int:
+-        return self.imu.policy_feature_dim + self.stereo_camera.policy_feature_dim + self.lidar.policy_feature_dim
++    def get_policy_feature_dim(self) -> int:
++        return (
++            self.imu.get_policy_feature_dim()
++            + self.stereo_camera.get_policy_feature_dim()
++            + self.lidar.get_policy_feature_dim()
++        )
+ 
+     def policy_descriptor(self) -> list[tuple[str, int]]:
+         descriptor: list[tuple[str, int]] = []
+-        if self.imu.policy_feature_dim:
+-            descriptor.append(("imu", self.imu.policy_feature_dim))
+-        if self.stereo_camera.policy_feature_dim:
+-            descriptor.append(("stereo_camera", self.stereo_camera.policy_feature_dim))
+-        if self.lidar.policy_feature_dim:
+-            descriptor.append(("lidar", self.lidar.policy_feature_dim))
++        imu_dim = self.imu.get_policy_feature_dim()
++        stereo_dim = self.stereo_camera.get_policy_feature_dim()
++        lidar_dim = self.lidar.get_policy_feature_dim()
++        if imu_dim:
++            descriptor.append(("imu", imu_dim))
++        if stereo_dim:
++            descriptor.append(("stereo_camera", stereo_dim))
++        if lidar_dim:
++            descriptor.append(("lidar", lidar_dim))
+         return descriptor
+ 
+ 
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py
+index 7f282f4..d24d3a4 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py
+@@ -12,7 +12,7 @@ from isaaclab.utils import configclass
+ @configclass
+ class StereoCameraSensorCfg:
+     enabled: bool = False
+-    prim_path: str = "{ENV_REGEX_NS}/Robot/head_car_chassis/Stereo_rig/left_camera"
++    prim_path: str = "{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis/Stereo_Vision_Camera/Camera_left"
+     update_period: float = 0.1
+     height: int = 64
+     width: int = 64
+@@ -26,8 +26,7 @@ class StereoCameraSensorCfg:
+     offset_convention: str = "ros"
+     include_in_policy: bool = True
+ 
+-    @property
+-    def policy_feature_dim(self) -> int:
++    def get_policy_feature_dim(self) -> int:
+         if not self.enabled or not self.include_in_policy:
+             return 0
+         dim = 0
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py
+index 625cac2..ef062f6 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py
+@@ -13,7 +13,7 @@ STAGE1_TERRAIN_CLASS_STEP = 1
+ STAGE1_TERRAIN_CLASS_GAP = 2
+ 
+ 
+-@dataclass(frozen=True)
++@dataclass
+ class Stage1TerrainCfg:
+     horizontal_scale: float = 0.1
+     vertical_scale: float = 0.005
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+index ffe194c..a925629 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+@@ -4,13 +4,12 @@ from __future__ import annotations
+ 
+ from dataclasses import field
+ 
++import torch
+ from isaaclab.sensors import RayCasterCfg, patterns
+ from isaaclab.utils import configclass
+ 
+ from .terrain_builder import STAGE1_TERRAIN_CLASS_GAP, STAGE1_TERRAIN_CLASS_OTHER, STAGE1_TERRAIN_CLASS_STEP, Stage1TerrainCfg
+ 
+-import torch
+-
+ # 输入轴范围和目标分辨率，输出该轴采样点列表
+ def _build_axis_points(min_value: float, max_value: float, target_resolution: float) -> list[float]:
+     num_points = int(round((max_value - min_value) / target_resolution)) + 1
+@@ -46,7 +45,7 @@ class CompleteCarTerrainRuntimeCfg:
+     measured_points_x: list[float] = field(default_factory=list)
+     measured_points_y: list[float] = field(default_factory=list)  # 最终生成后的采样坐标。
+ 
+-    height_scanner_prim_path: str = "{ENV_REGEX_NS}/Robot/body_car_chassis"
++    height_scanner_prim_path: str = "{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis"
+     height_scanner_update_period: float = 0.02
+     height_scanner_offset: tuple[float, float, float] = (0.0, 0.0, 20.0)
+     step_spawn_back_range: tuple[float, float] = (2.0, 3.0)
+@@ -54,11 +53,30 @@ class CompleteCarTerrainRuntimeCfg:
+     other_spawn_xy_range: tuple[float, float] = (-0.5, 0.5)
+     generator: Stage1TerrainCfg = Stage1TerrainCfg()
+ 
++    def _get_measured_points_x(self) -> list[float]:
++        if self.measured_points_x:
++            return self.measured_points_x
++        x_min = -(self.patch_rear_extent + self.patch_rear_margin)
++        x_max = self.patch_front_extent + self.patch_preview_length
++        return _build_axis_points(x_min, x_max, self.patch_resolution_x)
++
++    def _get_measured_points_y(self) -> list[float]:
++        if self.measured_points_y:
++            return self.measured_points_y
++        y_min = -(self.patch_half_width + self.patch_side_margin)
++        y_max = self.patch_half_width + self.patch_side_margin
++        return _build_axis_points(y_min, y_max, self.patch_resolution_y)
++
++    def get_num_height_points(self) -> int:
++        return len(self._get_measured_points_x()) * len(self._get_measured_points_y())
++
+     def build_height_scanner_cfg(self, ground_prim_path: str) -> RayCasterCfg:
+-        size_x = max(self.measured_points_x) - min(self.measured_points_x)
+-        size_y = max(self.measured_points_y) - min(self.measured_points_y)
+-        resolution_x = size_x / max(len(self.measured_points_x) - 1, 1)
+-        resolution_y = size_y / max(len(self.measured_points_y) - 1, 1)
++        measured_points_x = self._get_measured_points_x()
++        measured_points_y = self._get_measured_points_y()
++        size_x = max(measured_points_x) - min(measured_points_x)
++        size_y = max(measured_points_y) - min(measured_points_y)
++        resolution_x = size_x / max(len(measured_points_x) - 1, 1)
++        resolution_y = size_y / max(len(measured_points_y) - 1, 1)
+         resolution = min(resolution_x, resolution_y)
+         return RayCasterCfg(
+             prim_path=self.height_scanner_prim_path,
+@@ -70,29 +88,11 @@ class CompleteCarTerrainRuntimeCfg:
+             mesh_prim_paths=[ground_prim_path],
+         )
+ 
+-    def __post_init__(self):
+-        if not self.measured_points_x:
+-            x_min = -(self.patch_rear_extent + self.patch_rear_margin)
+-            x_max = self.patch_front_extent + self.patch_preview_length
+-            self.measured_points_x = _build_axis_points(x_min, x_max, self.patch_resolution_x)
+-
+-        if not self.measured_points_y:
+-            y_min = -(self.patch_half_width + self.patch_side_margin)
+-            y_max = self.patch_half_width + self.patch_side_margin
+-            self.measured_points_y = _build_axis_points(y_min, y_max, self.patch_resolution_y)
+-
+-
+-    @property
+-    def num_height_points(self) -> int:
+-        """返回 patch 中总采样点数。"""
+-
+-        return len(self.measured_points_x) * len(self.measured_points_y)
+-
+     def build_patch_local_points(self, device, dtype):
+         """返回中车局部坐标系下的 patch 采样点张量。"""
+ 
+-        x = torch.tensor(self.measured_points_x, device=device, dtype=dtype)
+-        y = torch.tensor(self.measured_points_y, device=device, dtype=dtype)
++        x = torch.tensor(self._get_measured_points_x(), device=device, dtype=dtype)
++        y = torch.tensor(self._get_measured_points_y(), device=device, dtype=dtype)
+         grid_x, grid_y = torch.meshgrid(x, y, indexing="ij")
+         points = torch.stack((grid_x.reshape(-1), grid_y.reshape(-1)), dim=-1)
+         offset = torch.tensor(self.patch_origin_offset_xy, device=device, dtype=dtype)
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py
+index 4ac6100..ab381f8 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py
+@@ -28,7 +28,7 @@ def build_observation_descriptor(cfg) -> list[tuple[str, int]]:
+ def build_critic_observation_descriptor(cfg) -> list[tuple[str, int]]:
+       descriptor = build_observation_descriptor(cfg).copy()
+       if cfg.terrain.measure_heights:
+-          descriptor.append(("terrain_height_patch", cfg.terrain.num_height_points))
++          descriptor.append(("terrain_height_patch", cfg.terrain.get_num_height_points()))
+       return descriptor
+ 
+ def build_state_descriptor(_cfg) -> list[tuple[str, int]]:
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py
+index 6da1357..c0e036c 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py
+@@ -7,6 +7,8 @@ from __future__ import annotations
+ import argparse
+ import csv
+ import json
++from collections import defaultdict
++from statistics import mean
+ from pathlib import Path
+ 
+ from tensorboard.backend.event_processing import event_accumulator
+@@ -16,6 +18,10 @@ def _sanitize_tag(tag: str) -> str:
+     return tag.replace("/", "__")
+ 
+ 
++def _tag_group(tag: str) -> str:
++    return tag.split("/", 1)[0] if "/" in tag else "ungrouped"
++
++
+ def _find_event_file(run_dir: Path) -> Path:
+     event_files = sorted(run_dir.glob("events.out.tfevents.*"))
+     if not event_files:
+@@ -45,9 +51,11 @@ def export_run_scalars(run_dir: str | Path) -> Path:
+         "event_file": str(event_file),
+         "scalar_tags": scalar_tags,
+         "scalars": {},
++        "groups": {},
+     }
+ 
+     latest_rows: list[dict[str, object]] = []
++    grouped_rows: dict[str, list[dict[str, object]]] = defaultdict(list)
+ 
+     for tag in scalar_tags:
+         events = accumulator.Scalars(tag)
+@@ -62,33 +70,88 @@ def export_run_scalars(run_dir: str | Path) -> Path:
+ 
+         first_value = events[0].value if events else None
+         last_value = events[-1].value if events else None
++        mean_value = mean(event.value for event in events) if events else None
++        min_value = min((event.value for event in events), default=None)
++        max_value = max((event.value for event in events), default=None)
+         last_step = events[-1].step if events else None
++        group = _tag_group(tag)
++        delta = (last_value - first_value) if events else None
+ 
+         summary["scalars"][tag] = {
++            "group": group,
+             "count": len(events),
+             "first_step": events[0].step if events else None,
+             "last_step": last_step,
+             "first_value": first_value,
+             "last_value": last_value,
++            "delta": delta,
++            "min_value": min_value,
++            "max_value": max_value,
++            "mean_value": mean_value,
+             "csv_path": str(csv_path),
+         }
+-        latest_rows.append(
++        row = {
++            "group": group,
++            "tag": tag,
++            "count": len(events),
++            "first_step": events[0].step if events else None,
++            "last_step": last_step,
++            "first_value": first_value,
++            "last_value": last_value,
++            "delta": delta,
++            "min_value": min_value,
++            "max_value": max_value,
++            "mean_value": mean_value,
++            "csv_path": str(csv_path),
++        }
++        latest_rows.append(row)
++        grouped_rows[group].append(row)
++
++    with (export_dir / "latest_values.csv").open("w", newline="", encoding="utf-8") as csv_file:
++        writer = csv.DictWriter(
++            csv_file,
++            fieldnames=[
++                "group",
++                "tag",
++                "count",
++                "first_step",
++                "last_step",
++                "first_value",
++                "last_value",
++                "delta",
++                "min_value",
++                "max_value",
++                "mean_value",
++                "csv_path",
++            ],
++        )
++        writer.writeheader()
++        writer.writerows(latest_rows)
++
++    group_summary_rows: list[dict[str, object]] = []
++    for group, rows in sorted(grouped_rows.items()):
++        latest_values = [row["last_value"] for row in rows if row["last_value"] is not None]
++        summary["groups"][group] = {
++            "tag_count": len(rows),
++            "tags": [row["tag"] for row in rows],
++            "latest_mean": mean(latest_values) if latest_values else None,
++        }
++        group_summary_rows.append(
+             {
+-                "tag": tag,
+-                "count": len(events),
+-                "last_step": last_step,
+-                "last_value": last_value,
++                "group": group,
++                "tag_count": len(rows),
++                "latest_mean": mean(latest_values) if latest_values else None,
+             }
+         )
+ 
++    with (export_dir / "group_summary.csv").open("w", newline="", encoding="utf-8") as csv_file:
++        writer = csv.DictWriter(csv_file, fieldnames=["group", "tag_count", "latest_mean"])
++        writer.writeheader()
++        writer.writerows(group_summary_rows)
++
+     with (export_dir / "summary.json").open("w", encoding="utf-8") as json_file:
+         json.dump(summary, json_file, indent=2, ensure_ascii=False)
+ 
+-    with (export_dir / "latest_values.csv").open("w", newline="", encoding="utf-8") as csv_file:
+-        writer = csv.DictWriter(csv_file, fieldnames=["tag", "count", "last_step", "last_value"])
+-        writer.writeheader()
+-        writer.writerows(latest_rows)
+-
+     return export_dir
+ 
+ 
+diff --git "a/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md" "b/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
+index 4f247a5..f122f73 100644
+--- "a/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
++++ "b/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
+@@ -35,7 +35,7 @@
+ 
+ ### 1.3 当前关键维度
+ 
+-- 并行环境数：`512`
++- 并行环境数：`64`
+ - 动作维度：`6`
+ - Actor 单帧观测维度：`45`
+ - Critic 单帧观测维度：`45`
+@@ -62,7 +62,7 @@ Stage0 训练时的配置继承关系是：
+ 
+ Stage0 最重要的覆写只有几条：
+ 
+-- `scene.num_envs = 512`
++- `scene.num_envs = 64`
+ - `terrain.enabled = False`
+ - `terrain.mode = "plane"`
+ - `curriculum.enabled = False`
+@@ -593,13 +593,14 @@ $$
+ 
+ ### 10.1 当前奖励项集合
+ 
+-当前 Stage0 reward 共有 `5` 项：
++当前 Stage0 reward 共有 `6` 项：
+ 
+ 1. `tracking_lin_vel`
+ 2. `tracking_ang_vel`
+ 3. `orientation`
+ 4. `action_rate`
+-5. `termination`
++5. `ball_joint_limit_soft`
++6. `termination`
+ 
+ ### 10.2 跟踪类奖励
+ 
+@@ -693,7 +694,60 @@ $$
+ 
+ - `termination = -2.0`
+ 
+-### 10.6 总奖励
++### 10.6 球铰角度软约束惩罚
++
++这项不是硬限制，也不是让球铰尽量不动。  
++它只在球铰接近硬 limit 的最后一段危险区时开始生效。
++
++设某个球铰当前角度为 $q$，默认角度为 $q_0$，硬下界为 $q_{min}$，硬上界为 $q_{max}$。
++
++先分别计算朝上下边界方向的利用率：
++
++$$
++u_{pos} = \max\left(\frac{q - q_0}{q_{max} - q_0}, 0\right)
++$$
++
++$$
++u_{neg} = \max\left(\frac{q_0 - q}{q_0 - q_{min}}, 0\right)
++$$
++
++$$
++u = u_{pos} + u_{neg}
++$$
++
++当前配置中：
++
++- `ball_joint_limit_soft_start_ratio = 0.8`
++
++也就是：
++
++- 当球铰使用率不超过可用范围的 `80%` 时，不惩罚
++- 只有进入最后 `20%` 危险区后，惩罚才开始增长
++
++将危险区归一化后：
++
++$$
++\hat{u} = \max\left(\frac{u - 0.8}{1 - 0.8}, 0\right)
++$$
++
++当前每个环境对 6 个球铰取均值，并使用二次增长：
++
++$$
++r_{soft} = \frac{1}{6} \sum_{i=1}^{6} \hat{u}_i^2
++$$
++
++对应配置：
++
++- `ball_joint_limit_soft_power = 2.0`
++- `ball_joint_limit_soft = -0.2`
++
++这个设计的目的不是把球铰限制在小角度附近，而是：
++
++- 允许球铰正常使用大部分可用角度
++- 只在逼近硬 limit 时提供提前的负反馈
++- 减少直接撞上 joint limit 再触发硬终止的情况
++
++### 10.7 总奖励
+ 
+ 当前总奖励为：
+ 
+@@ -703,6 +757,7 @@ R_{lin}
+ + R_{ang}
+ + R_{ori}
+ + R_{act}
+++ R_{soft}
+ + R_{term}
+ $$
+ 
+diff --git a/docs/conversation_history.md b/docs/conversation_history.md
+index 3e04616..9a5fc77 100644
+--- a/docs/conversation_history.md
++++ b/docs/conversation_history.md
+@@ -3656,6 +3656,371 @@ This file stores durable conclusions from past Codex sessions so that future ses
+ 
+ ## 2026-04-14
+ 
++### Replay and resume checkpoint lookup must use string selectors, not legacy integer sentinels
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
++  - `RL_Training/scripts/train.py`
++  - `RL_Training/scripts/play.py`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the active direct-workflow PPO runner config previously inherited legacy defaults:
++    - `load_run = -1`
++    - `load_checkpoint = -1`
++  - this is incompatible with Isaac Lab:
++    - `get_checkpoint_path(...)`
++    because that helper expects regex strings for both selectors and passes them into:
++    - `re.match(...)`
++  - the concrete failure was reproduced on replay with:
++    - `python scripts/play.py --task CompleteCar-Stage0 --load_run 2026-04-14_12-48-16 --num_envs 2`
++    which crashed with:
++    - `TypeError: first argument must be string or compiled pattern`
++  - the active defaults are now normalized to string selectors:
++    - `load_run = ".*"`
++    - `load_checkpoint = "model_.*.pt"`
++  - additionally, both:
++    - `scripts/train.py`
++    - `scripts/play.py`
++    now normalize the lookup arguments again before calling:
++    - `get_checkpoint_path(...)`
++    so stale integer sentinel values cannot crash replay/resume even if they reappear through old config paths
++- Reason:
++  - the user reported a concrete replay failure, and the root cause was a type mismatch between the local PPO config defaults and Isaac Lab's checkpoint lookup API
++- Impact:
++  - future replay commands that specify only:
++    - `--load_run <run_dir>`
++    should now correctly select the latest `model_*.pt` in that run
++  - future resume logic in `train.py` uses the same normalization path and should not regress on the same bug
++- Status:
++  - targeted `python3 -m py_compile` validation passed
++  - the normalization helper was locally sanity-checked to convert:
++    - `load_run='2026-04-14_12-48-16', load_checkpoint=-1`
++    into:
++    - `('2026-04-14_12-48-16', 'model_.*.pt')`
++
++### Vendored `rsl_rl` version tags used by replay must follow PEP 440, and replay now normalizes the local suffix before version branching
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/__init__.py`
++  - `RL_Training/scripts/play.py`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the vendored package version string had been set to:
++    - `5.0.1-local`
++  - this is not accepted by:
++    - `packaging.version.Version`
++    so replay crashed when `play.py` tried to branch on:
++    - `version.parse(installed_version) >= version.parse("4.0.0")`
++  - the vendored package version is now:
++    - `5.0.1+local`
++    which is valid PEP 440 local-version syntax
++  - additionally, replay now parses the version through a compatibility helper that rewrites:
++    - `-local`
++    to:
++    - `+local`
++    before parsing if needed
++  - this means replay should no longer fail at the version-gated export/reset branch even if an older local suffix accidentally reappears
++- Reason:
++  - after the earlier checkpoint-selector fix, the user's next replay attempt failed one step later on invalid version parsing, so the replay chain still needed another concrete bug fix before it could proceed
++- Impact:
++  - future local vendored version labels should use PEP 440 syntax
++  - future version-gated replay logic should not assume the raw local package string is always parseable without normalization
++- Status:
++  - targeted `python3 -m py_compile` validation passed
++  - local helper validation confirmed:
++    - `5.0.1-local`
++    is normalized and compared successfully against:
++    - `4.0.0`
++
++### Stage0 real run `2026-04-14_13-07-32` confirms the expanded logging surface is active, and the current dominant failure mode is ball-joint limit termination rather than body attitude collapse
++- Updated:
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Durable training conclusion:
++  - the real Stage0 run:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-07-32`
++    now exposes:
++    - `64`
++    scalar tags across the intended new groups:
++    - `Reward`
++    - `Tracking`
++    - `Action`
++    - `Command`
++    - `Observation`
++    - `Termination`
++    - `episode_per_step`
++    - `episode_reset`
++  - this confirms the expanded env/logger/export instrumentation is actually present in a fresh event file, not only in offline code
++  - the top-level learning curves of this run match the earlier run:
++    - `2026-04-14_12-48-16`
++    on the shared metrics that existed before
++  - under the current fixed seed and unchanged Stage0 config, that numerical match indicates the run is reproducible rather than meaningfully different
++  - the current last-50-iteration picture is approximately:
++    - `Train/mean_reward ≈ 2196`
++    - `Train/mean_episode_length ≈ 716`
++    - `Tracking/lin_vel_x_abs_error ≈ 0.084`
++    - `Tracking/ang_vel_yaw_abs_error ≈ 0.388`
++    - `Reward/total ≈ 3.107`
++    - `Observation/tilt_deg ≈ 3.11`
++  - the new termination breakdown shows the remaining resets are not dominated by:
++    - `bad_orientation`
++    - `root_too_low`
++  - instead, the main non-timeout failure source is:
++    - `ball_joint_limit`
++  - the same run also shows aggressive action usage:
++    - `Action/policy_abs_mean ≈ 0.886`
++    - `Action/policy_std ≈ 0.815`
++    which is consistent with the ball-joint-limit termination remaining active
++- Reason:
++  - after the logging expansion and replay fixes, the next durable question was whether a fresh real run actually emitted the intended metrics and what those metrics say about the current Stage0 bottleneck
++- Impact:
++  - future Stage0 iteration should prioritize reducing ball-joint-limit failures over chasing body-attitude or root-height failures
++  - the newly added action/termination metrics should be treated as the main evidence when deciding whether to adjust:
++    - action amplitude
++    - joint limits
++    - action-rate penalty
++    - reset initialization
++- Status:
++  - offline export and scalar inspection completed
++  - the run confirms logging expansion success
++  - the next engineering iteration should target the ball-joint-limit failure mode explicitly
++
++### Stage0 `ball_joint_limit_soft` reward was added as a margin-only soft constraint, and the first real GPU comparison shows better reward/tracking with a new orientation tradeoff
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the active Stage0 reward set now includes:
++    - `ball_joint_limit_soft`
++  - this term does not penalize general large-angle motion across the whole range
++  - instead, it activates only when a ball joint uses more than:
++    - `80%`
++    of its available distance from the default pose to the configured hard limit
++  - the implementation uses:
++    - side-specific utilization relative to the default pose
++    - zero penalty in the safe zone
++    - quadratic growth in the last margin near the limit
++    - mean aggregation across the 6 controlled ball joints
++  - the initial config used for the first comparison run is:
++    - `ball_joint_limit_soft_start_ratio = 0.8`
++    - `ball_joint_limit_soft_power = 2.0`
++    - `ball_joint_limit_soft = -0.2`
++- Durable training conclusion:
++  - the comparison baseline run is:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-07-32`
++  - the first soft-constraint run is:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-36-38_soft_limit_v1`
++  - comparing last-50-iteration means, the soft-constraint run improved:
++    - `Train/mean_reward`
++      from about `2196` to about `2387`
++    - `Train/mean_episode_length`
++      from about `716` to about `743`
++    - `Tracking/ang_vel_yaw_abs_error`
++      from about `0.388` to about `0.310`
++    - `episode_reset/ball_joint_limit_rate`
++      from about `0.395` to about `0.344`
++    - `episode_reset/time_out_rate`
++      from about `0.605` to about `0.656`
++  - however, this improvement came with a clear tradeoff:
++    - `Observation/tilt_deg`
++      increased from about `3.11 deg` to about `6.85 deg`
++    - `Reward/orientation` became more negative
++  - the policy-distribution std recorded by:
++    - `Policy/mean_std`
++    actually decreased:
++    - about `0.722 -> 0.641`
++  - but the runtime action spread and magnitude remained high:
++    - `Action/policy_abs_mean`
++      about `0.886 -> 0.876`
++    - `Action/policy_std`
++      about `0.815 -> 0.895`
++  - this means the remaining aggressive motion is not explained only by sampling noise; the learned policy means themselves are still driving large actions
++  - `Loss/value` remained noisy and non-monotonic in both runs, but because reward, episode length, and tracking all improved, this should not be interpreted as training failure by itself
++- Reason:
++  - the user approved implementing the previously proposed soft joint-limit reward as the first direct optimization for the identified Stage0 bottleneck and asked for a real GPU rerun plus a multi-metric analysis
++- Impact:
++  - future Stage0 optimization should now treat the main question as a reward tradeoff problem:
++    - keep the new reduction in joint-limit failures
++    - while recovering the lost orientation margin
++  - the next single-variable reward iteration should likely tune one of:
++    - `orientation` weight
++    - `action_rate` weight
++    - `ball_joint_limit_soft_start_ratio`
++    - `ball_joint_limit_soft` scale
++  - future result interpretation should continue combining:
++    - reward
++    - episode length
++    - tracking error
++    - action statistics
++    - termination breakdown
++    - and only then discuss loss curves
++- Status:
++  - targeted `python3 -m py_compile` check passed
++  - real GPU Stage0 training rerun completed successfully to iteration `599`
++  - offline TensorBoard export and comparison completed
++
++### Stage0 real run `2026-04-14_12-48-16` confirmed that the active logging path was under-instrumented, and the direct env/logger/export chain now logs observation/action/tracking/termination metrics explicitly
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the analyzed Stage0 run:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_12-48-16`
++    exposed only:
++    - `21`
++    TensorBoard scalar tags
++  - this was not a TensorBoard failure; it was a logging-coverage gap:
++    - the env only emitted a small `episode/...` set on reset
++    - the logger did not continuously aggregate current-step diagnostics from the active env state
++  - the direct env now records per-step metrics for the active Stage0 semantics, including:
++    - `Reward/...`
++    - `Tracking/...`
++    - `Action/...`
++    - `Command/...`
++    - `Observation/...`
++    - `Termination/...`
++  - the episode-reset path now also records richer episodic summaries:
++    - `episode/return`
++    - `episode/return_per_step`
++    - `episode_per_step/...`
++    - `episode_reset/...`
++  - the termination path is now split into explicit boolean terms before recombination:
++    - `bad_orientation`
++    - `ball_joint_out_of_bounds`
++    - `root_too_low`
++    - `time_out`
++    so later runs can expose termination-cause rates directly
++  - the TensorBoard export helper now writes richer offline summaries:
++    - `group_summary.csv`
++    - `latest_values.csv`
++      with:
++      - `group`
++      - `first_value`
++      - `last_value`
++      - `delta`
++      - `min_value`
++      - `max_value`
++      - `mean_value`
++- Reason:
++  - the user explicitly reported that the real Stage0 run logs were missing many metrics such as reward details, tracking error, and termination information, and required the active training/logging chain to be aligned with the current observation/reward/action/termination design
++- Impact:
++  - future training-result reading should not treat the older 21-tag Stage0 run as the full intended metric surface
++  - future run validation should explicitly check whether the new TensorBoard groups:
++    - `Reward`
++    - `Tracking`
++    - `Action`
++    - `Command`
++    - `Observation`
++    - `Termination`
++    appear in the event file
++  - if later observation/reward/action/termination semantics change again, the env logging and TensorBoard export should be updated in the same session instead of drifting behind the active task meaning
++- Status:
++  - targeted `python3 -m py_compile` validation passed
++  - updated TensorBoard export script executed successfully on the existing Stage0 run
++  - a fresh real training run is still required to verify the newly added tags in an event file
++### Robot asset binding paths must follow the USD-internal `complete_car_alternative` root, and Stage0 GPU smoke training is now runnable again
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the active robot USD:
++    - `USD/complete_car.usd`
++    has its real asset root under:
++    - `/World/complete_car_alternative`
++  - the articulation root is not:
++    - `/body_car_chassis`
++    by itself
++    but instead:
++    - `/complete_car_alternative/body_car_chassis`
++  - therefore the active direct-workflow bindings now use the USD-consistent paths:
++    - articulation root:
++      - `/complete_car_alternative/body_car_chassis`
++    - IMU:
++      - `{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis/Imu_Sensor`
++    - lidar:
++      - `{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis/Example_Rotary`
++    - stereo left camera:
++      - `{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis/Stereo_Vision_Camera/Camera_left`
++    - height-scanner anchor body:
++      - `{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis`
++  - after aligning these paths, the minimal real-GPU smoke command:
++    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 1 --max_iterations 1`
++    now:
++    - creates the articulation successfully
++    - starts simulation successfully
++    - builds actor/critic models successfully
++    - completes one PPO learning iteration successfully
++- Reason:
++  - after the earlier configclass / Hydra fixes, the next startup blocker was a PhysX articulation creation failure caused by asset bindings that assumed the robot bodies sat directly under `/Robot/...`, while the USD actually inserts an intermediate `complete_car_alternative` root and also uses different sensor prim names
++- Impact:
++  - future robot-asset or sensor-path edits should be verified against the real USD prim hierarchy, not inferred from desired naming
++  - if a later USD re-export changes the root prim or sensor names again, the first files to re-check are:
++    - `assets/robot_cfg.py`
++    - `sensors/imu.py`
++    - `sensors/lidar.py`
++    - `sensors/stereo_camera.py`
++    - `terrain/terrain_cfg.py`
++- Status:
++  - targeted `py_compile` validation passed
++  - Stage0 real-GPU minimal training smoke passed
++  - a non-blocking warning:
++    - `Failed to clone in Fabric`
++    still appears when `num_envs=1`, but it did not prevent environment setup or the completed training iteration
++
++### Direct-workflow startup configs must not expose inherited read-only properties or frozen nested terrain configs to Isaac Lab `configclass`
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - in the active `RL_Training/` direct workflow, config-derived quantities that sit inside Isaac Lab `configclass` trees should not be implemented as inherited read-only `@property` members
++  - the two concrete blocking cases were:
++    - `CompleteCarTerrainRuntimeCfg.num_height_points`
++    - `CompleteCarSensorSuiteCfg.policy_feature_dim` and the corresponding per-sensor `policy_feature_dim`
++  - these quantities are now queried through explicit methods instead of read-only properties:
++    - `get_num_height_points()`
++    - `get_policy_feature_dim()`
++  - `Stage1TerrainCfg` is no longer a `frozen dataclass`, so Hydra can safely write nested terrain-generator overrides back into the config tree
++  - after these changes, the real training entry:
++    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cpu --num_envs 1 --max_iterations 1`
++    now passes the previous config-construction failure points and reaches Isaac Lab simulation-context startup
++- Reason:
++  - the user reported a startup crash in the training script, and the root cause was Isaac Lab `configclass` / Hydra trying to `setattr(...)` into inherited property-backed or frozen nested config members during config materialization
++- Impact:
++  - future derived config values inside the active direct-workflow config tree should prefer explicit query methods over property-backed pseudo-fields
++  - future nested terrain-generator config objects that Hydra needs to override must remain mutable
++  - if later startup fails again, the next checks should start after config parsing rather than revisiting these resolved `property` / `frozen dataclass` issues
++- Status:
++  - targeted `python3 -m py_compile` validation passed
++  - runtime smoke no longer stops in the original Python config error chain
++  - remaining warnings/errors observed in the restricted terminal were environment-level Isaac Sim issues such as missing CUDA driver and non-writable kit cache, not this config bug
++
+ ### GitHub tracking scope now excludes the local thesis workspace and literature corpus
+ - Updated:
+   - `.gitignore`
+diff --git a/docs/current_status.md b/docs/current_status.md
+index 354684f..13a2598 100644
+--- a/docs/current_status.md
++++ b/docs/current_status.md
+@@ -7,7 +7,11 @@
+ ## 当前阶段
+ - 已完成 `RL_Training/` 原地重构。
+ - 已按用户要求把旧 `IK/FK`、本地 `rsl_rl` 本体、旧辅助脚本重新迁入新架构内部。
+-- 当前进入“等待真实 Isaac Lab 环境做运行态冒烟验证，并继续接入 MGDP 风格显式地形高度 patch 到 critic 观测”的阶段。
++- 已完成一轮真实训练入口冒烟，已清除启动链路中的 `configclass` / Hydra 配置阻塞。
++- 已完成 `Stage0` 在真实 GPU 环境下的最小训练启动验证。
++- 已完成一次真实 `Stage0` run 的日志诊断，并补齐训练日志 / TensorBoard 指标埋点。
++- 已完成一次基于球铰软约束惩罚的真实 GPU 训练对比实验，并拿到新 run 分析结果。
++- 当前进入“基于新日志继续收敛 Stage0 奖励设计，并继续接入 MGDP 风格显式地形高度 patch 到 critic 观测”的阶段。
+ 
+ ## 当前 RL 主线位置
+ - 当前活跃 RL 工作区：
+@@ -130,6 +134,114 @@
+ - 最近已修正一个旧配置问题：
+   - `Stage1` 中的 `default_terrain_name = "mix"` 不是合法 terrain 名称
+   - 当前已改为 `"flat"`
++- 最近已修正 direct workflow 训练启动链路中的一组配置类阻塞：
++  - `TerrainBindingCfg` 不再继承只读 `num_height_points` property
++  - `SensorBindingCfg` 不再继承只读 `policy_feature_dim` property
++  - `terrain.generator` 使用的 `Stage1TerrainCfg` 不再是 `frozen dataclass`
++  - 真实训练入口已可越过 Hydra 配置注册与 `env_cfg` 构建阶段，进入 Isaac Lab 仿真上下文创建
++- 最近已修正 direct workflow 资产 prim 路径与 USD 实际层级不一致的问题：
++  - articulation root 真实位于 `complete_car_alternative/body_car_chassis`
++  - IMU 真实 prim 为 `Imu_Sensor`
++  - 双目左相机真实 prim 为 `Stereo_Vision_Camera/Camera_left`
++  - LiDAR 真实 prim 为 `Example_Rotary`
++  - 当前 `Stage0` 已通过：
++    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 1 --max_iterations 1`
++    的真实 GPU 最小训练启动测试，并完成 1 次学习迭代
++- 最近已完成 Stage0 日志与 TensorBoard 指标补强：
++  - 已分析：
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_12-48-16`
++  - 该次 run 当前只有 21 个 scalar tag
++  - 原因已确认是：
++    - env 只在 reset 时写少量 `episode/...` 项
++    - logger 未持续聚合当前观测 / 动作 / 跟踪误差 / 终止分解
++  - 当前已在代码中补入以下指标分组：
++    - `Reward/...`
++    - `Tracking/...`
++    - `Action/...`
++    - `Command/...`
++    - `Observation/...`
++    - `Termination/...`
++    - `episode_per_step/...`
++    - `episode_reset/...`
++  - 当前 `tensorboard_export.py` 已补充导出：
++    - `group_summary.csv`
++    - 带 `group / first / last / delta / min / max / mean` 列的 `latest_values.csv`
++- 最近已修正一次回放链路断点：
++  - `python scripts/play.py --task CompleteCar-Stage0 --load_run 2026-04-14_12-48-16 --num_envs 2`
++    原先会因 `load_checkpoint = -1` 被传入 Isaac Lab `get_checkpoint_path()` 而报：
++    - `TypeError: first argument must be string or compiled pattern`
++  - 当前已修正：
++    - `agents/rsl_rl_ppo_cfg.py` 中默认 `load_run / load_checkpoint` 改为字符串正则
++    - `scripts/train.py` / `scripts/play.py` 在调用 `get_checkpoint_path()` 前会再做一次类型归一化
++- 最近已修正一次回放链路版本判断断点：
++  - 本地 vendored `rsl_rl.__version__` 原先是：
++    - `5.0.1-local`
++  - `play.py` 用 `packaging.version.parse()` 解析时会报：
++    - `InvalidVersion: '5.0.1-local'`
++  - 当前已修正：
++    - vendored 版本号改为合法写法 `5.0.1+local`
++    - `scripts/play.py` 的版本解析增加了 `-local -> +local` 的兼容归一化
++- 最近已完成对真实 Stage0 run：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-07-32`
++    的首轮结果分析
++  - 当前已确认：
++    - 新增日志链路已生效，scalar tag 数量由旧 run 的 `21` 增至 `64`
++    - 当前高层训练曲线与上一轮 `2026-04-14_12-48-16` 数值一致，说明在相同 seed 与配置下复现实验结果稳定
++    - 当前 last50 均值大致为：
++      - `Train/mean_reward ≈ 2196`
++      - `Train/mean_episode_length ≈ 716`
++      - `Tracking/lin_vel_x_abs_error ≈ 0.084`
++      - `Tracking/ang_vel_yaw_abs_error ≈ 0.388`
++      - `Reward/total ≈ 3.107`
++      - `Observation/tilt_deg ≈ 3.11`
++    - 当前主要剩余终止来源不是：
++      - `bad_orientation`
++      - `root_too_low`
++    - 而是：
++      - `ball_joint_limit`
++  - 当前日志还显示：
++    - `Action/policy_abs_mean ≈ 0.886`
++    - `Action/policy_std ≈ 0.815`
++    - policy 动作整体较频繁逼近动作边界
++    - 这与当前球铰越界终止仍占较大比例相一致
++- 最近已按用户确认新增球铰软约束惩罚，并完成真实 GPU 对比训练：
++  - 新增奖励项：
++    - `ball_joint_limit_soft`
++  - 当前实现语义：
++    - 仅当球铰使用率超过各自可用范围的 `80%` 后开始激活
++    - 对 6 个球铰取均值后施加二次惩罚
++    - 当前 scale：
++      - `-0.2`
++  - 对比 run：
++    - baseline：
++      - `2026-04-14_13-07-32`
++    - soft limit：
++      - `2026-04-14_13-36-38_soft_limit_v1`
++  - 当前 last50 均值对比显示：
++    - `Train/mean_reward`：
++      - `2196 -> 2387`
++    - `Train/mean_episode_length`：
++      - `716 -> 743`
++    - `Tracking/ang_vel_yaw_abs_error`：
++      - `0.388 -> 0.310`
++    - `episode_reset/ball_joint_limit_rate`：
++      - `0.395 -> 0.344`
++    - `episode_reset/time_out_rate`：
++      - `0.605 -> 0.656`
++  - 但同时出现明显 tradeoff：
++    - `Observation/tilt_deg`：
++      - `3.11 -> 6.85`
++    - `Reward/orientation` 更负
++    - `Action/policy_abs_mean` 仅小幅下降：
++      - `0.886 -> 0.876`
++    - `Action/policy_std` 反而上升：
++      - `0.815 -> 0.895`
++  - 当前 `Policy/mean_std` 已下降：
++    - `0.722 -> 0.641`
++    说明分布参数层面的探索强度在下降
++  - 但 runtime 动作分布仍偏激进，说明当前更多是 policy 均值输出在逼近大动作，而不只是采样噪声过大
++  - 当前 `Loss/value` 仍明显波动，不可视为严格收敛
++  - 但结合 reward、tracking、episode length 的改善，当前不能把“value loss 未单调下降”直接解释为训练失败
+ - 毕业论文 `chapter_03` 的速度雅可比推导已统一为由单一标量 `b` 定义的前后镜像偏置 `${}^{1}\mathbf b=[-b,0,0]^T`、`${}^{3}\mathbf b=[b,0,0]^T`，即仅保留 `x` 分量且 `y=z=0`，LaTeX 已完成通过式编译验证。
+ 
+ ## 当前默认设计选择
+@@ -211,7 +323,13 @@
+     - `tracking_ang_vel`
+     - `orientation`
+     - `action_rate`
++    - `ball_joint_limit_soft`
+     - `termination`
++  - 当前新增球铰软约束惩罚：
++    - 只在球铰使用率超过各自可用范围的 `80%` 后开始生效
++    - 当前按 6 个球铰均值计算二次惩罚
++    - 当前 scale：
++      - `ball_joint_limit_soft = -0.2`
+   - 当前已从 `rewards.py` 和 `RewardScalesCfg` 中删除：
+     - `lin_vel_z`
+     - `ang_vel_xy`
+@@ -233,16 +351,28 @@
+     - `critic = 45 + num_height_points`
+ 
+ ## 当前阻塞 / 风险
+-- 当前机器没有 Isaac Lab 运行环境，因此本轮只能完成代码重构和静态语法检查。
++- 当前对话终端本身不是可直接反复长时间试错 Isaac Lab 训练的 shell，因此后续每一轮训练修改仍应尽量保持单变量。
++- 但本轮已经完成一次真实 GPU 对比训练，可直接据此推进下一轮 Stage0 优化。
+ - 当前终端的 `python3` 也缺少 `numpy`，因此本轮无法在这里直接跑通：
+   - `utils/validate_wheel_speed_allocator.py`
+ - 尚未在真实 Isaac Lab 环境中验证：
+-  - 任务注册能否被 Isaac Lab 正常发现
+-  - `scripts/train.py` 能否正常启动 `CompleteCar-Stage0` 并优先导入项目内 `complete_car/rsl_rl`
+-  - `scripts/play.py` 能否正常加载 checkpoint 并优先导入项目内 `complete_car/rsl_rl`
++  - `scripts/play.py` 是否已在当前这批修复后继续稳定加载 checkpoint、通过版本判断分支，并优先导入项目内 `complete_car/rsl_rl`
+ - 当前 `RL_Training/` 结构已切换为新架构，后续不要再把旧的历史路径当作默认入口。
+ 
+ ## 下一步优先级
++- 继续围绕当前 Stage0 的 reward tradeoff 做下一轮单变量优化：
++  - 当前 `ball_joint_limit_soft` 已降低 joint-limit reset，但带来了更大的姿态倾角
++- 下一轮优先检查：
++  - 是否需要略提高：
++    - `orientation` 惩罚权重
++  - 是否需要略提高：
++    - `action_rate` 惩罚权重
++  - 是否需要调整：
++    - `ball_joint_limit_soft_start_ratio`
++    - `ball_joint_limit_soft` scale
++  - 目标是：
++    - 保住当前 tracking 与 episode length 改善
++    - 同时把 `tilt_deg` 从当前约 `6.85 deg` 再压回去
+ - 继续把显式地形高度 patch 从 terrain runtime 接到 env / critic 观测：
+   - 验证 `critic` 维度大于 `actor`
+   - 在真实 Isaac Lab 环境里检查 patch 数值是否随 terrain 起伏变化
+diff --git a/docs/training_workflow_and_tensorboard_guide.md b/docs/training_workflow_and_tensorboard_guide.md
+index 36a8e1d..d8c4738 100644
+--- a/docs/training_workflow_and_tensorboard_guide.md
++++ b/docs/training_workflow_and_tensorboard_guide.md
+@@ -1,570 +1,140 @@
+-# 完整车 RL 训练操作说明
++# 完整车 RL 训练与 TensorBoard 简明说明
+ 
+ ## 适用范围
+ 
+-本说明面向当前完整车 Isaac Lab + RSL-RL 训练项目，覆盖以下内容：
++本文档只针对当前活跃训练主线：
+ 
+-- 训练脚本启动指令
+-- TensorBoard 查看指令
+-- 策略回放指令
+-- 训练结果本地保存位置
+-- TensorBoard 图表读法
+-
+-当前任务 ID 为：
+-
+-```text
+-Complete-Car-Rl-Training-v0
+-```
+-
+-当前训练项目根目录为：
+-
+-```text
+-/home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
+-```
++- 训练工程目录：`/home/ubuntu/Graduation-Project/RL_Training`
++- 训练脚本：`scripts/train.py`
++- 回放脚本：`scripts/play.py`
++- 任务 ID：
++  - `CompleteCar-Stage0`
++  - `CompleteCar-Stage1`
++  - `CompleteCar-Stage2`
+ 
+ ---
+ 
+ ## 1. 训练前准备
+ 
+-先进入环境并切到训练项目目录：
++进入 Isaac Lab Python 环境后执行：
+ 
+ ```bash
+-conda activate env_isaacLab
+-cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
+-export OMNI_KIT_ACCEPT_EULA=YES
+-```
+-
+-如果本项目还没有做 editable install，先执行一次：
+-
+-```bash
+-python -m pip install -e . --no-build-isolation
++cd /home/ubuntu/Graduation-Project/RL_Training
++pip install -e source/complete_car_lab
+ ```
+ 
+ ---
+ 
+-## 2. 训练启动指令
++## 2. 训练
+ 
+-### 2.1 最常用训练指令
++最常用训练命令：
+ 
+ ```bash
+-cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
+-python scripts/rsl_rl/train.py \
+-  --task Complete-Car-Rl-Training-v0 \
+-  --num_envs 100 \
+-  --headless
++cd /home/ubuntu/Graduation-Project/RL_Training
++python scripts/train.py --task CompleteCar-Stage0 --headless
+ ```
+ 
+-含义：
+-
+-- `--task Complete-Car-Rl-Training-v0`
+-  - 启动当前完整车 active task
+-- `--headless`
+-  - 不开可视化窗口
+-- `--device cuda:0`
+-  - 使用第 1 张 GPU 跑训练
+-
+-### 2.2 冒烟测试训练指令
+-
+-如果只想先确认训练链路能否启动，不想直接跑满默认轮数：
+-
+-```bash
+-python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --device cuda:0 --num_envs 100 --max_iterations 10
+-```
+-
+-### 2.3 常用可调参数
+-
+-训练脚本支持的常见参数可通过以下命令查看：
++常用变体：
+ 
+ ```bash
+-python scripts/rsl_rl/train.py --help
++python scripts/train.py --task CompleteCar-Stage1 --headless
++python scripts/train.py --task CompleteCar-Stage2 --headless
++python scripts/train.py --task CompleteCar-Stage0 --headless --num_envs 64 --max_iterations 5
+ ```
+ 
+-当前常用参数包括：
++说明：
+ 
++- `--headless`
++  - 不开可视化窗口
+ - `--num_envs`
+-  - 指定并行环境数量
++  - 指定并行环境数
+ - `--max_iterations`
+-  - 指定 PPO 训练轮数
+-- `--seed`
+-  - 指定随机种子
+-- `--resume`
+-  - 从已有 checkpoint 继续训练
+-- `--load_run`
+-  - 指定已有 run 目录
+-- `--checkpoint`
+-  - 指定恢复的 checkpoint 文件
++  - 指定训练轮数，适合冒烟测试
+ 
+ ---
+ 
+-## 3. 本地结果保存在哪里
++## 3. 回放
+ 
+-每次训练的本地结果默认保存在：
+-
+-```text
+-logs/rsl_rl/complete_car_rl_training/YYYY-MM-DD_HH-MM-SS/
+-```
+-
+-一个典型 run 目录中常见文件如下：
+-
+-- `events.out.tfevents.*`
+-  - TensorBoard 原始事件文件
+-- `model_0.pt`
+-- `model_50.pt`
+-- `model_100.pt`
+-- `model_149.pt`
+-  - 训练保存的 checkpoint
+-- `params/env.yaml`
+-  - 本次 run 的环境配置快照
+-- `params/agent.yaml`
+-  - 本次 run 的 PPO 配置快照
+-- `git/Graduation-Project.diff`
+-  - 本次 run 对应的工作区代码差异快照
+-- `tensorboard_export/summary.json`
+-  - TensorBoard 离线导出总览
+-- `tensorboard_export/latest_values.csv`
+-  - 各标量的最新值
+-- `tensorboard_export/scalars/*.csv`
+-  - 每条曲线对应的本地 CSV
+-
+-也就是说：
+-
+-- TensorBoard 数据已经存到本地
+-- 网页 TensorBoard 只是读取这些本地 event 文件并可视化
+-- 即使不开网页，也可以直接分析导出的 `csv/json`
+-
+----
+-
+-## 4. 查看 TensorBoard 的指令
+-
+-### 4.1 最常用查看命令
+-
+-```bash
+-tensorboard --logdir /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training
+-```
+-
+-启动后浏览器通常访问：
+-
+-```text
+-http://localhost:6006
+-```
+-
+-### 4.2 远程机器常用命令
+-
+-如果需要从其他机器访问：
++指定 checkpoint 回放：
+ 
+ ```bash
+-tensorboard --logdir /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training --bind_all
+-```
+-
+-### 4.3 如果 TensorBoard 启动报 `pkg_resources` 错误
+-
+-当前 `env_isaacLab` 中，`tensorboard 2.20.0` 需要 `setuptools < 81`。
+-
+-如果再次出现如下报错：
+-
+-```text
+-ModuleNotFoundError: No module named 'pkg_resources'
++cd /home/ubuntu/Graduation-Project/RL_Training
++python scripts/play.py --task CompleteCar-Stage0 --checkpoint /path/to/model.pt
+ ```
+ 
+-可使用本机已有缓存离线修复：
++如果只知道某次 run 目录，也可以这样：
+ 
+ ```bash
+-conda install -n env_isaacLab --offline -y /home/ubuntu/miniconda3/pkgs/setuptools-80.10.2-py311h06a4308_0.conda
++python scripts/play.py --task CompleteCar-Stage0 --load_run <run_dir_name>
+ ```
+ 
+ ---
+ 
+-## 5. 策略回放指令
+-
+-### 5.1 最简单的回放命令
+-
+-```bash
+-python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0 
+-```
+-
+-这条命令适合快速验证当前任务的播放链路是否正常。
++## 4. 日志与 checkpoint 位置
+ 
+-### 5.2 指定某次 run 和某个 checkpoint 回放
++训练日志默认写入：
+ 
+-例如回放一次指定 run 的最终模型：
+-
+-```bash
+-python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0  --load_run 2026-04-06_17-40-38 --checkpoint model_149.pt
+-```
+-
+-如果希望少开一些并行环境，便于观察：
+-
+-```bash
+-python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0  --num_envs 32 --load_run 2026-04-06_17-40-38 --checkpoint model_149.pt
+-```
+-
+-如需查看完整参数：
+-
+-```bash
+-python scripts/rsl_rl/play.py --help
+-```
+-
+----
+-
+-## 6. 键盘控制脚本指令
+-
+-### 6.1 最简单的键盘控制启动命令
+-
+-```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/control_keyboard.py
+-```
+-
+-这条命令会启动完整车键盘控制脚本，不额外注入地形。
+-该脚本默认走 Isaac Sim 的 GPU 运行路径，不提供单独的 CPU 运行模式。
+-
+-### 6.2 在指定地形上启动键盘控制
+-
+-在训练同款 `stage1` 大地图上启动：
+-
+-```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/control_keyboard.py --terrain stage1
++```text
++RL_Training/logs/rsl_rl/<experiment_name>/<run_dir>/
+ ```
+ 
++当前各阶段默认实验名为：
+ 
+-### 6.3 当前可选地形
+-
+-当前 `control_keyboard.py` 支持的 `--terrain` 选项包括：
++- `CompleteCar-Stage0` -> `complete_car_stage0`
++- `CompleteCar-Stage1` -> `complete_car_stage1`
++- `CompleteCar-Stage2` -> `complete_car_stage2`
+ 
+-- `none`
+-- `stage1`
++因此常见目录例如：
+ 
+-如需查看完整参数：
+-
+-```bash
+-python scripts/isaac_sim/control_keyboard.py --help
++```text
++RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_12-00-00/
+ ```
+ 
+-补充说明：
++一个 run 目录下通常会有：
+ 
+-- 当前仓库状态下，键盘控制脚本只保留 `none` 和 `stage1`
+-- 之前脚本里暴露过的 `gap`、`stage2`、`both` 等选项依赖旧的 `scripts/isaac_sim/terrain_preview/` 源码；这些源码当前不在工作区内，因此不再作为可用入口写入文档
+-- 如果只是想看单块或分离画廊地形，请改用下面的地形查看脚本
++- `events.out.tfevents.*`
++- `model_*.pt`
++- `params/env.yaml`
++- `params/agent.yaml`
+ 
+ ---
+ 
+-## 7. 地形查看脚本指令
+-
+-### 7.1 查看整张 stage1 大地图
+-
+-```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/preview_stage1_terrain.py
+-```
+-
+-常见用法：
+-
+-- 查看指定焦点 tile：
+-
+-```bash
+-python scripts/isaac_sim/preview_stage1_terrain.py --row 0 --col 0
+-```
+-
+-- 在焦点 tile 上同时放车：
+-
+-```bash
+-python scripts/isaac_sim/preview_stage1_terrain.py --row 0 --col 0 --spawn-car
+-```
+-
+-
+-### 7.2 查看 stage1 单块或全部 tile 分离画廊
+-
+-默认查看当前 `20 x 10` 全部 tile 分离画廊：
+-
+-```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/preview_stage1_tile.py
+-```
++## 5. TensorBoard
+ 
+-只看一块指定 tile：
++查看全部训练：
+ 
+ ```bash
+-python scripts/isaac_sim/preview_stage1_tile.py --single-tile --row 0 --col 0
++cd /home/ubuntu/Graduation-Project/RL_Training
++tensorboard --logdir logs/rsl_rl --port 6006 --bind_all
+ ```
+ 
+-只看某一类地形：
++只看 Stage0：
+ 
+ ```bash
+-python scripts/isaac_sim/preview_stage1_tile.py --single-tile --terrain-name gap
++tensorboard --logdir logs/rsl_rl/complete_car_stage0 --port 6006 --bind_all
+ ```
+ 
+-列出当前支持的地形名：
+-
+-```bash
+-python scripts/isaac_sim/preview_stage1_tile.py --list-terrains
+-```
+-
+-### 7.3 查看 stage1 后六类地形
+-
+-默认查看后六类地形组成的 `20 x 10` gallery：
+-
+-```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/preview_stage1_last_six.py
+-```
+-
+-只看其中某一类：
+-
+-```bash
+-python scripts/isaac_sim/preview_stage1_last_six.py --single-tile --terrain-name pit
+-```
+-
+-列出“后六类地形”名字：
+-
+-```bash
+-python scripts/isaac_sim/preview_stage1_last_six.py --list-terrains
+-```
+-
+-### 7.4 地形查看脚本的使用建议
+-
+-当前建议这样选入口：
+-
+-- 想看训练时整张大地图：`preview_stage1_terrain.py`
+-- 想看全部 tile 的分离几何：`preview_stage1_tile.py`
+-- 想重点看后六类复杂地形：`preview_stage1_last_six.py`
+-- 想边看车边做手动联调：`control_keyboard.py --terrain stage1`
+-
+----
+-
+-## 8. TensorBoard 图怎么读
+-
+-### 8.1 先看横轴和纵轴
+-
+-在 `Scalars` 页面里，默认重点看：
+-
+-- 横轴：`step`
+-  - 对当前训练基本可理解为第几次 PPO iteration
+-- 纵轴：该指标在该 iteration 记录时的数值
+-
+-不建议一上来就把平滑开太高。  
+-先把 `Smoothing` 调低，再看原始趋势。
+-
+-### 8.2 先看哪几张图
+-
+-对当前第 1 阶段 `flat-only` baseline，优先看这 6 条：
+-
+-- `Train/mean_reward`
+-- `Train/mean_episode_length`
+-- `Episode_Termination/time_out`
+-- `Episode_Termination/root_too_low`
+-- `Episode_Reward/track_lin_vel_xy`
+-- `Episode_Reward/track_ang_vel_z`
+-
+----
+-
+-## 9. 这 6 条图分别是什么意思
+-
+-### 9.1 `Train/mean_reward`
+-
+-含义：
+-
+-- 平均总奖励
+-
+-横轴：
+-
+-- PPO iteration
+-
+-纵轴：
+-
+-- 当前统计窗口下的平均总 reward
+-
+-怎么判断：
+-
+-- 持续上升通常是好现象
+-- 长期不升或大幅震荡通常说明策略没有稳定学到目标行为
+-
+-### 9.2 `Train/mean_episode_length`
+-
+-含义：
+-
+-- 平均 episode 长度
+-
+-横轴：
+-
+-- PPO iteration
+-
+-纵轴：
+-
+-- 平均每个 episode 持续了多少个控制步
+-
+-怎么判断：
+-
+-- 对当前任务非常关键，越长通常越好
+-- 上升说明策略更能稳定活下来
+-
+-当前配置中：
+-
+-- `episode_length_s = 16`
+-- `dt = 1/120`
+-- `decimation = 2`
+-
+-所以单回合理论上限约为：
++浏览器地址通常是：
+ 
+ ```text
+-8 / (1/120 * 2) = 960 步
+-```
+-
+-如果这条曲线接近 `960`，通常说明大部分 episode 已经能正常活到超时。
+-
+-### 9.3 `Episode_Termination/time_out`
+-
+-含义：
+-
+-- 因为“正常跑满时长”而结束的比例
+-
+-横轴：
+-
+-- PPO iteration
+-
+-纵轴：
+-
+-- 当前统计窗口内因 `time_out` 结束的 episode 比例
+-
+-怎么判断：
+-
+-- 越接近 `1.0` 越好
+-- 上升说明提前失败越来越少
+-
+-### 9.4 `Episode_Termination/root_too_low`
+-
+-含义：
+-
+-- 因根部高度过低而终止的比例
+-
+-横轴：
+-
+-- PPO iteration
+-
+-纵轴：
+-
+-- 当前统计窗口内因 `root_too_low` 结束的 episode 比例
+-
+-怎么判断：
+-
+-- 越接近 `0.0` 越好
+-- 高说明车体经常趴地、翻倒或姿态崩坏
+-
+-### 9.5 `Episode_Reward/track_lin_vel_xy`
+-
+-含义：
+-
+-- 线速度跟踪奖励
+-
+-横轴：
+-
+-- PPO iteration
+-
+-纵轴：
+-
+-- 当前统计窗口内该奖励项的平均值
+-
+-怎么判断：
+-
+-- 越高越好
+-- 如果 `mean_episode_length` 在涨，但这条不涨，说明策略可能只是学会了“活着”，还没真正学会执行速度命令
+-
+-### 9.6 `Episode_Reward/track_ang_vel_z`
+-
+-含义：
+-
+-- 偏航角速度跟踪奖励
+-
+-横轴：
+-
+-- PPO iteration
+-
+-纵轴：
+-
+-- 当前统计窗口内该奖励项的平均值
+-
+-怎么判断：
+-
+-- 越高越好
+-- 如果这条明显低于 `track_lin_vel_xy`，通常说明策略“会走，但转向学得还不够好”
+-
+----
+-
+-## 10. 推荐的读图顺序
+-
+-建议按下面顺序判断一次训练是否正常：
+-
+-1. 先看是否能活下来
+-   - `Train/mean_episode_length`
+-   - `Episode_Termination/time_out`
+-   - `Episode_Termination/root_too_low`
+-2. 再看是否学会任务
+-   - `Episode_Reward/track_lin_vel_xy`
+-   - `Episode_Reward/track_ang_vel_z`
+-   - `Train/mean_reward`
+-3. 最后再看更细的稳定性和优化项
+-   - `Episode_Reward/body_orientation`
+-   - `Episode_Reward/lin_vel_z`
+-   - `Episode_Reward/ang_vel_xy`
+-   - `Episode_Reward/action_rate`
+-   - `Loss/value`
+-   - `Loss/surrogate`
+-
+----
+-
+-## 11. 一个最短操作流程
+-
+-### 11.1 跑训练
+-
+-```bash
+-conda activate env_isaacLab
+-cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
+-export OMNI_KIT_ACCEPT_EULA=YES
+-python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --device cuda:0
+-```
+-
+-### 11.2 开 TensorBoard
+-
+-```bash
+-tensorboard --logdir /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training
++http://localhost:6006
+ ```
+ 
+-### 11.3 回放某次训练结果
++如果只想把标量离线导出为 CSV/JSON：
+ 
+ ```bash
+-python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0 --device cuda:0 --num_envs 32 --load_run 2026-04-06_17-40-38 --checkpoint model_149.pt
++python -m complete_car_lab.tasks.direct.complete_car.utils.tensorboard_export \
++  --run_dir logs/rsl_rl/complete_car_stage0/<run_dir_name>
+ ```
+ 
+-### 11.4 用键盘控制做联调
+-
+-```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/control_keyboard.py --terrain stage1
+-```
++---
+ 
+-### 11.5 查看地形
++## 6. 当前推荐最短流程
+ 
+ ```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/preview_stage1_terrain.py
+-python scripts/isaac_sim/preview_stage1_tile.py --list-terrains
+-python scripts/isaac_sim/preview_stage1_last_six.py --list-terrains
++cd /home/ubuntu/Graduation-Project/RL_Training
++pip install -e source/complete_car_lab
++python scripts/train.py --task CompleteCar-Stage0 --headless --num_envs 64 --max_iterations 5
++tensorboard --logdir logs/rsl_rl/complete_car_stage0 --port 6006 --bind_all
++python scripts/play.py --task CompleteCar-Stage0 --checkpoint /path/to/model.pt
+ ```
+-
+-### 11.6 直接看本地离线结果
+-
+-先看：
+-
+-- `tensorboard_export/summary.json`
+-- `tensorboard_export/latest_values.csv`
+-
+-再按需要看：
+-
+-- `tensorboard_export/scalars/*.csv`
+-
+----
+-
+-## 12. 相关文档
+-
+-- [RL 训练策略](./rl_training_route.md)
+-- [TensorBoard 读图说明](./tensorboard_reading_guide.md)
+diff --git a/logs/daily_work_log.md b/logs/daily_work_log.md
+index 064fef2..8cf3a4a 100644
+--- a/logs/daily_work_log.md
++++ b/logs/daily_work_log.md
+@@ -4845,6 +4845,93 @@
+ 
+ ## 2026-04-14
+ 
++已完成：
++- 继续处理 `RL_Training/scripts/train.py` 在真实 GPU 训练启动阶段的 articulation 创建失败问题。
++- 使用最小 Isaac Sim headless 检查脚本读取 `USD/complete_car.usd` 的真实 prim 层级，确认：
++  - 资产根在 `/World/complete_car_alternative`
++  - articulation root 在 `/World/complete_car_alternative/body_car_chassis`
++  - IMU 实际 prim 名为 `Imu_Sensor`
++  - 双目左相机实际 prim 名为 `Stereo_Vision_Camera/Camera_left`
++  - LiDAR 实际 prim 名为 `Example_Rotary`
++- 修改 `assets/robot_cfg.py`：
++  - `COMPLETE_CAR_ARTICULATION_ROOT_PRIM_PATH` 改为 `/complete_car_alternative/body_car_chassis`
++- 修改传感器与 height scanner 路径：
++  - `sensors/imu.py`
++  - `sensors/lidar.py`
++  - `sensors/stereo_camera.py`
++  - `terrain/terrain_cfg.py`
++  统一补上 `complete_car_alternative` 中间层，并改为 USD 中真实存在的传感器 prim 名称
++- 使用：
++  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++  完成静态编译检查，检查通过。
++- 在沙箱外 GPU 环境执行最小训练命令：
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 1 --max_iterations 1`
++- 实测结果：
++  - articulation 创建成功
++  - 仿真启动成功
++  - actor/critic 网络构建成功
++  - 完成 1 次 PPO 学习迭代
++  - `Training time: 0.83 seconds`
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前用户这次遇到的训练启动失败已经解决。
++- 根因是代码中的 articulation root 与传感器 prim 路径没有对齐 USD 内部的 `complete_car_alternative` 根层级及真实传感器命名。
++- 当前 `Stage0` 已恢复为可在真实 GPU 环境中正常完成最小训练启动与 1 次学习迭代的状态。
++
++已完成：
++- 处理 `RL_Training/scripts/train.py` 启动时报错的配置类阻塞问题。
++- 修改 `terrain/terrain_cfg.py`：
++  - 删除会被 Isaac Lab `configclass` 误当作可写成员的只读 `num_height_points` property
++  - 改为通过 `get_num_height_points()` 与内部即时采样点解析逻辑计算 patch 点数
++- 修改 `base/complete_car_cfg.py` 与 `utils/io_descriptors.py`：
++  - 调整为调用 `terrain.get_num_height_points()`
++- 修改 `sensors/imu.py`、`sensors/lidar.py`、`sensors/stereo_camera.py`、`sensors/sensor_cfg.py`：
++  - 删除 `policy_feature_dim` 只读 property
++  - 改为统一使用 `get_policy_feature_dim()`
++- 修改 `terrain/terrain_builder.py`：
++  - 将 `Stage1TerrainCfg` 从 `frozen dataclass` 改为普通 dataclass
++  - 使 Hydra 可以回写 terrain generator 嵌套配置
++- 使用：
++  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++  完成静态编译检查，检查通过。
++- 使用：
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cpu --num_envs 1 --max_iterations 1`
++  做真实训练入口冒烟验证。
++- 结果：
++  - 已确认原始启动报错链路不再出现
++  - 训练入口已越过 Hydra 配置注册与 `env_cfg` 构建，进入 Isaac Lab 仿真上下文创建
++  - 当前继续看到的是环境级问题：
++    - 无 CUDA 驱动 / 无可用 GPU
++    - Isaac Sim `user.config.json` 与 cache 目录写入受限
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 direct workflow 的配置树中，不应再用继承只读 property 来表示可推导配置量。
++- 当前 terrain generator 嵌套配置必须保持可写，不能继续使用 `frozen dataclass`。
++- 用户本次贴出的训练启动报错已经解决；若后续仍无法跑通，应转而排查本机 Isaac Sim 运行环境而不是继续回到这组配置类问题。
++
+ 已完成：
+ - 按用户要求调整 GitHub 同步范围：
+   - 保留所有当前代码与文档改动进入本轮同步
+@@ -4871,3 +4958,252 @@
+ 产出/结论：
+ - 后续 GitHub 远端仓库将不再保存论文正文目录与文献资料目录。
+ - 这两个目录今后默认只作为本地研究工作区保留。
++
++已完成：
++- 按用户要求更新并精简 `docs/training_workflow_and_tensorboard_guide.md`。
++- 删除文档中已失效的旧工程路径与旧 task id：
++  - `src/rl_lab/complete_car_rl_training`
++  - `Complete-Car-Rl-Training-v0`
++- 文档现已统一改为当前有效主线：
++  - `RL_Training/`
++  - `scripts/train.py`
++  - `scripts/play.py`
++  - `CompleteCar-Stage0/1/2`
++- 文档内容已收口为最小工作流：
++  - 环境准备
++  - 训练命令
++  - 回放命令
++  - 日志与 checkpoint 目录
++  - TensorBoard 查看命令
++  - 离线导出 TensorBoard 标量命令
++
++修改文件：
++- `docs/training_workflow_and_tensorboard_guide.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前训练流程说明文档已与现有代码结构一致，可直接作为 `RL_Training/` 主线的简明操作入口使用。
++
++已完成：
++- 分析真实 Stage0 run：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_12-48-16`
++- 已确认该次 run 的 TensorBoard 当前只有 21 个 scalar tag，不是 TensorBoard 故障，而是训练日志覆盖面不足。
++- 已根据当前 active 语义补强训练日志链路：
++  - `env.py` 现可输出当前步的：
++    - `Reward/...`
++    - `Tracking/...`
++    - `Action/...`
++    - `Command/...`
++    - `Observation/...`
++    - `Termination/...`
++  - 终止逻辑已拆成显式分项：
++    - `bad_orientation`
++    - `ball_joint_out_of_bounds`
++    - `root_too_low`
++    - `time_out`
++  - episode 侧新增：
++    - `episode/return`
++    - `episode/return_per_step`
++    - `episode_per_step/...`
++    - `episode_reset/...`
++- 已修改 TensorBoard 离线导出脚本：
++  - 新增 `group_summary.csv`
++  - `latest_values.csv` 新增：
++    - `group`
++    - `first_value`
++    - `last_value`
++    - `delta`
++    - `min_value`
++    - `max_value`
++    - `mean_value`
++- 已执行：
++  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py`
++  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py --run_dir RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_12-48-16`
++  均已通过。
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前代码已经补齐新一轮训练应当输出的大部分核心运行指标。
++- 旧 run `2026-04-14_12-48-16` 的 event 文件不会自动长出新 tag；需要重新跑一次训练才能验证新增指标是否进入 TensorBoard。
++
++已完成：
++- 定位并修正一次回放链路报错。
++- 用户执行：
++  - `python scripts/play.py --task CompleteCar-Stage0 --load_run 2026-04-14_12-48-16 --num_envs 2`
++  时，原先会报：
++  - `TypeError: first argument must be string or compiled pattern`
++- 根因已确认：
++  - `agents/rsl_rl_ppo_cfg.py` 中默认：
++    - `load_run = -1`
++    - `load_checkpoint = -1`
++  - 但 Isaac Lab 的 `get_checkpoint_path()` 需要的是正则字符串，而不是整数哨兵值。
++- 当前已修正：
++  - `agents/rsl_rl_ppo_cfg.py`
++    - 改为：
++      - `load_run = ".*"`
++      - `load_checkpoint = "model_.*.pt"`
++  - `scripts/train.py`
++  - `scripts/play.py`
++    - 在调用 `get_checkpoint_path()` 前新增类型归一化，避免旧整数值再次导致崩溃
++- 已执行：
++  - `python3 -m py_compile RL_Training/scripts/train.py RL_Training/scripts/play.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
++  - 并做了本地选择器归一化检查，确认：
++    - `load_run='2026-04-14_12-48-16', load_checkpoint=-1`
++    会被转换为：
++    - `('2026-04-14_12-48-16', 'model_.*.pt')`
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
++- `RL_Training/scripts/train.py`
++- `RL_Training/scripts/play.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前回放命令在只指定 `--load_run` 时，逻辑上应会自动选择该 run 下最新的 `model_*.pt`，不应再因为 `-1` 类型错误崩溃。
++
++已完成：
++- 继续修正同一回放链路中的下一处报错。
++- 用户再次执行回放时，原先会报：
++  - `packaging.version.InvalidVersion: '5.0.1-local'`
++- 根因已确认：
++  - 本地 vendored `rsl_rl/__init__.py` 中版本号写成了：
++    - `5.0.1-local`
++  - `scripts/play.py` 中使用 `packaging.version.parse()` 做版本分支判断，这个字符串不符合 PEP 440。
++- 当前已修正：
++  - `rsl_rl/__init__.py`
++    - 改为：
++      - `5.0.1+local`
++  - `scripts/play.py`
++    - 增加版本兼容解析函数，若遇到旧的 `-local` 后缀会先归一化再解析
++- 已执行：
++  - `python3 -m py_compile RL_Training/scripts/play.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/__init__.py`
++  - 本地纯 Python 验证：
++    - `5.0.1-local`
++    - `5.0.1+local`
++    均可被当前回放辅助函数归一化并通过比较
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/__init__.py`
++- `RL_Training/scripts/play.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前回放链路已连续修掉：
++  - checkpoint 选择器类型错误
++  - vendored 版本号解析错误
++- 还需要在真实 Isaac Lab 环境里继续执行一次回放，确认后续运行时链路没有新的阻塞。
++
++已完成：
++- 分析真实 Stage0 run：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-07-32`
++- 已确认本次 run 的新增日志链路已实际写入 event 文件：
++  - scalar tag 数量为 `64`
++  - 分组已包含：
++    - `Action`
++    - `Command`
++    - `Reward`
++    - `Tracking`
++    - `Observation`
++    - `Termination`
++    - `episode_per_step`
++    - `episode_reset`
++- 当前 run 的高层训练结果与上一轮：
++  - `2026-04-14_12-48-16`
++  在旧共有指标上数值一致，说明相同 seed / 配置下复现稳定。
++- 本次 run 的 last50 结果大致为：
++  - `Train/mean_reward ≈ 2196`
++  - `Train/mean_episode_length ≈ 716`
++  - `Tracking/lin_vel_x_abs_error ≈ 0.084`
++  - `Tracking/ang_vel_yaw_abs_error ≈ 0.388`
++  - `Reward/total ≈ 3.107`
++  - `Observation/tilt_deg ≈ 3.11`
++- 当前主要剩余终止来源不是：
++  - `bad_orientation`
++  - `root_too_low`
++  而是：
++  - `ball_joint_limit`
++- 同时当前动作指标显示：
++  - `Action/policy_abs_mean ≈ 0.886`
++  - `Action/policy_std ≈ 0.815`
++  说明 policy 动作整体较激进，和球铰越界终止现象一致。
++- 已执行：
++  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py --run_dir RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-07-32`
++  并完成 event 标量统计与上一轮 run 对比。
++
++修改文件：
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 新日志体系已经在真实 run 中验证生效。
++- 当前 Stage0 下一轮更应该优先处理球铰越界终止，而不是姿态倾覆或车体高度问题。
++
++已完成：
++- 按用户确认执行方案一，新增球铰软约束惩罚：
++  - `ball_joint_limit_soft`
++- 当前实现位置：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++- 当前实现语义：
++  - 仅当球铰利用率超过可用范围的 `80%` 后激活
++  - 按默认位姿到硬 limit 的相对使用率计算
++  - 对 6 个球铰取均值
++  - 使用二次惩罚
++  - 当前 scale 为：
++    - `-0.2`
++- 同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++- 已执行真实 GPU 训练：
++  - `cd /home/ubuntu/Graduation-Project/RL_Training`
++  - `source /home/ubuntu/miniconda3/etc/profile.d/conda.sh && conda activate env_isaacLab`
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 64 --run_name soft_limit_v1`
++- 本轮新 run：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-36-38_soft_limit_v1`
++- 已执行离线导出：
++  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py --run_dir RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-36-38_soft_limit_v1`
++- 与 baseline：
++  - `2026-04-14_13-07-32`
++  的 last50 对比结果：
++  - `Train/mean_reward`：
++    - `2196 -> 2387`
++  - `Train/mean_episode_length`：
++    - `716 -> 743`
++  - `Tracking/ang_vel_yaw_abs_error`：
++    - `0.388 -> 0.310`
++  - `episode_reset/ball_joint_limit_rate`：
++    - `0.395 -> 0.344`
++  - `episode_reset/time_out_rate`：
++    - `0.605 -> 0.656`
++  - 但 `Observation/tilt_deg`：
++    - `3.11 -> 6.85`
++    出现明显上升
++- 额外结论：
++  - `Loss/value` 仍明显波动，不是单调收敛
++  - 但结合奖励、tracking、episode length 的改善，当前不能把 value loss 波动直接解释成训练失败
++  - 当前问题已从“球铰越界明显”变成“软约束改善 joint-limit reset，但带来了更大的姿态倾角”
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++- `docs/RL阶段训练参数一览表.md`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 方案一已真实跑通并完成结果对比。
++- 当前 soft limit 方向有效，但下一轮应围绕“压回姿态倾角”做单变量修正，而不是回退这个软约束项。

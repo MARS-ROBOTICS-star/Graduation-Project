@@ -94,6 +94,13 @@ def _update_agent_cfg(agent_cfg):
     return agent_cfg
 
 
+def _resolve_checkpoint_lookup_args(agent_cfg) -> tuple[str, str]:
+    """Normalize run/checkpoint selectors for Isaac Lab checkpoint lookup."""
+    run_pattern = agent_cfg.load_run if isinstance(agent_cfg.load_run, str) else ".*"
+    checkpoint_pattern = agent_cfg.load_checkpoint if isinstance(agent_cfg.load_checkpoint, str) else "model_.*.pt"
+    return run_pattern, checkpoint_pattern
+
+
 @hydra_task_config(args_cli.task, args_cli.agent)
 def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     agent_cfg = _update_agent_cfg(agent_cfg)
@@ -112,7 +119,8 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
 
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
     if agent_cfg.resume:
-        resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
+        run_pattern, checkpoint_pattern = _resolve_checkpoint_lookup_args(agent_cfg)
+        resume_path = get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
     else:
         resume_path = None
 

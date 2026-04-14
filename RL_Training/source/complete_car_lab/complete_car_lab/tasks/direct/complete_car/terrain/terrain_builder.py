@@ -13,7 +13,7 @@ STAGE1_TERRAIN_CLASS_STEP = 1
 STAGE1_TERRAIN_CLASS_GAP = 2
 
 
-@dataclass(frozen=True)
+@dataclass
 class Stage1TerrainCfg:
     horizontal_scale: float = 0.1
     vertical_scale: float = 0.005

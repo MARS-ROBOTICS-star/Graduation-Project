@@ -115,8 +115,9 @@ class RewardScalesCfg:
     termination: float = -2.0
     tracking_lin_vel: float = 2.0
     tracking_ang_vel: float = 2.0
-    orientation: float = -2.0
-    action_rate: float = -0.01
+    orientation: float = -3.0
+    action_rate: float = -0.1
+    ball_joint_limit_soft: float = -0.2
 
 
 @configclass
@@ -127,6 +128,8 @@ class RewardCfg:
     only_positive_rewards: bool = False
     tracking_lin_vel_std: float = math.sqrt(0.25)
     tracking_ang_vel_std: float = math.sqrt(0.25)
+    ball_joint_limit_soft_start_ratio: float = 0.8
+    ball_joint_limit_soft_power: float = 2.0
 
 
 @configclass
@@ -146,9 +149,9 @@ class ResetCfg:
     root_pos: tuple[float, float, float] = (0.0, 0.0, 0.30)
     root_lin_vel: tuple[float, float, float] = (0.0, 0.0, 0.0)
     root_ang_vel: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    root_x_range: tuple[float, float] = (-0.25, 0.25)
-    root_y_range: tuple[float, float] = (-0.25, 0.25)
-    root_yaw_range: tuple[float, float] = (-0.25 * math.pi, 0.25 * math.pi)
+    root_x_range: tuple[float, float] = (0.0, 0.0)
+    root_y_range: tuple[float, float] = (0.0, 0.0)
+    root_yaw_range: tuple[float, float] = (0.0 * math.pi, 0.0 * math.pi)
 
     default_ball_joint_angles: dict[str, float] = field(default_factory=lambda: {name: 0.0 for name in BALL_JOINT_NAMES})
     default_wheel_joint_pos: dict[str, float] = field(default_factory=lambda: {name: 0.0 for name in WHEEL_JOINT_NAMES})
@@ -206,8 +209,8 @@ class DebugCfg:
 class SceneCfg(InteractiveSceneCfg):
     """场景克隆配置。"""
 
-    num_envs: int = 512
-    env_spacing: float = 2.0 #不同环境之间的间距 m
+    num_envs: int = 64
+    env_spacing: float = 4.0 #不同环境之间的间距 m
     replicate_physics: bool = True
     clone_in_fabric: bool = True
 
@@ -281,7 +284,7 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
             if self.observations.use_history and self.observations.history_length > 1
             else base_obs_dim
         )
-        critic_obs_dim = actor_obs_dim + (self.terrain.num_height_points if self.terrain.measure_heights else 0)
+        critic_obs_dim = actor_obs_dim + (self.terrain.get_num_height_points() if self.terrain.measure_heights else 0)
         self.observation_space = {
             "actor": actor_obs_dim,
             "critic": critic_obs_dim,

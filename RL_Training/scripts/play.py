@@ -46,6 +46,7 @@ simulation_app = app_launcher.app
 
 import gymnasium as gym
 from packaging import version
+from packaging.version import InvalidVersion
 import torch
 import rsl_rl
 from rsl_rl.runners import OnPolicyRunner
@@ -71,6 +72,21 @@ def _update_agent_cfg(agent_cfg):
     return agent_cfg
 
 
+def _resolve_checkpoint_lookup_args(agent_cfg) -> tuple[str, str]:
+    """Normalize run/checkpoint selectors for Isaac Lab checkpoint lookup."""
+    run_pattern = agent_cfg.load_run if isinstance(agent_cfg.load_run, str) else ".*"
+    checkpoint_pattern = agent_cfg.load_checkpoint if isinstance(agent_cfg.load_checkpoint, str) else "model_.*.pt"
+    return run_pattern, checkpoint_pattern
+
+
+def _parse_rsl_rl_version(version_str: str):
+    """Parse vendored rsl_rl versions robustly."""
+    try:
+        return version.parse(version_str)
+    except InvalidVersion:
+        return version.parse(version_str.replace("-local", "+local"))
+
+
 @hydra_task_config(args_cli.task, args_cli.agent)
 def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     agent_cfg = _update_agent_cfg(agent_cfg)
@@ -82,7 +98,8 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     if args_cli.checkpoint:
         resume_path = retrieve_file_path(args_cli.checkpoint)
     else:
-        resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
+        run_pattern, checkpoint_pattern = _resolve_checkpoint_lookup_args(agent_cfg)
+        resume_path = get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
     log_dir = os.path.dirname(resume_path)
     env_cfg.log_dir = log_dir
 
@@ -104,7 +121,8 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
 
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
     installed_version = getattr(rsl_rl, "__version__", "0.0.0")
-    if version.parse(installed_version) >= version.parse("4.0.0"):
+    parsed_rsl_rl_version = _parse_rsl_rl_version(installed_version)
+    if parsed_rsl_rl_version >= version.parse("4.0.0"):
         runner.export_policy_to_jit(path=export_model_dir, filename="policy.pt")
         runner.export_policy_to_onnx(path=export_model_dir, filename="policy.onnx")
         policy_nn = None
@@ -122,7 +140,7 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         with torch.inference_mode():
             actions = policy(obs)
             obs, _, dones, _ = env.step(actions)
-            if version.parse(installed_version) >= version.parse("4.0.0"):
+            if parsed_rsl_rl_version >= version.parse("4.0.0"):
                 policy.reset(dones)
             elif policy_nn is not None:
                 policy_nn.reset(dones)

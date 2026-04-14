@@ -44,6 +44,7 @@ class Logger:
 
         # Create buffers
         self.ep_extras = []
+        self.step_extras = []
         self.rewbuffer = deque(maxlen=100)
         self.lenbuffer = deque(maxlen=100)
         self.cur_reward_sum = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
@@ -107,6 +108,8 @@ class Logger:
                 self.ep_extras.append(extras["episode"])
             elif "log" in extras:
                 self.ep_extras.append(extras["log"])
+            if "metrics" in extras:
+                self.step_extras.append(extras["metrics"])
 
             # Update rewards and episode length
             if intrinsic_rewards is not None:
@@ -157,26 +160,19 @@ class Logger:
             # Log episode extras
             extras_string = ""
             if self.ep_extras:
-                # Iterate over all keys in the episode info dictionary
-                for key in self.ep_extras[0]:
-                    infotensor = torch.tensor([], device=self.device)
-                    # Iterate over all steps
-                    for ep_info in self.ep_extras:
-                        # Handle missing, scalar, and zero dimensional tensors
-                        if key not in ep_info:
-                            continue
-                        if not isinstance(ep_info[key], torch.Tensor):
-                            ep_info[key] = torch.Tensor([ep_info[key]])
-                        if len(ep_info[key].shape) == 0:
-                            ep_info[key] = ep_info[key].unsqueeze(0)
-                        infotensor = torch.cat((infotensor, ep_info[key].to(self.device)))
-                    value = torch.mean(infotensor)
+                for key, value in self._aggregate_scalar_dicts(self.ep_extras).items():
                     if "/" in key:
                         self.writer.add_scalar(key, value, it)  # type: ignore
                         extras_string += f"""{f"{key}:":>{pad}} {value:.4f}\n"""
                     else:
                         self.writer.add_scalar("Episode/" + key, value, it)  # type: ignore
                         extras_string += f"""{f"Mean episode {key}:":>{pad}} {value:.4f}\n"""
+
+            if self.step_extras:
+                for key, value in self._aggregate_scalar_dicts(self.step_extras).items():
+                    self.writer.add_scalar(key, value, it)  # type: ignore
+                    if not print_minimal:
+                        extras_string += f"""{f"{key}:":>{pad}} {value:.4f}\n"""
 
             # Log losses
             for key, value in loss_dict.items():
@@ -262,6 +258,7 @@ class Logger:
 
             # Clear extras buffer
             self.ep_extras.clear()
+            self.step_extras.clear()
 
     def save_model(self, path: str, it: int) -> None:
         """Save the model to external logging services if specified."""
@@ -306,3 +303,24 @@ class Logger:
                 # Add the file path to the list of files to be uploaded
                 files_to_upload.append(diff_file_name)
         return files_to_upload
+
+    def _aggregate_scalar_dicts(self, info_dicts: list[dict]) -> dict[str, float]:
+        """Aggregate a list of scalar dictionaries into per-key means."""
+        aggregated: dict[str, float] = {}
+        all_keys = sorted({key for info in info_dicts for key in info})
+        for key in all_keys:
+            values = []
+            for info in info_dicts:
+                if key not in info:
+                    continue
+                value = info[key]
+                if not isinstance(value, torch.Tensor):
+                    value = torch.tensor([value], device=self.device, dtype=torch.float32)
+                else:
+                    value = value.to(self.device, dtype=torch.float32)
+                if value.ndim == 0:
+                    value = value.unsqueeze(0)
+                values.append(value.reshape(-1))
+            if values:
+                aggregated[key] = float(torch.mean(torch.cat(values)).item())
+        return aggregated

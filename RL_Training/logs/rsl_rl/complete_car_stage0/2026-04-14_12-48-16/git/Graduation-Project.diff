@@ -1,0 +1,1214 @@
+--- git commit ---
+3ff50eb8dd0df09e48725c3ee74a082a12f58eac
+
+
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py
+	modified:   docs/conversation_history.md
+	modified:   docs/current_status.md
+	modified:   docs/training_workflow_and_tensorboard_guide.md
+	modified:   logs/daily_work_log.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	RL_Training/logs/
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py
+index a0c2319..e84db91 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py
+@@ -42,7 +42,7 @@ RIGHT_WHEEL_JOINT_NAMES = [
+ 
+ ALL_JOINT_NAMES = BALL_JOINT_NAMES + WHEEL_JOINT_NAMES
+ CONTROLLED_JOINT_NAMES = BALL_JOINT_NAMES
+-COMPLETE_CAR_ARTICULATION_ROOT_PRIM_PATH = "/body_car_chassis"
++COMPLETE_CAR_ARTICULATION_ROOT_PRIM_PATH = "/complete_car_alternative/body_car_chassis"
+ 
+ 
+ def _find_repo_root(start: Path) -> Path:
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
+index 8286b3c..fb1a454 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
+@@ -206,8 +206,8 @@ class DebugCfg:
+ class SceneCfg(InteractiveSceneCfg):
+     """场景克隆配置。"""
+ 
+-    num_envs: int = 512
+-    env_spacing: float = 2.0 #不同环境之间的间距 m
++    num_envs: int = 64
++    env_spacing: float = 4.0 #不同环境之间的间距 m
+     replicate_physics: bool = True
+     clone_in_fabric: bool = True
+ 
+@@ -281,7 +281,7 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
+             if self.observations.use_history and self.observations.history_length > 1
+             else base_obs_dim
+         )
+-        critic_obs_dim = actor_obs_dim + (self.terrain.num_height_points if self.terrain.measure_heights else 0)
++        critic_obs_dim = actor_obs_dim + (self.terrain.get_num_height_points() if self.terrain.measure_heights else 0)
+         self.observation_space = {
+             "actor": actor_obs_dim,
+             "critic": critic_obs_dim,
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
+index 651e05d..5eb3f22 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
+@@ -10,7 +10,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
+     stage_name: str = "stage0"
+ 
+     def __post_init__(self) -> None:
+-        self.scene.num_envs = 512
++        self.scene.num_envs = 64
+         self.terrain.enabled = False
+         self.terrain.mode = "plane"
+         self.curriculum.enabled = False
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py
+index d9d7433..bf2c82f 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py
+@@ -11,14 +11,13 @@ from isaaclab.utils import configclass
+ @configclass
+ class ImuSensorCfg:
+     enabled: bool = False
+-    prim_path: str = "{ENV_REGEX_NS}/Robot/body_car_chassis/IMU_body"
++    prim_path: str = "{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis/Imu_Sensor"
+     update_period: float = 0.0
+     gravity_bias: tuple[float, float, float] = (0.0, 0.0, 0.0)
+     debug_vis: bool = False
+     include_in_policy: bool = True
+ 
+-    @property
+-    def policy_feature_dim(self) -> int:
++    def get_policy_feature_dim(self) -> int:
+         return 12 if self.enabled and self.include_in_policy else 0
+ 
+     def build_cfg(self) -> ImuCfg:
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py
+index 939beeb..b8e2454 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py
+@@ -9,7 +9,7 @@ from isaaclab.utils import configclass
+ @configclass
+ class LidarSensorCfg:
+     enabled: bool = False
+-    prim_path: str = "{ENV_REGEX_NS}/Robot/head_car_chassis/Example_Rotary"
++    prim_path: str = "{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis/Example_Rotary"
+     update_period: float = 0.1
+     horizontal_fov_range: tuple[float, float] = (-60.0, 60.0)
+     vertical_fov_range: tuple[float, float] = (-10.0, 10.0)
+@@ -23,8 +23,7 @@ class LidarSensorCfg:
+     policy_num_bins: int = 16
+     include_in_policy: bool = True
+ 
+-    @property
+-    def policy_feature_dim(self) -> int:
++    def get_policy_feature_dim(self) -> int:
+         return self.policy_num_bins if self.enabled and self.include_in_policy else 0
+ 
+     def build_cfg(self, ground_prim_path: str) -> RayCasterCfg:
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+index 10e55fc..de39753 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+@@ -23,18 +23,24 @@ class CompleteCarSensorSuiteCfg:
+     enable_height_scanner: bool = False
+     height_scanner_debug_vis: bool = False
+ 
+-    @property
+-    def policy_feature_dim(self) -> int:
+-        return self.imu.policy_feature_dim + self.stereo_camera.policy_feature_dim + self.lidar.policy_feature_dim
++    def get_policy_feature_dim(self) -> int:
++        return (
++            self.imu.get_policy_feature_dim()
++            + self.stereo_camera.get_policy_feature_dim()
++            + self.lidar.get_policy_feature_dim()
++        )
+ 
+     def policy_descriptor(self) -> list[tuple[str, int]]:
+         descriptor: list[tuple[str, int]] = []
+-        if self.imu.policy_feature_dim:
+-            descriptor.append(("imu", self.imu.policy_feature_dim))
+-        if self.stereo_camera.policy_feature_dim:
+-            descriptor.append(("stereo_camera", self.stereo_camera.policy_feature_dim))
+-        if self.lidar.policy_feature_dim:
+-            descriptor.append(("lidar", self.lidar.policy_feature_dim))
++        imu_dim = self.imu.get_policy_feature_dim()
++        stereo_dim = self.stereo_camera.get_policy_feature_dim()
++        lidar_dim = self.lidar.get_policy_feature_dim()
++        if imu_dim:
++            descriptor.append(("imu", imu_dim))
++        if stereo_dim:
++            descriptor.append(("stereo_camera", stereo_dim))
++        if lidar_dim:
++            descriptor.append(("lidar", lidar_dim))
+         return descriptor
+ 
+ 
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py
+index 7f282f4..d24d3a4 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py
+@@ -12,7 +12,7 @@ from isaaclab.utils import configclass
+ @configclass
+ class StereoCameraSensorCfg:
+     enabled: bool = False
+-    prim_path: str = "{ENV_REGEX_NS}/Robot/head_car_chassis/Stereo_rig/left_camera"
++    prim_path: str = "{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis/Stereo_Vision_Camera/Camera_left"
+     update_period: float = 0.1
+     height: int = 64
+     width: int = 64
+@@ -26,8 +26,7 @@ class StereoCameraSensorCfg:
+     offset_convention: str = "ros"
+     include_in_policy: bool = True
+ 
+-    @property
+-    def policy_feature_dim(self) -> int:
++    def get_policy_feature_dim(self) -> int:
+         if not self.enabled or not self.include_in_policy:
+             return 0
+         dim = 0
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py
+index 625cac2..ef062f6 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py
+@@ -13,7 +13,7 @@ STAGE1_TERRAIN_CLASS_STEP = 1
+ STAGE1_TERRAIN_CLASS_GAP = 2
+ 
+ 
+-@dataclass(frozen=True)
++@dataclass
+ class Stage1TerrainCfg:
+     horizontal_scale: float = 0.1
+     vertical_scale: float = 0.005
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+index ffe194c..a925629 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+@@ -4,13 +4,12 @@ from __future__ import annotations
+ 
+ from dataclasses import field
+ 
++import torch
+ from isaaclab.sensors import RayCasterCfg, patterns
+ from isaaclab.utils import configclass
+ 
+ from .terrain_builder import STAGE1_TERRAIN_CLASS_GAP, STAGE1_TERRAIN_CLASS_OTHER, STAGE1_TERRAIN_CLASS_STEP, Stage1TerrainCfg
+ 
+-import torch
+-
+ # 输入轴范围和目标分辨率，输出该轴采样点列表
+ def _build_axis_points(min_value: float, max_value: float, target_resolution: float) -> list[float]:
+     num_points = int(round((max_value - min_value) / target_resolution)) + 1
+@@ -46,7 +45,7 @@ class CompleteCarTerrainRuntimeCfg:
+     measured_points_x: list[float] = field(default_factory=list)
+     measured_points_y: list[float] = field(default_factory=list)  # 最终生成后的采样坐标。
+ 
+-    height_scanner_prim_path: str = "{ENV_REGEX_NS}/Robot/body_car_chassis"
++    height_scanner_prim_path: str = "{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis"
+     height_scanner_update_period: float = 0.02
+     height_scanner_offset: tuple[float, float, float] = (0.0, 0.0, 20.0)
+     step_spawn_back_range: tuple[float, float] = (2.0, 3.0)
+@@ -54,11 +53,30 @@ class CompleteCarTerrainRuntimeCfg:
+     other_spawn_xy_range: tuple[float, float] = (-0.5, 0.5)
+     generator: Stage1TerrainCfg = Stage1TerrainCfg()
+ 
++    def _get_measured_points_x(self) -> list[float]:
++        if self.measured_points_x:
++            return self.measured_points_x
++        x_min = -(self.patch_rear_extent + self.patch_rear_margin)
++        x_max = self.patch_front_extent + self.patch_preview_length
++        return _build_axis_points(x_min, x_max, self.patch_resolution_x)
++
++    def _get_measured_points_y(self) -> list[float]:
++        if self.measured_points_y:
++            return self.measured_points_y
++        y_min = -(self.patch_half_width + self.patch_side_margin)
++        y_max = self.patch_half_width + self.patch_side_margin
++        return _build_axis_points(y_min, y_max, self.patch_resolution_y)
++
++    def get_num_height_points(self) -> int:
++        return len(self._get_measured_points_x()) * len(self._get_measured_points_y())
++
+     def build_height_scanner_cfg(self, ground_prim_path: str) -> RayCasterCfg:
+-        size_x = max(self.measured_points_x) - min(self.measured_points_x)
+-        size_y = max(self.measured_points_y) - min(self.measured_points_y)
+-        resolution_x = size_x / max(len(self.measured_points_x) - 1, 1)
+-        resolution_y = size_y / max(len(self.measured_points_y) - 1, 1)
++        measured_points_x = self._get_measured_points_x()
++        measured_points_y = self._get_measured_points_y()
++        size_x = max(measured_points_x) - min(measured_points_x)
++        size_y = max(measured_points_y) - min(measured_points_y)
++        resolution_x = size_x / max(len(measured_points_x) - 1, 1)
++        resolution_y = size_y / max(len(measured_points_y) - 1, 1)
+         resolution = min(resolution_x, resolution_y)
+         return RayCasterCfg(
+             prim_path=self.height_scanner_prim_path,
+@@ -70,29 +88,11 @@ class CompleteCarTerrainRuntimeCfg:
+             mesh_prim_paths=[ground_prim_path],
+         )
+ 
+-    def __post_init__(self):
+-        if not self.measured_points_x:
+-            x_min = -(self.patch_rear_extent + self.patch_rear_margin)
+-            x_max = self.patch_front_extent + self.patch_preview_length
+-            self.measured_points_x = _build_axis_points(x_min, x_max, self.patch_resolution_x)
+-
+-        if not self.measured_points_y:
+-            y_min = -(self.patch_half_width + self.patch_side_margin)
+-            y_max = self.patch_half_width + self.patch_side_margin
+-            self.measured_points_y = _build_axis_points(y_min, y_max, self.patch_resolution_y)
+-
+-
+-    @property
+-    def num_height_points(self) -> int:
+-        """返回 patch 中总采样点数。"""
+-
+-        return len(self.measured_points_x) * len(self.measured_points_y)
+-
+     def build_patch_local_points(self, device, dtype):
+         """返回中车局部坐标系下的 patch 采样点张量。"""
+ 
+-        x = torch.tensor(self.measured_points_x, device=device, dtype=dtype)
+-        y = torch.tensor(self.measured_points_y, device=device, dtype=dtype)
++        x = torch.tensor(self._get_measured_points_x(), device=device, dtype=dtype)
++        y = torch.tensor(self._get_measured_points_y(), device=device, dtype=dtype)
+         grid_x, grid_y = torch.meshgrid(x, y, indexing="ij")
+         points = torch.stack((grid_x.reshape(-1), grid_y.reshape(-1)), dim=-1)
+         offset = torch.tensor(self.patch_origin_offset_xy, device=device, dtype=dtype)
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py
+index 4ac6100..ab381f8 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py
+@@ -28,7 +28,7 @@ def build_observation_descriptor(cfg) -> list[tuple[str, int]]:
+ def build_critic_observation_descriptor(cfg) -> list[tuple[str, int]]:
+       descriptor = build_observation_descriptor(cfg).copy()
+       if cfg.terrain.measure_heights:
+-          descriptor.append(("terrain_height_patch", cfg.terrain.num_height_points))
++          descriptor.append(("terrain_height_patch", cfg.terrain.get_num_height_points()))
+       return descriptor
+ 
+ def build_state_descriptor(_cfg) -> list[tuple[str, int]]:
+diff --git a/docs/conversation_history.md b/docs/conversation_history.md
+index 3e04616..4f7a959 100644
+--- a/docs/conversation_history.md
++++ b/docs/conversation_history.md
+@@ -3656,6 +3656,97 @@ This file stores durable conclusions from past Codex sessions so that future ses
+ 
+ ## 2026-04-14
+ 
++### Robot asset binding paths must follow the USD-internal `complete_car_alternative` root, and Stage0 GPU smoke training is now runnable again
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the active robot USD:
++    - `USD/complete_car.usd`
++    has its real asset root under:
++    - `/World/complete_car_alternative`
++  - the articulation root is not:
++    - `/body_car_chassis`
++    by itself
++    but instead:
++    - `/complete_car_alternative/body_car_chassis`
++  - therefore the active direct-workflow bindings now use the USD-consistent paths:
++    - articulation root:
++      - `/complete_car_alternative/body_car_chassis`
++    - IMU:
++      - `{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis/Imu_Sensor`
++    - lidar:
++      - `{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis/Example_Rotary`
++    - stereo left camera:
++      - `{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis/Stereo_Vision_Camera/Camera_left`
++    - height-scanner anchor body:
++      - `{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis`
++  - after aligning these paths, the minimal real-GPU smoke command:
++    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 1 --max_iterations 1`
++    now:
++    - creates the articulation successfully
++    - starts simulation successfully
++    - builds actor/critic models successfully
++    - completes one PPO learning iteration successfully
++- Reason:
++  - after the earlier configclass / Hydra fixes, the next startup blocker was a PhysX articulation creation failure caused by asset bindings that assumed the robot bodies sat directly under `/Robot/...`, while the USD actually inserts an intermediate `complete_car_alternative` root and also uses different sensor prim names
++- Impact:
++  - future robot-asset or sensor-path edits should be verified against the real USD prim hierarchy, not inferred from desired naming
++  - if a later USD re-export changes the root prim or sensor names again, the first files to re-check are:
++    - `assets/robot_cfg.py`
++    - `sensors/imu.py`
++    - `sensors/lidar.py`
++    - `sensors/stereo_camera.py`
++    - `terrain/terrain_cfg.py`
++- Status:
++  - targeted `py_compile` validation passed
++  - Stage0 real-GPU minimal training smoke passed
++  - a non-blocking warning:
++    - `Failed to clone in Fabric`
++    still appears when `num_envs=1`, but it did not prevent environment setup or the completed training iteration
++
++### Direct-workflow startup configs must not expose inherited read-only properties or frozen nested terrain configs to Isaac Lab `configclass`
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - in the active `RL_Training/` direct workflow, config-derived quantities that sit inside Isaac Lab `configclass` trees should not be implemented as inherited read-only `@property` members
++  - the two concrete blocking cases were:
++    - `CompleteCarTerrainRuntimeCfg.num_height_points`
++    - `CompleteCarSensorSuiteCfg.policy_feature_dim` and the corresponding per-sensor `policy_feature_dim`
++  - these quantities are now queried through explicit methods instead of read-only properties:
++    - `get_num_height_points()`
++    - `get_policy_feature_dim()`
++  - `Stage1TerrainCfg` is no longer a `frozen dataclass`, so Hydra can safely write nested terrain-generator overrides back into the config tree
++  - after these changes, the real training entry:
++    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cpu --num_envs 1 --max_iterations 1`
++    now passes the previous config-construction failure points and reaches Isaac Lab simulation-context startup
++- Reason:
++  - the user reported a startup crash in the training script, and the root cause was Isaac Lab `configclass` / Hydra trying to `setattr(...)` into inherited property-backed or frozen nested config members during config materialization
++- Impact:
++  - future derived config values inside the active direct-workflow config tree should prefer explicit query methods over property-backed pseudo-fields
++  - future nested terrain-generator config objects that Hydra needs to override must remain mutable
++  - if later startup fails again, the next checks should start after config parsing rather than revisiting these resolved `property` / `frozen dataclass` issues
++- Status:
++  - targeted `python3 -m py_compile` validation passed
++  - runtime smoke no longer stops in the original Python config error chain
++  - remaining warnings/errors observed in the restricted terminal were environment-level Isaac Sim issues such as missing CUDA driver and non-writable kit cache, not this config bug
++
+ ### GitHub tracking scope now excludes the local thesis workspace and literature corpus
+ - Updated:
+   - `.gitignore`
+diff --git a/docs/current_status.md b/docs/current_status.md
+index 354684f..c5abde8 100644
+--- a/docs/current_status.md
++++ b/docs/current_status.md
+@@ -7,7 +7,9 @@
+ ## 当前阶段
+ - 已完成 `RL_Training/` 原地重构。
+ - 已按用户要求把旧 `IK/FK`、本地 `rsl_rl` 本体、旧辅助脚本重新迁入新架构内部。
+-- 当前进入“等待真实 Isaac Lab 环境做运行态冒烟验证，并继续接入 MGDP 风格显式地形高度 patch 到 critic 观测”的阶段。
++- 已完成一轮真实训练入口冒烟，已清除启动链路中的 `configclass` / Hydra 配置阻塞。
++- 已完成 `Stage0` 在真实 GPU 环境下的最小训练启动验证。
++- 当前进入“继续扩展到后续 stage 的运行态冒烟验证，并继续接入 MGDP 风格显式地形高度 patch 到 critic 观测”的阶段。
+ 
+ ## 当前 RL 主线位置
+ - 当前活跃 RL 工作区：
+@@ -130,6 +132,19 @@
+ - 最近已修正一个旧配置问题：
+   - `Stage1` 中的 `default_terrain_name = "mix"` 不是合法 terrain 名称
+   - 当前已改为 `"flat"`
++- 最近已修正 direct workflow 训练启动链路中的一组配置类阻塞：
++  - `TerrainBindingCfg` 不再继承只读 `num_height_points` property
++  - `SensorBindingCfg` 不再继承只读 `policy_feature_dim` property
++  - `terrain.generator` 使用的 `Stage1TerrainCfg` 不再是 `frozen dataclass`
++  - 真实训练入口已可越过 Hydra 配置注册与 `env_cfg` 构建阶段，进入 Isaac Lab 仿真上下文创建
++- 最近已修正 direct workflow 资产 prim 路径与 USD 实际层级不一致的问题：
++  - articulation root 真实位于 `complete_car_alternative/body_car_chassis`
++  - IMU 真实 prim 为 `Imu_Sensor`
++  - 双目左相机真实 prim 为 `Stereo_Vision_Camera/Camera_left`
++  - LiDAR 真实 prim 为 `Example_Rotary`
++  - 当前 `Stage0` 已通过：
++    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 1 --max_iterations 1`
++    的真实 GPU 最小训练启动测试，并完成 1 次学习迭代
+ - 毕业论文 `chapter_03` 的速度雅可比推导已统一为由单一标量 `b` 定义的前后镜像偏置 `${}^{1}\mathbf b=[-b,0,0]^T`、`${}^{3}\mathbf b=[b,0,0]^T`，即仅保留 `x` 分量且 `y=z=0`，LaTeX 已完成通过式编译验证。
+ 
+ ## 当前默认设计选择
+diff --git a/docs/training_workflow_and_tensorboard_guide.md b/docs/training_workflow_and_tensorboard_guide.md
+index 36a8e1d..d8c4738 100644
+--- a/docs/training_workflow_and_tensorboard_guide.md
++++ b/docs/training_workflow_and_tensorboard_guide.md
+@@ -1,570 +1,140 @@
+-# 完整车 RL 训练操作说明
++# 完整车 RL 训练与 TensorBoard 简明说明
+ 
+ ## 适用范围
+ 
+-本说明面向当前完整车 Isaac Lab + RSL-RL 训练项目，覆盖以下内容：
++本文档只针对当前活跃训练主线：
+ 
+-- 训练脚本启动指令
+-- TensorBoard 查看指令
+-- 策略回放指令
+-- 训练结果本地保存位置
+-- TensorBoard 图表读法
+-
+-当前任务 ID 为：
+-
+-```text
+-Complete-Car-Rl-Training-v0
+-```
+-
+-当前训练项目根目录为：
+-
+-```text
+-/home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
+-```
++- 训练工程目录：`/home/ubuntu/Graduation-Project/RL_Training`
++- 训练脚本：`scripts/train.py`
++- 回放脚本：`scripts/play.py`
++- 任务 ID：
++  - `CompleteCar-Stage0`
++  - `CompleteCar-Stage1`
++  - `CompleteCar-Stage2`
+ 
+ ---
+ 
+ ## 1. 训练前准备
+ 
+-先进入环境并切到训练项目目录：
++进入 Isaac Lab Python 环境后执行：
+ 
+ ```bash
+-conda activate env_isaacLab
+-cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
+-export OMNI_KIT_ACCEPT_EULA=YES
+-```
+-
+-如果本项目还没有做 editable install，先执行一次：
+-
+-```bash
+-python -m pip install -e . --no-build-isolation
++cd /home/ubuntu/Graduation-Project/RL_Training
++pip install -e source/complete_car_lab
+ ```
+ 
+ ---
+ 
+-## 2. 训练启动指令
++## 2. 训练
+ 
+-### 2.1 最常用训练指令
++最常用训练命令：
+ 
+ ```bash
+-cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
+-python scripts/rsl_rl/train.py \
+-  --task Complete-Car-Rl-Training-v0 \
+-  --num_envs 100 \
+-  --headless
++cd /home/ubuntu/Graduation-Project/RL_Training
++python scripts/train.py --task CompleteCar-Stage0 --headless
+ ```
+ 
+-含义：
+-
+-- `--task Complete-Car-Rl-Training-v0`
+-  - 启动当前完整车 active task
+-- `--headless`
+-  - 不开可视化窗口
+-- `--device cuda:0`
+-  - 使用第 1 张 GPU 跑训练
+-
+-### 2.2 冒烟测试训练指令
+-
+-如果只想先确认训练链路能否启动，不想直接跑满默认轮数：
+-
+-```bash
+-python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --device cuda:0 --num_envs 100 --max_iterations 10
+-```
+-
+-### 2.3 常用可调参数
+-
+-训练脚本支持的常见参数可通过以下命令查看：
++常用变体：
+ 
+ ```bash
+-python scripts/rsl_rl/train.py --help
++python scripts/train.py --task CompleteCar-Stage1 --headless
++python scripts/train.py --task CompleteCar-Stage2 --headless
++python scripts/train.py --task CompleteCar-Stage0 --headless --num_envs 64 --max_iterations 5
+ ```
+ 
+-当前常用参数包括：
++说明：
+ 
++- `--headless`
++  - 不开可视化窗口
+ - `--num_envs`
+-  - 指定并行环境数量
++  - 指定并行环境数
+ - `--max_iterations`
+-  - 指定 PPO 训练轮数
+-- `--seed`
+-  - 指定随机种子
+-- `--resume`
+-  - 从已有 checkpoint 继续训练
+-- `--load_run`
+-  - 指定已有 run 目录
+-- `--checkpoint`
+-  - 指定恢复的 checkpoint 文件
++  - 指定训练轮数，适合冒烟测试
+ 
+ ---
+ 
+-## 3. 本地结果保存在哪里
++## 3. 回放
+ 
+-每次训练的本地结果默认保存在：
+-
+-```text
+-logs/rsl_rl/complete_car_rl_training/YYYY-MM-DD_HH-MM-SS/
+-```
+-
+-一个典型 run 目录中常见文件如下：
+-
+-- `events.out.tfevents.*`
+-  - TensorBoard 原始事件文件
+-- `model_0.pt`
+-- `model_50.pt`
+-- `model_100.pt`
+-- `model_149.pt`
+-  - 训练保存的 checkpoint
+-- `params/env.yaml`
+-  - 本次 run 的环境配置快照
+-- `params/agent.yaml`
+-  - 本次 run 的 PPO 配置快照
+-- `git/Graduation-Project.diff`
+-  - 本次 run 对应的工作区代码差异快照
+-- `tensorboard_export/summary.json`
+-  - TensorBoard 离线导出总览
+-- `tensorboard_export/latest_values.csv`
+-  - 各标量的最新值
+-- `tensorboard_export/scalars/*.csv`
+-  - 每条曲线对应的本地 CSV
+-
+-也就是说：
+-
+-- TensorBoard 数据已经存到本地
+-- 网页 TensorBoard 只是读取这些本地 event 文件并可视化
+-- 即使不开网页，也可以直接分析导出的 `csv/json`
+-
+----
+-
+-## 4. 查看 TensorBoard 的指令
+-
+-### 4.1 最常用查看命令
+-
+-```bash
+-tensorboard --logdir /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training
+-```
+-
+-启动后浏览器通常访问：
+-
+-```text
+-http://localhost:6006
+-```
+-
+-### 4.2 远程机器常用命令
+-
+-如果需要从其他机器访问：
++指定 checkpoint 回放：
+ 
+ ```bash
+-tensorboard --logdir /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training --bind_all
+-```
+-
+-### 4.3 如果 TensorBoard 启动报 `pkg_resources` 错误
+-
+-当前 `env_isaacLab` 中，`tensorboard 2.20.0` 需要 `setuptools < 81`。
+-
+-如果再次出现如下报错：
+-
+-```text
+-ModuleNotFoundError: No module named 'pkg_resources'
++cd /home/ubuntu/Graduation-Project/RL_Training
++python scripts/play.py --task CompleteCar-Stage0 --checkpoint /path/to/model.pt
+ ```
+ 
+-可使用本机已有缓存离线修复：
++如果只知道某次 run 目录，也可以这样：
+ 
+ ```bash
+-conda install -n env_isaacLab --offline -y /home/ubuntu/miniconda3/pkgs/setuptools-80.10.2-py311h06a4308_0.conda
++python scripts/play.py --task CompleteCar-Stage0 --load_run <run_dir_name>
+ ```
+ 
+ ---
+ 
+-## 5. 策略回放指令
+-
+-### 5.1 最简单的回放命令
+-
+-```bash
+-python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0 
+-```
+-
+-这条命令适合快速验证当前任务的播放链路是否正常。
++## 4. 日志与 checkpoint 位置
+ 
+-### 5.2 指定某次 run 和某个 checkpoint 回放
++训练日志默认写入：
+ 
+-例如回放一次指定 run 的最终模型：
+-
+-```bash
+-python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0  --load_run 2026-04-06_17-40-38 --checkpoint model_149.pt
+-```
+-
+-如果希望少开一些并行环境，便于观察：
+-
+-```bash
+-python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0  --num_envs 32 --load_run 2026-04-06_17-40-38 --checkpoint model_149.pt
+-```
+-
+-如需查看完整参数：
+-
+-```bash
+-python scripts/rsl_rl/play.py --help
+-```
+-
+----
+-
+-## 6. 键盘控制脚本指令
+-
+-### 6.1 最简单的键盘控制启动命令
+-
+-```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/control_keyboard.py
+-```
+-
+-这条命令会启动完整车键盘控制脚本，不额外注入地形。
+-该脚本默认走 Isaac Sim 的 GPU 运行路径，不提供单独的 CPU 运行模式。
+-
+-### 6.2 在指定地形上启动键盘控制
+-
+-在训练同款 `stage1` 大地图上启动：
+-
+-```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/control_keyboard.py --terrain stage1
++```text
++RL_Training/logs/rsl_rl/<experiment_name>/<run_dir>/
+ ```
+ 
++当前各阶段默认实验名为：
+ 
+-### 6.3 当前可选地形
+-
+-当前 `control_keyboard.py` 支持的 `--terrain` 选项包括：
++- `CompleteCar-Stage0` -> `complete_car_stage0`
++- `CompleteCar-Stage1` -> `complete_car_stage1`
++- `CompleteCar-Stage2` -> `complete_car_stage2`
+ 
+-- `none`
+-- `stage1`
++因此常见目录例如：
+ 
+-如需查看完整参数：
+-
+-```bash
+-python scripts/isaac_sim/control_keyboard.py --help
++```text
++RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_12-00-00/
+ ```
+ 
+-补充说明：
++一个 run 目录下通常会有：
+ 
+-- 当前仓库状态下，键盘控制脚本只保留 `none` 和 `stage1`
+-- 之前脚本里暴露过的 `gap`、`stage2`、`both` 等选项依赖旧的 `scripts/isaac_sim/terrain_preview/` 源码；这些源码当前不在工作区内，因此不再作为可用入口写入文档
+-- 如果只是想看单块或分离画廊地形，请改用下面的地形查看脚本
++- `events.out.tfevents.*`
++- `model_*.pt`
++- `params/env.yaml`
++- `params/agent.yaml`
+ 
+ ---
+ 
+-## 7. 地形查看脚本指令
+-
+-### 7.1 查看整张 stage1 大地图
+-
+-```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/preview_stage1_terrain.py
+-```
+-
+-常见用法：
+-
+-- 查看指定焦点 tile：
+-
+-```bash
+-python scripts/isaac_sim/preview_stage1_terrain.py --row 0 --col 0
+-```
+-
+-- 在焦点 tile 上同时放车：
+-
+-```bash
+-python scripts/isaac_sim/preview_stage1_terrain.py --row 0 --col 0 --spawn-car
+-```
+-
+-
+-### 7.2 查看 stage1 单块或全部 tile 分离画廊
+-
+-默认查看当前 `20 x 10` 全部 tile 分离画廊：
+-
+-```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/preview_stage1_tile.py
+-```
++## 5. TensorBoard
+ 
+-只看一块指定 tile：
++查看全部训练：
+ 
+ ```bash
+-python scripts/isaac_sim/preview_stage1_tile.py --single-tile --row 0 --col 0
++cd /home/ubuntu/Graduation-Project/RL_Training
++tensorboard --logdir logs/rsl_rl --port 6006 --bind_all
+ ```
+ 
+-只看某一类地形：
++只看 Stage0：
+ 
+ ```bash
+-python scripts/isaac_sim/preview_stage1_tile.py --single-tile --terrain-name gap
++tensorboard --logdir logs/rsl_rl/complete_car_stage0 --port 6006 --bind_all
+ ```
+ 
+-列出当前支持的地形名：
+-
+-```bash
+-python scripts/isaac_sim/preview_stage1_tile.py --list-terrains
+-```
+-
+-### 7.3 查看 stage1 后六类地形
+-
+-默认查看后六类地形组成的 `20 x 10` gallery：
+-
+-```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/preview_stage1_last_six.py
+-```
+-
+-只看其中某一类：
+-
+-```bash
+-python scripts/isaac_sim/preview_stage1_last_six.py --single-tile --terrain-name pit
+-```
+-
+-列出“后六类地形”名字：
+-
+-```bash
+-python scripts/isaac_sim/preview_stage1_last_six.py --list-terrains
+-```
+-
+-### 7.4 地形查看脚本的使用建议
+-
+-当前建议这样选入口：
+-
+-- 想看训练时整张大地图：`preview_stage1_terrain.py`
+-- 想看全部 tile 的分离几何：`preview_stage1_tile.py`
+-- 想重点看后六类复杂地形：`preview_stage1_last_six.py`
+-- 想边看车边做手动联调：`control_keyboard.py --terrain stage1`
+-
+----
+-
+-## 8. TensorBoard 图怎么读
+-
+-### 8.1 先看横轴和纵轴
+-
+-在 `Scalars` 页面里，默认重点看：
+-
+-- 横轴：`step`
+-  - 对当前训练基本可理解为第几次 PPO iteration
+-- 纵轴：该指标在该 iteration 记录时的数值
+-
+-不建议一上来就把平滑开太高。  
+-先把 `Smoothing` 调低，再看原始趋势。
+-
+-### 8.2 先看哪几张图
+-
+-对当前第 1 阶段 `flat-only` baseline，优先看这 6 条：
+-
+-- `Train/mean_reward`
+-- `Train/mean_episode_length`
+-- `Episode_Termination/time_out`
+-- `Episode_Termination/root_too_low`
+-- `Episode_Reward/track_lin_vel_xy`
+-- `Episode_Reward/track_ang_vel_z`
+-
+----
+-
+-## 9. 这 6 条图分别是什么意思
+-
+-### 9.1 `Train/mean_reward`
+-
+-含义：
+-
+-- 平均总奖励
+-
+-横轴：
+-
+-- PPO iteration
+-
+-纵轴：
+-
+-- 当前统计窗口下的平均总 reward
+-
+-怎么判断：
+-
+-- 持续上升通常是好现象
+-- 长期不升或大幅震荡通常说明策略没有稳定学到目标行为
+-
+-### 9.2 `Train/mean_episode_length`
+-
+-含义：
+-
+-- 平均 episode 长度
+-
+-横轴：
+-
+-- PPO iteration
+-
+-纵轴：
+-
+-- 平均每个 episode 持续了多少个控制步
+-
+-怎么判断：
+-
+-- 对当前任务非常关键，越长通常越好
+-- 上升说明策略更能稳定活下来
+-
+-当前配置中：
+-
+-- `episode_length_s = 16`
+-- `dt = 1/120`
+-- `decimation = 2`
+-
+-所以单回合理论上限约为：
++浏览器地址通常是：
+ 
+ ```text
+-8 / (1/120 * 2) = 960 步
+-```
+-
+-如果这条曲线接近 `960`，通常说明大部分 episode 已经能正常活到超时。
+-
+-### 9.3 `Episode_Termination/time_out`
+-
+-含义：
+-
+-- 因为“正常跑满时长”而结束的比例
+-
+-横轴：
+-
+-- PPO iteration
+-
+-纵轴：
+-
+-- 当前统计窗口内因 `time_out` 结束的 episode 比例
+-
+-怎么判断：
+-
+-- 越接近 `1.0` 越好
+-- 上升说明提前失败越来越少
+-
+-### 9.4 `Episode_Termination/root_too_low`
+-
+-含义：
+-
+-- 因根部高度过低而终止的比例
+-
+-横轴：
+-
+-- PPO iteration
+-
+-纵轴：
+-
+-- 当前统计窗口内因 `root_too_low` 结束的 episode 比例
+-
+-怎么判断：
+-
+-- 越接近 `0.0` 越好
+-- 高说明车体经常趴地、翻倒或姿态崩坏
+-
+-### 9.5 `Episode_Reward/track_lin_vel_xy`
+-
+-含义：
+-
+-- 线速度跟踪奖励
+-
+-横轴：
+-
+-- PPO iteration
+-
+-纵轴：
+-
+-- 当前统计窗口内该奖励项的平均值
+-
+-怎么判断：
+-
+-- 越高越好
+-- 如果 `mean_episode_length` 在涨，但这条不涨，说明策略可能只是学会了“活着”，还没真正学会执行速度命令
+-
+-### 9.6 `Episode_Reward/track_ang_vel_z`
+-
+-含义：
+-
+-- 偏航角速度跟踪奖励
+-
+-横轴：
+-
+-- PPO iteration
+-
+-纵轴：
+-
+-- 当前统计窗口内该奖励项的平均值
+-
+-怎么判断：
+-
+-- 越高越好
+-- 如果这条明显低于 `track_lin_vel_xy`，通常说明策略“会走，但转向学得还不够好”
+-
+----
+-
+-## 10. 推荐的读图顺序
+-
+-建议按下面顺序判断一次训练是否正常：
+-
+-1. 先看是否能活下来
+-   - `Train/mean_episode_length`
+-   - `Episode_Termination/time_out`
+-   - `Episode_Termination/root_too_low`
+-2. 再看是否学会任务
+-   - `Episode_Reward/track_lin_vel_xy`
+-   - `Episode_Reward/track_ang_vel_z`
+-   - `Train/mean_reward`
+-3. 最后再看更细的稳定性和优化项
+-   - `Episode_Reward/body_orientation`
+-   - `Episode_Reward/lin_vel_z`
+-   - `Episode_Reward/ang_vel_xy`
+-   - `Episode_Reward/action_rate`
+-   - `Loss/value`
+-   - `Loss/surrogate`
+-
+----
+-
+-## 11. 一个最短操作流程
+-
+-### 11.1 跑训练
+-
+-```bash
+-conda activate env_isaacLab
+-cd /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training
+-export OMNI_KIT_ACCEPT_EULA=YES
+-python scripts/rsl_rl/train.py --task Complete-Car-Rl-Training-v0 --headless --device cuda:0
+-```
+-
+-### 11.2 开 TensorBoard
+-
+-```bash
+-tensorboard --logdir /home/ubuntu/Graduation-Project/src/rl_lab/complete_car_rl_training/logs/rsl_rl/complete_car_rl_training
++http://localhost:6006
+ ```
+ 
+-### 11.3 回放某次训练结果
++如果只想把标量离线导出为 CSV/JSON：
+ 
+ ```bash
+-python scripts/rsl_rl/play.py --task Complete-Car-Rl-Training-v0 --device cuda:0 --num_envs 32 --load_run 2026-04-06_17-40-38 --checkpoint model_149.pt
++python -m complete_car_lab.tasks.direct.complete_car.utils.tensorboard_export \
++  --run_dir logs/rsl_rl/complete_car_stage0/<run_dir_name>
+ ```
+ 
+-### 11.4 用键盘控制做联调
+-
+-```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/control_keyboard.py --terrain stage1
+-```
++---
+ 
+-### 11.5 查看地形
++## 6. 当前推荐最短流程
+ 
+ ```bash
+-cd /home/ubuntu/Graduation-Project
+-python scripts/isaac_sim/preview_stage1_terrain.py
+-python scripts/isaac_sim/preview_stage1_tile.py --list-terrains
+-python scripts/isaac_sim/preview_stage1_last_six.py --list-terrains
++cd /home/ubuntu/Graduation-Project/RL_Training
++pip install -e source/complete_car_lab
++python scripts/train.py --task CompleteCar-Stage0 --headless --num_envs 64 --max_iterations 5
++tensorboard --logdir logs/rsl_rl/complete_car_stage0 --port 6006 --bind_all
++python scripts/play.py --task CompleteCar-Stage0 --checkpoint /path/to/model.pt
+ ```
+-
+-### 11.6 直接看本地离线结果
+-
+-先看：
+-
+-- `tensorboard_export/summary.json`
+-- `tensorboard_export/latest_values.csv`
+-
+-再按需要看：
+-
+-- `tensorboard_export/scalars/*.csv`
+-
+----
+-
+-## 12. 相关文档
+-
+-- [RL 训练策略](./rl_training_route.md)
+-- [TensorBoard 读图说明](./tensorboard_reading_guide.md)
+diff --git a/logs/daily_work_log.md b/logs/daily_work_log.md
+index 064fef2..4bb652e 100644
+--- a/logs/daily_work_log.md
++++ b/logs/daily_work_log.md
+@@ -4845,6 +4845,93 @@
+ 
+ ## 2026-04-14
+ 
++已完成：
++- 继续处理 `RL_Training/scripts/train.py` 在真实 GPU 训练启动阶段的 articulation 创建失败问题。
++- 使用最小 Isaac Sim headless 检查脚本读取 `USD/complete_car.usd` 的真实 prim 层级，确认：
++  - 资产根在 `/World/complete_car_alternative`
++  - articulation root 在 `/World/complete_car_alternative/body_car_chassis`
++  - IMU 实际 prim 名为 `Imu_Sensor`
++  - 双目左相机实际 prim 名为 `Stereo_Vision_Camera/Camera_left`
++  - LiDAR 实际 prim 名为 `Example_Rotary`
++- 修改 `assets/robot_cfg.py`：
++  - `COMPLETE_CAR_ARTICULATION_ROOT_PRIM_PATH` 改为 `/complete_car_alternative/body_car_chassis`
++- 修改传感器与 height scanner 路径：
++  - `sensors/imu.py`
++  - `sensors/lidar.py`
++  - `sensors/stereo_camera.py`
++  - `terrain/terrain_cfg.py`
++  统一补上 `complete_car_alternative` 中间层，并改为 USD 中真实存在的传感器 prim 名称
++- 使用：
++  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++  完成静态编译检查，检查通过。
++- 在沙箱外 GPU 环境执行最小训练命令：
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 1 --max_iterations 1`
++- 实测结果：
++  - articulation 创建成功
++  - 仿真启动成功
++  - actor/critic 网络构建成功
++  - 完成 1 次 PPO 学习迭代
++  - `Training time: 0.83 seconds`
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前用户这次遇到的训练启动失败已经解决。
++- 根因是代码中的 articulation root 与传感器 prim 路径没有对齐 USD 内部的 `complete_car_alternative` 根层级及真实传感器命名。
++- 当前 `Stage0` 已恢复为可在真实 GPU 环境中正常完成最小训练启动与 1 次学习迭代的状态。
++
++已完成：
++- 处理 `RL_Training/scripts/train.py` 启动时报错的配置类阻塞问题。
++- 修改 `terrain/terrain_cfg.py`：
++  - 删除会被 Isaac Lab `configclass` 误当作可写成员的只读 `num_height_points` property
++  - 改为通过 `get_num_height_points()` 与内部即时采样点解析逻辑计算 patch 点数
++- 修改 `base/complete_car_cfg.py` 与 `utils/io_descriptors.py`：
++  - 调整为调用 `terrain.get_num_height_points()`
++- 修改 `sensors/imu.py`、`sensors/lidar.py`、`sensors/stereo_camera.py`、`sensors/sensor_cfg.py`：
++  - 删除 `policy_feature_dim` 只读 property
++  - 改为统一使用 `get_policy_feature_dim()`
++- 修改 `terrain/terrain_builder.py`：
++  - 将 `Stage1TerrainCfg` 从 `frozen dataclass` 改为普通 dataclass
++  - 使 Hydra 可以回写 terrain generator 嵌套配置
++- 使用：
++  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++  完成静态编译检查，检查通过。
++- 使用：
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cpu --num_envs 1 --max_iterations 1`
++  做真实训练入口冒烟验证。
++- 结果：
++  - 已确认原始启动报错链路不再出现
++  - 训练入口已越过 Hydra 配置注册与 `env_cfg` 构建，进入 Isaac Lab 仿真上下文创建
++  - 当前继续看到的是环境级问题：
++    - 无 CUDA 驱动 / 无可用 GPU
++    - Isaac Sim `user.config.json` 与 cache 目录写入受限
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 direct workflow 的配置树中，不应再用继承只读 property 来表示可推导配置量。
++- 当前 terrain generator 嵌套配置必须保持可写，不能继续使用 `frozen dataclass`。
++- 用户本次贴出的训练启动报错已经解决；若后续仍无法跑通，应转而排查本机 Isaac Sim 运行环境而不是继续回到这组配置类问题。
++
+ 已完成：
+ - 按用户要求调整 GitHub 同步范围：
+   - 保留所有当前代码与文档改动进入本轮同步
+@@ -4871,3 +4958,28 @@
+ 产出/结论：
+ - 后续 GitHub 远端仓库将不再保存论文正文目录与文献资料目录。
+ - 这两个目录今后默认只作为本地研究工作区保留。
++
++已完成：
++- 按用户要求更新并精简 `docs/training_workflow_and_tensorboard_guide.md`。
++- 删除文档中已失效的旧工程路径与旧 task id：
++  - `src/rl_lab/complete_car_rl_training`
++  - `Complete-Car-Rl-Training-v0`
++- 文档现已统一改为当前有效主线：
++  - `RL_Training/`
++  - `scripts/train.py`
++  - `scripts/play.py`
++  - `CompleteCar-Stage0/1/2`
++- 文档内容已收口为最小工作流：
++  - 环境准备
++  - 训练命令
++  - 回放命令
++  - 日志与 checkpoint 目录
++  - TensorBoard 查看命令
++  - 离线导出 TensorBoard 标量命令
++
++修改文件：
++- `docs/training_workflow_and_tensorboard_guide.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前训练流程说明文档已与现有代码结构一致，可直接作为 `RL_Training/` 主线的简明操作入口使用。

@@ -1,0 +1,56 @@
+class_name: OnPolicyRunner
+seed: 1
+device: cuda:0
+num_steps_per_env: 48
+max_iterations: 1
+obs_groups:
+  actor:
+  - actor
+  critic:
+  - critic
+clip_actions: 1.0
+check_for_nan: true
+save_interval: 100
+experiment_name: complete_car_stage0
+run_name: ''
+logger: tensorboard
+neptune_project: complete_car
+wandb_project: complete_car
+resume: false
+load_run: -1
+load_checkpoint: -1
+actor:
+  class_name: MLPModel
+  hidden_dims:
+  - 256
+  - 128
+  - 64
+  activation: elu
+  obs_normalization: true
+  distribution_cfg:
+    class_name: GaussianDistribution
+    init_std: 0.7
+    std_type: scalar
+critic:
+  class_name: MLPModel
+  hidden_dims:
+  - 256
+  - 128
+  - 64
+  activation: elu
+  obs_normalization: true
+  distribution_cfg: null
+algorithm:
+  class_name: PPO
+  num_learning_epochs: 5
+  num_mini_batches: 4
+  learning_rate: 0.0003
+  schedule: adaptive
+  gamma: 0.99
+  lam: 0.95
+  entropy_coef: 0.005
+  desired_kl: 0.01
+  max_grad_norm: 1.0
+  value_loss_coef: 1.0
+  use_clipped_value_loss: true
+  clip_param: 0.2

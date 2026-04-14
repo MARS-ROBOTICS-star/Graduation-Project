@@ -35,7 +35,7 @@
 
 ### 1.3 当前关键维度
 
-- 并行环境数：`512`
+- 并行环境数：`64`
 - 动作维度：`6`
 - Actor 单帧观测维度：`45`
 - Critic 单帧观测维度：`45`
@@ -62,11 +62,12 @@ Stage0 训练时的配置继承关系是：
 
 Stage0 最重要的覆写只有几条：
 
-- `scene.num_envs = 512`
+- `scene.num_envs = 64`
 - `terrain.enabled = False`
 - `terrain.mode = "plane"`
 - `curriculum.enabled = False`
 - `terrain.measure_heights = False`
+- `rewards.scales.orientation = -3.0`
 - 所有传感器关闭
 
 所以 Stage0 的思路非常明确：  
@@ -593,13 +594,14 @@ $$
 
 ### 10.1 当前奖励项集合
 
-当前 Stage0 reward 共有 `5` 项：
+当前 Stage0 reward 共有 `6` 项：
 
 1. `tracking_lin_vel`
 2. `tracking_ang_vel`
 3. `orientation`
 4. `action_rate`
-5. `termination`
+5. `ball_joint_limit_soft`
+6. `termination`
 
 ### 10.2 跟踪类奖励
 
@@ -653,12 +655,13 @@ $$
 
 对应权重：
 
-- `orientation = -2.0`
+- base 默认值：`orientation = -2.0`
+- Stage0 当前实际生效值：`orientation = -3.0`
 
 所以实际项为：
 
 $$
-R_{ori} = -2.0 \cdot (g_x^2 + g_y^2)
+R_{ori} = -3.0 \cdot (g_x^2 + g_y^2)
 $$
 
 这项本质上在罚 roll/pitch 倾斜。
@@ -693,7 +696,60 @@ $$
 
 - `termination = -2.0`
 
-### 10.6 总奖励
+### 10.6 球铰角度软约束惩罚
+
+这项不是硬限制，也不是让球铰尽量不动。  
+它只在球铰接近硬 limit 的最后一段危险区时开始生效。
+
+设某个球铰当前角度为 $q$，默认角度为 $q_0$，硬下界为 $q_{min}$，硬上界为 $q_{max}$。
+
+先分别计算朝上下边界方向的利用率：
+
+$$
+u_{pos} = \max\left(\frac{q - q_0}{q_{max} - q_0}, 0\right)
+$$
+
+$$
+u_{neg} = \max\left(\frac{q_0 - q}{q_0 - q_{min}}, 0\right)
+$$
+
+$$
+u = u_{pos} + u_{neg}
+$$
+
+当前配置中：
+
+- `ball_joint_limit_soft_start_ratio = 0.8`
+
+也就是：
+
+- 当球铰使用率不超过可用范围的 `80%` 时，不惩罚
+- 只有进入最后 `20%` 危险区后，惩罚才开始增长
+
+将危险区归一化后：
+
+$$
+\hat{u} = \max\left(\frac{u - 0.8}{1 - 0.8}, 0\right)
+$$
+
+当前每个环境对 6 个球铰取均值，并使用二次增长：
+
+$$
+r_{soft} = \frac{1}{6} \sum_{i=1}^{6} \hat{u}_i^2
+$$
+
+对应配置：
+
+- `ball_joint_limit_soft_power = 2.0`
+- `ball_joint_limit_soft = -0.2`
+
+这个设计的目的不是把球铰限制在小角度附近，而是：
+
+- 允许球铰正常使用大部分可用角度
+- 只在逼近硬 limit 时提供提前的负反馈
+- 减少直接撞上 joint limit 再触发硬终止的情况
+
+### 10.7 总奖励
 
 当前总奖励为：
 
@@ -703,6 +759,7 @@ R_{lin}
 + R_{ang}
 + R_{ori}
 + R_{act}
++ R_{soft}
 + R_{term}
 $$
 
@@ -990,7 +1047,7 @@ $$
 
 ### 17.1 环境与仿真
 
-- `num_envs = 512`
+- `num_envs = 64`
 - `episode_length_s = 16`
 - `sim_dt = 1/120`
 - `control_dt = 1/60`
@@ -1016,7 +1073,17 @@ $$
 - 跟踪角速度
 - 姿态惩罚
 - 动作变化惩罚
+- 球铰软约束惩罚
 - 终止惩罚
+
+其中当前 Stage0 实际生效的关键权重为：
+
+- `tracking_lin_vel = 2.0`
+- `tracking_ang_vel = 2.0`
+- `orientation = -3.0`
+- `action_rate = -0.01`
+- `ball_joint_limit_soft = -0.2`
+- `termination = -2.0`
 
 ### 17.5 终止
 

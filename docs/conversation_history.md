@@ -3656,6 +3656,371 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-14
 
+### Replay and resume checkpoint lookup must use string selectors, not legacy integer sentinels
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+  - `RL_Training/scripts/train.py`
+  - `RL_Training/scripts/play.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the active direct-workflow PPO runner config previously inherited legacy defaults:
+    - `load_run = -1`
+    - `load_checkpoint = -1`
+  - this is incompatible with Isaac Lab:
+    - `get_checkpoint_path(...)`
+    because that helper expects regex strings for both selectors and passes them into:
+    - `re.match(...)`
+  - the concrete failure was reproduced on replay with:
+    - `python scripts/play.py --task CompleteCar-Stage0 --load_run 2026-04-14_12-48-16 --num_envs 2`
+    which crashed with:
+    - `TypeError: first argument must be string or compiled pattern`
+  - the active defaults are now normalized to string selectors:
+    - `load_run = ".*"`
+    - `load_checkpoint = "model_.*.pt"`
+  - additionally, both:
+    - `scripts/train.py`
+    - `scripts/play.py`
+    now normalize the lookup arguments again before calling:
+    - `get_checkpoint_path(...)`
+    so stale integer sentinel values cannot crash replay/resume even if they reappear through old config paths
+- Reason:
+  - the user reported a concrete replay failure, and the root cause was a type mismatch between the local PPO config defaults and Isaac Lab's checkpoint lookup API
+- Impact:
+  - future replay commands that specify only:
+    - `--load_run <run_dir>`
+    should now correctly select the latest `model_*.pt` in that run
+  - future resume logic in `train.py` uses the same normalization path and should not regress on the same bug
+- Status:
+  - targeted `python3 -m py_compile` validation passed
+  - the normalization helper was locally sanity-checked to convert:
+    - `load_run='2026-04-14_12-48-16', load_checkpoint=-1`
+    into:
+    - `('2026-04-14_12-48-16', 'model_.*.pt')`
+
+### Vendored `rsl_rl` version tags used by replay must follow PEP 440, and replay now normalizes the local suffix before version branching
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/__init__.py`
+  - `RL_Training/scripts/play.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the vendored package version string had been set to:
+    - `5.0.1-local`
+  - this is not accepted by:
+    - `packaging.version.Version`
+    so replay crashed when `play.py` tried to branch on:
+    - `version.parse(installed_version) >= version.parse("4.0.0")`
+  - the vendored package version is now:
+    - `5.0.1+local`
+    which is valid PEP 440 local-version syntax
+  - additionally, replay now parses the version through a compatibility helper that rewrites:
+    - `-local`
+    to:
+    - `+local`
+    before parsing if needed
+  - this means replay should no longer fail at the version-gated export/reset branch even if an older local suffix accidentally reappears
+- Reason:
+  - after the earlier checkpoint-selector fix, the user's next replay attempt failed one step later on invalid version parsing, so the replay chain still needed another concrete bug fix before it could proceed
+- Impact:
+  - future local vendored version labels should use PEP 440 syntax
+  - future version-gated replay logic should not assume the raw local package string is always parseable without normalization
+- Status:
+  - targeted `python3 -m py_compile` validation passed
+  - local helper validation confirmed:
+    - `5.0.1-local`
+    is normalized and compared successfully against:
+    - `4.0.0`
+
+### Stage0 real run `2026-04-14_13-07-32` confirms the expanded logging surface is active, and the current dominant failure mode is ball-joint limit termination rather than body attitude collapse
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable training conclusion:
+  - the real Stage0 run:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-07-32`
+    now exposes:
+    - `64`
+    scalar tags across the intended new groups:
+    - `Reward`
+    - `Tracking`
+    - `Action`
+    - `Command`
+    - `Observation`
+    - `Termination`
+    - `episode_per_step`
+    - `episode_reset`
+  - this confirms the expanded env/logger/export instrumentation is actually present in a fresh event file, not only in offline code
+  - the top-level learning curves of this run match the earlier run:
+    - `2026-04-14_12-48-16`
+    on the shared metrics that existed before
+  - under the current fixed seed and unchanged Stage0 config, that numerical match indicates the run is reproducible rather than meaningfully different
+  - the current last-50-iteration picture is approximately:
+    - `Train/mean_reward ≈ 2196`
+    - `Train/mean_episode_length ≈ 716`
+    - `Tracking/lin_vel_x_abs_error ≈ 0.084`
+    - `Tracking/ang_vel_yaw_abs_error ≈ 0.388`
+    - `Reward/total ≈ 3.107`
+    - `Observation/tilt_deg ≈ 3.11`
+  - the new termination breakdown shows the remaining resets are not dominated by:
+    - `bad_orientation`
+    - `root_too_low`
+  - instead, the main non-timeout failure source is:
+    - `ball_joint_limit`
+  - the same run also shows aggressive action usage:
+    - `Action/policy_abs_mean ≈ 0.886`
+    - `Action/policy_std ≈ 0.815`
+    which is consistent with the ball-joint-limit termination remaining active
+- Reason:
+  - after the logging expansion and replay fixes, the next durable question was whether a fresh real run actually emitted the intended metrics and what those metrics say about the current Stage0 bottleneck
+- Impact:
+  - future Stage0 iteration should prioritize reducing ball-joint-limit failures over chasing body-attitude or root-height failures
+  - the newly added action/termination metrics should be treated as the main evidence when deciding whether to adjust:
+    - action amplitude
+    - joint limits
+    - action-rate penalty
+    - reset initialization
+- Status:
+  - offline export and scalar inspection completed
+  - the run confirms logging expansion success
+  - the next engineering iteration should target the ball-joint-limit failure mode explicitly
+
+### Stage0 `ball_joint_limit_soft` reward was added as a margin-only soft constraint, and the first real GPU comparison shows better reward/tracking with a new orientation tradeoff
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the active Stage0 reward set now includes:
+    - `ball_joint_limit_soft`
+  - this term does not penalize general large-angle motion across the whole range
+  - instead, it activates only when a ball joint uses more than:
+    - `80%`
+    of its available distance from the default pose to the configured hard limit
+  - the implementation uses:
+    - side-specific utilization relative to the default pose
+    - zero penalty in the safe zone
+    - quadratic growth in the last margin near the limit
+    - mean aggregation across the 6 controlled ball joints
+  - the initial config used for the first comparison run is:
+    - `ball_joint_limit_soft_start_ratio = 0.8`
+    - `ball_joint_limit_soft_power = 2.0`
+    - `ball_joint_limit_soft = -0.2`
+- Durable training conclusion:
+  - the comparison baseline run is:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-07-32`
+  - the first soft-constraint run is:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-36-38_soft_limit_v1`
+  - comparing last-50-iteration means, the soft-constraint run improved:
+    - `Train/mean_reward`
+      from about `2196` to about `2387`
+    - `Train/mean_episode_length`
+      from about `716` to about `743`
+    - `Tracking/ang_vel_yaw_abs_error`
+      from about `0.388` to about `0.310`
+    - `episode_reset/ball_joint_limit_rate`
+      from about `0.395` to about `0.344`
+    - `episode_reset/time_out_rate`
+      from about `0.605` to about `0.656`
+  - however, this improvement came with a clear tradeoff:
+    - `Observation/tilt_deg`
+      increased from about `3.11 deg` to about `6.85 deg`
+    - `Reward/orientation` became more negative
+  - the policy-distribution std recorded by:
+    - `Policy/mean_std`
+    actually decreased:
+    - about `0.722 -> 0.641`
+  - but the runtime action spread and magnitude remained high:
+    - `Action/policy_abs_mean`
+      about `0.886 -> 0.876`
+    - `Action/policy_std`
+      about `0.815 -> 0.895`
+  - this means the remaining aggressive motion is not explained only by sampling noise; the learned policy means themselves are still driving large actions
+  - `Loss/value` remained noisy and non-monotonic in both runs, but because reward, episode length, and tracking all improved, this should not be interpreted as training failure by itself
+- Reason:
+  - the user approved implementing the previously proposed soft joint-limit reward as the first direct optimization for the identified Stage0 bottleneck and asked for a real GPU rerun plus a multi-metric analysis
+- Impact:
+  - future Stage0 optimization should now treat the main question as a reward tradeoff problem:
+    - keep the new reduction in joint-limit failures
+    - while recovering the lost orientation margin
+  - the next single-variable reward iteration should likely tune one of:
+    - `orientation` weight
+    - `action_rate` weight
+    - `ball_joint_limit_soft_start_ratio`
+    - `ball_joint_limit_soft` scale
+  - future result interpretation should continue combining:
+    - reward
+    - episode length
+    - tracking error
+    - action statistics
+    - termination breakdown
+    - and only then discuss loss curves
+- Status:
+  - targeted `python3 -m py_compile` check passed
+  - real GPU Stage0 training rerun completed successfully to iteration `599`
+  - offline TensorBoard export and comparison completed
+
+### Stage0 real run `2026-04-14_12-48-16` confirmed that the active logging path was under-instrumented, and the direct env/logger/export chain now logs observation/action/tracking/termination metrics explicitly
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the analyzed Stage0 run:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_12-48-16`
+    exposed only:
+    - `21`
+    TensorBoard scalar tags
+  - this was not a TensorBoard failure; it was a logging-coverage gap:
+    - the env only emitted a small `episode/...` set on reset
+    - the logger did not continuously aggregate current-step diagnostics from the active env state
+  - the direct env now records per-step metrics for the active Stage0 semantics, including:
+    - `Reward/...`
+    - `Tracking/...`
+    - `Action/...`
+    - `Command/...`
+    - `Observation/...`
+    - `Termination/...`
+  - the episode-reset path now also records richer episodic summaries:
+    - `episode/return`
+    - `episode/return_per_step`
+    - `episode_per_step/...`
+    - `episode_reset/...`
+  - the termination path is now split into explicit boolean terms before recombination:
+    - `bad_orientation`
+    - `ball_joint_out_of_bounds`
+    - `root_too_low`
+    - `time_out`
+    so later runs can expose termination-cause rates directly
+  - the TensorBoard export helper now writes richer offline summaries:
+    - `group_summary.csv`
+    - `latest_values.csv`
+      with:
+      - `group`
+      - `first_value`
+      - `last_value`
+      - `delta`
+      - `min_value`
+      - `max_value`
+      - `mean_value`
+- Reason:
+  - the user explicitly reported that the real Stage0 run logs were missing many metrics such as reward details, tracking error, and termination information, and required the active training/logging chain to be aligned with the current observation/reward/action/termination design
+- Impact:
+  - future training-result reading should not treat the older 21-tag Stage0 run as the full intended metric surface
+  - future run validation should explicitly check whether the new TensorBoard groups:
+    - `Reward`
+    - `Tracking`
+    - `Action`
+    - `Command`
+    - `Observation`
+    - `Termination`
+    appear in the event file
+  - if later observation/reward/action/termination semantics change again, the env logging and TensorBoard export should be updated in the same session instead of drifting behind the active task meaning
+- Status:
+  - targeted `python3 -m py_compile` validation passed
+  - updated TensorBoard export script executed successfully on the existing Stage0 run
+  - a fresh real training run is still required to verify the newly added tags in an event file
+### Robot asset binding paths must follow the USD-internal `complete_car_alternative` root, and Stage0 GPU smoke training is now runnable again
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the active robot USD:
+    - `USD/complete_car.usd`
+    has its real asset root under:
+    - `/World/complete_car_alternative`
+  - the articulation root is not:
+    - `/body_car_chassis`
+    by itself
+    but instead:
+    - `/complete_car_alternative/body_car_chassis`
+  - therefore the active direct-workflow bindings now use the USD-consistent paths:
+    - articulation root:
+      - `/complete_car_alternative/body_car_chassis`
+    - IMU:
+      - `{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis/Imu_Sensor`
+    - lidar:
+      - `{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis/Example_Rotary`
+    - stereo left camera:
+      - `{ENV_REGEX_NS}/Robot/complete_car_alternative/head_car_chassis/Stereo_Vision_Camera/Camera_left`
+    - height-scanner anchor body:
+      - `{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis`
+  - after aligning these paths, the minimal real-GPU smoke command:
+    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 1 --max_iterations 1`
+    now:
+    - creates the articulation successfully
+    - starts simulation successfully
+    - builds actor/critic models successfully
+    - completes one PPO learning iteration successfully
+- Reason:
+  - after the earlier configclass / Hydra fixes, the next startup blocker was a PhysX articulation creation failure caused by asset bindings that assumed the robot bodies sat directly under `/Robot/...`, while the USD actually inserts an intermediate `complete_car_alternative` root and also uses different sensor prim names
+- Impact:
+  - future robot-asset or sensor-path edits should be verified against the real USD prim hierarchy, not inferred from desired naming
+  - if a later USD re-export changes the root prim or sensor names again, the first files to re-check are:
+    - `assets/robot_cfg.py`
+    - `sensors/imu.py`
+    - `sensors/lidar.py`
+    - `sensors/stereo_camera.py`
+    - `terrain/terrain_cfg.py`
+- Status:
+  - targeted `py_compile` validation passed
+  - Stage0 real-GPU minimal training smoke passed
+  - a non-blocking warning:
+    - `Failed to clone in Fabric`
+    still appears when `num_envs=1`, but it did not prevent environment setup or the completed training iteration
+
+### Direct-workflow startup configs must not expose inherited read-only properties or frozen nested terrain configs to Isaac Lab `configclass`
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/imu.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/lidar.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/stereo_camera.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - in the active `RL_Training/` direct workflow, config-derived quantities that sit inside Isaac Lab `configclass` trees should not be implemented as inherited read-only `@property` members
+  - the two concrete blocking cases were:
+    - `CompleteCarTerrainRuntimeCfg.num_height_points`
+    - `CompleteCarSensorSuiteCfg.policy_feature_dim` and the corresponding per-sensor `policy_feature_dim`
+  - these quantities are now queried through explicit methods instead of read-only properties:
+    - `get_num_height_points()`
+    - `get_policy_feature_dim()`
+  - `Stage1TerrainCfg` is no longer a `frozen dataclass`, so Hydra can safely write nested terrain-generator overrides back into the config tree
+  - after these changes, the real training entry:
+    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cpu --num_envs 1 --max_iterations 1`
+    now passes the previous config-construction failure points and reaches Isaac Lab simulation-context startup
+- Reason:
+  - the user reported a startup crash in the training script, and the root cause was Isaac Lab `configclass` / Hydra trying to `setattr(...)` into inherited property-backed or frozen nested config members during config materialization
+- Impact:
+  - future derived config values inside the active direct-workflow config tree should prefer explicit query methods over property-backed pseudo-fields
+  - future nested terrain-generator config objects that Hydra needs to override must remain mutable
+  - if later startup fails again, the next checks should start after config parsing rather than revisiting these resolved `property` / `frozen dataclass` issues
+- Status:
+  - targeted `python3 -m py_compile` validation passed
+  - runtime smoke no longer stops in the original Python config error chain
+  - remaining warnings/errors observed in the restricted terminal were environment-level Isaac Sim issues such as missing CUDA driver and non-writable kit cache, not this config bug
+
 ### GitHub tracking scope now excludes the local thesis workspace and literature corpus
 - Updated:
   - `.gitignore`
@@ -3676,6 +4041,48 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - future temporary office lock files matching `.~lock*` should stay out of version control by default
 - Status:
   - repository sync preparation updated
+
+## 2026-04-14
+
+### Stage0 reward search currently converges to `soft_limit + orientation=-3.0` as the best validated default
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable training conclusion:
+  - the active Stage0 default should currently keep:
+    - `ball_joint_limit_soft = -0.2`
+    - `ball_joint_limit_soft_start_ratio = 0.8`
+    - `ball_joint_limit_soft_power = 2.0`
+    - `orientation = -3.0` as a Stage0-local override
+  - among the compared real GPU runs:
+    - baseline `2026-04-14_13-07-32`
+    - `soft_limit_v1`
+    - `soft_limit_v1_orient3`
+    - `soft_limit_v1_orient25`
+    - `soft_limit_v1_orient3_lin22`
+    the best current balance came from:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-48-25_soft_limit_v1_orient3`
+  - its last-50 behavior was approximately:
+    - `Train/mean_reward ≈ 2779`
+    - `Train/mean_episode_length ≈ 893`
+    - `Tracking/lin_vel_x_abs_error ≈ 0.141`
+    - `Tracking/ang_vel_yaw_abs_error ≈ 0.344`
+    - `Observation/tilt_deg ≈ 2.03`
+    - `episode_reset/terminated_rate ≈ 0.085`
+    - `episode_reset/time_out_rate ≈ 0.915`
+- Reason:
+  - `soft_limit_v1` reduced joint-limit resets but made tilt much worse
+  - lowering the orientation penalty to `-2.5` recovered part of the forward tracking but clearly weakened stability again
+  - raising `tracking_lin_vel` to `2.2` on top of `orientation=-3.0` increased the reward term itself, but the real forward error, yaw error, tilt, and ball-joint target error all worsened versus `soft_limit_v1_orient3`
+- Impact:
+  - future Stage0 work should treat `soft_limit_v1_orient3` as the current best validated checkpoint/config, rather than the temporary `-2.5` or `lin22` branches
+  - if later Stage0 tuning continues, the next single-variable search should more likely target action regularization or reward coupling, not another direct reduction of the orientation penalty
+- Status:
+  - current code has been restored to the best validated default
+  - follow-up reward search is optional, not blocking the next engineering step
 
 ### RL mainline has been simplified again: `baseline/` now keeps only one override file, and terrain generation moved to `utils/terrain.py`
 - Date:

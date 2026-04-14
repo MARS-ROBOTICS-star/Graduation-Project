@@ -10,7 +10,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
     stage_name: str = "stage0"
 
     def __post_init__(self) -> None:
-        self.scene.num_envs = 512
+        self.scene.num_envs = 64
         self.terrain.enabled = False
         self.terrain.mode = "plane"
         self.curriculum.enabled = False

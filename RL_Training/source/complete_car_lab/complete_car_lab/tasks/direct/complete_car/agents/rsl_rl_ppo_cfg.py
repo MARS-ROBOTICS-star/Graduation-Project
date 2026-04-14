@@ -68,22 +68,22 @@ class LocalOnPolicyRunnerCfg:
 @configclass
 class CompleteCarBasePPORunnerCfg(LocalOnPolicyRunnerCfg):
     seed = 1
-    num_steps_per_env = 48
-    max_iterations = 600
-    save_interval = 100
+    num_steps_per_env = 96
+    max_iterations = 1000
+    save_interval = 200
     experiment_name = "complete_car_direct"
     run_name = ""
     obs_groups = {"actor": ["actor"], "critic": ["critic"]}
     resume = False
-    load_run = -1
-    load_checkpoint = -1
+    load_run = ".*"
+    load_checkpoint = "model_.*.pt"
     clip_actions = 1.0
 
     actor = LocalMlpModelCfg(
         hidden_dims=[256, 128, 64],
         activation="elu",
         obs_normalization=True,
-        distribution_cfg=LocalGaussianDistributionCfg(init_std=0.7, std_type="scalar"),
+        distribution_cfg=LocalGaussianDistributionCfg(init_std=0.4, std_type="scalar"),
     )
     critic = LocalMlpModelCfg(
         hidden_dims=[256, 128, 64],
@@ -95,7 +95,7 @@ class CompleteCarBasePPORunnerCfg(LocalOnPolicyRunnerCfg):
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.005,
+        entropy_coef=0.003,
         num_learning_epochs=5,
         num_mini_batches=4,
         learning_rate=3.0e-4,

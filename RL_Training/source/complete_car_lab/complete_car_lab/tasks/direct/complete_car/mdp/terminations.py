@@ -33,14 +33,9 @@ def compute_done_terms(
         dim=1,
     )
 
-    root_too_low = torch.zeros_like(time_out)
-    if cfg.terminations.minimum_root_height is not None:
-        root_too_low = robot.data.root_link_pos_w[:, 2] < cfg.terminations.minimum_root_height
-
     return {
         "bad_orientation": bad_orientation,
         "ball_joint_out_of_bounds": ball_joint_out_of_bounds,
-        "root_too_low": root_too_low,
         "time_out": time_out,
     }
 
@@ -50,6 +45,5 @@ def compute_dones(cfg, robot, ball_joint_ids, episode_length_buf: torch.Tensor, 
     terminated = (
         done_terms["bad_orientation"]
         | done_terms["ball_joint_out_of_bounds"]
-        | done_terms["root_too_low"]
     )
     return terminated, done_terms["time_out"]

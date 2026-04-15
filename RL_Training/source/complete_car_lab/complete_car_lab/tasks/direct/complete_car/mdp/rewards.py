@@ -1,91 +1,111 @@
-"""奖励项计算。"""
+"""目标导向奖励项计算。"""
 
 from __future__ import annotations
 
+import math
+
 import torch
 
-from ..utils.math_utils import wrap_to_pi_tensor
+from ..utils.math_utils import quaternion_to_rpy, wrap_to_pi_tensor
 
 REWARD_TERM_NAMES = (
-    "tracking_lin_vel",
-    "tracking_ang_vel",
-    "orientation",
-    "action_rate",
-    "ball_joint_limit_soft",
-    "termination",
+    "target_bonus",
+    "progress",
+    "roll_gate",
+    "speed_gate",
+    "force_gate",
+    "heading_gate",
+    "longitudinal_slip_gate",
+    "lateral_slip_gate",
+    "composite_gate",
+    "gated_progress",
 )
 
 
-def compute_tracking_terms(cfg, robot, commands: torch.Tensor) -> dict[str, torch.Tensor]:
-    base_lin_vel = robot.data.root_com_lin_vel_b
-    base_ang_vel = robot.data.root_com_ang_vel_b
-
-    lin_vel_error = torch.square(commands[:, 0] - base_lin_vel[:, 0])
-    tracking_lin_vel = torch.exp(-lin_vel_error / max(cfg.rewards.tracking_lin_vel_std**2, 1.0e-6))
-
-    yaw_rate_error = torch.square(commands[:, 1] - base_ang_vel[:, 2])
-    tracking_ang_vel = torch.exp(-yaw_rate_error / max(cfg.rewards.tracking_ang_vel_std**2, 1.0e-6))
-    return {
-        "tracking_lin_vel": tracking_lin_vel,
-        "tracking_ang_vel": tracking_ang_vel,
-    }
-
-
-def compute_ball_joint_limit_soft_penalty(cfg, robot, ball_joint_ids) -> torch.Tensor:
-    """Penalize only the last margin near the configured hard joint limits.
-
-    The penalty stays at zero in the safe zone and rises smoothly only when a joint
-    uses more than ``ball_joint_limit_soft_start_ratio`` of its available range from
-    the default pose toward either the lower or upper hard limit.
-    """
-
-    ball_joint_pos = wrap_to_pi_tensor(robot.data.joint_pos[:, ball_joint_ids])
-    default_joint_pos = robot.data.default_joint_pos[:, ball_joint_ids]
-
-    lower_limits = ball_joint_pos.new_tensor(cfg.terminations.ball_joint_pos_lower_limits).unsqueeze(0)
-    upper_limits = ball_joint_pos.new_tensor(cfg.terminations.ball_joint_pos_upper_limits).unsqueeze(0)
-
-    positive_span = torch.clamp(upper_limits - default_joint_pos, min=1.0e-6)
-    negative_span = torch.clamp(default_joint_pos - lower_limits, min=1.0e-6)
-
-    positive_utilization = torch.clamp((ball_joint_pos - default_joint_pos) / positive_span, min=0.0)
-    negative_utilization = torch.clamp((default_joint_pos - ball_joint_pos) / negative_span, min=0.0)
-    utilization = positive_utilization + negative_utilization
-
-    start_ratio = cfg.rewards.ball_joint_limit_soft_start_ratio
-    active_margin = max(1.0 - start_ratio, 1.0e-6)
-    normalized_overuse = torch.clamp((utilization - start_ratio) / active_margin, min=0.0)
-    return torch.mean(normalized_overuse.pow(cfg.rewards.ball_joint_limit_soft_power), dim=1)
+def _compute_target_bonus_value(cfg) -> float:
+    progress_horizon = cfg.commands.goal_distance / max(cfg.control.control_dt, 1.0e-6)
+    ratio = cfg.rewards.params.target_bonus_ratio
+    return progress_horizon * ratio / max(1.0 - ratio, 1.0e-6)
 
 
 def compute_reward_terms(
     cfg,
     robot,
-    ball_joint_ids,
     commands: torch.Tensor,
-    actions: torch.Tensor,
-    last_actions: torch.Tensor,
-    reset_terminated: torch.Tensor,
+    previous_goal_distance: torch.Tensor,
+    raw_obs_terms: dict[str, torch.Tensor],
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    scales = cfg.rewards.scales
+    params = cfg.rewards.params
+    current_goal_distance = torch.linalg.vector_norm(commands[:, :2], dim=1)
+    goal_yaw_error = wrap_to_pi_tensor(commands[:, 2])
 
-    projected_gravity = robot.data.projected_gravity_b
+    goal_reached = (
+        (current_goal_distance < params.target_position_tolerance)
+        & (torch.abs(goal_yaw_error) < math.radians(params.target_yaw_tolerance_deg))
+    )
+    target_bonus = goal_reached.float() * _compute_target_bonus_value(cfg)
 
-    tracking_terms = compute_tracking_terms(cfg, robot, commands)
-    orientation = torch.sum(torch.square(projected_gravity[:, :2]), dim=1)
-    action_rate = torch.sum(torch.square(actions - last_actions), dim=1)
-    ball_joint_limit_soft = compute_ball_joint_limit_soft_penalty(cfg, robot, ball_joint_ids)
-    termination = reset_terminated.float()
+    control_frequency = 1.0 / max(cfg.control.control_dt, 1.0e-6)
+    progress = (previous_goal_distance - current_goal_distance) * control_frequency
+
+    heading_denominator = torch.clamp(
+        current_goal_distance / max(params.heading_distance_scale, 1.0e-6),
+        min=1.0e-6,
+    )
+    heading_gate = torch.exp(-0.5 * torch.square(goal_yaw_error / heading_denominator))
+
+    middle_roll = quaternion_to_rpy(robot.data.root_link_quat_w)[:, 0]
+    abs_middle_roll = torch.abs(middle_roll)
+    free_roll_band = math.radians(params.roll_free_deg)
+    roll_gate = torch.where(
+        abs_middle_roll <= free_roll_band,
+        torch.ones_like(abs_middle_roll),
+        torch.exp(-0.5 * torch.square(abs_middle_roll / max(params.roll_gaussian_scale, 1.0e-6))),
+    )
+
+    horizontal_speed = torch.linalg.vector_norm(robot.data.root_link_lin_vel_w[:, :2], dim=1)
+    speed_gate = torch.minimum(
+        torch.ones_like(horizontal_speed),
+        torch.exp(params.speed_gain * (params.speed_limit - horizontal_speed)),
+    )
+
+    normalized_wheel_forces = raw_obs_terms["wheel_normal_contact_force"]
+    force_std = torch.std(normalized_wheel_forces, dim=1, unbiased=False)
+    force_gate = torch.exp(-0.5 * torch.square(force_std / max(params.force_std_scale, 1.0e-6)))
+
+    wheel_longitudinal_slip = raw_obs_terms["wheel_longitudinal_slip"]
+    longitudinal_slip_gate = torch.prod(
+        torch.exp(-0.5 * torch.square(wheel_longitudinal_slip / max(params.longitudinal_slip_scale, 1.0e-6))),
+        dim=1,
+    )
+
+    wheel_slip_angle = raw_obs_terms["wheel_slip_angle"]
+    slip_angle_limit = math.pi / max(params.lateral_slip_gain, 1.0e-6)
+    clipped_slip_angle = torch.clamp(wheel_slip_angle, -slip_angle_limit, slip_angle_limit)
+    lateral_slip_terms = 0.5 * torch.cos(params.lateral_slip_gain * clipped_slip_angle) + 0.5
+    lateral_slip_terms = torch.where(
+        torch.abs(wheel_slip_angle) <= slip_angle_limit,
+        lateral_slip_terms,
+        torch.zeros_like(lateral_slip_terms),
+    )
+    lateral_slip_gate = torch.prod(lateral_slip_terms, dim=1)
+
+    composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3.0
+    gated_progress = progress * roll_gate * speed_gate * force_gate * composite_gate
 
     components = {
-        "tracking_lin_vel": scales.tracking_lin_vel * tracking_terms["tracking_lin_vel"],
-        "tracking_ang_vel": scales.tracking_ang_vel * tracking_terms["tracking_ang_vel"],
-        "orientation": scales.orientation * orientation,
-        "action_rate": scales.action_rate * action_rate,
-        "ball_joint_limit_soft": scales.ball_joint_limit_soft * ball_joint_limit_soft,
-        "termination": scales.termination * termination,
+        "target_bonus": target_bonus,
+        "progress": progress,
+        "roll_gate": roll_gate,
+        "speed_gate": speed_gate,
+        "force_gate": force_gate,
+        "heading_gate": heading_gate,
+        "longitudinal_slip_gate": longitudinal_slip_gate,
+        "lateral_slip_gate": lateral_slip_gate,
+        "composite_gate": composite_gate,
+        "gated_progress": gated_progress,
     }
-    total_reward = torch.stack(tuple(components.values()), dim=0).sum(dim=0)
+    total_reward = target_bonus + gated_progress
     if cfg.rewards.only_positive_rewards:
         total_reward = torch.clamp(total_reward, min=0.0)
     return total_reward, components

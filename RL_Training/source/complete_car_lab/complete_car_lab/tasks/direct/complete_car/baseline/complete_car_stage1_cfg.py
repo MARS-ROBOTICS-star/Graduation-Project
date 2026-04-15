@@ -22,6 +22,4 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.sensors.stereo_camera.enabled = False
         self.sensors.lidar.enabled = False
         self.sensors.enable_height_scanner = False
-
-        self.rewards.scales.orientation = -4.0
         super().__post_init__()

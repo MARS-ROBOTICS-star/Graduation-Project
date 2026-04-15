@@ -1,5 +1,128 @@
 # 每日工作日志
 
+## 2026-04-15
+
+已完成：
+- 对当前三节关节小车 direct workflow 做了一轮 goal-conditioned 主线重构。
+- 当前命令空间已从速度命令改为目标位姿命令：
+  - env 内存储为全局目标位姿：
+    - `[x_t, y_t, psi_target]`
+  - 目标采样规则改为：
+    - 固定距离 `12 m`
+    - 相对起始航向偏角 `phi ∈ [-18.43°, 18.43°]`
+    - 使用 `phi = s * phi_max * sqrt(u)` 的边缘强化二次采样
+    - 目标朝向附加偏置 `delta ∈ [-9.215°, 9.215°]`
+- 当前观测中的命令项已改为车体系下的相对目标：
+  - `[x_rel, y_rel, psi_rel]`
+- 当前动作空间已从仅球铰控制改为：
+  - `6` 个球铰姿态目标
+  - `6` 个车轮速度目标
+  - 共 `12` 维
+- wheel allocator 已从当前 env 执行链路中移除，车轮速度目标改为由 policy 直接输出并映射到速度上下界。
+- 为保持 env 可运行，本轮对 reward/curriculum/metrics 做了最小兼容改动，但完整 goal-conditioned reward 设计尚未展开。
+- 已同步更新：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 direct workflow 的命令与动作接口已经切换到用户指定的 goal-conditioned 口径。
+- 当前 Stage0 默认关键维度已变为：
+  - 动作 `12`
+  - Actor 观测 `52`
+  - Critic 观测 `52`
+
+已完成：
+- 新增 Zotero 本地补挂脚本：
+  - `scripts/literature/attach_local_pdfs_to_zotero_collection.py`
+- 针对 Zotero 集合：
+  - `核心参考-RL、Sim-to-Real`
+  执行了一次本地 PDF 回填
+- 因当前 `zotero-mcp` 的 collection 接口受 `Local API is not enabled` 限制，实际采用：
+  - 关闭 `zotero-bin`
+  - 备份 `zotero.sqlite`
+  - 直接写入 Zotero 本地 SQLite 与 `storage/` 附件目录
+  - 重开 Zotero
+- 本轮从：
+  - `docs/literature/`
+  成功补挂 `10` 个原本缺 PDF 的条目
+- 已核对补挂成功的 parent key：
+  - `QFLNKZ2Q`
+  - `V7VESQJM`
+  - `KXTHNV77`
+  - `3NRQAKKS`
+  - `LMTJ8X83`
+  - `ZNSS2JA8`
+  - `5M2SGTER`
+  - `XH4XPRC6`
+  - `WXIK6J7M`
+  - `2TICENYY`
+
+修改文件：
+- `scripts/literature/attach_local_pdfs_to_zotero_collection.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `核心参考-RL、Sim-to-Real` 集合里，凡是 `docs/literature/` 已有对应 PDF 且原条目缺 PDF 的项目，本轮已完成自动补挂。
+- 已在真实 Zotero 库修改前生成数据库备份：
+  - `/home/lbz/Zotero/zotero.sqlite.backup_2026-04-15_00-27-59`
+
+已完成：
+- 在 Zotero 桌面端已打开、并选中目标集合的前提下，使用 Google Scholar BibTeX + 本地 Zotero Connector 流程，将上轮筛出的 10 篇核心候选论文导入 Zotero 集合：
+  - `核心参考-RL、Sim-to-Real`
+- 本轮导入的 10 篇文献包括：
+  - `Hybrid Learning for Rough Terrain Navigation of Actively Articulated Wheeled Vehicles`
+  - `Control of rough terrain vehicles using deep reinforcement learning`
+  - `Simultaneous control of terrain adaptation and wheel speed allocation for a planetary rover with an active suspension system`
+  - `Control of robotic vehicles with actively articulated suspensions in rough terrain`
+  - `Design and field testing of a rover with an actively articulated suspension system in a Mars analog terrain`
+  - `Actively articulated suspension for a wheel-on-leg rover operating on a martian analog surface`
+  - `Deep reinforcement learning for safe local planning of a ground vehicle in unknown rough terrain`
+  - `A sim-to-real pipeline for deep reinforcement learning for autonomous robot navigation in cluttered rough terrain`
+  - `Static force distribution and orientation control for a rover with an actively articulated suspension system`
+  - `Predict the rover mobility over soft terrain using articulated wheeled bevameter`
+- 导入结果：
+  - 10 篇元数据全部导入成功
+  - 3 篇 PDF 自动附加成功
+  - 5 篇 PDF 因站点重定向或 `403` 被拒绝，未自动附加
+  - 其余 2 篇本轮未附带可直接抓取的 PDF 链接
+- 自动附加成功的 PDF 对应：
+  - `Deep reinforcement learning for safe local planning of a ground vehicle in unknown rough terrain`
+  - `A sim-to-real pipeline for deep reinforcement learning for autonomous robot navigation in cluttered rough terrain`
+  - `Predict the rover mobility over soft terrain using articulated wheeled bevameter`
+- 已同步更新：
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前课题第一轮核心英文参考文献池已经落入 Zotero 主集合，后续继续做 cited-by 扩展、批注、读书笔记时可以直接从该集合接续。
+- 若后续需要完整 PDF，仍需针对未自动附加的 5 篇做单篇补抓。
+
 ## 2026-04-13
 
 已完成：
@@ -4846,6 +4969,38 @@
 ## 2026-04-14
 
 已完成：
+- 使用 Google Scholar 按 3 组关键词做一轮分批检索，每组抓取第 1 页，共整理 30 篇候选论文：
+  - `("articulated wheeled robot" OR "articulated vehicle" OR "articulated rover") AND ("rough terrain" OR "uneven terrain") AND (control OR "reinforcement learning")`
+  - `("active suspension" OR "actively articulated suspension" OR "articulated suspension") AND (robot OR rover) AND ("rough terrain" OR terrain)`
+  - `("wheeled robot" OR "ground vehicle") AND ("rough terrain" OR "off-road") AND ("reinforcement learning" OR "deep reinforcement learning")`
+- 按“与 articulated / multi-body / actively-jointed wheeled robot + rough terrain + reinforcement learning + terrain perception 的贴合程度”对候选结果做了二次人工重排。
+- 当前检索结果可归为 3 类：
+  - 主动车体/主动悬架在粗糙地形上的机构与控制
+  - 粗糙地形轮式/地面车辆 RL 导航与控制
+  - 地形几何估计 / 地形感知驱动的悬架或轮速分配
+- 当前第一轮最有价值的 seed papers 已收口为：
+  - `Hybrid Learning for Rough Terrain Navigation of Actively Articulated Wheeled Vehicles`
+  - `Control of rough terrain vehicles using deep reinforcement learning`
+  - `Simultaneous control of terrain adaptation and wheel speed allocation for a planetary rover with an active suspension system`
+  - `Control of robotic vehicles with actively articulated suspensions in rough terrain`
+- 已同步更新：
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前与课题四要素同时高度重合的论文并不多，更多是：
+  - 主动关节/主动悬架一类论文覆盖机构与地形适应
+  - RL 一类论文覆盖粗糙地形控制或导航
+  - 地形感知一类论文覆盖 terrain geometry estimation / wheel-terrain contact
+- 后续二轮扩展更适合从 seed papers 做 cited-by 追踪，而不是继续大范围宽搜。
+
+已完成：
 - 继续处理 `RL_Training/scripts/train.py` 在真实 GPU 训练启动阶段的 articulation 创建失败问题。
 - 使用最小 Isaac Sim headless 检查脚本读取 `USD/complete_car.usd` 的真实 prim 层级，确认：
   - 资产根在 `/World/complete_car_alternative`
@@ -5293,3 +5448,369 @@
   - `RL_Training/logs/rsl_rl/<experiment_name>/<run_dir>/`
 - 对于当前这次 Stage0 训练，对应目录就是：
   - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_20-52-07/`
+
+## 2026-04-15
+
+已完成：
+- 按用户要求检查两个真实 Stage0 run 的 observation 项，确认能否通过 scale 反推出原始量级并判断当前参数是否合适：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_14-04-19_soft_limit_v1_orient3_lin22`
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_20-52-07`
+- 由于第二个 run 原本只有 `events.out.tfevents.*`，已先补执行：
+  - `python3 source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py --run_dir logs/rsl_rl/complete_car_stage0/2026-04-14_20-52-07`
+- 对照两次 run 冻结下来的 `params/env.yaml`，确认两次 run 的 observation scale 完全一致：
+  - `base_lin_vel = 1.0`
+  - `base_ang_vel = 0.25`
+  - `projected_gravity = 1.0`
+  - `ball_joint_pos = 1.0`
+  - `ball_joint_vel = 0.05`
+  - `ball_joint_target_error = 1.0`
+  - `module_roll_pitch = 1.0`
+  - `wheel_joint_vel = 0.05`
+  - `commands = 1.0`
+- 已根据 last50 统计反推归一化后的观测量级：
+  - 可直接反推的观测项大多落在 `0.03 ~ 0.54` 这一量级
+  - 当前没有发现明显的 observation scale 配置错误
+- 同时确认一个重要限制：
+  - `Observation/base_lin_vel_x`
+  - `Observation/base_ang_vel_yaw`
+  - `Command/lin_vel_x`
+  - `Command/ang_vel_yaw`
+  当前日志记录的是跨 env 的有符号均值，不能直接拿来判断真实幅值分布
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 的 observation scale 不是主要矛盾。
+- 相比之下，更值得继续盯的是：
+  - `Action/policy_abs_mean` 仍接近 `1.0`
+  - `ball_joint_target_error_abs_mean` 仍偏大
+- 因此如果后续继续做 Stage0 诊断，优先级应放在动作激进性和 reward 耦合，而不是先去大幅重配 observation scale。
+
+已完成：
+- 按用户要求修改 TensorBoard 的 step-level observation 输出，使其显式记录未乘 scale 的原始观测值，而不是和 policy 输入混在一起。
+- 在：
+  - `mdp/observations.py`
+  中新增原始观测分量收集函数，并将 Actor observation 的 scale 乘法保留在观测拼接阶段。
+- 在：
+  - `base/env.py`
+  中把 TensorBoard 使用的 `Observation/...` 日志改为从原始观测分量直接取值，并统一追加 `_raw` 后缀。
+- 当前新增/替换的原始观测标签包括：
+  - `Observation/base_lin_vel_x_raw`
+  - `Observation/base_ang_vel_yaw_raw`
+  - `Observation/projected_gravity_xy_norm_raw`
+  - `Observation/ball_joint_pos_abs_mean_raw`
+  - `Observation/ball_joint_vel_abs_mean_raw`
+  - `Observation/ball_joint_target_error_abs_mean_raw`
+  - `Observation/wheel_joint_vel_abs_mean_raw`
+  - `Observation/head_roll_pitch_abs_mean_raw`
+  - `Observation/tail_roll_pitch_abs_mean_raw`
+  - `Observation/goal_rel_x_raw`
+  - `Observation/goal_rel_y_raw`
+  - `Observation/goal_rel_psi_raw`
+  - `Observation/last_action_abs_mean_raw`
+- 已执行静态检查：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 之后新的 TensorBoard run 中，`Observation/..._raw` 可以直接拿来读原始物理量，不需要再手工除以 scale。
+- policy 输入归一化逻辑仍然保留，不影响训练执行链。
+
+已完成：
+- 按用户要求删去动作链中的电机干扰项。
+- 当前已从主执行链路中移除：
+  - `motor_strength`
+  - reset 时的 `sample_motor_strength(...)`
+  - `Action/motor_strength_mean` 日志项
+- `preprocess_policy_actions(...)` 现已改为：
+  - 先裁剪 policy action
+  - 再直接作为 `processed_actions`
+  - 不再乘任何电机强度系数
+- `RandomizationCfg` 已删除：
+  - `randomize_motor_strength`
+  - `motor_strength_range`
+- 当前动作侧若后续开启随机化，仅剩：
+  - `action_noise_std`
+  - `action_bias_std`
+  这两类显式机制
+- 已同步更新：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/randomization.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 active action pipeline 已不存在电机强度扰动项。
+- 之后如果训练中还出现动作侧不稳定，应优先从：
+  - policy 输出本身
+  - `action_noise_std`
+  - `action_bias_std`
+  去查，而不是再去找 `motor_strength` 支路。
+
+已完成：
+- 按用户要求从当前 active direct workflow 中删去 `root_too_low` 相关内容。
+- 当前已删除：
+  - `TerminationCfg.minimum_root_height`
+  - `done_terms["root_too_low"]`
+  - `Termination/root_too_low_rate`
+  - `episode_reset/root_too_low_rate`
+  - `episode/root_height_mean`
+  - `episode/root_height_min`
+  - `Observation/root_height`
+- env 内部也不再维护用于该终止项诊断的 root-height 统计缓存。
+- 当前 active 失败终止条件已收口为：
+  - `bad_orientation`
+  - `ball_joint_out_of_bounds`
+- 已同步更新：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 之后新的 direct-workflow run 不应再出现 `root_too_low` 相关 termination 和统计标签。
+- 历史日志中与 `root_too_low` 相关的条目仍保留为历史结论，但不再代表当前 active 主线。
+
+已完成：
+- 按用户要求在当前 active direct workflow 的现有观测项基础上新增 18 维轮地接触相关观测：
+  - 6 维各轮纵向滑移率
+  - 6 维各轮侧滑角
+  - 6 维按整车重量归一化的各轮法向接触力
+- 当前 slip / contact 观测实现已按用户给定物理定义接入：
+  - 纵向滑移率使用
+    - `(v_x - r * omega) / max(|v_x|, eps)`
+  - 侧滑角使用
+    - `atan2(v_y, |v_x| + eps)`
+  - 法向接触力使用
+    - `max(0, F_contact · z_hat) / (m_total * g)`
+- 当前低速保护与裁剪参数为：
+  - `eps = 0.1`
+  - `slip ratio clip = [-1, 1]`
+  - `slip angle clip = [-pi/2, pi/2]`
+- 当前 wheel contact force 入口已打通：
+  - `robot_cfg.py` 中 USD spawn 已启用 `activate_contact_sensors = True`
+  - `sensor_cfg.py` 中新增了绑定 6 个 wheel body 的 `ContactSensor`
+  - `env.py` 中会读取 `net_forces_w` 并传入 observation 计算链
+- 当前 wheel body 与参数常量已显式收口：
+  - `WHEEL_BODY_NAMES`
+  - `WHEEL_RADIUS = 0.19`
+- 当前 actor / critic 单帧观测维度已由：
+  - `52 / 52`
+  更新为：
+  - `70 / 70`
+- TensorBoard step-level 原始观测日志已新增：
+  - `Observation/wheel_longitudinal_slip_abs_mean_raw`
+  - `Observation/wheel_slip_angle_abs_mean_raw`
+  - `Observation/wheel_normal_contact_force_abs_mean_raw`
+  - `Observation/wheel_normal_contact_force_sum_raw`
+- 已同步更新：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/__init__.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 active direct workflow 已具备显式轮地滑移/侧滑/载荷分布观测。
+- 当前法向接触力仍采用世界系 `z` 方向近似法向，这是当前实现里有意保留的简化，而不是局部接触面法向重建。
+- 已通过目标文件的 `python3 -m py_compile` 静态编译检查。
+
+已完成：
+- 按用户要求删除车轮动作映射里重复的上下限配置项：
+  - `wheel_joint_action_lower_limits`
+  - `wheel_joint_action_upper_limits`
+- 当前车轮动作只保留一个对称速度上限入口：
+  - `wheel_joint_velocity_limit_sim`
+- 当前后 6 维标准化车轮动作的映射已改为：
+  - `wheel_target = action * wheel_joint_velocity_limit_sim`
+- 因此当前车轮动作语义为：
+  - `action = 1` 对应 `+v_max`
+  - `action = -1` 对应 `-v_max`
+  - `action = 0` 对应 `0`
+- env 主链调用和文档说明已同步到这一口径。
+- 已同步更新：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前车轮动作映射参数已收口，不再出现“先定义速度上限、再重复定义一组对称上下限”的冗余配置。
+- 后续若要调整车轮动作幅值，只需要改：
+  - `wheel_joint_velocity_limit_sim`
+- 已通过目标文件的 `python3 -m py_compile` 静态编译检查。
+
+已完成：
+- 按用户要求，先将以下 5 组量从当前 active policy observation trunk 中注释掉，暂不送入 PPO：
+  - 6 个球铰角速度
+  - 6 个球铰目标跟踪误差
+  - 前车绝对 roll/pitch
+  - 后车绝对 roll/pitch
+  - 6 个车轮轮速
+- 当前修改只影响 actor / critic 观测主干，不影响：
+  - 底层状态本身
+  - reward 主链
+  - 动作执行链
+- observation descriptor 与 observation-noise 维度已同步收口。
+- 当前 actor / critic 单帧观测维度已由：
+  - `70 / 70`
+  调整为：
+  - `48 / 48`
+- 已同步更新：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 active policy observation trunk 已精简为：
+  - 中车 body-frame 线速度
+  - 中车 body-frame 角速度
+  - 中车重力投影
+  - 6 个球铰角
+  - 6 个车轮纵向滑移率
+  - 6 个车轮侧滑角
+  - 6 个按整车重量归一化的车轮法向接触力
+  - 相对目标命令
+  - 上一时刻动作
+- 已通过目标文件的 `python3 -m py_compile` 静态编译检查。
+
+已完成：
+- 按用户要求，将轮胎法向接触力从“世界系 `z` 分量近似”改成“沿轮胎-地面接触法向”的更严格版本。
+- 先对照本地 Isaac Lab 手册确认：
+  - `ContactSensor.data.net_forces_w`
+  本身就是世界系下的净法向接触力向量，而不是总接触力。
+- 因此当前实现已从：
+  - `max(0, F_contact · z_hat) / (m_total * g)`
+  改为：
+  - `||net_forces_w|| / (m_total * g)`
+- 当前含义是：
+  - 直接使用 6 个 wheel body 的净法向接触力向量模长
+  - 再按整车总重量归一化
+- 已同步更新：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前轮胎法向接触力不再依赖世界系竖直方向近似。
+- 当前实现已经切到基于 Isaac Lab 法向接触力向量本身的更严格口径。
+
+已完成：
+- 按用户要求，将当前 direct workflow 的奖励主线从旧的速度跟踪型 reward 重构为目标导向 reward。
+- 当前 reward 不再使用旧的：
+  - `tracking_lin_vel`
+  - `tracking_ang_vel`
+  - `orientation`
+  - `action_rate`
+  - `ball_joint_limit_soft`
+  - `termination`
+- 当前 active reward 结构已经改为：
+  - `target_bonus + gated_progress`
+- 其中：
+  - `progress = (d_{t-1} - d_t) * control_frequency`
+  - `gated_progress = progress * roll_gate * speed_gate * force_gate * composite_gate`
+  - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
+- 当前已新增并接线的 reward 组成包括：
+  - `target_bonus`
+  - `progress`
+  - `roll_gate`
+  - `speed_gate`
+  - `force_gate`
+  - `heading_gate`
+  - `longitudinal_slip_gate`
+  - `lateral_slip_gate`
+  - `composite_gate`
+  - `gated_progress`
+- env 当前已维护：
+  - 上一时刻目标距离缓存
+  - reset 后目标距离初始化
+  - 命令重采样后的目标距离重置
+- TensorBoard step 级 reward 指标已同步切换为新的目标导向指标命名。
+- 已同步更新：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 direct workflow 的 active reward 已正式切到目标达成 + 朝目标推进主线。
+- 当前奖励已经与 goal-conditioned 命令空间一致，不再保留旧速度命令跟踪逻辑。
+- 已通过针对改动文件的 `python3 -m py_compile` 静态编译检查。

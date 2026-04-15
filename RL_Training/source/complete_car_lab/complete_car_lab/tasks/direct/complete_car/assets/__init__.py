@@ -6,7 +6,9 @@ from .robot_cfg import (
     CONTROLLED_JOINT_NAMES,
     LEFT_WHEEL_JOINT_NAMES,
     RIGHT_WHEEL_JOINT_NAMES,
+    WHEEL_BODY_NAMES,
     WHEEL_JOINT_NAMES,
+    WHEEL_RADIUS,
     build_complete_car_robot_cfg,
 )
 
@@ -17,7 +19,9 @@ __all__ = [
     "CONTROLLED_JOINT_NAMES",
     "LEFT_WHEEL_JOINT_NAMES",
     "RIGHT_WHEEL_JOINT_NAMES",
+    "WHEEL_BODY_NAMES",
     "WHEEL_JOINT_NAMES",
+    "WHEEL_RADIUS",
     "build_complete_car_actuators_cfg",
     "build_complete_car_robot_cfg",
 ]

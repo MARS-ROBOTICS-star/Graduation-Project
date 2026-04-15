@@ -12,6 +12,12 @@
 - 已完成一次真实 `Stage0` run 的日志诊断，并补齐训练日志 / TensorBoard 指标埋点。
 - 已完成一轮 Stage0 奖励收敛实验串行搜索，并确定当前最优已验证配置。
 - 当前进入“固定当前最优 Stage0 配置，并继续接入 MGDP 风格显式地形高度 patch 到 critic 观测”的阶段。
+- 已完成一次 Zotero 文献库维护：
+  - `核心参考-RL、Sim-to-Real` 集合中，已把 `docs/literature/` 内能匹配到的本地 PDF 补挂回缺失条目。
+- 已完成一轮 goal-conditioned 主线接线：
+  - 命令空间已从速度命令切换为目标位姿命令
+  - 动作空间已从仅球铰 `6` 维扩成 `球铰 + 轮速` 共 `12` 维
+  - 观测中的命令项已切换为车体系下的 `[x_rel, y_rel, psi_rel]`
 
 ## 当前 RL 主线位置
 - 当前活跃 RL 工作区：
@@ -72,6 +78,36 @@
   - `utils/validate_wheel_speed_allocator.py`
 
 ## 本轮已确认
+- 已新增本地文献补挂脚本：
+  - `scripts/literature/attach_local_pdfs_to_zotero_collection.py`
+- 已完成当前 direct workflow 命令 / 动作主线重构：
+  - `CommandCfg.num_commands` 已由 `2` 改为 `3`
+  - 新命令语义为目标全局位姿：
+    - `[x_t, y_t, psi_target]`
+  - 目标采样规则已按用户指定改为：
+    - 固定距离 `12 m`
+    - 相对起始航向偏角 `phi ∈ [-18.43°, 18.43°]`
+    - `phi = s * phi_max * sqrt(u)` 的边缘强化二次采样
+  - 目标朝向偏置 `delta ∈ [-9.215°, 9.215°]`
+  - Actor / Critic 当前单帧观测维度已由 `45 / 45` 改为：
+    - `48 / 48`
+  - 当前动作维度已由 `6` 改为：
+    - `12`
+  - 当前 wheel allocator 已从 env 实际执行链路移除，保留在仓库中但不再参与当前动作到轮速目标的映射
+  - 当前 reward 已从旧的速度跟踪主线重构为目标导向主线：
+    - `target_bonus + gated_progress`
+    - 其中 `gated_progress = progress * roll_gate * speed_gate * force_gate * composite_gate`
+    - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
+  - 已在当前 actor / critic 主线新增 18 维轮地接触相关观测：
+    - 6 维各轮纵向滑移率
+    - 6 维各轮侧滑角
+    - 6 维按整车重量归一化的各轮法向接触力
+- 已完成对 Zotero 集合：
+  - `核心参考-RL、Sim-to-Real`
+  的一次本地 PDF 回填
+  - 本轮共补挂 `10` 条缺失 PDF 的条目
+  - 匹配源统一来自：
+    - `docs/literature/`
 - 仓库同步策略已调整为：
   - `毕业论文/` 与 `docs/literature/` 仅保留为本地研究资料目录
   - 根 `.gitignore` 已忽略上述两个目录
@@ -107,13 +143,12 @@
 - 3 个任务统一指向：
   - `base/env.py` 中的 `CompleteCarDirectEnv`
 - `base/complete_car_cfg.py` 已按独立配置块实现：
-  - `CommandRangesCfg`
   - `CommandCfg`
   - `ControlCfg`
   - `ObservationScalesCfg`
   - `ObservationNoiseCfg`
   - `ObservationCfg`
-  - `RewardScalesCfg`
+  - `RewardParamsCfg`
   - `RewardCfg`
   - `TerminationCfg`
   - `ResetCfg`
@@ -196,7 +231,6 @@
       - `Observation/tilt_deg ≈ 3.11`
     - 当前主要剩余终止来源不是：
       - `bad_orientation`
-      - `root_too_low`
     - 而是：
       - `ball_joint_limit`
   - 当前日志还显示：
@@ -204,14 +238,8 @@
     - `Action/policy_std ≈ 0.815`
     - policy 动作整体较频繁逼近动作边界
     - 这与当前球铰越界终止仍占较大比例相一致
-- 最近已按用户确认新增球铰软约束惩罚，并完成真实 GPU 对比训练：
-  - 新增奖励项：
-    - `ball_joint_limit_soft`
-  - 当前实现语义：
-    - 仅当球铰使用率超过各自可用范围的 `80%` 后开始激活
-    - 对 6 个球铰取均值后施加二次惩罚
-    - 当前 scale：
-      - `-0.2`
+- 旧速度命令版本里围绕 `ball_joint_limit_soft` 做过一轮真实 GPU 对比训练；
+  这部分结论现在只保留为历史参考，不再代表当前 active reward 主线。
   - 对比 run：
     - baseline：
       - `2026-04-14_13-07-32`
@@ -261,15 +289,20 @@
   - Stage2：
     - `curriculum.enabled = True`
     - `curriculum.max_init_terrain_level = 5`
-- 当前默认动作语义：
-  - policy 输出 6 维球铰目标
-  - 车轮轮速由 env 内部依据 command 和 wheel allocator 自动生成
+  - 当前默认动作语义：
+  - policy 当前输出 `12` 维动作：
+    - 前 `6` 维为球铰目标
+    - 后 `6` 维为车轮速度目标
+  - wheel allocator 已从当前 env 执行链路移除
   - 球铰动作当前不再使用统一的 `ball_joint_action_scale`
   - 当前球铰动作解释为标准化动作 `[-1, 1]`
   - 每个关节按自己的上下界做非对称映射，且：
     - `action = 0` 对应默认关节角
     - `action = 1` 对应该关节上界
     - `action = -1` 对应该关节下界
+  - 车轮动作当前不再单独维护 `wheel_joint_action_lower_limits / upper_limits`
+  - 当前车轮动作直接按对称速度上限映射：
+    - `wheel_target = action * wheel_joint_velocity_limit_sim`
   - 当前逐轴动作范围按关节顺序 `z, y, x, z, y, x` 为：
     - `yaw in [-0.7, 0.7]`
     - `pitch in [-1.6, 0.5]`
@@ -281,13 +314,16 @@
     - action bias
     - motor strength 动作随机化
 - 当前默认命令语义：
-  - 当前仅保留 2 维命令：
-    - `lin_vel_x / ang_vel_yaw`
-  - 原 `Vy` 与 `heading` 命令已从 active Stage0 主线移除
-  - 对 `Vx,Wz` 的实际执行语义，当前在命令重采样出口先扩成虚拟三维向量 `[Vx, 0, Wz]`，再左乘固定变换矩阵：
-    - `[[1, 0, -0.00614478162640497], [0, 1, -1.07379532542362e-5], [0, 0, 1]]`
-  - 其中 env 内实际保存、观测、奖励、日志使用的是收口后的 2 维变换命令：
-    - `[Vx', Wz']`
+  - 当前默认命令已改为目标位姿命令
+  - env 内当前保存的全局目标为：
+    - `[x_t, y_t, psi_target]`
+  - 目标采样当前使用：
+    - 固定距离 `12 m`
+    - `phi ∈ [-18.43°, 18.43°]`
+    - `phi = s * phi_max * sqrt(u)` 的边缘强化二次采样
+    - `delta ∈ [-9.215°, 9.215°]`
+  - policy 在观测中实际看到的是车体系相对命令：
+    - `[x_rel, y_rel, psi_rel]`
 - 当前默认观测语义：
   - env 当前显式返回两组观测：
     - `actor`
@@ -298,15 +334,19 @@
     - 中车 body-frame 角速度
     - 中车重力投影
     - 6 个球铰角
+    - 6 个车轮纵向滑移率
+    - 6 个车轮侧滑角
+    - 6 个按整车重量归一化的车轮法向接触力
+    - 相对目标命令 `[x_rel, y_rel, psi_rel]`
+    - 上一时刻动作
+  - 当前已暂时从 policy observation trunk 注释掉：
     - 6 个球铰角速度
     - 6 个球铰目标跟踪误差
     - 前车绝对 roll/pitch
     - 后车绝对 roll/pitch
     - 6 个车轮轮速
-    - command
-    - 上一时刻动作
   - 当前单帧 actor/critic 观测维度均为：
-    - 45
+    - 48
   - Stage2 传感器当前仍保留在 scene/runtime 侧，但不再默认拼入 actor/critic 观测主干
 - 当前默认终止条件语义：
   - 姿态倾角超过 `45 deg` 提前终止
@@ -316,37 +356,29 @@
     - `pitch in [-1.6, 0.5]`
     - `roll in [-0.5, 0.5]`
   - 前后两组球铰当前使用相同范围
-  - `minimum_root_height` 当前仍未启用
 - 当前默认奖励语义：
-  - 当前 reward 集合已收口为：
-    - `tracking_lin_vel`
-    - `tracking_ang_vel`
-    - `orientation`
-    - `action_rate`
-    - `ball_joint_limit_soft`
-    - `termination`
-  - 当前新增球铰软约束惩罚：
-    - 只在球铰使用率超过各自可用范围的 `80%` 后开始生效
-    - 当前按 6 个球铰均值计算二次惩罚
-    - 当前 scale：
-      - `ball_joint_limit_soft = -0.2`
-  - 当前 Stage0 局部覆写为：
-    - `orientation = -3.0`
-  - 当前最优已验证 run：
-    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_13-48-25_soft_limit_v1_orient3`
-  - 当前 last50 结果大致为：
-    - `Train/mean_reward ≈ 2779`
-    - `Train/mean_episode_length ≈ 893`
-    - `Tracking/lin_vel_x_abs_error ≈ 0.141`
-    - `Tracking/ang_vel_yaw_abs_error ≈ 0.344`
-    - `Observation/tilt_deg ≈ 2.03`
-    - `episode_reset/terminated_rate ≈ 0.085`
-    - `episode_reset/time_out_rate ≈ 0.915`
-  - 本轮继续尝试过：
-    - `orientation = -2.5`
-    - `orientation = -3.0 + tracking_lin_vel = 2.2`
-    均未超过当前最优配置
-  - 当前已从 `rewards.py` 和 `RewardScalesCfg` 中删除：
+  - 当前 reward 主体已改为：
+    - `target_bonus`
+    - `progress`
+  - 当前乘性约束项为：
+    - `roll_gate`
+    - `speed_gate`
+    - `force_gate`
+    - `heading_gate`
+    - `longitudinal_slip_gate`
+    - `lateral_slip_gate`
+  - 当前总奖励形式为：
+    - `target_bonus + progress * roll_gate * speed_gate * force_gate * ((heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3)`
+  - `target_bonus` 触发条件：
+    - 水平目标距离 `< 0.3 m`
+    - 目标朝向误差 `< 9 deg`
+  - `progress` 当前按：
+    - `(d_{t-1} - d_t) * control_frequency`
+    计算
+  - 当前已在 env 中维护：
+    - 上一时刻目标距离缓存
+    - 命令重采样后的目标距离重置
+  - 当前已从 `rewards.py` 和旧奖励 scale 主线中删除：
     - `lin_vel_z`
     - `ang_vel_xy`
     - `ball_joint_deviation`
@@ -367,10 +399,53 @@
     - `critic = 45 + num_height_points`
 
 ## 当前阻塞 / 风险
+- 已完成一轮 Google Scholar 分批粗检索（2026-04-14）：
+  - 按 3 组 query 各抓取 Scholar 第 1 页，共得到 30 篇候选
+  - 当前候选文献明显分成 3 类：
+    - 主动车体/主动悬架在粗糙地形上的机构与控制
+    - 粗糙地形轮式/地面车辆 RL 导航与控制
+    - 地形几何估计/地形感知驱动的悬架或轮速分配
+  - 当前最贴近本课题主线的桥接候选不是单一经典论文，而是以下几条线的交集：
+    - actively articulated wheeled vehicle + rough terrain + learning
+    - active suspension + terrain geometry estimation
+    - rough-terrain ground vehicle + deep reinforcement learning
+- 上轮筛出的 10 篇核心候选已于 2026-04-15 导入 Zotero 集合：
+  - `核心参考-RL、Sim-to-Real`
+  - 当前导入结果为：
+    - 10 篇条目元数据导入成功
+    - 3 篇 PDF 自动附加成功
+    - 5 篇 PDF 因站点重定向或 `403` 限制未自动附加
 - 当前对话终端本身不是可直接反复长时间试错 Isaac Lab 训练的 shell，因此后续每一轮训练修改仍应尽量保持单变量。
-- 当前 Stage0 的“稳定性更强”与“前向误差更小”之间仍有 tradeoff：
-  - `orientation = -3.0` 版本显著更稳
-  - 但 `Tracking/lin_vel_x_abs_error` 仍高于 baseline
+- 已完成对两个真实 run 的 observation scale 反推检查：
+  - `2026-04-14_14-04-19_soft_limit_v1_orient3_lin22`
+  - `2026-04-14_20-52-07`
+  - 两次 run 冻结下来的 observation scale 完全一致，当前没有发现明显的量级配置错误
+  - 对可直接反推的观测项，乘上 scale 后大多仍落在 `0.03 ~ 0.54` 这一类 `O(1)` 附近的范围内
+  - 当前最值得关注的不是 observation scale 失衡，而是：
+    - `Action/policy_abs_mean` 仍长期接近 `1.0`
+    - `ball_joint_target_error_abs_mean` 仍偏大
+  - 同时要注意：
+    - 旧日志中的 `Observation/base_lin_vel_x`
+    - `Observation/base_ang_vel_yaw`
+    - `Command/lin_vel_x`
+    - `Command/ang_vel_yaw`
+    都是跨 env 的有符号均值，不能直接拿来反推真实幅值分布
+- 当前已将 step-level TensorBoard 观测日志改为显式输出原始值：
+  - 观测标签统一改为 `Observation/..._raw`
+  - 这些值来自未乘 scale 的原始观测分量
+  - policy 真正输入网络前的乘 scale 过程仍保留在 `mdp/observations.py`
+- 当前 wheel contact sensor 已接入 active direct workflow：
+  - 机器人 USD spawn 已启用 `activate_contact_sensors`
+  - env 通过 `ContactSensor` 读取 6 个 wheel body 的 `net_forces_w`
+  - 当前法向力直接使用 `net_forces_w` 这个净法向接触力向量的模长，并按整车重量归一化
+- 当前动作执行链已去除电机干扰项：
+  - `motor_strength` 不再参与 `policy_actions -> processed_actions`
+  - reset 时也不再为动作采样电机强度系数
+  - 当前动作侧若开启随机化，只剩 action noise / action bias 这两类显式机制
+- 当前已从 active direct workflow 中移除 `root_too_low` 相关主线内容：
+  - `TerminationCfg` 中不再保留 `minimum_root_height`
+  - `done_terms` 不再生成 `root_too_low`
+  - episode / step metrics 不再输出 `root_too_low` rate 或 root-height 专用统计
 - 当前终端的 `python3` 也缺少 `numpy`，因此本轮无法在这里直接跑通：
   - `utils/validate_wheel_speed_allocator.py`
 - 尚未在真实 Isaac Lab 环境中验证：
@@ -378,12 +453,26 @@
 - 当前 `RL_Training/` 结构已切换为新架构，后续不要再把旧的历史路径当作默认入口。
 
 ## 下一步优先级
-- 先以当前最优 Stage0 配置作为默认起点继续：
-  - `ball_joint_limit_soft = -0.2`
-  - `orientation = -3.0`
-- 后续若继续做 Stage0 奖励搜索，应继续保持单变量，并优先考虑：
-  - 是否需要略提高 `tracking_lin_vel` 的同时补更强的动作约束，而不是直接削弱姿态惩罚
-  - 是否需要改 `action_rate` 而不是继续扫 `orientation`
+- 文献侧优先继续沿以下线索做二轮扩展：
+  - `Hybrid Learning for Rough Terrain Navigation of Actively Articulated Wheeled Vehicles`
+  - `Control of rough terrain vehicles using deep reinforcement learning`
+  - `Simultaneous control of terrain adaptation and wheel speed allocation for a planetary rover with an active suspension system`
+  - `Control of robotic vehicles with actively articulated suspensions in rough terrain`
+- 在真实 Isaac Lab 环境里先验证新的 goal-conditioned reward：
+  - `Reward/target_bonus`
+  - `Reward/progress`
+  - `Reward/roll_gate`
+  - `Reward/speed_gate`
+  - `Reward/force_gate`
+  - `Reward/heading_gate`
+  - `Reward/longitudinal_slip_gate`
+  - `Reward/lateral_slip_gate`
+  - `Reward/composite_gate`
+  - `Reward/gated_progress`
+- 重点检查新的主 reward 是否出现：
+  - `progress` 长期为负
+  - 乘性 gate 长期塌到接近 `0`
+  - `target_bonus` 长时间从不触发
 - 继续把显式地形高度 patch 从 terrain runtime 接到 env / critic 观测：
   - 验证 `critic` 维度大于 `actor`
   - 在真实 Isaac Lab 环境里检查 patch 数值是否随 terrain 起伏变化

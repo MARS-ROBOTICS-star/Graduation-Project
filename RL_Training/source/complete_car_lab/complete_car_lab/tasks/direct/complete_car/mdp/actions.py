@@ -5,11 +5,11 @@ from __future__ import annotations
 import torch
 
 
-def preprocess_policy_actions(actions: torch.Tensor, clip_actions: float, motor_strength: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """返回限幅后的标准化动作与施加随机化后的实际动作。"""
+def preprocess_policy_actions(actions: torch.Tensor, clip_actions: float) -> tuple[torch.Tensor, torch.Tensor]:
+    """返回限幅后的标准化动作与实际执行动作。"""
 
     policy_actions = actions.clone().clamp(-clip_actions, clip_actions)
-    processed_actions = (policy_actions * motor_strength).clamp(-clip_actions, clip_actions)
+    processed_actions = policy_actions.clone()
     return policy_actions, processed_actions
 
 
@@ -44,17 +44,11 @@ def apply_ball_joint_targets(
 
 
 def apply_wheel_velocity_targets(
-    allocator,
-    robot,
-    joint_vel_targets: torch.Tensor,
-    ball_joint_ids,
+    wheel_ang_vel_targets: torch.Tensor,
     wheel_joint_ids,
-    commands: torch.Tensor,
+    processed_wheel_actions: torch.Tensor,
+    wheel_velocity_limit: float,
 ) -> torch.Tensor:
-    wheel_targets = allocator.compute_wheel_speed_targets_from_planar_command(
-        ball_joint_pos=robot.data.joint_pos[:, ball_joint_ids],
-        ball_joint_vel=robot.data.joint_vel[:, ball_joint_ids],
-        planar_command=commands,
-    )
-    joint_vel_targets[:, wheel_joint_ids] = wheel_targets
-    return joint_vel_targets
+    wheel_targets = processed_wheel_actions * wheel_velocity_limit
+    wheel_ang_vel_targets[:, wheel_joint_ids] = wheel_targets
+    return wheel_ang_vel_targets

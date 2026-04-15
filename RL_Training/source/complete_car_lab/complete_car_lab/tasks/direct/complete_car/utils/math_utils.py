@@ -15,6 +15,14 @@ def sample_uniform_tensor(value_range: tuple[float, float], shape: tuple[int, ..
 def wrap_to_pi_tensor(angles: torch.Tensor) -> torch.Tensor:
     return torch.atan2(torch.sin(angles), torch.cos(angles))
 
+
+def world_xy_to_body_xy(delta_xy_w: torch.Tensor, yaw_w: torch.Tensor) -> torch.Tensor:
+    cos_yaw = torch.cos(yaw_w)
+    sin_yaw = torch.sin(yaw_w)
+    x_rel = cos_yaw * delta_xy_w[:, 0] + sin_yaw * delta_xy_w[:, 1]
+    y_rel = -sin_yaw * delta_xy_w[:, 0] + cos_yaw * delta_xy_w[:, 1]
+    return torch.stack((x_rel, y_rel), dim=-1)
+
 # 四元数转换为欧拉角
 def quaternion_to_rpy(quat_wxyz: torch.Tensor) -> torch.Tensor:
     w, x, y, z = quat_wxyz.unbind(dim=-1)
@@ -75,6 +83,13 @@ def quat_mul(q0: torch.Tensor, q1: torch.Tensor) -> torch.Tensor:
     )
 
 
+def quat_rotate(quat_wxyz: torch.Tensor, vectors: torch.Tensor) -> torch.Tensor:
+    quat_vec = quat_wxyz[..., 1:]
+    uv = torch.cross(quat_vec, vectors, dim=-1)
+    uuv = torch.cross(quat_vec, uv, dim=-1)
+    return vectors + 2.0 * (quat_wxyz[..., :1] * uv + uuv)
+
+
 def update_history(history_buffer: torch.Tensor | None, current_obs: torch.Tensor) -> torch.Tensor:
     if history_buffer is None:
         return current_obs
@@ -92,12 +107,11 @@ def compute_policy_obs_noise_magnitudes(cfg) -> list[float]:
     magnitudes.extend([noise_level * noise_cfg.base_ang_vel] * 3)
     magnitudes.extend([noise_level * noise_cfg.projected_gravity] * 3)
     magnitudes.extend([noise_level * noise_cfg.ball_joint_pos] * len(BALL_JOINT_NAMES))
-    magnitudes.extend([noise_level * noise_cfg.ball_joint_vel] * len(BALL_JOINT_NAMES))
-    magnitudes.extend([noise_level * noise_cfg.ball_joint_target_error] * len(BALL_JOINT_NAMES))
-    magnitudes.extend([noise_level * noise_cfg.module_roll_pitch] * 4)
-    magnitudes.extend([noise_level * noise_cfg.wheel_joint_vel] * len(WHEEL_JOINT_NAMES))
+    magnitudes.extend([noise_level * noise_cfg.wheel_longitudinal_slip] * len(WHEEL_JOINT_NAMES))
+    magnitudes.extend([noise_level * noise_cfg.wheel_slip_angle] * len(WHEEL_JOINT_NAMES))
+    magnitudes.extend([noise_level * noise_cfg.wheel_normal_contact_force] * len(WHEEL_JOINT_NAMES))
     magnitudes.extend([noise_level * noise_cfg.commands] * cfg.commands.num_commands)
-    magnitudes.extend([0.0] * len(BALL_JOINT_NAMES))
+    magnitudes.extend([0.0] * cfg.action_space)
 
     return magnitudes
 
@@ -106,12 +120,11 @@ def compute_policy_obs_dim(cfg) -> int:
     proprio_dim = (
         3+ 3+ 3
         + len(BALL_JOINT_NAMES)
-        + len(BALL_JOINT_NAMES)
-        + len(BALL_JOINT_NAMES)
-        + 2 + 2
+        + len(WHEEL_JOINT_NAMES)
+        + len(WHEEL_JOINT_NAMES)
         + len(WHEEL_JOINT_NAMES)
         + cfg.commands.num_commands
-        + len(BALL_JOINT_NAMES)
+        + cfg.action_space
     )
     return proprio_dim
 
@@ -119,10 +132,12 @@ __all__ = [
     "body_ang_vel_to_rpy_rates",
     "compute_policy_obs_dim",
     "compute_policy_obs_noise_magnitudes",
+    "quat_rotate",
     "quat_mul",
     "quaternion_to_rpy",
     "sample_uniform_tensor",
     "update_history",
     "wrap_to_pi_tensor",
+    "world_xy_to_body_xy",
     "yaw_quaternion",
 ]

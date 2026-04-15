@@ -1,60 +1,78 @@
-"""命令采样与命令时钟推进。"""
+"""Goal-conditioned command sampling and relative-goal conversion."""
 
 from __future__ import annotations
 
+import math
+
 import torch
 
-from ..kinematics.wheel_speed_allocator import PLANAR_COMMAND_TRANSFORM
-from ..utils.math_utils import sample_uniform_tensor
+from ..utils.math_utils import wrap_to_pi_tensor, world_xy_to_body_xy
 
 
-def transform_planar_command_torch(planar_command: torch.Tensor) -> torch.Tensor:
-    planar_command = (
-        planar_command
-        if torch.is_tensor(planar_command)
-        else torch.as_tensor(planar_command)
-    )
-    if planar_command.ndim == 1:
-        if planar_command.shape[0] != 2:
-            raise ValueError("planar_command must have shape (2,).")
-        planar_command_2d = planar_command.reshape(1, -1)
-        squeeze_output = True
-    elif planar_command.ndim == 2 and planar_command.shape[1] == 2:
-        planar_command_2d = planar_command
-        squeeze_output = False
-    else:
-        raise ValueError("planar_command must have shape (N, 2).")
-
-    transform = planar_command_2d.new_tensor(PLANAR_COMMAND_TRANSFORM)
-    planar_command_xyz = torch.zeros((planar_command_2d.shape[0], 3), device=planar_command_2d.device, dtype=planar_command_2d.dtype)
-    planar_command_xyz[:, 0] = planar_command_2d[:, 0]
-    planar_command_xyz[:, 2] = planar_command_2d[:, 1]
-    transformed_xyz = planar_command_xyz @ transform.transpose(0, 1)
-    transformed = torch.stack((transformed_xyz[:, 0], transformed_xyz[:, 2]), dim=1)
-    return transformed.reshape(-1) if squeeze_output else transformed
-
-
-def resample_velocity_commands(
-    commands: torch.Tensor,
+def resample_goal_commands(
+    command_targets_w: torch.Tensor,
     command_time_left: torch.Tensor,
     env_ids: torch.Tensor,
+    base_pos_xy_w: torch.Tensor,
+    base_yaw_w: torch.Tensor,
     cfg,
-) -> None:
+) -> tuple[torch.Tensor, torch.Tensor]:
     if env_ids.numel() == 0:
-        return
+        empty = torch.empty(0, device=command_targets_w.device, dtype=command_targets_w.dtype)
+        return empty, empty
 
-    device = commands.device
-    commands[env_ids, 0] = sample_uniform_tensor(cfg.ranges.lin_vel_x, (env_ids.numel(),), device)
-    commands[env_ids, 1] = sample_uniform_tensor(cfg.ranges.ang_vel_yaw, (env_ids.numel(),), device)
-    commands[env_ids] = transform_planar_command_torch(commands[env_ids])
+    device = command_targets_w.device
+    dtype = command_targets_w.dtype
+    num_envs = env_ids.numel()
 
+    goal_direction_max = math.radians(cfg.goal_direction_max_deg)
+    goal_heading_delta_max = math.radians(cfg.goal_direction_max_deg/2)
+
+    u = torch.rand(num_envs, device=device, dtype=dtype) #[0,1)均匀分布
+    signs = torch.where(
+        torch.rand(num_envs, device=device) < 0.5,
+        -torch.ones(num_envs, device=device, dtype=dtype),
+        torch.ones(num_envs, device=device, dtype=dtype),
+    ) #以 50% 的概率生成 +1 或 -1
+
+    phi = signs * goal_direction_max * torch.sqrt(u)# 使用 phi = s * phi_max * sqrt(u) 实现边缘强化采样。
+    theta_los = wrap_to_pi_tensor(base_yaw_w + phi) #目标点在世界坐标系下的绝对方位角
+    delta = torch.empty(num_envs, device=device, dtype=dtype).uniform_(-goal_heading_delta_max, goal_heading_delta_max)#生成目标航向的随机偏差 delta
+    psi_target = wrap_to_pi_tensor(theta_los + delta) #计算最终要求小车到达目标点时的车头朝向 psi
+
+    command_targets_w[env_ids, 0] = base_pos_xy_w[:, 0] + cfg.goal_distance * torch.cos(theta_los)
+    command_targets_w[env_ids, 1] = base_pos_xy_w[:, 1] + cfg.goal_distance * torch.sin(theta_los)
+    command_targets_w[env_ids, 2] = psi_target
+    # 按概率让一部分小车的目标点就是它当前的位置，让它们练习“原地保持不动”.
     if cfg.rel_standing_envs > 0.0:
-        standing_mask = torch.rand(env_ids.numel(), device=device) < cfg.rel_standing_envs
-        commands[env_ids[standing_mask]] = 0.0
+        standing_mask = torch.rand(num_envs, device=device) < cfg.rel_standing_envs
+        if torch.any(standing_mask):
+            command_targets_w[env_ids[standing_mask], 0] = base_pos_xy_w[standing_mask, 0]
+            command_targets_w[env_ids[standing_mask], 1] = base_pos_xy_w[standing_mask, 1]
+            command_targets_w[env_ids[standing_mask], 2] = base_yaw_w[standing_mask]
+            phi = torch.where(standing_mask, torch.zeros_like(phi), phi)
+            delta = torch.where(standing_mask, torch.zeros_like(delta), delta)
+    # 强制所有小车的目标点设为当前位置
     if cfg.zero_command:
-        commands[env_ids] = 0.0
+        command_targets_w[env_ids, 0] = base_pos_xy_w[:, 0]
+        command_targets_w[env_ids, 1] = base_pos_xy_w[:, 1]
+        command_targets_w[env_ids, 2] = base_yaw_w
+        phi.zero_()
+        delta.zero_()
 
     command_time_left[env_ids] = cfg.resampling_time
+    return phi, delta
+
+# 计算在小车坐标系下的目标及朝向
+def compute_relative_goal_commands(
+    command_targets_w: torch.Tensor,
+    base_pos_xy_w: torch.Tensor,
+    base_yaw_w: torch.Tensor,
+) -> torch.Tensor:
+    delta_xy_w = command_targets_w[:, :2] - base_pos_xy_w
+    relative_xy_b = world_xy_to_body_xy(delta_xy_w, base_yaw_w)
+    relative_yaw = wrap_to_pi_tensor(command_targets_w[:, 2] - base_yaw_w)
+    return torch.cat((relative_xy_b, relative_yaw.unsqueeze(-1)), dim=-1)
 
 
 def step_command_timer(command_time_left: torch.Tensor, step_dt: float) -> torch.Tensor:

@@ -12,7 +12,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.noise import GaussianNoiseCfg, NoiseModelCfg, NoiseModelWithAdditiveBiasCfg
 
-from ..assets.robot_cfg import BALL_JOINT_NAMES, CONTROLLED_JOINT_NAMES, WHEEL_JOINT_NAMES, build_complete_car_robot_cfg
+from ..assets.robot_cfg import BALL_JOINT_NAMES, CONTROLLED_JOINT_NAMES, WHEEL_JOINT_NAMES, WHEEL_RADIUS, build_complete_car_robot_cfg
 from ..mdp.observations import PerComponentUniformNoiseCfg
 from ..sensors.sensor_cfg import CompleteCarSensorSuiteCfg
 from ..terrain.terrain_cfg import CompleteCarTerrainRuntimeCfg
@@ -21,22 +21,15 @@ from ..utils.math_utils import compute_policy_obs_noise_magnitudes
 
 
 @configclass
-class CommandRangesCfg:
-    """高层速度指令采样范围。"""
-
-    lin_vel_x: tuple[float, float] = (-1.0, 1.0)
-    ang_vel_yaw: tuple[float, float] = (-1.0, 1.0)
-
-
-@configclass
 class CommandCfg:
-    """命令采样器配置。"""
+    """目标位姿命令采样器配置。"""
 
-    num_commands: int = 2
-    resampling_time: float = 4.0
-    zero_command: bool = False  # 为 True 时，本次采样出的整组命令会被强制清零。
-    rel_standing_envs: float = 0.0  # 每次重采样后，被随机指定为静止环境的比例。
-    ranges: CommandRangesCfg = CommandRangesCfg()
+    num_commands: int = 3
+    resampling_time: float = 5.0
+    goal_distance: float = 20
+    goal_direction_max_deg: float = 18.43
+    zero_command: bool = False  # 为 True 时，本次采样出的目标会退化为当前位置和当前朝向。
+    rel_standing_envs: float = 0.0  # 每次重采样后，被随机指定为原地目标环境的比例。
 
 
 @configclass
@@ -55,12 +48,13 @@ class ControlCfg:
     ball_joint_stiffness: float = 100.0  # 球铰位置控制刚度，单位：N*m/rad。
     ball_joint_damping: float = 10.0  # 球铰位置控制阻尼，单位：N*m*s/rad。
     ball_joint_effort_limit_sim: float = 120.0  # 球铰驱动器力矩上限，单位：N*m。
-    ball_joint_velocity_limit_sim: float = 6.0  # 球铰驱动器速度上限，单位：rad/s。
+    ball_joint_velocity_limit_sim: float = 1.0  # 球铰驱动器速度上限，单位：rad/s。
 
     wheel_joint_stiffness: float = 0.0  # 车轮位置刚度，单位：N*m/rad。
     wheel_joint_damping: float = 1.0e3  # 车轮速度控制阻尼，单位：N*m*s/rad。
     wheel_joint_effort_limit_sim: float = 80.0  # 车轮驱动器力矩上限，单位：N*m。
     wheel_joint_velocity_limit_sim: float = 20.0  # 车轮驱动器速度上限，单位：rad/s。
+    wheel_radius: float = WHEEL_RADIUS
 
 
 @configclass
@@ -75,6 +69,9 @@ class ObservationScalesCfg:
     ball_joint_target_error: float =1.0
     module_roll_pitch: float =1.0
     wheel_joint_vel: float =0.05
+    wheel_longitudinal_slip: float = 1.0
+    wheel_slip_angle: float = 1.0
+    wheel_normal_contact_force: float = 1.0
     commands: float = 1.0
     last_action: float = 1.0
 
@@ -93,6 +90,9 @@ class ObservationNoiseCfg:
     ball_joint_target_error: float =0.01
     module_roll_pitch: float =0.02
     wheel_joint_vel: float =0.05
+    wheel_longitudinal_slip: float = 0.0
+    wheel_slip_angle: float = 0.0
+    wheel_normal_contact_force: float = 0.0
     commands: float = 0.0
 
 
@@ -104,32 +104,36 @@ class ObservationCfg:
     history_length: int = 1
     clip_observations: float = 100.0
     clip_actions: float = 1.0 #action的裁切量
+    wheel_slip_epsilon: float = 0.1
+    wheel_longitudinal_slip_clip: float = 1.0
+    wheel_slip_angle_clip_rad: float = math.pi / 2.0
     scales: ObservationScalesCfg = ObservationScalesCfg()
     noise: ObservationNoiseCfg = ObservationNoiseCfg()
 
 
 @configclass
-class RewardScalesCfg:
-    """奖励项缩放。"""
+class RewardParamsCfg:
+    """目标导向奖励参数。"""
 
-    termination: float = -2.0
-    tracking_lin_vel: float = 2.0
-    tracking_ang_vel: float = 2.0
-    orientation: float = -3.0
-    action_rate: float = -0.1
-    ball_joint_limit_soft: float = -0.2
+    target_bonus_ratio: float = 0.05
+    target_position_tolerance: float = 0.3
+    target_yaw_tolerance_deg: float = 9.0
+    heading_distance_scale: float = 5.0
+    roll_free_deg: float = 5.0
+    roll_gaussian_scale: float = math.pi / 16.0
+    speed_limit: float = 2.0
+    speed_gain: float = 2.0
+    force_std_scale: float = 0.1
+    longitudinal_slip_scale: float = 0.3
+    lateral_slip_gain: float = 6.0
 
 
 @configclass
 class RewardCfg:
     """奖励核参数。"""
 
-    scales: RewardScalesCfg = RewardScalesCfg()
+    params: RewardParamsCfg = RewardParamsCfg()
     only_positive_rewards: bool = False
-    tracking_lin_vel_std: float = math.sqrt(0.25)
-    tracking_ang_vel_std: float = math.sqrt(0.25)
-    ball_joint_limit_soft_start_ratio: float = 0.8
-    ball_joint_limit_soft_power: float = 2.0
 
 
 @configclass
@@ -139,7 +143,6 @@ class TerminationCfg:
     orientation_limit_deg: float = 45.0 #整车最大侧倾角
     ball_joint_pos_lower_limits: tuple[float, ...] = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)#球铰yaw,pitch,roll的限制
     ball_joint_pos_upper_limits: tuple[float, ...] = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
-    minimum_root_height: float | None = None
 
 
 @configclass
@@ -149,8 +152,8 @@ class ResetCfg:
     root_pos: tuple[float, float, float] = (0.0, 0.0, 0.30)
     root_lin_vel: tuple[float, float, float] = (0.0, 0.0, 0.0)
     root_ang_vel: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    root_x_range: tuple[float, float] = (0.0, 0.0)
-    root_y_range: tuple[float, float] = (0.0, 0.0)
+    root_x_range: tuple[float, float] = (-1.0, 1.0)
+    root_y_range: tuple[float, float] = (-1.0, 1.0)
     root_yaw_range: tuple[float, float] = (0.0 * math.pi, 0.0 * math.pi)
 
     default_ball_joint_angles: dict[str, float] = field(default_factory=lambda: {name: 0.0 for name in BALL_JOINT_NAMES})
@@ -169,8 +172,6 @@ class RandomizationCfg:
     """域随机化配置。"""
 
     enable_action_randomization: bool = False
-    randomize_motor_strength: bool = False
-    motor_strength_range: tuple[float, float] = (0.9, 1.1)
     joint_position_noise_scale: float = 0.0
     action_noise_std: float = 0.0
     action_bias_std: float = 0.0

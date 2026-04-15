@@ -28,6 +28,17 @@ WHEEL_JOINT_NAMES = [
     "tail_car_wheel_right_joint",
 ]
 
+WHEEL_BODY_NAMES = [
+    "body_car_wheel_left",
+    "body_car_wheel_right",
+    "head_car_wheel_left",
+    "head_car_wheel_right",
+    "tail_car_wheel_left",
+    "tail_car_wheel_right",
+]
+
+WHEEL_RADIUS = 0.19
+
 LEFT_WHEEL_JOINT_NAMES = [
     "body_car_wheel_left_joint",
     "head_car_wheel_left_joint",
@@ -41,7 +52,7 @@ RIGHT_WHEEL_JOINT_NAMES = [
 ]
 
 ALL_JOINT_NAMES = BALL_JOINT_NAMES + WHEEL_JOINT_NAMES
-CONTROLLED_JOINT_NAMES = BALL_JOINT_NAMES
+CONTROLLED_JOINT_NAMES = ALL_JOINT_NAMES
 COMPLETE_CAR_ARTICULATION_ROOT_PRIM_PATH = "/complete_car_alternative/body_car_chassis"
 
 
@@ -78,7 +89,7 @@ def build_complete_car_robot_cfg(
     return ArticulationCfg(
         spawn=sim_utils.UsdFileCfg(
             usd_path=str(COMPLETE_CAR_USD_PATH),
-            activate_contact_sensors=False,
+            activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 rigid_body_enabled=True,
                 disable_gravity=False,
@@ -114,6 +125,8 @@ __all__ = [
     "CONTROLLED_JOINT_NAMES",
     "LEFT_WHEEL_JOINT_NAMES",
     "RIGHT_WHEEL_JOINT_NAMES",
+    "WHEEL_BODY_NAMES",
     "WHEEL_JOINT_NAMES",
+    "WHEEL_RADIUS",
     "build_complete_car_robot_cfg",
 ]

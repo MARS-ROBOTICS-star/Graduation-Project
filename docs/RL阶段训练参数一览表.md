@@ -30,15 +30,16 @@
 - 双目相机：关闭
 - 激光雷达：关闭
 - height scanner：关闭
+- wheel contact sensor：开启
 - 动作随机化：关闭
 - 观测噪声：关闭
 
 ### 1.3 当前关键维度
 
 - 并行环境数：`64`
-- 动作维度：`6`
-- Actor 单帧观测维度：`45`
-- Critic 单帧观测维度：`45`
+- 动作维度：`12`
+- Actor 单帧观测维度：`48`
+- Critic 单帧观测维度：`48`
 - state space 维度：`0`
 - 控制频率：`60 Hz`
 - 单回合时长：`16 s`
@@ -67,8 +68,7 @@ Stage0 最重要的覆写只有几条：
 - `terrain.mode = "plane"`
 - `curriculum.enabled = False`
 - `terrain.measure_heights = False`
-- `rewards.scales.orientation = -3.0`
-- 所有传感器关闭
+- 除 wheel contact sensor 以外，其余显式传感器关闭
 
 所以 Stage0 的思路非常明确：  
 只保留最小可运行 RL 闭环，不引入 rough terrain、传感器、课程学习、显式高度图这些复杂因素。
@@ -170,14 +170,15 @@ Stage0 因为是平地，所以地面由 ground plane 直接生成。
 
 ### 5.3 控制关节
 
-当前 RL policy 直接控制的只有 6 个球铰关节：
+当前 RL policy 直接控制全部 `12` 个执行量：
 
-- `CONTROLLED_JOINT_NAMES = BALL_JOINT_NAMES`
+- 6 个球铰姿态目标
+- 6 个车轮速度目标
 
 所以：
 
-- 动作维度 = `6`
-- policy 不直接输出轮速
+- 动作维度 = `12`
+- policy 直接输出轮速目标
 
 ### 5.4 驱动器参数
 
@@ -194,6 +195,7 @@ Stage0 因为是平地，所以地面由 ground plane 直接生成。
 - 阻尼：`1000.0`
 - 力矩上限：`80.0`
 - 速度上限：`20.0 rad/s`
+- 车轮半径：`0.19 m`
 
 这说明：
 
@@ -230,9 +232,9 @@ Reset 在每次 episode 结束后执行，负责把 root 和 joint 设回初值�
 
 随机扰动范围：
 
-- `root_x_range = (-0.25, 0.25)`
-- `root_y_range = (-0.25, 0.25)`
-- `root_yaw_range = (-0.25π, 0.25π)`
+- `root_x_range = (-1, 1)`
+- `root_y_range = (-1, 1)`
+- `root_yaw_range = (0, 0)`
 
 数学上，reset 后 root 状态可理解为：
 
@@ -284,31 +286,65 @@ Stage0 因为是平地，所以 reset 不会受到 terrain class 的 spawn offse
 
 ### 7.1 命令维度
 
-命令维度是 `2`：
+命令维度是 `3`，但 env 内部存的是全局目标位姿：
 
 $$
-\mathbf{c} = [v_x, \omega_z]
+\mathbf{c}_t^{world} = [x_t, y_t, \psi_{target}]
 $$
 
-分别对应：
+policy 在观测里实际接收到的不是全局量，而是当前车体系下的相对目标：
 
-- `lin_vel_x`
-- `ang_vel_yaw`
+$$
+\mathbf{c}_t^{rel} = [x_{rel}, y_{rel}, \psi_{rel}]
+$$
 
-### 7.2 当前采样范围
+### 7.2 当前目标采样规则
 
-- `lin_vel_x ∈ [-1.0, 1.0]`
-- `ang_vel_yaw ∈ [-1.0, 1.0]`
+- 目标距离固定：`12 m`
+- 目标方向相对当前起始航向的偏角范围：`[-18.43°, +18.43°]`
+- 目标朝向相对目标连线方向的偏置范围：`[-9.215°, +9.215°]`
 
-说明：
+工程实现：
 
-- 当前 Stage0 命令主线只保留前进速度和偏航角速度
+1. 先采样 $u \sim U(0,1)$
+2. 再采样符号 $s \in \{-1,+1\}$
+3. 目标方向偏角：
+
+$$
+\phi = s \cdot 18.43^\circ \cdot \sqrt{u}
+$$
+
+这里采用的是“偏向扇区边缘的二次分布”实现，使接近边缘角的目标比接近正前方的目标更常出现。
+
+再定义：
+
+$$
+\theta_{los} = \psi_0 + \phi
+$$
+
+$$
+\delta \sim U(-9.215^\circ, 9.215^\circ)
+$$
+
+$$
+\psi_{target} = \mathrm{wrapToPi}(\theta_{los} + \delta)
+$$
+
+目标点坐标为：
+
+$$
+x_t = x_0 + 12 \cos(\theta_{los})
+$$
+
+$$
+y_t = y_0 + 12 \sin(\theta_{los})
+$$
 
 ### 7.3 命令重采样周期
 
-- `resampling_time = 4.0 s`
+- `resampling_time = 5.0 s`
 
-也就是说每个环境每 `4` 秒重新采样一次命令。
+也就是说每个环境每 `5` 秒重新采样一次命令。
 
 ### 7.4 命令时钟逻辑
 
@@ -326,51 +362,43 @@ $$
 
 则该环境重新采样命令。
 
-### 7.5 命令变换矩阵
+### 7.5 观测中的相对命令表达
 
-当前代码中，采样后的 $[v_x, \omega_z]$ 不会直接进入环境主线。  
-它会先扩成虚拟三维向量 $[v_x, 0, \omega_z]$，再左乘固定矩阵：
+设当前车体世界坐标为 $(x, y)$，当前航向为 $\psi$，则：
 
 $$
-\begin{bmatrix}
-v_x' \\
-\omega_z'
-\end{bmatrix}
-=
-\begin{bmatrix}
-1 & 0 & 0 \\
-0 & 0 & 1
-\end{bmatrix}
-\begin{bmatrix}
-1 & 0 & -0.00614478162640497 \\
-0 & 1 & -1.07379532542362 \times 10^{-5} \\
-0 & 0 & 1
-\end{bmatrix}
-\begin{bmatrix}
-v_x \\
-0 \\
-\omega_z
-\end{bmatrix}
+\Delta x = x_t - x,\quad \Delta y = y_t - y
 $$
 
-所以 env 内真正用于：
+世界系到车体系的二维变换使用：
 
-- observation
-- reward
-- curriculum
-- wheel allocator
+$$
+x_{rel} = \cos\psi \cdot \Delta x + \sin\psi \cdot \Delta y
+$$
 
-的命令，是收口后的二维变换命令 $[v_x', \omega_z']$。
+$$
+y_{rel} = -\sin\psi \cdot \Delta x + \cos\psi \cdot \Delta y
+$$
+
+$$
+\psi_{rel} = \mathrm{wrapToPi}(\psi_{target} - \psi)
+$$
+
+最终 observation 中的命令项就是：
+
+$$
+[x_{rel}, y_{rel}, \psi_{rel}]
+$$
 
 ### 7.6 当前命令开关
 
 - `zero_command = False`
 - `rel_standing_envs = 0.0`
 
-因此：
+因此默认情况下：
 
-- 不强制全零命令
-- 不随机抽一部分静止环境
+- 不强制原地目标
+- 不随机抽一部分原地目标环境
 
 ---
 
@@ -392,7 +420,7 @@ $$
 当前单帧 Actor 观测维度：
 
 $$
-3 + 3 + 3 + 6 + 6 + 6 + 2 + 2 + 6 + 2 + 6 = 45
+3 + 3 + 3 + 6 + 6 + 6 + 6 + 3 + 12 = 48
 $$
 
 即：
@@ -401,13 +429,11 @@ $$
 2. 中车 body-frame 角速度：`3`
 3. 中车重力投影：`3`
 4. 6 个球铰角：`6`
-5. 6 个球铰角速度：`6`
-6. 6 个球铰目标跟踪误差：`6`
-7. 前车绝对 roll/pitch：`2`
-8. 后车绝对 roll/pitch：`2`
-9. 6 个车轮轮速：`6`
-10. command：`2`
-11. 上一时刻动作：`6`
+5. 6 个车轮纵向滑移率：`6`
+6. 6 个车轮侧滑角：`6`
+7. 6 个按整车重量归一化的车轮法向接触力：`6`
+8. 相对目标命令：`3`
+9. 上一时刻动作：`12`
 
 ### 8.3 观测数学定义
 
@@ -421,11 +447,9 @@ $$
 \boldsymbol{\omega}_b,\;
 \mathbf{g}_b,\;
 \mathbf{q}_{ball},\;
-\dot{\mathbf{q}}_{ball},\;
-\mathrm{wrap}(\mathbf{q}_{target}-\mathbf{q}_{ball}),\;
-\mathbf{rpy}_{head}^{rp},\;
-\mathbf{rpy}_{tail}^{rp},\;
-\dot{\mathbf{q}}_{wheel},\;
+\boldsymbol{\lambda}_{wheel},\;
+\boldsymbol{\alpha}_{wheel},\;
+\bar{\mathbf{F}}_{n,wheel},\;
 \mathbf{c},\;
 \mathbf{a}_{t-1}
 \right]
@@ -437,9 +461,59 @@ $$
 - $\boldsymbol{\omega}_b$：中车 body-frame 角速度
 - $\mathbf{g}_b$：重力在 body frame 下的投影
 - $\mathbf{q}_{ball}$：球铰角
-- $\dot{\mathbf{q}}_{ball}$：球铰角速度
-- $\mathbf{q}_{target}$：球铰目标角
-- `wrap`：角度规整到 `[-π, π]`
+- $\boldsymbol{\lambda}_{wheel}$：6 个车轮纵向滑移率
+- $\boldsymbol{\alpha}_{wheel}$：6 个车轮侧滑角
+- $\bar{\mathbf{F}}_{n,wheel}$：6 个按整车重量归一化的车轮法向接触力
+
+当前暂时不送入 policy observation 的量包括：
+
+- 6 个球铰角速度
+- 6 个球铰目标跟踪误差
+- 前车绝对 roll/pitch
+- 后车绝对 roll/pitch
+- 6 个车轮轮速
+
+其中新增 3 组车轮接触观测的定义为：
+
+- 纵向滑移率：
+
+$$
+\lambda_i = \mathrm{clip}\left(
+\frac{v_{x,i} - r \omega_i}{\max(|v_{x,i}|, \varepsilon)},
+[-1, 1]
+\right)
+$$
+
+这里：
+- $v_{x,i}$ 是第 $i$ 个车轮轮心线速度在车轮局部前向轴上的投影
+- $r = 0.19 \text{ m}$
+- $\varepsilon = 0.1$
+
+- 侧滑角：
+
+$$
+\alpha_i = \mathrm{clip}\left(
+\mathrm{atan2}(v_{y,i}, |v_{x,i}| + \varepsilon),
+\left[-\frac{\pi}{2}, \frac{\pi}{2}\right]
+\right)
+$$
+
+这里：
+- $v_{y,i}$ 是第 $i$ 个车轮轮心线速度在车轮局部侧向轴上的投影
+- 单位保持为弧度
+
+- 法向接触力：
+
+$$
+\bar{F}_{n,i} = \frac{\left\lVert \mathbf{F}_{n,i}^{w} \right\rVert_2}{m_{total} g}
+$$
+
+这里：
+
+- $\mathbf{F}_{n,i}^{w}$ 是 Isaac Lab `ContactSensor.data.net_forces_w` 返回的第 `i` 个车轮净法向接触力向量
+- Isaac Lab 文档已明确该量就是世界系下的法向接触力向量，而不是含摩擦的总接触力
+
+因此当前实现直接取这个法向力向量的模长，而不再使用世界坐标系竖直方向近似。
 
 ### 8.4 观测缩放
 
@@ -451,12 +525,17 @@ $$
 - `base_ang_vel = 0.25`
 - `projected_gravity = 1.0`
 - `ball_joint_pos = 1.0`
-- `ball_joint_vel = 0.05`
-- `ball_joint_target_error = 1.0`
-- `module_roll_pitch = 1.0`
-- `wheel_joint_vel = 0.05`
+- `wheel_longitudinal_slip = 1.0`
+- `wheel_slip_angle = 1.0`
+- `wheel_normal_contact_force = 1.0`
 - `commands = 1.0`
 - `last_action = 1.0`
+
+当前 slip 相关观测参数：
+
+- `wheel_slip_epsilon = 0.1`
+- `wheel_longitudinal_slip_clip = 1.0`
+- `wheel_slip_angle_clip_rad = π / 2`
 
 ### 8.5 观测噪声
 
@@ -501,10 +580,13 @@ $$
 
 ### 9.1 动作维度
 
-动作维度为 `6`，对应 6 个球铰关节。
+动作维度为 `12`：
+
+- 前 6 维：6 个球铰姿态目标
+- 后 6 维：6 个车轮速度目标
 
 $$
-\mathbf{a}_t \in \mathbb{R}^6
+\mathbf{a}_t \in \mathbb{R}^{12}
 $$
 
 ### 9.2 动作裁剪
@@ -529,7 +611,6 @@ $$
 
 - 不加 action noise
 - 不加 action bias
-- `motor_strength = 1`
 
 因此：
 
@@ -572,196 +653,248 @@ $$
 - pitch：`[-1.6, 0.5]`
 - roll：`[-0.5, 0.5]`
 
-### 9.6 轮速目标生成
+### 9.6 车轮速度目标映射
 
-当前 policy 不直接输出轮速。  
-轮速目标由 wheel allocator 根据：
+当前 policy 直接输出 6 个车轮速度目标的标准化动作。
+每个车轮动作仍先裁剪到 `[-1, 1]`，然后只按单一对称速度上限映射：
 
-- 当前球铰角
-- 当前球铰角速度
-- 当前命令
+- 速度上限参数：`wheel_joint_velocity_limit_sim = 20 rad/s`
 
-自动生成。
+映射公式为：
 
-也就是说，控制结构是：
+$$
+\omega_{target,i} = a_i \cdot \omega_{max}
+$$
 
-- 高层 RL：控制球铰姿态
-- 低层解析器：自动分配 6 个轮速
+其中：
+
+- `a_i` 是第 `i` 个标准化车轮动作
+- `\omega_{max}` 是统一车轮速度上限
+
+因此：
+
+- `action = 1` -> `+20 rad/s`
+- `action = -1` -> `-20 rad/s`
+- `action = 0` -> `0`
+
+因此现在的控制结构是：
+
+- 高层 RL：同时输出球铰目标角和车轮速度目标
+- wheel allocator：保留在仓库里，但当前执行链路不再参与 env 控制
 
 ---
 
 ## 10. 奖励配置
 
-### 10.1 当前奖励项集合
+### 10.1 当前奖励主干
 
-当前 Stage0 reward 共有 `6` 项：
-
-1. `tracking_lin_vel`
-2. `tracking_ang_vel`
-3. `orientation`
-4. `action_rate`
-5. `ball_joint_limit_soft`
-6. `termination`
-
-### 10.2 跟踪类奖励
-
-#### 线速度跟踪
-
-令命令前进速度为 $c_x$，实际 body-frame 前向速度为 $v_x$，则：
+当前 active reward 已经不再围绕速度命令跟踪展开，而是改成目标导向结构：
 
 $$
-e_{lin} = (c_x - v_x)^2
+R = r_{tar} + r_{prog} \cdot r_{roll} \cdot r_{speed} \cdot r_{forces} \cdot \left(\frac{r_{head} + r_{slip\parallel} + r_{slip\perp}}{3}\right)
 $$
 
+其中：
+
+- `r_tar` 是目标达成 bonus
+- `r_prog` 是朝目标推进的 dense progress 主奖励
+- `r_roll / r_speed / r_forces` 是乘性抑制项
+- `r_head / r_slip_parallel / r_slip_perp` 先取平均，再作为复合乘子
+
+### 10.2 目标达成奖励
+
+设当前相对目标位置误差为：
+
 $$
-r_{lin} = \exp\left(-\frac{e_{lin}}{\sigma_{lin}^2}\right)
+d_t = \sqrt{x_{rel}^2 + y_{rel}^2}
+$$
+
+设当前相对目标朝向误差为：
+
+$$
+\Psi = \psi_{rel}
+$$
+
+当同时满足：
+
+- `d_t < 0.3 m`
+- `|\Psi| < 9°`
+
+则给 target bonus：
+
+$$
+r_{tar} = k_{tar} \cdot \mathbf{1}(d_t < 0.3,\ |\Psi| < 9^\circ)
+$$
+
+当前代码里 `k_tar` 不是手填常数，而是按“最大无折扣回报的 5%”反解：
+
+$$
+k_{tar} = \frac{\rho \cdot (r_0 \cdot f_{control})}{1 - \rho}, \qquad \rho = 0.05
+$$
+
+其中：
+
+- `r_0 = 12 m`
+- `f_control = 60 Hz`
+
+### 10.3 朝目标推进奖励
+
+设上一时刻和当前时刻到目标的水平距离分别为 $d_{t-1}$ 与 $d_t$，则：
+
+$$
+r_{prog} = (d_{t-1} - d_t) \cdot f_{control}
 $$
 
 当前：
 
-- `tracking_lin_vel_std = sqrt(0.25)`
-- scale：`2.0`
+- `f_control = 60 Hz`
 
-因此实际加权项为：
+因此：
 
-$$
-R_{lin} = 2.0 \cdot r_{lin}
-$$
+- 朝目标前进时，`r_prog > 0`
+- 远离目标时，`r_prog < 0`
 
-#### 角速度跟踪
+### 10.4 航向对齐项
 
-设命令 yaw rate 为 $c_{\omega}$，实际 yaw rate 为 $\omega_z$，则：
+航向门控项定义为：
 
 $$
-e_{ang} = (c_{\omega} - \omega_z)^2
-$$
-
-$$
-r_{ang} = \exp\left(-\frac{e_{ang}}{\sigma_{ang}^2}\right)
+r_{head} = \exp\left[-\frac{1}{2}\left(\frac{\Psi}{d_t / k_d}\right)^2\right]
 $$
 
 当前：
 
-- `tracking_ang_vel_std = sqrt(0.25)`
-- scale：`2.0`
+- `k_d = 5 m`
 
-### 10.3 姿态惩罚
+这个设计的含义是：
 
-令重力在 body frame 下投影为 $\mathbf{g}_b = [g_x, g_y, g_z]$，则：
+- 离目标远时，允许先把车开到目标附近
+- 离目标近时，目标朝向误差会被更严格地放大
 
-$$
-r_{ori} = g_x^2 + g_y^2
-$$
+### 10.5 中车 roll 约束项
 
-对应权重：
-
-- base 默认值：`orientation = -2.0`
-- Stage0 当前实际生效值：`orientation = -3.0`
-
-所以实际项为：
+设中车绝对 roll 为 $\phi$，则：
 
 $$
-R_{ori} = -3.0 \cdot (g_x^2 + g_y^2)
+r_{roll} =
+\begin{cases}
+1, & |\phi| \le 5^\circ \\
+\exp\left[-\frac{1}{2}\left(\frac{\phi}{k_\phi}\right)^2\right], & |\phi| > 5^\circ
+\end{cases}
 $$
 
-这项本质上在罚 roll/pitch 倾斜。
+当前：
 
-### 10.4 动作变化惩罚
+- `roll_free_deg = 5°`
+- `k_phi = \pi/16`
 
-设当前动作为 $\mathbf{a}_t$，上一时刻动作为 $\mathbf{a}_{t-1}$，则：
+这项用于抑制过大侧倾。
 
-$$
-r_{act} = \|\mathbf{a}_t - \mathbf{a}_{t-1}\|^2
-$$
+### 10.6 速度约束项
 
-权重：
-
-- `action_rate = -0.01`
-
-### 10.5 终止惩罚
-
-若当前帧因为失败终止，则：
+设中车平面速度模长为 $|v|$，则：
 
 $$
-r_{term} = 1
+r_{speed} = \min\left(1,\ \exp[k_{speed}(v_{lim} - |v|)]\right)
 $$
 
-否则：
+当前：
+
+- `v_lim = 2 m/s`
+- `k_speed = 2`
+
+这项不会额外奖励低速，只在速度过高时明显压低回报。
+
+### 10.7 轮载均匀性项
+
+对 6 个车轮，先计算按整车重量归一化后的法向接触力标准差：
 
 $$
-r_{term} = 0
+\sigma_{forces} = \operatorname{std}(\bar F_{n,1}, \dots, \bar F_{n,6})
 $$
 
-权重：
-
-- `termination = -2.0`
-
-### 10.6 球铰角度软约束惩罚
-
-这项不是硬限制，也不是让球铰尽量不动。  
-它只在球铰接近硬 limit 的最后一段危险区时开始生效。
-
-设某个球铰当前角度为 $q$，默认角度为 $q_0$，硬下界为 $q_{min}$，硬上界为 $q_{max}$。
-
-先分别计算朝上下边界方向的利用率：
+然后定义：
 
 $$
-u_{pos} = \max\left(\frac{q - q_0}{q_{max} - q_0}, 0\right)
+r_{forces} = \exp\left[-\frac{1}{2}\left(\frac{\sigma_{forces}}{k_{forces}}\right)^2\right]
 $$
 
-$$
-u_{neg} = \max\left(\frac{q_0 - q}{q_0 - q_{min}}, 0\right)
-$$
+当前：
+
+- `k_forces = 0.1`
+
+这项鼓励六轮受力更均匀，降低悬空轮和单轮过载。
+
+### 10.8 纵向滑移项
+
+对每个车轮纵向滑移率 $\lambda_i$，定义：
 
 $$
-u = u_{pos} + u_{neg}
+r_{slip\parallel} = \prod_{i=1}^{6} \exp\left[-\frac{1}{2}\left(\frac{\lambda_i}{k_\lambda}\right)^2\right]
 $$
 
-当前配置中：
+当前：
 
-- `ball_joint_limit_soft_start_ratio = 0.8`
+- `k_lambda = 0.3`
 
-也就是：
+这是乘积结构，不是求和，所以任何一个轮子纵向滑移过大，整体项都会被明显压低。
 
-- 当球铰使用率不超过可用范围的 `80%` 时，不惩罚
-- 只有进入最后 `20%` 危险区后，惩罚才开始增长
+### 10.9 侧滑角项
 
-将危险区归一化后：
-
-$$
-\hat{u} = \max\left(\frac{u - 0.8}{1 - 0.8}, 0\right)
-$$
-
-当前每个环境对 6 个球铰取均值，并使用二次增长：
+对每个车轮侧滑角 $\alpha_i$，先限制在：
 
 $$
-r_{soft} = \frac{1}{6} \sum_{i=1}^{6} \hat{u}_i^2
+\alpha_i \in \left[-\frac{\pi}{k_\alpha}, \frac{\pi}{k_\alpha}\right]
 $$
 
-对应配置：
-
-- `ball_joint_limit_soft_power = 2.0`
-- `ball_joint_limit_soft = -0.2`
-
-这个设计的目的不是把球铰限制在小角度附近，而是：
-
-- 允许球铰正常使用大部分可用角度
-- 只在逼近硬 limit 时提供提前的负反馈
-- 减少直接撞上 joint limit 再触发硬终止的情况
-
-### 10.7 总奖励
-
-当前总奖励为：
+超出这个范围时，该轮对应项直接记为 `0`。
+范围内则定义：
 
 $$
-R =
-R_{lin}
-+ R_{ang}
-+ R_{ori}
-+ R_{act}
-+ R_{soft}
-+ R_{term}
+r_{slip\perp,i} = 0.5 \cos(k_\alpha \alpha_i) + 0.5
 $$
+
+再对 6 个轮子取乘积：
+
+$$
+r_{slip\perp} = \prod_{i=1}^{6} r_{slip\perp,i}
+$$
+
+当前：
+
+- `k_alpha = 6`
+
+### 10.10 当前配置参数总览
+
+当前 `RewardParamsCfg` 生效值为：
+
+- `target_bonus_ratio = 0.05`
+- `target_position_tolerance = 0.3`
+- `target_yaw_tolerance_deg = 9.0`
+- `heading_distance_scale = 5.0`
+- `roll_free_deg = 5.0`
+- `roll_gaussian_scale = pi / 16`
+- `speed_limit = 2.0`
+- `speed_gain = 2.0`
+- `force_std_scale = 0.1`
+- `longitudinal_slip_scale = 0.3`
+- `lateral_slip_gain = 6.0`
+
+### 10.11 当前 TensorBoard 奖励日志
+
+当前 step 级别会输出：
+
+- `Reward/target_bonus`
+- `Reward/progress`
+- `Reward/roll_gate`
+- `Reward/speed_gate`
+- `Reward/force_gate`
+- `Reward/heading_gate`
+- `Reward/longitudinal_slip_gate`
+- `Reward/lateral_slip_gate`
+- `Reward/composite_gate`
+- `Reward/gated_progress`
+- `Reward/total`
 
 当前：
 
@@ -826,23 +959,11 @@ $$
 
 则失败终止。
 
-### 11.4 最低高度终止
-
-当前：
-
-- `minimum_root_height = None`
-
-所以 Stage0 不启用该项。
-
----
-
 ## 12. 随机化配置
 
 当前随机化总开关与子项如下：
 
 - `enable_action_randomization = False`
-- `randomize_motor_strength = False`
-- `motor_strength_range = (0.9, 1.1)`
 - `joint_position_noise_scale = 0.0`
 - `action_noise_std = 0.0`
 - `action_bias_std = 0.0`
@@ -850,7 +971,6 @@ $$
 实际效果：
 
 - 不做动作侧随机化
-- 不做 motor strength 随机化
 - joint reset 不叠加额外噪声
 
 ---
@@ -910,7 +1030,7 @@ $$
 
 ### 15.2 训练总轮数
 
-- `max_iterations = 600`
+- `max_iterations = 1000
 
 ### 15.3 Mini-batch
 
@@ -1027,17 +1147,18 @@ $$
 从训练流程角度，Stage0 每个控制周期的闭环如下：
 
 1. 如果命令计时器到期，重采样命令
-2. 采样到的命令先经过固定变换矩阵
-3. policy 读取 45 维 actor 观测
-4. actor 输出 6 维标准化动作
-5. 动作先裁剪到 `[-1, 1]`
-6. 动作按逐轴关节上下界映射成 6 个球铰目标角
-7. wheel allocator 根据球铰状态和命令计算 6 个轮速目标
-8. Isaac Sim 执行球铰位置控制和轮速控制
-9. 环境读取新状态，生成下一时刻观测
-10. 按 5 项 reward 计算当前奖励
-11. 判断是否终止或超时
-12. PPO 存 rollout，周期性更新 actor/critic
+2. 命令根据当前位姿采样一个目标全局位姿
+3. env 把目标转成车体系下的 `[x_rel, y_rel, psi_rel]`
+4. policy 读取 48 维 actor 观测
+5. actor 输出 12 维标准化动作
+6. 动作先裁剪到 `[-1, 1]`
+7. 前 6 维映射成 6 个球铰目标角
+8. 后 6 维映射成 6 个车轮速度目标
+9. Isaac Sim 执行球铰位置控制和轮速控制
+10. 环境读取新状态，生成下一时刻观测
+11. 按当前 reward 配置计算当前奖励
+12. 判断是否终止或超时
+13. PPO 存 rollout，周期性更新 actor/critic
 
 ---
 
@@ -1055,35 +1176,41 @@ $$
 
 ### 17.2 动作与观测
 
-- 动作维度：`6`
-- Actor 观测维度：`45`
-- Critic 观测维度：`45`
-- 动作范围：逐轴 `[-1, 1]` 标准化，映射到球铰物理上下界
+- 动作维度：`12`
+- Actor 观测维度：`48`
+- Critic 观测维度：`48`
+- 动作范围：逐轴 `[-1, 1]` 标准化，球铰映射到各自角度上下界，车轮映射到对称速度上限
 
 ### 17.3 命令
 
-- 命令维度：`2`
-- 每 `4 s` 重采样一次
-- `vx ∈ [-1,1]`
-- `wz ∈ [-1,1]`
+- 命令维度：`3`
+- 每 `5 s` 重采样一次
+- 目标距离固定 `12 m`
+- 目标方向偏角范围 `[-18.43°, +18.43°]`
+- 目标朝向附加偏置范围 `[-9.215°, +9.215°]`
 
 ### 17.4 奖励
 
-- 跟踪线速度
-- 跟踪角速度
-- 姿态惩罚
-- 动作变化惩罚
-- 球铰软约束惩罚
-- 终止惩罚
+- 总奖励：
+  - `target_bonus + gated_progress`
+- 其中：
+  - `gated_progress = progress * roll_gate * speed_gate * force_gate * composite_gate`
+- 其中：
+  - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
 
-其中当前 Stage0 实际生效的关键权重为：
+当前关键参数为：
 
-- `tracking_lin_vel = 2.0`
-- `tracking_ang_vel = 2.0`
-- `orientation = -3.0`
-- `action_rate = -0.01`
-- `ball_joint_limit_soft = -0.2`
-- `termination = -2.0`
+- `target_bonus_ratio = 0.05`
+- `target_position_tolerance = 0.3 m`
+- `target_yaw_tolerance_deg = 9°`
+- `heading_distance_scale = 5 m`
+- `roll_free_deg = 5°`
+- `roll_gaussian_scale = pi / 16`
+- `speed_limit = 2.0 m/s`
+- `speed_gain = 2.0`
+- `force_std_scale = 0.1`
+- `longitudinal_slip_scale = 0.3`
+- `lateral_slip_gain = 6.0`
 
 ### 17.5 终止
 

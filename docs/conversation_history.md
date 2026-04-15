@@ -2,6 +2,266 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-15
+
+### The active reward trunk is now goal-conditioned and no longer centered on velocity-command tracking
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the active reward no longer uses the old additive core:
+    - `tracking_lin_vel`
+    - `tracking_ang_vel`
+    - `orientation`
+    - `action_rate`
+    - `ball_joint_limit_soft`
+    - `termination`
+  - the active reward now follows the goal-conditioned structure:
+    - `target_bonus + gated_progress`
+  - the dense progress term is:
+    - `(d_{t-1} - d_t) * control_frequency`
+  - the multiplicative gated progress term is:
+    - `progress * roll_gate * speed_gate * force_gate * composite_gate`
+  - the active composite gate is:
+    - `(heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
+  - the target bonus uses:
+    - position threshold `0.3 m`
+    - yaw threshold `9 deg`
+    - bonus ratio `5%` of the maximum undiscounted return, solved from:
+      - `k_tar = ratio * (goal_distance * control_frequency + k_tar)`
+  - the active reward implementation now depends on an env-side previous-goal-distance buffer:
+    - reset on episode reset
+    - reset again whenever a new goal command is resampled
+  - the active step-level reward logs are now:
+    - `Reward/target_bonus`
+    - `Reward/progress`
+    - `Reward/roll_gate`
+    - `Reward/speed_gate`
+    - `Reward/force_gate`
+    - `Reward/heading_gate`
+    - `Reward/longitudinal_slip_gate`
+    - `Reward/lateral_slip_gate`
+    - `Reward/composite_gate`
+    - `Reward/gated_progress`
+- Reason:
+  - the user explicitly required replacing the old velocity-tracking reward with a goal-conditioned reward centered on target reaching and dense progress, while using multiplicative gates for roll, speed, force balance, heading, and slip
+- Impact:
+  - future reward discussions should treat the direct workflow as using a target-reaching + gated-progress reward by default
+  - any remaining tuning notes centered on `tracking_lin_vel` or `orientation` as active reward terms are now historical, not current
+- Status:
+  - targeted `python3 -m py_compile` check passed for the modified direct-workflow files
+
+### Five proprioceptive groups are now temporarily disabled from the active policy observation trunk
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the active policy observation trunk now temporarily excludes these five groups:
+    - `ball_joint_vel`
+    - `ball_joint_target_error`
+    - `head_car_abs_rp`
+    - `tail_car_abs_rp`
+    - `wheel_joint_vel`
+  - these terms are not deleted from the raw state collection path, but they are no longer concatenated into the actor/critic observation returned to PPO
+  - the active single-frame observation sizes are now:
+    - `Stage0 actor = 48`
+    - `Stage0 critic = 48`
+    - `Stage1 actor = 48`
+    - `Stage1 critic = 48 + num_height_points`
+- Reason:
+  - the user explicitly required commenting out these observation groups for now and not using them in the policy observation space
+- Impact:
+  - future policy-observation analysis should treat the active trunk as excluding joint velocities, joint target-tracking errors, module roll/pitch, and wheel angular velocities until the user explicitly restores them
+  - any observation-dimension discussion that still says `70` for the current active trunk is outdated
+- Status:
+  - targeted `python3 -m py_compile` check passed for the modified direct-workflow files
+
+### Wheel-speed action mapping now uses only one symmetric speed-limit parameter
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the active wheel-speed action mapping no longer keeps duplicated config fields:
+    - `wheel_joint_action_lower_limits`
+    - `wheel_joint_action_upper_limits`
+  - the only active wheel-speed magnitude parameter is now:
+    - `wheel_joint_velocity_limit_sim`
+  - the last six normalized policy actions are now mapped symmetrically as:
+    - `wheel_target = action * wheel_joint_velocity_limit_sim`
+  - this means:
+    - `action = 1` maps to `+v_max`
+    - `action = -1` maps to `-v_max`
+    - `action = 0` maps to `0`
+- Reason:
+  - the user explicitly required removing the redundant duplicated lower/upper wheel-speed config and using a single symmetric speed limit instead
+- Impact:
+  - future wheel-speed tuning should update only `wheel_joint_velocity_limit_sim`
+  - future code and documentation should not reintroduce redundant wheel lower/upper action limit tuples unless the wheel action semantics themselves become asymmetric
+- Status:
+  - targeted `python3 -m py_compile` check passed for the modified direct-workflow files
+
+### Wheel-ground contact observations are now part of the active direct-workflow observation trunk
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/__init__.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the active proprioceptive observation trunk now includes 18 new wheel-ground contact terms:
+    - `6` wheel longitudinal slip ratios
+    - `6` wheel slip angles
+    - `6` wheel normal contact forces normalized by total vehicle weight
+  - the wheel longitudinal slip ratio uses:
+    - `lambda = (v_x - r * omega) / max(|v_x|, eps)`
+    with:
+    - low-speed protection `eps = 0.1`
+    - clipping to `[-1, 1]`
+  - the wheel slip angle uses:
+    - `atan2(v_y, |v_x| + eps)`
+    with:
+    - the same low-speed protection
+    - clipping to `[-pi/2, pi/2]`
+    - units kept in radians
+  - the normal contact force now uses the magnitude of `ContactSensor.data.net_forces_w`
+    because Isaac Lab defines it as the summed normal contact-force vector in world frame
+  - the active implementation is now:
+    - `F_n = ||net_forces_w|| / (m_total * g)`
+  - the active wheel radius reused by this observation path is:
+    - `0.19 m`
+  - the robot USD spawn now enables contact sensors, and the env uses a dedicated `ContactSensor` bound to the six wheel bodies
+  - the active single-frame observation sizes are now:
+    - `Stage0 actor = 48`
+    - `Stage0 critic = 48`
+    - `Stage1 actor = 48`
+    - `Stage1 critic = 48 + num_height_points`
+- Reason:
+  - the user explicitly required adding wheel longitudinal slip, slip angle, and normalized normal contact force to the current RL observation space using the provided physical definitions
+- Impact:
+  - future observation-dimension, scale, and TensorBoard discussions must treat the 18 wheel-ground contact dimensions as part of the active direct-workflow mainline
+  - future contact-force interpretation should remember that the current implementation uses the magnitude of the summed normal-contact-force vector, not the previous world-z approximation
+- Status:
+  - targeted `python3 -m py_compile` check passed for the modified direct-workflow files
+
+### Complete-car direct workflow command space is now goal-conditioned, and the policy action space now directly outputs both ball-joint targets and wheel-speed targets
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the active command space no longer samples velocity commands such as:
+    - `lin_vel_x`
+    - `ang_vel_yaw`
+  - the new command target stored in env is the global goal pose:
+    - `[x_t, y_t, psi_target]`
+  - the active goal sampling rule is now:
+    - fixed goal distance `12 m`
+    - goal-direction offset `phi ∈ [-18.43°, 18.43°]`
+    - edge-biased quadratic sampling:
+      - `phi = s * phi_max * sqrt(u)`
+    - heading offset `delta ∈ [-9.215°, 9.215°]`
+    - `psi_target = wrapToPi(theta_los + delta)`
+  - the policy does not observe the global goal directly
+  - the active observation-side command term is now the body-frame relative goal:
+    - `[x_rel, y_rel, psi_rel]`
+  - the active policy action space no longer controls only the six ball joints
+  - the action space is now `12`-dimensional:
+    - first `6`: ball-joint pose targets
+    - last `6`: wheel-speed targets
+  - the wheel-speed allocator has been removed from the active env execution path
+  - wheel velocities are now mapped directly from the last six normalized policy actions to configured wheel-speed bounds
+  - the default single-frame observation sizes are now:
+    - `Stage0 actor = 52`
+    - `Stage0 critic = 52`
+    - `Stage1 actor = 52`
+    - `Stage1 critic = 52 + num_height_points`
+- Reason:
+  - the user explicitly required replacing the velocity-command task with a goal-conditioned task and also required the RL policy to output both ball-joint targets and wheel-speed targets directly
+- Impact:
+  - future command, observation, logging, and action-space discussions should treat the direct workflow as a goal-conditioned navigation/control task by default
+  - future wheel-speed changes should no longer assume allocator-generated wheel commands unless that design is explicitly restored
+  - reward semantics were only minimally adapted for compatibility in this round and should still be treated as pending dedicated redesign
+- Status:
+  - targeted `python3 -m py_compile` check passed for the modified direct-workflow files
+
+### Zotero `核心参考-RL、Sim-to-Real` collection can now be backfilled from local `docs/literature/` PDFs through a direct SQLite + storage workflow
+- Updated:
+  - `scripts/literature/attach_local_pdfs_to_zotero_collection.py`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the active Zotero local library data directory is:
+    - `/home/lbz/Zotero`
+  - the target collection:
+    - `核心参考-RL、Sim-to-Real`
+    currently corresponds to:
+    - `collectionID = 16`
+  - because the current `zotero-mcp` collection endpoints are blocked by:
+    - `Local API is not enabled`
+    the workable automation path for this machine is:
+    - close `zotero-bin`
+    - back up `zotero.sqlite`
+    - attach matched PDFs by writing the child attachment rows into `zotero.sqlite`
+    - copy the PDF into `Zotero/storage/<attachment_key>/`
+    - reopen Zotero
+  - the new helper script:
+    - `scripts/literature/attach_local_pdfs_to_zotero_collection.py`
+    implements this path with:
+    - default dry-run
+    - exact collection-name targeting
+    - title-based local PDF matching against `docs/literature/`
+    - apply mode that inserts imported-file PDF attachments
+  - this round successfully backfilled `10` missing-PDF items in:
+    - `核心参考-RL、Sim-to-Real`
+  - the attached parent item keys are:
+    - `QFLNKZ2Q`
+    - `V7VESQJM`
+    - `KXTHNV77`
+    - `3NRQAKKS`
+    - `LMTJ8X83`
+    - `ZNSS2JA8`
+    - `5M2SGTER`
+    - `XH4XPRC6`
+    - `WXIK6J7M`
+    - `2TICENYY`
+- Reason:
+  - the user explicitly asked to inspect the Zotero collection and attach all corresponding local papers found under the repository literature directory
+- Impact:
+  - future local literature maintenance on this machine should reuse the new script instead of manually editing SQLite again from scratch
+  - if `zotero-mcp` later gains working collection access, the direct SQLite route can be reconsidered, but it is the validated path for the current environment
+- Status:
+  - real-library backup was created before modification
+  - post-write verification confirmed the 10 target parent items now each have `1` PDF attachment
+
 ## 2026-04-12
 
 ### `Vx / Vy / Wz` command semantics now apply a fixed left-multiplication transform before env-wide use
@@ -4044,6 +4304,70 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-14
 
+### Google Scholar first-pass retrieval for thesis-related rough-terrain articulated wheeled robot literature now has a stable seed set and clustering
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable literature conclusion:
+  - on 2026-04-14, a first-pass Google Scholar retrieval was run with three query groups around:
+    - articulated wheeled robot / articulated vehicle / articulated rover
+    - active suspension / actively articulated suspension / articulated suspension
+    - wheeled robot / ground vehicle + rough terrain/off-road + reinforcement learning
+  - the first page of each query was collected, giving:
+    - 30 candidate papers total
+  - the resulting literature pool separates into three reusable clusters:
+    - actively articulated suspension / rough-terrain control classics
+    - rough-terrain wheeled or ground-vehicle RL papers
+    - terrain-geometry estimation / terrain-adaptation papers that bridge perception and suspension control
+  - the current most useful seed papers for the thesis are:
+    - `Hybrid Learning for Rough Terrain Navigation of Actively Articulated Wheeled Vehicles`
+    - `Control of rough terrain vehicles using deep reinforcement learning`
+    - `Simultaneous control of terrain adaptation and wheel speed allocation for a planetary rover with an active suspension system`
+    - `Control of robotic vehicles with actively articulated suspensions in rough terrain`
+  - for current thesis use, the literature should not be treated as one homogeneous pool:
+    - morphology / mechanism justification should prioritize the active articulated suspension line
+    - RL task and training design should prioritize the rough-terrain RL line
+    - terrain perception arguments should prioritize the terrain-geometry / wheel-terrain-contact estimation line
+- Reason:
+  - the user asked for a Scholar-based relevance-ranked search focused on articulated or multi-body actively-jointed wheeled robots under rough terrain, reinforcement learning, and terrain perception
+- Impact:
+  - future literature expansion should start from the seed set above instead of re-running broad keyword searches from scratch
+  - cited-by expansion should first branch from the four seed papers above
+  - when writing related work, avoid overclaiming that the current seed set already contains many papers covering all four dimensions simultaneously; the dominant pattern is still partial overlap between mechanism, RL, and terrain perception
+- Status:
+  - first-pass retrieval completed
+  - current seed set ready for second-pass cited-by expansion or PDF/full-text collection
+
+## 2026-04-15
+
+### The current top-10 Scholar seed papers have been imported into Zotero collection `核心参考-RL、Sim-to-Real`
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable literature-management conclusion:
+  - the top-10 papers selected from the 2026-04-14 Scholar first-pass ranking were imported into the Zotero collection:
+    - `核心参考-RL、Sim-to-Real`
+  - metadata import status:
+    - 10 / 10 succeeded
+  - automatic PDF attachment status:
+    - 3 succeeded
+    - 5 failed due to publisher-side redirect or `403` restrictions
+    - 2 had no attachment attempt because no direct PDF URL was available in the selected import path
+  - the PDFs that were attached successfully correspond to:
+    - `Deep reinforcement learning for safe local planning of a ground vehicle in unknown rough terrain`
+    - `A sim-to-real pipeline for deep reinforcement learning for autonomous robot navigation in cluttered rough terrain`
+    - `Predict the rover mobility over soft terrain using articulated wheeled bevameter`
+- Reason:
+  - the user asked to place the selected 10 references into a single Zotero collection for core thesis use
+- Impact:
+  - future cited-by expansion, note-taking, and reading annotations should continue from this Zotero collection instead of rebuilding the same seed set
+  - papers without attached PDFs may still need manual full-text recovery from publisher pages, ResearchGate, Academia, or alternate mirrors
+- Status:
+  - collection seeding completed
+  - partial attachment recovery still open if full texts are needed
+
 ### Stage0 reward search currently converges to `soft_limit + orientation=-3.0` as the best validated default
 - Updated:
   - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
@@ -4083,6 +4407,139 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Status:
   - current code has been restored to the best validated default
   - follow-up reward search is optional, not blocking the next engineering step
+
+### Stage0 observation-scale back-check on two real runs shows no obvious normalization mismatch
+- Date:
+  - 2026-04-15
+- Scope:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_14-04-19_soft_limit_v1_orient3_lin22`
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-14_20-52-07`
+- Decision / conclusion:
+  - export and inspect the second run's TensorBoard scalars as well, then compare both runs against their frozen `params/env.yaml`
+  - both runs use the same Stage0 observation scales:
+    - `base_lin_vel = 1.0`
+    - `base_ang_vel = 0.25`
+    - `projected_gravity = 1.0`
+    - `ball_joint_pos = 1.0`
+    - `ball_joint_vel = 0.05`
+    - `ball_joint_target_error = 1.0`
+    - `module_roll_pitch = 1.0`
+    - `wheel_joint_vel = 0.05`
+    - `commands = 1.0`
+  - for the observation terms that are logged as absolute means or norms, the normalized magnitudes inferred from the last-50 statistics stay roughly in the `0.03 ~ 0.54` range
+  - this means the current Stage0 observation scaling is broadly reasonable and does not show an obvious order-of-magnitude error
+- Important caveat:
+  - the current logs for:
+    - `Observation/base_lin_vel_x`
+    - `Observation/base_ang_vel_yaw`
+    - `Command/lin_vel_x`
+    - `Command/ang_vel_yaw`
+    are cross-env signed means, not absolute magnitudes
+  - therefore they cannot be used directly to infer the real observation amplitude distribution
+- Main diagnostic implication:
+  - the stronger signal is not a bad observation scale
+  - the stronger signal is that the policy remains aggressive:
+    - `Action/policy_abs_mean` stays close to `1.0`
+    - `ball_joint_target_error_abs_mean` remains relatively large
+  - so future diagnosis should prioritize action aggressiveness and reward coupling over a blind rescaling of the observation channels
+- Status:
+  - durable conclusion; inherit in later Stage0 tuning unless new logs contradict it
+
+### TensorBoard step-level observation tags now log raw observation values explicitly, separate from scaled policy inputs
+- Date:
+  - 2026-04-15
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- Decision / conclusion:
+  - split the observation path into:
+    - raw observation term collection
+    - scaled actor-observation assembly
+  - `mdp/observations.py` now exposes a shared helper that returns the raw observation terms before any observation scale is applied
+  - TensorBoard step metrics in `env.py` now log these raw values explicitly under `Observation/..._raw`
+  - the policy observation path still multiplies the same raw terms by `cfg.observations.scales.*` before concatenation
+- Reason:
+  - the user explicitly required the TensorBoard observation output to reflect original physical values instead of scaled network inputs
+- Impact:
+  - future observation diagnosis from TensorBoard should read:
+    - `Observation/base_lin_vel_x_raw`
+    - `Observation/base_ang_vel_yaw_raw`
+    - `Observation/ball_joint_pos_abs_mean_raw`
+    - `Observation/ball_joint_vel_abs_mean_raw`
+    - `Observation/ball_joint_target_error_abs_mean_raw`
+    - `Observation/wheel_joint_vel_abs_mean_raw`
+    - `Observation/head_roll_pitch_abs_mean_raw`
+    - `Observation/tail_roll_pitch_abs_mean_raw`
+    - `Observation/goal_rel_x_raw`
+    - `Observation/goal_rel_y_raw`
+    - `Observation/goal_rel_psi_raw`
+    - `Observation/last_action_abs_mean_raw`
+  - old non-`_raw` observation tags from previous runs should be treated as historical and not mixed directly with the new logging convention
+- Status:
+  - targeted `python3 -m py_compile` check passed
+
+### The active action pipeline no longer includes motor-strength disturbance
+- Date:
+  - 2026-04-15
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/randomization.py`
+  - `docs/RL阶段训练参数一览表.md`
+- Decision / conclusion:
+  - remove `motor_strength` from the active action-processing chain entirely
+  - `preprocess_policy_actions(...)` now maps:
+    - clipped policy action
+    directly to:
+    - processed action
+  - env reset no longer samples per-action motor-strength coefficients
+  - step metrics no longer log:
+    - `Action/motor_strength_mean`
+  - `RandomizationCfg` no longer carries:
+    - `randomize_motor_strength`
+    - `motor_strength_range`
+- Reason:
+  - the user explicitly required deleting the motor-disturbance term from the action path
+- Impact:
+  - future action-side diagnosis should assume:
+    - `processed_actions == clipped policy_actions`
+    unless explicit action noise / bias is enabled elsewhere
+  - older notes that mention motor-strength randomization should be treated as historical only
+- Status:
+  - targeted `python3 -m py_compile` check passed
+
+### The active direct-workflow mainline no longer includes `root_too_low` termination or root-height-only diagnostics
+- Date:
+  - 2026-04-15
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `docs/RL阶段训练参数一览表.md`
+- Decision / conclusion:
+  - remove `root_too_low` from the active direct-workflow termination path entirely
+  - `TerminationCfg` no longer carries:
+    - `minimum_root_height`
+  - `compute_done_terms(...)` no longer returns:
+    - `root_too_low`
+  - active failure termination is now only composed of:
+    - `bad_orientation`
+    - `ball_joint_out_of_bounds`
+  - env no longer maintains root-height-only episode buffers for this removed termination branch
+  - step / episode metrics no longer emit:
+    - `Termination/root_too_low_rate`
+    - `episode_reset/root_too_low_rate`
+    - `episode/root_height_mean`
+    - `episode/root_height_min`
+    - `Observation/root_height`
+- Reason:
+  - the user explicitly required deleting the `root_too_low`-related content from the active mainline
+- Impact:
+  - future direct-workflow tuning should not treat root-link height thresholding as part of the current Stage0/1/2 default design
+  - older historical runs and notes that mention `root_too_low` remain valid only as archived history
+- Status:
+  - targeted static validation passed after removal
 
 ### RL mainline has been simplified again: `baseline/` now keeps only one override file, and terrain generation moved to `utils/terrain.py`
 - Date:

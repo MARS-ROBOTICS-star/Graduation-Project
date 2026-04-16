@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -79,6 +80,43 @@ def _resolve_checkpoint_lookup_args(agent_cfg) -> tuple[str, str]:
     return run_pattern, checkpoint_pattern
 
 
+def _resolve_checkpoint_path(log_root_path: str, run_pattern: str, checkpoint_pattern: str) -> str:
+    """Resolve checkpoints from either a run name or a direct run-directory-like path."""
+
+    def _try_existing_run_dir(candidate: Path) -> str | None:
+        if not candidate.is_dir():
+            return None
+        return get_checkpoint_path(str(candidate.parent), candidate.name, checkpoint_pattern)
+
+    if run_pattern in {"", ".*"}:
+        return get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
+
+    run_selector = Path(run_pattern)
+    direct_candidates = []
+    if run_selector.is_absolute():
+        direct_candidates.append(run_selector)
+    else:
+        direct_candidates.append(Path(run_pattern))
+        direct_candidates.append(Path(log_root_path) / run_selector)
+        direct_candidates.append(Path(log_root_path).parent / run_selector)
+
+    for candidate in direct_candidates:
+        resolved = _try_existing_run_dir(candidate)
+        if resolved is not None:
+            return resolved
+
+    if not run_selector.is_absolute():
+        normalized_pattern = str(run_selector).strip()
+        normalized_pattern = re.sub(r"^[./]+", "", normalized_pattern)
+        log_root_name = Path(log_root_path).name
+        duplicated_prefix = f"{log_root_name}/"
+        if normalized_pattern.startswith(duplicated_prefix):
+            normalized_pattern = normalized_pattern[len(duplicated_prefix) :]
+        return get_checkpoint_path(log_root_path, normalized_pattern, checkpoint_pattern)
+
+    return get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
+
+
 def _parse_rsl_rl_version(version_str: str):
     """Parse vendored rsl_rl versions robustly."""
     try:
@@ -99,7 +137,7 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         resume_path = retrieve_file_path(args_cli.checkpoint)
     else:
         run_pattern, checkpoint_pattern = _resolve_checkpoint_lookup_args(agent_cfg)
-        resume_path = get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
+        resume_path = _resolve_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
     log_dir = os.path.dirname(resume_path)
     env_cfg.log_dir = log_dir
 

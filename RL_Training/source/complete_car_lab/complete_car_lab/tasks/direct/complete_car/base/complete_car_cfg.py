@@ -25,9 +25,10 @@ class CommandCfg:
     """目标位姿命令采样器配置。"""
 
     num_commands: int = 3
-    resampling_time: float = 5.0
+    resampling_time: float = 5.0  # 目标重采样周期，单位：s。
     goal_distance: float = 20
     goal_direction_max_deg: float = 18.43
+    goal_heading_delta_max_deg: float = 9.215
     zero_command: bool = False  # 为 True 时，本次采样出的目标会退化为当前位置和当前朝向。
     rel_standing_envs: float = 0.0  # 每次重采样后，被随机指定为原地目标环境的比例。
 
@@ -126,6 +127,9 @@ class RewardParamsCfg:
     force_std_scale: float = 0.1
     longitudinal_slip_scale: float = 0.3
     lateral_slip_gain: float = 6.0
+    vertical_speed_scale: float = 0.35
+    ball_joint_speed_scale: float = 0.8
+    wheel_action_rate_scale: float = 0.35
 
 
 @configclass

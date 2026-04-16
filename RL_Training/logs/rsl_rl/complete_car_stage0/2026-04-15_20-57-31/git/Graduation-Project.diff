@@ -1,0 +1,546 @@
+--- git commit ---
+fd8860716ca6509cb178ccc74db096325e394b79
+
+
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+	modified:   USD/complete_car.usd
+	modified:   docs/conversation_history.md
+	modified:   docs/current_status.md
+	modified:   logs/daily_work_log.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-44-35/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-57-31/
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+index c1dee53..f504b22 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+@@ -40,12 +40,16 @@ class CompleteCarDirectEnv(DirectRLEnv):
+         self._ball_joint_ids, _ = self.robot.find_joints(BALL_JOINT_NAMES)
+         self._wheel_joint_ids, _ = self.robot.find_joints(WHEEL_JOINT_NAMES)
+         self._wheel_body_ids, _ = self.robot.find_bodies(WHEEL_BODY_NAMES, preserve_order=True)
++        self._body_car_body_id, _ = self.robot.find_bodies("body_car_chassis")
+         self._head_car_body_id, _ = self.robot.find_bodies("head_car_chassis")
+         self._tail_car_body_id, _ = self.robot.find_bodies("tail_car_chassis")
++        self._body_car_body_id = self._body_car_body_id[0]
+         self._head_car_body_id = self._head_car_body_id[0]
+         self._tail_car_body_id = self._tail_car_body_id[0]
+         gravity_magnitude = abs(float(self.cfg.sim.gravity[2]))
+-        self._total_vehicle_weight = self.robot.data.default_mass.sum(dim=1, keepdim=True) * gravity_magnitude
++        self._total_vehicle_weight = (
++            self.robot.data.default_mass.sum(dim=1, keepdim=True).to(device=self.device) * gravity_magnitude
++        )
+ 
+         self.actions = torch.zeros((self.num_envs, self.cfg.action_space), device=self.device)
+         self.last_actions = torch.zeros_like(self.actions)
+@@ -109,12 +113,13 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             spawn_ground_plane(prim_path=ground_prim_path, cfg=GroundPlaneCfg())
+ 
+         self._sensor_runtime = CompleteCarSensorSuiteRuntime(self.cfg.sensors, self.cfg.terrain, ground_prim_path)
+-        self._sensor_runtime.build_scene_entities(self.scene)
+ 
+         self.scene.clone_environments(copy_from_source=False)
+         if str(self.device) == "cpu":
+             self.scene.filter_collisions(global_prim_paths=[])
+ 
++        self._sensor_runtime.build_scene_entities(self.scene)
++
+         if self._terrain_runtime.generator_enabled:
+             mdp_curriculum.initialize_terrain_curriculum(self.cfg.curriculum, self._terrain_runtime, self.scene)
+         else:
+@@ -219,28 +224,43 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             self.extras["sensors"] = self._sensor_runtime.get_raw_output()
+         return {"actor": actor_obs, "critic": critic_obs}
+ 
++    def _get_critic_height_patch_reference_states(self) -> tuple[torch.Tensor, torch.Tensor]:
++        scheme = self.cfg.terrain.height_patch_scheme
++        if scheme == "body_single":
++            reference_pos_w = self.robot.data.root_link_pos_w.unsqueeze(1)
++            reference_yaw_w = quaternion_to_rpy(self.robot.data.root_link_quat_w)[:, 2:3]
++            return reference_pos_w, reference_yaw_w
++
++        if scheme == "three_body_separate":
++            body_ids = [self._head_car_body_id, self._body_car_body_id, self._tail_car_body_id]
++            reference_pos_w = self.robot.data.body_com_pos_w[:, body_ids]
++            reference_yaw_w = quaternion_to_rpy(self.robot.data.body_quat_w[:, body_ids])[..., 2]
++            return reference_pos_w, reference_yaw_w
++
++        raise ValueError(f"Unsupported height_patch_scheme: {scheme}")
++
+     def _compute_critic_height_patch(self) -> torch.Tensor | None:
+         if not self.cfg.terrain.measure_heights or self._terrain_runtime is None:
+             return None
+ 
+-        local_points = self._critic_height_patch_local.unsqueeze(0).expand(self.num_envs, -1, -1)
+-
+-        root_pos_w = self.robot.data.root_link_pos_w
+-        yaw = quaternion_to_rpy(self.robot.data.root_link_quat_w)[:, 2]
++        reference_pos_w, reference_yaw_w = self._get_critic_height_patch_reference_states()
++        num_references = reference_pos_w.shape[1]
++        local_points = self._critic_height_patch_local.view(1, 1, -1, 2).expand(self.num_envs, num_references, -1, -1)
+ 
+-        cos_yaw = torch.cos(yaw).unsqueeze(1)
+-        sin_yaw = torch.sin(yaw).unsqueeze(1)
++        cos_yaw = torch.cos(reference_yaw_w).unsqueeze(-1)
++        sin_yaw = torch.sin(reference_yaw_w).unsqueeze(-1)
+ 
+         x_local = local_points[..., 0]
+         y_local = local_points[..., 1]
+ 
+-        x_world = root_pos_w[:, 0:1] + cos_yaw * x_local - sin_yaw * y_local
+-        y_world = root_pos_w[:, 1:2] + sin_yaw * x_local + cos_yaw * y_local
++        x_world = reference_pos_w[..., 0:1] + cos_yaw * x_local - sin_yaw * y_local
++        y_world = reference_pos_w[..., 1:2] + sin_yaw * x_local + cos_yaw * y_local
+ 
+         patch_points_xy_w = torch.stack((x_world, y_world), dim=-1)
+         terrain_height = self._terrain_runtime.sample_heights_world_xy(patch_points_xy_w)
+ 
+-        relative_height = root_pos_w[:, 2:3] - terrain_height
++        relative_height = reference_pos_w[..., 2:3] - terrain_height
++        relative_height = relative_height.reshape(self.num_envs, -1)
+         return torch.nan_to_num(relative_height, nan=0.0, posinf=0.0, neginf=0.0)
+ 
+     def _get_rewards(self) -> torch.Tensor:
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+index 93411e9..7674f49 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+@@ -5,14 +5,23 @@ from __future__ import annotations
+ from dataclasses import field
+ 
+ import torch
+-from isaaclab.sensors import ContactSensor, ContactSensorCfg, RayCaster, RayCasterCfg
++from isaacsim.core.simulation_manager import SimulationManager
++from isaaclab.sensors import RayCaster, RayCasterCfg
++import isaaclab.sim as sim_utils
+ from isaaclab.utils import configclass
+ 
++from ..assets.robot_cfg import WHEEL_BODY_NAMES
+ from .imu import ImuSensorAdapter, ImuSensorCfg
+ from .lidar import LidarSensorAdapter, LidarSensorCfg
+ from .stereo_camera import StereoCameraAdapter, StereoCameraSensorCfg
+ 
+ 
++def _resolve_env_regex_ns(prim_path: str, scene) -> str:
++    """Resolve Isaac Lab's environment namespace placeholder for manually-built sensors."""
++
++    return prim_path.format(ENV_REGEX_NS=scene.env_regex_ns)
++
++
+ @configclass
+ class CompleteCarSensorSuiteCfg:
+     """集中描述 Stage0/1/2 需要绑定的传感器集合。"""
+@@ -56,30 +65,24 @@ class CompleteCarSensorSuiteRuntime:
+         self.stereo_camera = StereoCameraAdapter(cfg.stereo_camera)
+         self.lidar = LidarSensorAdapter(cfg.lidar, ground_prim_path)
+         self.height_scanner: RayCaster | None = None
+-        self.wheel_contact_sensor: ContactSensor | None = None
+-        self._wheel_contact_body_ids: torch.Tensor | None = None
++        self._wheel_contact_views: dict[str, object] = {}
++        self._wheel_contact_sim_dt: float | None = None
++        self._wheel_contact_env_glob_ns: str | None = None
++        self._wheel_contact_num_envs: int | None = None
+         self._raw_output: dict[str, torch.Tensor | dict[str, torch.Tensor]] = {}
+ 
+     def build_scene_entities(self, scene) -> None:
++        self.cfg.imu.prim_path = _resolve_env_regex_ns(self.cfg.imu.prim_path, scene)
++        self.cfg.stereo_camera.prim_path = _resolve_env_regex_ns(self.cfg.stereo_camera.prim_path, scene)
++        self.cfg.lidar.prim_path = _resolve_env_regex_ns(self.cfg.lidar.prim_path, scene)
++        self.terrain_cfg.height_scanner_prim_path = _resolve_env_regex_ns(self.terrain_cfg.height_scanner_prim_path, scene)
++        self._wheel_contact_env_glob_ns = scene.env_regex_ns.replace(".*", "*")
++        self._wheel_contact_num_envs = scene.cfg.num_envs
++
+         self.imu.build(scene)
+         self.stereo_camera.build(scene)
+         self.lidar.build(scene)
+ 
+-        self.wheel_contact_sensor = ContactSensor(
+-            ContactSensorCfg(
+-                prim_path=(
+-                    "{ENV_REGEX_NS}/Robot/"
+-                    "(body_car_wheel_left|body_car_wheel_right|"
+-                    "head_car_wheel_left|head_car_wheel_right|"
+-                    "tail_car_wheel_left|tail_car_wheel_right)"
+-                ),
+-                update_period=0.0,
+-                history_length=1,
+-                debug_vis=False,
+-            )
+-        )
+-        scene.sensors["wheel_contact_sensor"] = self.wheel_contact_sensor
+-
+         if self.cfg.enable_height_scanner:
+             height_cfg: RayCasterCfg = self.terrain_cfg.build_height_scanner_cfg(self.ground_prim_path)
+             height_cfg.debug_vis = self.cfg.height_scanner_debug_vis
+@@ -90,11 +93,43 @@ class CompleteCarSensorSuiteRuntime:
+         self.imu.reset(env_ids)
+         self.stereo_camera.reset(env_ids)
+         self.lidar.reset(env_ids)
+-        if self.wheel_contact_sensor is not None:
+-            self.wheel_contact_sensor.reset(env_ids)
+         if self.height_scanner is not None:
+             self.height_scanner.reset(env_ids)
+ 
++    def _initialize_wheel_contact_views_if_needed(self) -> None:
++        if self._wheel_contact_views:
++            return
++        if self._wheel_contact_env_glob_ns is None:
++            raise RuntimeError("Wheel contact env namespace has not been prepared.")
++        if self._wheel_contact_num_envs is None:
++            raise RuntimeError("Wheel contact env count has not been prepared.")
++
++        sim = sim_utils.SimulationContext.instance()
++        if sim is None:
++            raise RuntimeError("Simulation context is not initialized.")
++        physics_sim_view = SimulationManager.get_physics_sim_view()
++        self._wheel_contact_sim_dt = sim.get_physics_dt()
++        num_envs = self._wheel_contact_num_envs
++
++        for wheel_body_name in WHEEL_BODY_NAMES:
++            wheel_prim_glob = (
++                f"{self._wheel_contact_env_glob_ns}/Robot/complete_car_alternative/{wheel_body_name}"
++            )
++            body_view = physics_sim_view.create_rigid_body_view(wheel_prim_glob)
++            if body_view.count != num_envs:
++                raise RuntimeError(
++                    "Failed to initialize wheel rigid body view."
++                    f"\n\tWheel body : {wheel_body_name}"
++                    f"\n\tPrim glob  : {wheel_prim_glob}"
++                    f"\n\tBody count : {body_view.count}"
++                    f"\n\tNum envs   : {num_envs}"
++                )
++            self._wheel_contact_views[wheel_body_name] = physics_sim_view.create_rigid_contact_view(
++                wheel_prim_glob,
++                filter_patterns=[],
++                max_contact_data_count=4 * num_envs,
++            )
++
+     def get_height_features(self) -> torch.Tensor | None:
+         if self.height_scanner is None:
+             return None
+@@ -126,18 +161,19 @@ class CompleteCarSensorSuiteRuntime:
+         return features
+ 
+     def get_wheel_contact_forces_w(self, wheel_body_names: list[str]) -> torch.Tensor:
+-        if self.wheel_contact_sensor is None:
+-            raise RuntimeError("Wheel contact sensor has not been created.")
+-
+-        if self._wheel_contact_body_ids is None:
+-            body_ids, _ = self.wheel_contact_sensor.find_bodies(wheel_body_names, preserve_order=True)
+-            self._wheel_contact_body_ids = torch.as_tensor(
+-                body_ids,
+-                device=self.wheel_contact_sensor.data.net_forces_w.device,
+-                dtype=torch.long,
+-            )
+-
+-        net_forces_w = self.wheel_contact_sensor.data.net_forces_w[:, self._wheel_contact_body_ids]
++        self._initialize_wheel_contact_views_if_needed()
++        if self._wheel_contact_sim_dt is None:
++            raise RuntimeError("Wheel contact sim dt has not been initialized.")
++
++        net_forces_w = torch.cat(
++            [
++                self._wheel_contact_views[wheel_body_name]
++                .get_net_contact_forces(dt=self._wheel_contact_sim_dt)
++                .view(-1, 1, 3)
++                for wheel_body_name in wheel_body_names
++            ],
++            dim=1,
++        )
+         self._raw_output["wheel_contact_forces_w"] = net_forces_w
+         return net_forces_w
+ 
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+index a925629..dbcd667 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+@@ -44,6 +44,7 @@ class CompleteCarTerrainRuntimeCfg:
+     patch_resolution_y: float = 0.10  # patch 网格分辨率。
+     measured_points_x: list[float] = field(default_factory=list)
+     measured_points_y: list[float] = field(default_factory=list)  # 最终生成后的采样坐标。
++    height_patch_scheme: str = "body_single"  # 可选: body_single / three_body_separate。
+ 
+     height_scanner_prim_path: str = "{ENV_REGEX_NS}/Robot/complete_car_alternative/body_car_chassis"
+     height_scanner_update_period: float = 0.02
+@@ -67,9 +68,19 @@ class CompleteCarTerrainRuntimeCfg:
+         y_max = self.patch_half_width + self.patch_side_margin
+         return _build_axis_points(y_min, y_max, self.patch_resolution_y)
+ 
+-    def get_num_height_points(self) -> int:
++    def get_height_patch_reference_names(self) -> tuple[str, ...]:
++        if self.height_patch_scheme == "body_single":
++            return ("body",)
++        if self.height_patch_scheme == "three_body_separate":
++            return ("head", "body", "tail")
++        raise ValueError(f"Unsupported height_patch_scheme: {self.height_patch_scheme}")
++
++    def get_num_height_points_per_patch(self) -> int:
+         return len(self._get_measured_points_x()) * len(self._get_measured_points_y())
+ 
++    def get_num_height_points(self) -> int:
++        return self.get_num_height_points_per_patch() * len(self.get_height_patch_reference_names())
++
+     def build_height_scanner_cfg(self, ground_prim_path: str) -> RayCasterCfg:
+         measured_points_x = self._get_measured_points_x()
+         measured_points_y = self._get_measured_points_y()
+@@ -89,7 +100,7 @@ class CompleteCarTerrainRuntimeCfg:
+         )
+ 
+     def build_patch_local_points(self, device, dtype):
+-        """返回中车局部坐标系下的 patch 采样点张量。"""
++        """返回单个 patch 的局部坐标系采样点张量。"""
+ 
+         x = torch.tensor(self._get_measured_points_x(), device=device, dtype=dtype)
+         y = torch.tensor(self._get_measured_points_y(), device=device, dtype=dtype)
+diff --git a/USD/complete_car.usd b/USD/complete_car.usd
+index 3456010..d419faa 100644
+Binary files a/USD/complete_car.usd and b/USD/complete_car.usd differ
+diff --git a/docs/conversation_history.md b/docs/conversation_history.md
+index fa94351..2c46fd7 100644
+--- a/docs/conversation_history.md
++++ b/docs/conversation_history.md
+@@ -4,6 +4,80 @@ This file stores durable conclusions from past Codex sessions so that future ses
+ 
+ ## 2026-04-15
+ 
++### Critic terrain-height patch now supports an optional three-body concatenated scheme
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `docs/current_status.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the active critic explicit height-patch path now supports:
++    - `terrain.height_patch_scheme = "body_single"`
++    - `terrain.height_patch_scheme = "three_body_separate"`
++  - default behavior remains the original single-patch mode:
++    - one patch referenced to the middle-body root frame
++  - in `three_body_separate` mode:
++    - three patches are sampled independently using the same local patch grid
++    - the reference origins are the COMs of:
++      - `head_car_chassis`
++      - `body_car_chassis`
++      - `tail_car_chassis`
++    - each patch is rotated by its own body yaw
++    - each patch height is expressed relative to its own body COM height
++    - the final critic height vector is concatenated in:
++      - `head -> body -> tail`
++  - `terrain.get_num_height_points()` now returns the total concatenated dimension implied by the selected scheme
++- Reason:
++  - the user explicitly required keeping the current middle-body patch method while adding an alternative scheme that builds three yaw-aligned local patches around the front, middle, and rear body COMs and concatenates them into the critic observation
++- Impact:
++  - future Stage1 terrain-patch experiments can switch schemes only by changing `terrain.height_patch_scheme` in config
++  - observation-dimension checks for critic terrain features must now account for either one patch or three concatenated patches depending on the selected scheme
++- Status:
++  - targeted `python3 -m py_compile` check passed for the modified direct-workflow files
++
++### Wheel contact sensor startup now requires runtime namespace resolution, the `complete_car_alternative` path segment, and wheel-root contact-report APIs in USD
++- Updated:
++  - `USD/complete_car.usd`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `docs/current_status.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the six wheel rigid-body roots in `complete_car.usd` now explicitly carry `PhysxContactReportAPI`
++  - the verified wheel roots are:
++    - `body_car_wheel_left`
++    - `body_car_wheel_right`
++    - `head_car_wheel_left`
++    - `head_car_wheel_right`
++    - `tail_car_wheel_left`
++    - `tail_car_wheel_right`
++  - because the sensor suite is built manually at runtime instead of through `InteractiveSceneCfg`, `{ENV_REGEX_NS}` is not auto-expanded for these sensors
++  - the active runtime fix now explicitly resolves `{ENV_REGEX_NS}` inside `sensors/sensor_cfg.py` before constructing:
++    - IMU
++    - stereo camera
++    - lidar
++    - height scanner
++    - wheel contact sensor
++  - the active wheel contact sensor path must include the asset's internal hierarchy under `Robot`:
++    - `{ENV_REGEX_NS}/Robot/complete_car_alternative/(body_car_wheel_left|body_car_wheel_right|head_car_wheel_left|head_car_wheel_right|tail_car_wheel_left|tail_car_wheel_right)`
++  - omitting the `complete_car_alternative` segment is incorrect for the spawned RL asset path and will fail sensor initialization
++  - during this same debug round, `base/env.py` was corrected so `_total_vehicle_weight` is cached on `self.device`, avoiding CPU/CUDA mismatch when normalizing wheel contact forces
++  - after these fixes, the minimal real-GPU training command completed one learning iteration successfully:
++    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 1 --max_iterations 1`
++  - the verified run directory is:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-44-35`
++- Reason:
++  - the user manually repaired the USD to add wheel contact-report APIs, and the training startup still needed the runtime contact-sensor path to match the actual spawned prim hierarchy
++- Impact:
++  - future wheel-contact debugging should first check:
++    - wheel-root `Contact Report API` in USD
++    - runtime `{ENV_REGEX_NS}` expansion
++    - presence of `complete_car_alternative` in the spawned sensor path
++    - device placement of the cached total-vehicle-weight tensor
++- Status:
++  - targeted `python3 -m py_compile` check passed
++  - real GPU minimal training startup passed and completed 1 learning iteration
++
+ ### The active reward trunk is now goal-conditioned and no longer centered on velocity-command tracking
+ - Updated:
+   - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+diff --git a/docs/current_status.md b/docs/current_status.md
+index 6cea55f..067ab1e 100644
+--- a/docs/current_status.md
++++ b/docs/current_status.md
+@@ -12,12 +12,23 @@
+ - 已完成一次真实 `Stage0` run 的日志诊断，并补齐训练日志 / TensorBoard 指标埋点。
+ - 已完成一轮 Stage0 奖励收敛实验串行搜索，并确定当前最优已验证配置。
+ - 当前进入“固定当前最优 Stage0 配置，并继续接入 MGDP 风格显式地形高度 patch 到 critic 观测”的阶段。
++- 已为 critic 显式地形高度 patch 新增一套可选方案：
++  - 保留原有 `body_single`
++  - 新增 `three_body_separate`
++  - 该新方案会分别以前车 / 中车 / 后车质心为原点，并按各自 yaw 旋转各自 patch，最后按 `head -> body -> tail` 顺序拼接进 critic
+ - 已完成一次 Zotero 文献库维护：
+   - `核心参考-RL、Sim-to-Real` 集合中，已把 `docs/literature/` 内能匹配到的本地 PDF 补挂回缺失条目。
+ - 已完成一轮 goal-conditioned 主线接线：
+   - 命令空间已从速度命令切换为目标位姿命令
+   - 动作空间已从仅球铰 `6` 维扩成 `球铰 + 轮速` 共 `12` 维
+   - 观测中的命令项已切换为车体系下的 `[x_rel, y_rel, psi_rel]`
++- 已完成一轮 wheel contact sensor 启动链路修复：
++  - 用户已在 `USD/complete_car.usd` 的 6 个轮子刚体根节点补入 `Contact Report API`
++  - runtime 手动创建的传感器已显式解析 `{ENV_REGEX_NS}`
++  - wheel contact sensor 的实际 prim 路径已修正为：
++    - `{ENV_REGEX_NS}/Robot/complete_car_alternative/(6 个 wheel body)`
++  - `env.py` 中整车重量缓存已显式放到 `env device`
++  - `Stage0` 已再次通过真实 GPU 最小训练验证，并完成 1 次 learning iteration
+ 
+ ## 当前 RL 主线位置
+ - 当前活跃 RL 工作区：
+@@ -80,6 +91,23 @@
+ ## 本轮已确认
+ - 已新增本地文献补挂脚本：
+   - `scripts/literature/attach_local_pdfs_to_zotero_collection.py`
++- 已完成一轮 wheel contact sensor 启动修复验证：
++  - 当前 `complete_car.usd` 中以下 6 个 wheel body 根节点已确认带有 `Contact Report API`：
++    - `body_car_wheel_left`
++    - `body_car_wheel_right`
++    - `head_car_wheel_left`
++    - `head_car_wheel_right`
++    - `tail_car_wheel_left`
++    - `tail_car_wheel_right`
++  - `sensors/sensor_cfg.py` 已补充 runtime 侧 `{ENV_REGEX_NS}` 解析
++  - `ContactSensorCfg.prim_path` 已改为显式绑定：
++    - `{ENV_REGEX_NS}/Robot/complete_car_alternative/(body_car_wheel_left|...|tail_car_wheel_right)`
++  - `base/env.py` 已修正：
++    - `_total_vehicle_weight` 强制放到 `self.device`
++  - 当前真实验证命令：
++    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 1 --max_iterations 1`
++  - 已通过的 run：
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-44-35`
+ - 已完成当前 direct workflow 命令 / 动作主线重构：
+   - `CommandCfg.num_commands` 已由 `2` 改为 `3`
+   - 新命令语义为目标全局位姿：
+@@ -162,6 +190,20 @@
+ - 当前 `RL_Training/` 下全部 Python 文件已通过：
+   - `python3 -m py_compile $(find RL_Training -name '*.py' | sort)`
+ - 最近已补充 `base/complete_car_cfg.py` 中 `CommandCfg` 与 `ControlCfg` 的中文工程注释，便于后续阅读配置语义与单位。
++- 最近已完成 critic 显式高度 patch 方案扩展：
++  - `terrain.height_patch_scheme` 当前支持：
++    - `body_single`
++    - `three_body_separate`
++  - 默认仍为：
++    - `body_single`
++  - `three_body_separate` 下：
++    - patch 采样点仍复用同一套单 patch 局部网格
++    - 参考点改为前 / 中 / 后三节车体各自质心
++    - 每份 patch 分别跟随各自车体 yaw 旋转
++    - 最终按 `head -> body -> tail` 顺序展平拼接后送入 critic
++  - `terrain.get_num_height_points()` 已按方案自动返回：
++    - 单 patch 点数
++    - 或三份 patch 拼接后的总点数
+ - 最近已完成 terrain curriculum 重构：
+   - 参数入口改为 `CurriculumCfg`
+   - env 在 `_setup_scene()` / `_reset_idx()` 中调用 `mdp/curriculum.py`
+diff --git a/logs/daily_work_log.md b/logs/daily_work_log.md
+index bb32296..cec9282 100644
+--- a/logs/daily_work_log.md
++++ b/logs/daily_work_log.md
+@@ -2,6 +2,36 @@
+ 
+ ## 2026-04-15
+ 
++已完成：
++- 为当前 critic 显式地形高度 patch 新增一套可选的三车独立方案。
++- 保留原有：
++  - `terrain.height_patch_scheme = "body_single"`
++- 新增：
++  - `terrain.height_patch_scheme = "three_body_separate"`
++- 在新方案下：
++  - 分别以前车 / 中车 / 后车的质心为 patch 原点
++  - 三份 patch 分别跟随各自车体 yaw 旋转
++  - 三份 patch 按 `head -> body -> tail` 顺序展平后拼接进 critic 观测
++  - 每份 patch 的高度值相对各自车体质心高度计算
++- 已同步让：
++  - `terrain.get_num_height_points()`
++  按当前方案自动返回单 patch 或三 patch 拼接后的总维度
++- 使用：
++  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
++  完成静态编译检查，检查通过。
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 critic 显式高度 patch 已支持“中车单 patch”和“前中后三 patch 拼接”两套方案。
++- 默认行为仍保持原方案不变；如需启用新方案，只需在配置里切到：
++  - `terrain.height_patch_scheme = "three_body_separate"`
++
+ 已完成：
+ - 对当前三节关节小车 direct workflow 做了一轮 goal-conditioned 主线重构。
+ - 当前命令空间已从速度命令改为目标位姿命令：
+@@ -123,6 +153,34 @@
+ - 当前课题第一轮核心英文参考文献池已经落入 Zotero 主集合，后续继续做 cited-by 扩展、批注、读书笔记时可以直接从该集合接续。
+ - 若后续需要完整 PDF，仍需针对未自动附加的 5 篇做单篇补抓。
+ 
++已完成：
++- 重新检查 `USD/complete_car.usd` 的 6 个轮子刚体根节点，确认用户已手动补入 `Contact Report API`。
++- 修改 `sensors/sensor_cfg.py`：
++  - 为 runtime 手动创建的传感器补上 `{ENV_REGEX_NS}` 显式解析
++  - 将 wheel contact sensor 的 prim 路径修正为：
++    - `{ENV_REGEX_NS}/Robot/complete_car_alternative/(body_car_wheel_left|...|tail_car_wheel_right)`
++- 修改 `base/env.py`：
++  - 将 `_total_vehicle_weight` 显式放到 `self.device`
++  - 修复轮地法向接触力归一化时的 CPU / CUDA 设备不一致问题
++- 使用以下命令完成真实 GPU 最小训练验证：
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 1 --max_iterations 1`
++- 本轮验证通过的 run：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-44-35`
++
++修改文件：
++- `USD/complete_car.usd`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 wheel contact sensor 启动链路已经打通，不再报：
++  - prim path 非全局
++  - 找不到带 contact reporter API 的 body
++- 当前最小训练脚本已在真实 GPU 环境下完成 1 次 learning iteration。
++
+ ## 2026-04-13
+ 
+ 已完成：

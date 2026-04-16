@@ -1,0 +1,89 @@
+--- git commit ---
+fd8860716ca6509cb178ccc74db096325e394b79
+
+
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+	modified:   USD/complete_car.usd
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-44-35/
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+index c1dee53..0c4aca8 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+@@ -45,7 +45,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
+         self._head_car_body_id = self._head_car_body_id[0]
+         self._tail_car_body_id = self._tail_car_body_id[0]
+         gravity_magnitude = abs(float(self.cfg.sim.gravity[2]))
+-        self._total_vehicle_weight = self.robot.data.default_mass.sum(dim=1, keepdim=True) * gravity_magnitude
++        self._total_vehicle_weight = (
++            self.robot.data.default_mass.sum(dim=1, keepdim=True).to(device=self.device) * gravity_magnitude
++        )
+ 
+         self.actions = torch.zeros((self.num_envs, self.cfg.action_space), device=self.device)
+         self.last_actions = torch.zeros_like(self.actions)
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+index 93411e9..02cfc11 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+@@ -13,6 +13,12 @@ from .lidar import LidarSensorAdapter, LidarSensorCfg
+ from .stereo_camera import StereoCameraAdapter, StereoCameraSensorCfg
+ 
+ 
++def _resolve_env_regex_ns(prim_path: str, scene) -> str:
++    """Resolve Isaac Lab's environment namespace placeholder for manually-built sensors."""
++
++    return prim_path.format(ENV_REGEX_NS=scene.env_regex_ns)
++
++
+ @configclass
+ class CompleteCarSensorSuiteCfg:
+     """集中描述 Stage0/1/2 需要绑定的传感器集合。"""
+@@ -61,17 +67,25 @@ class CompleteCarSensorSuiteRuntime:
+         self._raw_output: dict[str, torch.Tensor | dict[str, torch.Tensor]] = {}
+ 
+     def build_scene_entities(self, scene) -> None:
++        self.cfg.imu.prim_path = _resolve_env_regex_ns(self.cfg.imu.prim_path, scene)
++        self.cfg.stereo_camera.prim_path = _resolve_env_regex_ns(self.cfg.stereo_camera.prim_path, scene)
++        self.cfg.lidar.prim_path = _resolve_env_regex_ns(self.cfg.lidar.prim_path, scene)
++        self.terrain_cfg.height_scanner_prim_path = _resolve_env_regex_ns(self.terrain_cfg.height_scanner_prim_path, scene)
++
+         self.imu.build(scene)
+         self.stereo_camera.build(scene)
+         self.lidar.build(scene)
+ 
+         self.wheel_contact_sensor = ContactSensor(
+             ContactSensorCfg(
+-                prim_path=(
+-                    "{ENV_REGEX_NS}/Robot/"
+-                    "(body_car_wheel_left|body_car_wheel_right|"
+-                    "head_car_wheel_left|head_car_wheel_right|"
+-                    "tail_car_wheel_left|tail_car_wheel_right)"
++                prim_path=_resolve_env_regex_ns(
++                    (
++                        "{ENV_REGEX_NS}/Robot/complete_car_alternative/"
++                        "(body_car_wheel_left|body_car_wheel_right|"
++                        "head_car_wheel_left|head_car_wheel_right|"
++                        "tail_car_wheel_left|tail_car_wheel_right)"
++                    ),
++                    scene,
+                 ),
+                 update_period=0.0,
+                 history_length=1,
+diff --git a/USD/complete_car.usd b/USD/complete_car.usd
+index 3456010..d419faa 100644
+Binary files a/USD/complete_car.usd and b/USD/complete_car.usd differ

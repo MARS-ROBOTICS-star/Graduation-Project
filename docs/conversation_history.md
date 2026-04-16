@@ -2,7 +2,715 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-16
+
+### Sparse-zero TensorBoard termination tags are now suppressed, and run `2026-04-16_13-20-05` has already been rewritten to remove the empty cards
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - the active TensorBoard logging path now treats these reset-reason tags as sparse-zero diagnostics:
+    - `Termination/terminated_rate`
+    - `Termination/bad_orientation_rate`
+    - `Termination/ball_joint_limit_rate`
+  - if one of these tags stays exactly `0` for the whole run, it is no longer written into TensorBoard at all
+  - if one of these tags later becomes non-zero during training, the logger flushes its buffered history and the tag reappears with the full timeline
+  - the existing run:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-16_13-20-05`
+    has already had its event file rewritten
+  - after pruning, this run keeps only:
+    - `Termination/00_time_out_rate`
+  - the original event file is preserved at:
+    - `tensorboard_export/original_events/events.out.tfevents.1776316811.ubuntu22.20391.0`
+- Reason:
+  - the user wanted TensorBoard to stop showing empty termination cards that carried no diagnostic signal
+  - in this run, the three removed tags were constant-zero from start to finish, so they only occupied space without adding information
+- Impact:
+  - future new runs should no longer show blank cards for all-zero reset reasons
+  - old runs remain comparable only if you remember that some runs may still contain those zero-only tags while newer cleaned runs do not
+  - when retroactively cleaning an old run, use:
+    - `python RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py --run_dir <run_dir> --prune-sparse-zero-tags`
+- Status:
+  - implemented
+  - validated on a temporary copy before rewriting the real run
+
+### Short-distance multi-goal Stage0 run `2026-04-16_13-20-05` improved survival and posture, but reward became bonus-dominated while critic value loss stayed persistently high
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-16_13-20-05`
+- Durable diagnosis:
+  - with the new Stage0 task bundle:
+    - `episode_length_s = 16.0`
+    - `resampling_time = 5.3`
+    - `goal_distance = 3.0`
+    - `goal_direction_max_deg = 30.0`
+    - `goal_heading_delta_max_deg = 12.0`
+  - the rollout reached full survival:
+    - `Train/mean_episode_length = 959 / 959`
+    - `Termination/time_out_rate = 1.0`
+  - posture and load support improved markedly versus the previous 20 m one-goal run:
+    - `tilt_deg ≈ 6.6°`
+    - `wheel_normal_contact_force_sum_raw ≈ 0.94`
+  - however the new main problems are:
+    - `Reward/progress` near zero at the end, and negative on the last-10 average
+    - total reward is now largely driven by `target_bonus`
+    - longitudinal slip remains high:
+      - `wheel_longitudinal_slip_abs_mean_raw ≈ 0.85`
+    - lateral slip is still high:
+      - `wheel_slip_angle_abs_mean_raw ≈ 0.70 rad`
+    - critic instability is no longer a brief spike but a sustained late-stage issue:
+      - `Loss/value last ≈ 21`
+      - `Loss/value last10 ≈ 24`
+- Reason:
+  - the shorter repeated-goal task removed the previous speed-pressure bottleneck, so the policy became much more conservative in posture
+  - but the return structure is now sparse/bonus-heavy enough that the actor can survive and occasionally collect target bonuses without learning strong continuous progress
+- Impact:
+  - future Stage0 iteration should not read this run as “fully solved”
+  - the next priorities should move to:
+    - reduce bonus dominance in the return
+    - strengthen sustained progress learning
+    - keep the improved posture regime
+    - continue working on traction quality
+- Status:
+  - diagnosed
+  - should guide the next Stage0 reward/task iteration
+
+### Quick real-GPU run `2026-04-16_13-36-23_goaldist12_v1` showed that restoring `goal_distance = 12.0` immediately pushes Stage0 back toward progress-chasing with poor traction quality
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-16_13-36-23_goaldist12_v1`
+- Durable diagnosis:
+  - the run was intentionally stopped early at `iteration 13/300` because the trend was already clear
+  - positive signal:
+    - `Reward/progress` recovered quickly to about `0.56`
+    - `goal_pos_error` moved from about `12.0` to `10.6`
+  - dominant problem:
+    - effective progress stayed tiny:
+      - `Reward/gated_progress ≈ 0.008`
+    - slip gates remained near the floor:
+      - `longitudinal_slip_gate ≈ 0.011`
+      - `lateral_slip_gate ≈ 0.192`
+    - traction quality stayed poor:
+      - `wheel_longitudinal_slip_abs_mean_raw ≈ 0.852`
+      - `wheel_slip_angle_abs_mean_raw ≈ 0.692`
+  - interpretation:
+    - a 12 m target restores strong incentive for forward progress
+    - but under the current reward/task structure, that incentive again points the policy toward progress-chasing before traction quality is solved
+- Impact:
+  - `goal_distance = 12.0` should currently be treated as a stress-test setting, not as evidence that the task design problem is solved
+  - future Stage0 task tuning must balance:
+    - enough distance to avoid bonus-dominance
+    - but not so much distance that the policy immediately returns to high-slip progress-seeking
+- Status:
+  - diagnosed from early-run evidence
+  - no need to continue this exact run to 300 iterations
+
+### Stage0 active tunables are now centralized in `complete_car_stage0_cfg.py`, and the goal-command timer is no longer forcibly aligned to episode length
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, Stage0 should no longer depend on the base template file for day-to-day parameter tuning
+  - the active Stage0 tunables are now explicitly concentrated in:
+    - `baseline/complete_car_stage0_cfg.py`
+  - `CommandCfg` now includes:
+    - `goal_heading_delta_max_deg`
+  - `CompleteCarEnvCfg.__post_init__()` no longer overwrites:
+    - `commands.resampling_time = episode_length_s`
+- Stage0 active command bundle:
+  - `episode_length_s = 16.0`
+  - `resampling_time = 5.3`
+  - `goal_distance = 3.0`
+  - `goal_direction_max_deg = 30.0`
+  - `goal_heading_delta_max_deg = 12.0`
+- Reason:
+  - the user decided that Stage0 should train a shorter-range, repeated-goal flat-ground motion task instead of the previous one-goal-per-episode 20 m navigation setup
+  - the base cfg should remain a template, while Stage0 tuning should happen in the Stage0 file directly
+- Impact:
+  - future Stage0 tuning should primarily edit:
+    - `baseline/complete_car_stage0_cfg.py`
+  - future command interpretation must use the explicit heading-delta range from config instead of assuming:
+    - `goal_heading_delta_max_deg = goal_direction_max_deg / 2`
+  - Stage0 now supports mid-episode command resampling again, so command-timing analysis must no longer assume one fixed goal per episode
+- Status:
+  - implemented
+  - static compile check pending this session's final verification
+
+### TensorBoard command traces now log `env_0` only, and the active step-metric set no longer includes the old velocity-error pair or the current `base_lin_vel_x/base_ang_vel_yaw` scalars
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active TensorBoard `Command/*` scalars no longer aggregate across all environments
+  - the active command traces are now anchored to:
+    - `env_0`
+  - by user request, the active step-metric set no longer logs:
+    - `Observation/base_lin_vel_x_raw`
+    - `Observation/base_ang_vel_yaw_raw`
+  - the older command-velocity mainline metrics:
+    - `Tracking/ang_vel_yaw_abs_error`
+    - `Tracking/lin_vel_x_abs_error`
+    are already absent from the active goal-conditioned Stage0 code path and should be treated as historical-only when reviewing old runs
+- Reason:
+  - the user wanted command curves to reflect one concrete environment trajectory instead of a cross-env average
+  - the user also wanted the TensorBoard view trimmed by removing the specified velocity-related outputs
+- Impact:
+  - future TensorBoard interpretation must distinguish:
+    - new runs: `Command/*` = `env_0` only
+    - old runs: `Command/*` may still reflect cross-env averaging
+  - old and new runs are therefore not directly comparable on command traces without accounting for this logging-rule change
+- Status:
+  - targeted `py_compile` passed for `base/env.py`
+
+### TensorBoard termination traces now use the former reset-level definition under the `Termination/*` names, and `episode_reset/*` is removed from the active logging surface
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active TensorBoard `Termination/*` series no longer come from step-level averages in `_collect_step_metrics()`
+  - the retained `Termination/*` series now come from `_collect_episode_logs(...)` at reset time, i.e. the same statistics that were previously exposed as:
+    - `episode_reset/terminated_rate`
+    - `episode_reset/time_out_rate`
+    - `episode_reset/bad_orientation_rate`
+    - `episode_reset/ball_joint_limit_rate`
+  - the `episode_reset/*` namespace is removed from the active logging surface
+- Reason:
+  - the user wanted only one termination view in TensorBoard and wanted that view to match the more intuitive reset-level interpretation
+- Impact:
+  - future TensorBoard reading must interpret `Termination/*` as:
+    - among the envs being reset now, what fraction ended for each reason
+  - old runs and new runs are no longer directly comparable on `Termination/*` without accounting for this logging-rule change
+- Status:
+  - targeted `py_compile` passed for `base/env.py`
+
+### `Observation/wheel_normal_contact_force_abs_mean_raw` is removed from the active TensorBoard surface, while `wheel_normal_contact_force_sum_raw` is kept as the more informative load-loss indicator
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active TensorBoard no longer logs:
+    - `Observation/wheel_normal_contact_force_abs_mean_raw`
+  - the active load-related observation metric retained in TensorBoard is:
+    - `Observation/wheel_normal_contact_force_sum_raw`
+- Reason:
+  - the sum metric is more directly useful for diagnosing whether the vehicle is losing total normal support, while the removed mean metric added little extra value in the current workflow
+- Impact:
+  - future run comparisons should use:
+    - `wheel_normal_contact_force_sum_raw`
+    - `Reward/force_gate`
+    together when diagnosing load-distribution and partial wheel-unloading issues
+- Status:
+  - targeted `py_compile` passed for `base/env.py`
+
+### TensorBoard now surfaces the highest-signal charts first within each namespace, and the training console only prints the high-frequency diagnostic subset
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active training console no longer prints the full scalar surface
+  - the console now keeps only the high-frequency diagnostic subset, centered on:
+    - `Reward/gated_progress`
+    - `Reward/progress`
+    - slip / force / smoothness gates
+    - `Tracking/goal_pos_error`
+    - `Tracking/goal_yaw_error_abs`
+    - key `Observation/*`
+    - `Action/policy_abs_mean`
+    - `Action/policy_std`
+    - `Termination/*`
+  - lower-priority or redundant metrics are still allowed to exist in TensorBoard, but they no longer flood the terminal log
+  - by user request, the active TensorBoard tag names now add sortable numeric prefixes to the highest-signal curves so they appear first inside each namespace
+  - examples:
+    - `Observation/00_wheel_longitudinal_slip_abs_mean_raw`
+    - `Reward/00_gated_progress`
+    - `Tracking/00_goal_pos_error`
+    - `Loss/00_value`
+- Reason:
+  - the user wanted post-run diagnosis to focus on the metrics that materially guide Stage0 iteration, instead of repeatedly scanning duplicated or low-signal charts
+- Impact:
+  - future new runs will no longer be directly tag-name compatible with old runs for the reordered prefixed tags
+  - when comparing old and new runs, treat the new prefixed names as the same physical metrics under a different display-oriented tag
+- Status:
+  - targeted `py_compile` passed for `rsl_rl/utils/logger.py`
+
+### Full Stage0 run `2026-04-16_10-12-26` confirms survival/progress learning, but the active bottleneck has shifted to traction quality, lateral drift, and load distribution
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - the fully completed run is:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-16_10-12-26`
+  - this run is not a startup failure and not an unhealthy-rollout case
+  - end-of-run signals around `iteration 299/300` are:
+    - `Train/mean_reward ≈ 55.87`
+    - `Train/mean_episode_length ≈ 903 / 959`
+    - `Tracking/goal_pos_error ≈ 7.96 m`
+    - `Observation/base_lin_vel_x_raw ≈ 1.28 m/s`
+    - `Observation/wheel_longitudinal_slip_abs_mean_raw ≈ 0.864`
+    - `Observation/wheel_slip_angle_abs_mean_raw ≈ 0.803 rad`
+    - `Observation/tilt_deg ≈ 19.89°`
+    - `Reward/longitudinal_slip_gate ≈ 0.0099`
+    - `Reward/lateral_slip_gate ≈ 0.145`
+    - `Reward/force_gate ≈ 0.288`
+  - termination health is already good:
+    - `bad_orientation_rate = 0`
+    - `ball_joint_limit_rate ≈ 0`
+    - episode resets are dominated by timeout
+  - critic stability is improved relative to the earlier unstable baseline, but not fully solved:
+    - `Loss/value` returns to about `0.07` by the end
+    - however, a transient spike still appears around `iteration 148 ~ 157`, with peaks in the `O(10^2 ~ 10^3)` range
+  - the correct interpretation is:
+    - the policy already knows how to survive and move toward the goal
+    - but it still does so with poor wheel-ground traction quality
+    - lateral drift and load distribution are now more important than further suppressing ball-joint motion
+- Reason:
+  - the smoothed slip-gate plus `wheel_action_rate_gate` bundle keeps training alive and maintains progress
+  - but the end-of-run traction indicators remain too poor for Stage0 to be considered mechanically clean
+- Impact:
+  - future Stage0 tuning should prioritize:
+    - wheel-speed output structure
+    - lateral-slip suppression
+    - wheel-ground normal-load distribution
+  - future Stage0 tuning should not default to another round of simply lowering PPO aggressiveness or further shrinking ball-joint freedom
+- Status:
+  - offline TensorBoard export completed for this run
+  - the run has become the latest full-length diagnostic reference
+  - the older short run
+    - `2026-04-15_22-45-26_wheel_action_smooth_v1`
+    remains the better short-horizon reference for lower slip, but not a full-length replacement
+
 ## 2026-04-15
+
+### `wheel_action_rate_gate` should be kept in the active Stage0 default, while `lateral_speed_gate` and extra lateral-slip prioritization should not
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable diagnosis conclusion:
+  - after the slip-gate reshaping was kept, three follow-up reward directions were tested:
+    - add `wheel_action_rate_gate`
+    - add `lateral_speed_gate`
+    - multiply `lateral_slip_gate` once more outside `composite_gate`
+  - the short run:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-45-26_wheel_action_smooth_v1`
+    is the best outcome among this batch and should be treated as the active default reference
+  - at roughly `iteration 39/40`, that run reaches about:
+    - `wheel_longitudinal_slip_abs_mean_raw ≈ 0.8145`
+    - `wheel_slip_angle_abs_mean_raw ≈ 0.7318`
+    - `base_lin_vel_x_raw ≈ 1.3777`
+    - `Loss/value ≈ 0.027`
+  - the `lateral_speed_gate` experiment:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-48-41_lateral_speed_gate_v1`
+    is rejected
+  - reason:
+    - it makes critic behavior look good, but compared with `wheel_action_smooth_v1` it does not improve the actual traction objective enough
+    - by `iteration 39/40`, it is still around:
+      - `wheel_longitudinal_slip_abs_mean_raw ≈ 0.8336`
+      - `wheel_slip_angle_abs_mean_raw ≈ 0.7281`
+      - `base_lin_vel_x_raw ≈ 1.3125`
+  - the extra lateral-slip-priority experiment:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-50-45_lateral_slip_priority_v1`
+    looks promising only in the very early short run
+  - but the longer confirmation run:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-52-30_lateral_slip_priority_v1_iter300`
+    shows the real issue
+  - that long run was observed until about `iteration 143/300`, then stopped manually because the trend was already clear:
+    - critic stays very stable, around `Loss/value ≈ 0.001 ~ 0.002`
+    - but the policy still drifts back into the aggressive regime:
+      - `base_lin_vel_x_raw ≈ 1.62 ~ 1.65`
+      - `wheel_longitudinal_slip_abs_mean_raw ≈ 0.816 ~ 0.819`
+      - `wheel_slip_angle_abs_mean_raw ≈ 0.733 ~ 0.735`
+      - `tilt_deg ≈ 16.4 ~ 16.7`
+  - therefore the durable default is:
+    - keep `wheel_action_rate_gate`
+    - keep the smoothed slip gates
+    - keep the Stage0 stability-first actuator / PPO bundle
+    - do not keep `lateral_speed_gate`
+    - do not keep the extra outer multiplication by `lateral_slip_gate`
+  - also keep the added metric:
+    - `Observation/base_lin_vel_y_raw`
+- Impact:
+  - the current best Stage0 default is now:
+    - stability-first 300-iteration bundle
+    - smoothed longitudinal/lateral slip gates
+    - `wheel_action_rate_gate`
+  - future side-slip work should move away from piling more multiplicative gates on top of the same reward and should instead target a more structural source of lateral drift
+- Status:
+  - the rejected reward experiments have been rolled back from the active code
+  - the active code is back to the `wheel_action_rate_gate` default line
+
+### Stage0 default tuning is now shifted to a stability-first 300-iteration configuration, and actuator overrides after `super().__post_init__()` must rebuild the robot cfg
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - after diagnosing run `complete_car_stage0/2026-04-15_21-35-52`, the user-selected optimization priority became:
+    - lower longitudinal slip
+    - lower lateral slip
+    - lower vertical bounce
+    - smoother ball-joint motion
+    - then critic stability
+  - the active Stage0 PPO default is now:
+    - `max_iterations = 300`
+    - `save_interval = 100`
+    - actor `init_std = 0.35`
+    - `learning_rate = 2.0e-4`
+    - `num_learning_epochs = 4`
+    - `entropy_coef = 0.002`
+    - `desired_kl = 0.008`
+    - `value_loss_coef = 0.7`
+    - `max_grad_norm = 0.7`
+  - the active Stage0 environment-side tuning now includes:
+    - tighter ball-joint action range:
+      - lower `(-0.56, -1.30, -0.35, -0.56, -1.30, -0.35)`
+      - upper `(0.56, 0.40, 0.35, 0.56, 0.40, 0.35)`
+    - higher ball-joint damping:
+      - `20.0`
+    - lower ball-joint velocity limit:
+      - `0.8 rad/s`
+    - lower wheel velocity limit:
+      - `12.0 rad/s`
+    - PhysX velocity solve strengthened:
+      - `max_velocity_iteration_count = 1`
+      - `enable_external_forces_every_iteration = True`
+    - Stage0 reward now adds two new multiplicative gates:
+      - `vertical_speed_gate`
+      - `ball_joint_speed_gate`
+    - the active gated progress is now:
+      - `progress * roll_gate * speed_gate * force_gate * vertical_speed_gate * ball_joint_speed_gate * composite_gate`
+  - engineering caveat validated in this round:
+    - `CompleteCarEnvCfg.__post_init__()` rebuilds `self.robot` near the end
+    - therefore any stage cfg that overrides actuator-related `control` values after `super().__post_init__()` must rebuild:
+      - `self.robot = build_complete_car_robot_cfg(self.control, self.resets)`
+    - otherwise the spawned articulation silently keeps the old base actuator damping / velocity limits
+  - the latest real-GPU smoke validation run is:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-26-28`
+  - that run confirms:
+    - training startup passes
+    - `Learning iteration 0/1` completes
+    - articulation logs now show the intended Stage0 actuator values:
+      - ball-joint damping `20.0`
+      - ball-joint velocity limit `0.8`
+      - wheel velocity limit `12.0`
+- Reason:
+  - the user explicitly chose a stability-first tuning direction instead of a speed-first one
+  - the first smoke run revealed that part of the intended actuator tuning had not actually reached PhysX because the robot cfg had already been built in the base class
+- Impact:
+  - future Stage0 tuning should treat this 300-iteration stability-first bundle as the new default starting point
+  - future stage-specific actuator tuning must always verify the articulation log instead of assuming cfg edits propagated automatically
+- Status:
+  - targeted `python3 -m py_compile` checks passed
+  - real GPU smoke validation passed
+  - the next useful step is a full 300-iteration run and a fresh slip / stability / critic diagnosis against the previous `21-35-52` baseline
+
+### Mid-run validation of `2026-04-15_22-29-47_stability_v1_iter300` shows the new Stage0 bundle fixes smoothness/critic first, but not wheel slip
+- Updated:
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable diagnosis conclusion:
+  - the run directory is:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-29-47_stability_v1_iter300`
+  - this run was intentionally stopped around `iteration 85/300` because the trend was already clear enough for tuning decisions
+  - confirmed improvements relative to the earlier high-slip baseline:
+    - `Mean value loss` stays around `0.13 ~ 0.18` instead of blowing up into the previous very-large-value regime
+    - `Observation/ball_joint_vel_abs_mean_raw` stays around `0.43 ~ 0.45`, materially lower than the old late-run level near `0.8`
+    - `Reward/vertical_speed_gate` stays around `0.92 ~ 0.93`
+    - `Termination/bad_orientation_rate` remains `0`
+    - `Termination/ball_joint_limit_rate` remains `0`
+  - remaining failure mode is still wheel-ground traction quality:
+    - `Observation/wheel_longitudinal_slip_abs_mean_raw` remains around `0.81 ~ 0.87`
+    - `Observation/wheel_slip_angle_abs_mean_raw` remains around `0.64 ~ 0.75 rad`
+    - `Reward/longitudinal_slip_gate` stays near `0`
+    - `Reward/lateral_slip_gate` also stays near `0`
+  - the correct interpretation is:
+    - the new Stage0 bundle successfully stabilizes critic behavior and articulation/body smoothness
+    - but it does not yet solve the actual traction problem
+- Impact:
+  - next tuning should move away from further ball-joint suppression and focus on:
+    - wheel speed command range / mapping
+    - slip penalty structure
+    - wheel-action smoothness or delta limits
+- Status:
+  - no new startup blocker found
+  - run stopped manually after sufficient mid-run evidence was collected
+
+### Stage0 slip gates have been reshaped to avoid early saturation, and this works better than simply lowering the wheel-speed cap
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable diagnosis conclusion:
+  - two follow-up directions were tested after the stability-first bundle:
+    - lower wheel-speed cap to `8.5 rad/s`
+    - reshape the slip gates so they no longer collapse to near-zero immediately
+  - the wheel-cap-only run:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-37-02_slip_cap85_v1`
+    showed that reducing the wheel limit by itself lowers wheel speed, but also suppresses early progress and does not solve longitudinal slip well enough
+  - that wheel-cap-only direction is therefore rejected as the new default
+  - the active slip-gate update changes:
+    - longitudinal slip gate:
+      - from per-wheel Gaussian product
+      - to `exp(-mean(abs(longitudinal_slip)) / scale)`
+    - lateral slip gate:
+      - from hard-clipped cosine product
+      - to `exp(-mean(abs(slip_angle)) / (pi / lateral_slip_gain))`
+  - the short validation run:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-39-33_slip_gate_v1`
+    confirms this does what was intended:
+    - both slip gates remain non-zero and therefore provide usable reward signal
+    - by `iteration 39/40`, the run reaches roughly:
+      - `Observation/wheel_longitudinal_slip_abs_mean_raw ≈ 0.821`
+      - `Observation/base_lin_vel_x_raw ≈ 1.17`
+      - `Loss/value ≈ 0.15`
+    - compared with the earlier stability-first early-stage rollout, this is a better tradeoff:
+      - more forward progress
+      - lower longitudinal slip
+      - critic still stable
+    - however the lateral slip problem remains:
+      - `Observation/wheel_slip_angle_abs_mean_raw` is still around `0.72 rad`
+- Impact:
+  - keep the slip-gate reshaping in the active Stage0 default
+  - do not keep the `8.5 rad/s` wheel-cap-only experiment as default
+  - next traction work should target lateral slip shaping or wheel-action smoothness, not another blind wheel-cap reduction
+- Status:
+  - targeted `python3 -m py_compile` passed
+  - real GPU `0/1` startup passed
+  - real GPU `40`-iteration validation passed
+
+### Diagnosed run `complete_car_stage0/2026-04-15_21-35-52` shows strong survival/progress learning but persistent high slip and critic instability
+- Updated:
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable diagnosis conclusion:
+  - the run directory is:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-35-52`
+  - this run is not a startup failure and not a simple unhealthy-rollout case
+  - it reaches clear survival improvement:
+    - `Train/mean_episode_length` rises to about `941 / 959`
+    - `bad_orientation` stays at zero
+  - it also reaches clear task-progress improvement:
+    - `Train/mean_reward` rises to about `247`
+    - `Tracking/goal_pos_error` drops from about `20 m` to about `8.75 m`
+    - `Reward/progress` becomes clearly positive
+    - `Reward/target_bonus` becomes non-zero
+  - however, the policy remains traction-poor:
+    - `wheel_longitudinal_slip_abs_mean_raw` stays around `0.89`
+    - `wheel_slip_angle_abs_mean_raw` stays around `0.73 rad`
+    - the corresponding slip gates remain near zero
+  - the action style remains aggressive:
+    - `Action/policy_abs_mean` settles near `0.60`
+    - late-episode `ball_joint_limit` resets rise materially
+  - the critic is the main numerical weak point:
+    - `Loss/value` grows to very large values while policy std remains stable
+  - the correct interpretation is:
+    - the current policy has learned to survive and move toward the goal
+    - but it is still doing so with poor wheel-ground traction quality and an unstable value function
+- Impact:
+  - future tuning after this run should prioritize:
+    - slip-related behavior
+    - joint-limit pressure
+    - critic/value-loss stabilization
+- Status:
+  - offline TensorBoard export completed
+  - no new startup blocker found in the simulator log
+
+### `play.py` now resolves `--load_run` robustly from run names, experiment-prefixed paths, or absolute run directories
+- Updated:
+  - `RL_Training/scripts/play.py`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the replay entry no longer assumes `--load_run` is only a bare run directory name
+  - it now accepts all of these forms:
+    - `2026-04-15_21-35-52`
+    - `complete_car_stage0/2026-04-15_21-35-52`
+    - an absolute path pointing to the run directory
+  - when a direct existing run directory is detected, the script resolves checkpoints from that directory's parent plus basename instead of passing the raw string unchanged into Isaac Lab's `get_checkpoint_path()`
+  - this fixes the previous failure mode:
+    - `ValueError: No runs present in the directory ... match ...`
+    when users passed `--load_run` with the experiment-name prefix included
+- Reason:
+  - the user attempted replay with:
+    - `--load_run complete_car_stage0/2026-04-15_21-35-52`
+    and the run directory plus checkpoints did exist, but `play.py` forwarded the selector in a form Isaac Lab did not interpret correctly under the current `log_root_path`
+- Impact:
+  - future replay commands can use either the bare timestamp run name or the experiment-prefixed relative path without additional manual normalization
+  - if replay still fails after this fix, checkpoint lookup is no longer the first suspect; environment/runtime issues should be checked next
+- Status:
+  - targeted `python3 -m py_compile RL_Training/scripts/play.py` check passed
+  - real replay launch verified that checkpoint parsing now succeeds and proceeds into Isaac Sim startup
+  - the current machine then failed later because no CUDA GPU was available, which is a separate runtime issue
+
+### The active critic terrain-height patch path lives in `env._compute_critic_height_patch`, and the old `height_scanner.get_height_features()` path has been removed
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the active explicit terrain-height patch used by critic is computed in:
+    - `base/env.py::_compute_critic_height_patch()`
+  - this path:
+    - starts from the middle-body local patch grid
+    - rotates it by the middle-body yaw
+    - samples terrain height from `terrain_runtime.height_field_raw`
+    - concatenates the resulting relative heights into critic observation
+  - the old sensor-side helper:
+    - `sensors/sensor_cfg.py::get_height_features()`
+    has been removed
+  - reason it was removable:
+    - current Stage0 / Stage1 / Stage2 all set `enable_height_scanner = False`
+    - its return value was not consumed by actor or critic observation assembly
+- Reason:
+  - the user explicitly asked where the real patch logic lives and required deleting the pasted code if it was unused
+- Impact:
+  - future terrain-patch modifications should go to `base/env.py::_compute_critic_height_patch()` rather than reviving the deleted height-scanner helper by mistake
+- Status:
+  - targeted `python3 -m py_compile` check passed for the modified direct-workflow files
+
+### Goal-command resampling is now fixed to one target per episode in the active direct-workflow mainline
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the active command trunk no longer resamples target goals inside an episode by default
+  - `commands.resampling_time` is now aligned to `episode_length_s` during env-cfg assembly
+  - the env-side timer-based resampling path is now gated so it only runs when:
+    - `resampling_time < episode_length_s`
+  - therefore the current active behavior is:
+    - sample one goal at reset
+    - keep that goal fixed for the entire episode
+- Reason:
+  - the user explicitly required changing the target resampling behavior so each episode contains only one goal before further curriculum work
+- Impact:
+  - future curriculum design should treat episode outcome as corresponding to one single target by default
+  - future mixed-terrain success/failure logic can now be tied directly to per-episode goal completion without handling multiple goal switches inside one episode
+- Status:
+  - targeted `python3 -m py_compile` check passed for the modified direct-workflow files
+
+### Strict wheel normal-force reconstruction now uses detailed contact-point normals with the exact ground collider filter
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the active wheel normal-force implementation no longer stops at the PhysX aggregated net-force API
+  - it now reads detailed contact-point buffers from:
+    - `rigid_contact_view.get_contact_data(dt)`
+  - for each wheel, the world-frame normal-force resultant vector is reconstructed as:
+    - `sum(normal_force_scalar * contact_normal_vector)`
+  - the observation path still stores the scalar wheel load as:
+    - `||F_n|| / (m_total * g)`
+    so the PPO interface shape does not change
+  - the wheel-ground contact filter cannot be bound to the ground root prim directly
+  - the runtime must first resolve the exact collider prim under `ground_prim_path`:
+    - `Plane` for flat ground
+    - `Mesh` for generated terrain
+  - using the ground root prim or broad child wildcard patterns causes PhysX tensor filter mismatch / unsupported warnings and yields invalid zero wheel loads
+  - after resolving the exact collider prim, the default real-GPU startup validation succeeded and produced non-zero wheel normal-load observations under the standard `64`-env setup
+  - the verified run directory is:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-10-27`
+- Reason:
+  - the user explicitly required replacing the current wheel normal-force proxy with a stricter implementation based on real contact-point normals
+- Impact:
+  - future wheel-load work in this repository should preserve the exact-collider filter resolution step
+  - future rough-terrain extensions should continue using the same `Plane/Mesh` collider resolution rule rather than reverting to ground-root filters
+- Status:
+  - targeted `python3 -m py_compile` check passed
+  - real GPU default-64-env startup passed with non-zero wheel normal-load observations
+
+### Wheel-ground contact force collection now uses runtime PhysX contact views instead of Isaac Lab `ContactSensor` in the active direct workflow
+- Updated:
+  - `USD/complete_car.usd`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- Durable implementation conclusion:
+  - the six wheel rigid-body roots in `complete_car.usd` now explicitly carry `PhysxContactReportAPI`
+  - the verified wheel roots are:
+    - `body_car_wheel_left`
+    - `body_car_wheel_right`
+    - `head_car_wheel_left`
+    - `head_car_wheel_right`
+    - `tail_car_wheel_left`
+    - `tail_car_wheel_right`
+  - because the sensor suite is built manually at runtime instead of through `InteractiveSceneCfg`, `{ENV_REGEX_NS}` is not auto-expanded for these sensors
+  - the active runtime fix explicitly resolves `{ENV_REGEX_NS}` inside `sensors/sensor_cfg.py` before constructing:
+    - IMU
+    - stereo camera
+    - lidar
+    - height scanner
+  - we verified that the underlying PhysX rigid-body/contact-view patterns for the six wheel roots are valid under the default `64`-environment setup
+  - however, Isaac Lab `ContactSensor` still remained unstable in the full default direct-workflow startup path, even after:
+    - valid wheel-root contact-report APIs in USD
+    - correct `complete_car_alternative` path segment
+    - correct runtime namespace expansion
+  - therefore the active direct-workflow mainline no longer uses Isaac Lab `ContactSensor` for wheel-ground force collection
+  - the active implementation now creates one PhysX `rigid_contact_view` per wheel root at runtime and reads:
+    - `get_contact_data(dt)`
+    then reconstructs each wheel's world-frame normal-force resultant vector by summing:
+    - `normal_force_scalar * contact_normal_vector`
+    across all wheel-ground contact points
+  - the six reconstructed `(num_envs, 1, 3)` tensors are then concatenated into `(num_envs, 6, 3)`
+  - during this same debug round, `base/env.py` was corrected so `_total_vehicle_weight` is cached on `self.device`, avoiding CPU/CUDA mismatch when normalizing wheel contact forces
+  - after these fixes, the default real-GPU training command entered the continuous training loop successfully under the normal `64`-environment setup:
+    - `python scripts/train.py --task CompleteCar-Stage0 --headless`
+  - the verified run directory is:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-57-31`
+- Reason:
+  - the user manually repaired the USD to add wheel contact-report APIs, but the active Isaac Lab `ContactSensor` initialization path still remained unstable in the full default multi-env direct workflow
+- Impact:
+  - future wheel-contact debugging should first check:
+    - wheel-root `Contact Report API` in USD
+    - runtime `{ENV_REGEX_NS}` expansion
+    - presence of `complete_car_alternative` in the spawned wheel path
+    - device placement of the cached total-vehicle-weight tensor
+  - future wheel-ground force work in this repository should continue from the active PhysX contact-view path, not by reverting to Isaac Lab `ContactSensor` unless that path is explicitly revalidated under the default multi-env training configuration
+- Status:
+  - targeted `python3 -m py_compile` check passed
+  - real GPU default training startup passed and entered the training loop under `64` envs
 
 ### The active reward trunk is now goal-conditioned and no longer centered on velocity-command tracking
 - Updated:
@@ -142,13 +850,12 @@ This file stores durable conclusions from past Codex sessions so that future ses
     - the same low-speed protection
     - clipping to `[-pi/2, pi/2]`
     - units kept in radians
-  - the normal contact force now uses the magnitude of `ContactSensor.data.net_forces_w`
-    because Isaac Lab defines it as the summed normal contact-force vector in world frame
+  - the normal contact force now uses the magnitude of the wheel-ground normal-force resultant vector reconstructed from detailed PhysX contact-point data
   - the active implementation is now:
-    - `F_n = ||net_forces_w|| / (m_total * g)`
+    - `F_n = ||sum_k(f_{n,k} * n_k)|| / (m_total * g)`
   - the active wheel radius reused by this observation path is:
     - `0.19 m`
-  - the robot USD spawn now enables contact sensors, and the env uses a dedicated `ContactSensor` bound to the six wheel bodies
+  - the robot USD spawn now enables contact reporting, and the env uses one runtime PhysX `rigid_contact_view` per wheel body
   - the active single-frame observation sizes are now:
     - `Stage0 actor = 48`
     - `Stage0 critic = 48`
@@ -158,7 +865,7 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - the user explicitly required adding wheel longitudinal slip, slip angle, and normalized normal contact force to the current RL observation space using the provided physical definitions
 - Impact:
   - future observation-dimension, scale, and TensorBoard discussions must treat the 18 wheel-ground contact dimensions as part of the active direct-workflow mainline
-  - future contact-force interpretation should remember that the current implementation uses the magnitude of the summed normal-contact-force vector, not the previous world-z approximation
+  - future contact-force interpretation should remember that the current implementation uses the magnitude of the wheel-ground normal-force resultant reconstructed from detailed contact-point normals, not the previous world-z approximation
 - Status:
   - targeted `python3 -m py_compile` check passed for the modified direct-workflow files
 

@@ -17,6 +17,92 @@ from collections import deque
 import rsl_rl
 
 
+TENSORBOARD_TAG_ALIASES = {
+    "Train/mean_episode_length": "Train/00_mean_episode_length",
+    "Train/mean_reward": "Train/01_mean_reward",
+    "Train/mean_episode_length/time": "Train/00_mean_episode_length/time",
+    "Train/mean_reward/time": "Train/01_mean_reward/time",
+    "Loss/value": "Loss/00_value",
+    "Loss/learning_rate": "Loss/01_learning_rate",
+    "Loss/entropy": "Loss/02_entropy",
+    "Loss/surrogate": "Loss/03_surrogate",
+    "Policy/mean_std": "Policy/00_mean_std",
+    "Perf/total_fps": "Perf/00_total_fps",
+    "Perf/collection_time": "Perf/01_collection_time",
+    "Perf/learning_time": "Perf/02_learning_time",
+    "Observation/wheel_longitudinal_slip_abs_mean_raw": "Observation/00_wheel_longitudinal_slip_abs_mean_raw",
+    "Observation/wheel_slip_angle_abs_mean_raw": "Observation/01_wheel_slip_angle_abs_mean_raw",
+    "Observation/wheel_normal_contact_force_sum_raw": "Observation/02_wheel_normal_contact_force_sum_raw",
+    "Observation/tilt_deg": "Observation/03_tilt_deg",
+    "Observation/ball_joint_vel_abs_mean_raw": "Observation/04_ball_joint_vel_abs_mean_raw",
+    "Reward/gated_progress": "Reward/00_gated_progress",
+    "Reward/progress": "Reward/01_progress",
+    "Reward/longitudinal_slip_gate": "Reward/02_longitudinal_slip_gate",
+    "Reward/lateral_slip_gate": "Reward/03_lateral_slip_gate",
+    "Reward/force_gate": "Reward/04_force_gate",
+    "Reward/vertical_speed_gate": "Reward/05_vertical_speed_gate",
+    "Reward/ball_joint_speed_gate": "Reward/06_ball_joint_speed_gate",
+    "Reward/wheel_action_rate_gate": "Reward/07_wheel_action_rate_gate",
+    "Reward/total": "Reward/08_total",
+    "Tracking/goal_pos_error": "Tracking/00_goal_pos_error",
+    "Tracking/goal_progress": "Tracking/01_goal_progress",
+    "Tracking/goal_yaw_error_abs": "Tracking/02_goal_yaw_error_abs",
+    "Action/policy_abs_mean": "Action/00_policy_abs_mean",
+    "Action/policy_std": "Action/01_policy_std",
+    "Action/processed_abs_mean": "Action/02_processed_abs_mean",
+    "Action/processed_std": "Action/03_processed_std",
+    "Command/goal_rel_x": "Command/00_goal_rel_x",
+    "Command/goal_rel_y": "Command/01_goal_rel_y",
+    "Command/goal_rel_psi": "Command/02_goal_rel_psi",
+    "Command/goal_target_x_world": "Command/03_goal_target_x_world",
+    "Command/goal_target_y_world": "Command/04_goal_target_y_world",
+    "Command/goal_target_yaw_world": "Command/05_goal_target_yaw_world",
+    "Command/goal_direction_offset_deg": "Command/06_goal_direction_offset_deg",
+    "Command/goal_heading_offset_deg": "Command/07_goal_heading_offset_deg",
+    "Termination/time_out_rate": "Termination/00_time_out_rate",
+    "Termination/terminated_rate": "Termination/01_terminated_rate",
+    "Termination/bad_orientation_rate": "Termination/02_bad_orientation_rate",
+    "Termination/ball_joint_limit_rate": "Termination/03_ball_joint_limit_rate",
+}
+
+CONSOLE_PRIORITY_TAGS = (
+    "Reward/gated_progress",
+    "Reward/progress",
+    "Reward/longitudinal_slip_gate",
+    "Reward/lateral_slip_gate",
+    "Reward/force_gate",
+    "Reward/vertical_speed_gate",
+    "Reward/ball_joint_speed_gate",
+    "Reward/wheel_action_rate_gate",
+    "Tracking/goal_pos_error",
+    "Tracking/goal_yaw_error_abs",
+    "Observation/wheel_longitudinal_slip_abs_mean_raw",
+    "Observation/wheel_slip_angle_abs_mean_raw",
+    "Observation/wheel_normal_contact_force_sum_raw",
+    "Observation/tilt_deg",
+    "Observation/ball_joint_vel_abs_mean_raw",
+    "Action/policy_abs_mean",
+    "Action/policy_std",
+    "Termination/time_out_rate",
+    "Termination/terminated_rate",
+    "Termination/bad_orientation_rate",
+    "Termination/ball_joint_limit_rate",
+)
+
+CONSOLE_VISIBLE_TAGS = set(CONSOLE_PRIORITY_TAGS)
+CONSOLE_TAG_ORDER = {tag: idx for idx, tag in enumerate(CONSOLE_PRIORITY_TAGS)}
+
+# These reset-reason rates are only useful once they deviate from zero.
+# Keeping an all-zero history creates blank TensorBoard cards without adding signal.
+SPARSE_ZERO_SCALARS = frozenset(
+    {
+        "Termination/terminated_rate",
+        "Termination/bad_orientation_rate",
+        "Termination/ball_joint_limit_rate",
+    }
+)
+
+
 class Logger:
     """Logger to save the learning metrics to different logging services."""
 
@@ -49,6 +135,8 @@ class Logger:
         self.lenbuffer = deque(maxlen=100)
         self.cur_reward_sum = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
         self.cur_episode_length = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+        self._activated_sparse_zero_scalars: set[str] = set()
+        self._pending_sparse_zero_scalars: dict[str, list[tuple[int, float]]] = {}
 
         # Create RND buffers
         if self.cfg["algorithm"]["rnd_cfg"]:
@@ -160,47 +248,51 @@ class Logger:
             # Log episode extras
             extras_string = ""
             if self.ep_extras:
-                for key, value in self._aggregate_scalar_dicts(self.ep_extras).items():
+                episode_scalars = self._aggregate_scalar_dicts(self.ep_extras)
+                for key, value in self._ordered_scalar_items(episode_scalars):
                     if "/" in key:
-                        self.writer.add_scalar(key, value, it)  # type: ignore
-                        extras_string += f"""{f"{key}:":>{pad}} {value:.4f}\n"""
+                        self._write_tensorboard_scalar(key, value, it)
+                        if self._should_print_scalar(key):
+                            extras_string += f"""{f"{key}:":>{pad}} {value:.4f}\n"""
                     else:
-                        self.writer.add_scalar("Episode/" + key, value, it)  # type: ignore
-                        extras_string += f"""{f"Mean episode {key}:":>{pad}} {value:.4f}\n"""
+                        self._write_tensorboard_scalar("Episode/" + key, value, it)
+                        if self._should_print_scalar("Episode/" + key):
+                            extras_string += f"""{f"Mean episode {key}:":>{pad}} {value:.4f}\n"""
 
             if self.step_extras:
-                for key, value in self._aggregate_scalar_dicts(self.step_extras).items():
-                    self.writer.add_scalar(key, value, it)  # type: ignore
-                    if not print_minimal:
+                step_scalars = self._aggregate_scalar_dicts(self.step_extras)
+                for key, value in self._ordered_scalar_items(step_scalars):
+                    self._write_tensorboard_scalar(key, value, it)
+                    if not print_minimal and self._should_print_scalar(key):
                         extras_string += f"""{f"{key}:":>{pad}} {value:.4f}\n"""
 
             # Log losses
             for key, value in loss_dict.items():
-                self.writer.add_scalar(f"Loss/{key}", value, it)
-            self.writer.add_scalar("Loss/learning_rate", learning_rate, it)
+                self._write_tensorboard_scalar(f"Loss/{key}", value, it)
+            self._write_tensorboard_scalar("Loss/learning_rate", learning_rate, it)
 
             # Log std
-            self.writer.add_scalar("Policy/mean_std", action_std.mean().item(), it)
+            self._write_tensorboard_scalar("Policy/mean_std", action_std.mean().item(), it)
 
             # Log performance
             fps = int(collection_size / (collect_time + learn_time))
-            self.writer.add_scalar("Perf/total_fps", fps, it)
-            self.writer.add_scalar("Perf/collection_time", collect_time, it)
-            self.writer.add_scalar("Perf/learning_time", learn_time, it)
+            self._write_tensorboard_scalar("Perf/total_fps", fps, it)
+            self._write_tensorboard_scalar("Perf/collection_time", collect_time, it)
+            self._write_tensorboard_scalar("Perf/learning_time", learn_time, it)
 
             # Log rewards and episode length
             if len(self.rewbuffer) > 0:
                 if self.cfg["algorithm"]["rnd_cfg"]:
-                    self.writer.add_scalar("Rnd/mean_extrinsic_reward", statistics.mean(self.erewbuffer), it)
-                    self.writer.add_scalar("Rnd/mean_intrinsic_reward", statistics.mean(self.irewbuffer), it)
-                    self.writer.add_scalar("Rnd/weight", rnd_weight, it)  # type: ignore
-                self.writer.add_scalar("Train/mean_reward", statistics.mean(self.rewbuffer), it)
-                self.writer.add_scalar("Train/mean_episode_length", statistics.mean(self.lenbuffer), it)
+                    self._write_tensorboard_scalar("Rnd/mean_extrinsic_reward", statistics.mean(self.erewbuffer), it)
+                    self._write_tensorboard_scalar("Rnd/mean_intrinsic_reward", statistics.mean(self.irewbuffer), it)
+                    self._write_tensorboard_scalar("Rnd/weight", rnd_weight, it)  # type: ignore[arg-type]
+                self._write_tensorboard_scalar("Train/mean_reward", statistics.mean(self.rewbuffer), it)
+                self._write_tensorboard_scalar("Train/mean_episode_length", statistics.mean(self.lenbuffer), it)
                 if self.logger_type != "wandb":
-                    self.writer.add_scalar(
+                    self._write_tensorboard_scalar(
                         "Train/mean_reward/time", statistics.mean(self.rewbuffer), int(self.tot_time)
                     )
-                    self.writer.add_scalar(
+                    self._write_tensorboard_scalar(
                         "Train/mean_episode_length/time", statistics.mean(self.lenbuffer), int(self.tot_time)
                     )
 
@@ -324,3 +416,38 @@ class Logger:
             if values:
                 aggregated[key] = float(torch.mean(torch.cat(values)).item())
         return aggregated
+
+    def _tensorboard_tag(self, tag: str) -> str:
+        """Map selected tags to prefixed aliases so important charts appear first in TensorBoard."""
+        return TENSORBOARD_TAG_ALIASES.get(tag, tag)
+
+    def _write_tensorboard_scalar(self, tag: str, value: float, step: int) -> None:
+        """Write scalars to TensorBoard while suppressing selected all-zero series."""
+        if self.writer is None:
+            return
+
+        tensorboard_tag = self._tensorboard_tag(tag)
+        if tag not in SPARSE_ZERO_SCALARS:
+            self.writer.add_scalar(tensorboard_tag, value, step)  # type: ignore
+            return
+
+        if tag not in self._activated_sparse_zero_scalars:
+            if abs(float(value)) <= 1.0e-12:
+                self._pending_sparse_zero_scalars.setdefault(tag, []).append((step, float(value)))
+                return
+            self._activated_sparse_zero_scalars.add(tag)
+            for pending_step, pending_value in self._pending_sparse_zero_scalars.pop(tag, []):
+                self.writer.add_scalar(tensorboard_tag, pending_value, pending_step)  # type: ignore
+
+        self.writer.add_scalar(tensorboard_tag, value, step)  # type: ignore
+
+    def _should_print_scalar(self, tag: str) -> bool:
+        """Only print the highest-signal scalar subset to the training console."""
+        return tag in CONSOLE_VISIBLE_TAGS
+
+    def _ordered_scalar_items(self, scalar_dict: dict[str, float]) -> list[tuple[str, float]]:
+        """Sort scalar tags so the same high-signal subset stays near the top in console output."""
+        return sorted(
+            scalar_dict.items(),
+            key=lambda item: (CONSOLE_TAG_ORDER.get(item[0], len(CONSOLE_TAG_ORDER)), item[0]),
+        )

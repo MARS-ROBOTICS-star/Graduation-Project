@@ -1,0 +1,595 @@
+--- git commit ---
+fd8860716ca6509cb178ccc74db096325e394b79
+
+
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+	modified:   USD/complete_car.usd
+	modified:   "docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
+	modified:   docs/conversation_history.md
+	modified:   docs/current_status.md
+	modified:   logs/daily_work_log.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-44-35/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-57-31/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-08-59/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-10-27/
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+index c1dee53..df1e9a5 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+@@ -45,7 +45,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
+         self._head_car_body_id = self._head_car_body_id[0]
+         self._tail_car_body_id = self._tail_car_body_id[0]
+         gravity_magnitude = abs(float(self.cfg.sim.gravity[2]))
+-        self._total_vehicle_weight = self.robot.data.default_mass.sum(dim=1, keepdim=True) * gravity_magnitude
++        self._total_vehicle_weight = (
++            self.robot.data.default_mass.sum(dim=1, keepdim=True).to(device=self.device) * gravity_magnitude
++        )
+ 
+         self.actions = torch.zeros((self.num_envs, self.cfg.action_space), device=self.device)
+         self.last_actions = torch.zeros_like(self.actions)
+@@ -109,12 +111,13 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             spawn_ground_plane(prim_path=ground_prim_path, cfg=GroundPlaneCfg())
+ 
+         self._sensor_runtime = CompleteCarSensorSuiteRuntime(self.cfg.sensors, self.cfg.terrain, ground_prim_path)
+-        self._sensor_runtime.build_scene_entities(self.scene)
+ 
+         self.scene.clone_environments(copy_from_source=False)
+         if str(self.device) == "cpu":
+             self.scene.filter_collisions(global_prim_paths=[])
+ 
++        self._sensor_runtime.build_scene_entities(self.scene)
++
+         if self._terrain_runtime.generator_enabled:
+             mdp_curriculum.initialize_terrain_curriculum(self.cfg.curriculum, self._terrain_runtime, self.scene)
+         else:
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py
+index 05712c6..ece51c0 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py
+@@ -41,8 +41,8 @@ def _compute_wheel_contact_observations(
+     wheel_slip_angle = torch.atan2(v_y, torch.abs(v_x) + slip_velocity_epsilon)
+     wheel_slip_angle = torch.clamp(wheel_slip_angle, -slip_angle_clip_rad, slip_angle_clip_rad)
+ 
+-    # ContactSensor.net_forces_w is already the summed normal contact-force vector in world frame.
+-    # Use its magnitude to obtain the load carried along the actual wheel-ground contact normal.
++    # The runtime sensor path reconstructs one wheel-ground normal-force resultant vector in world frame
++    # by summing all contact-point (normal_force_scalar * contact_normal_vector) terms for each wheel.
+     wheel_normal_contact_force = torch.linalg.vector_norm(wheel_contact_forces_w, dim=-1) / total_vehicle_weight
+ 
+     return wheel_longitudinal_slip, wheel_slip_angle, wheel_normal_contact_force
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+index 93411e9..bbcd762 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+@@ -5,14 +5,37 @@ from __future__ import annotations
+ from dataclasses import field
+ 
+ import torch
+-from isaaclab.sensors import ContactSensor, ContactSensorCfg, RayCaster, RayCasterCfg
++from isaacsim.core.simulation_manager import SimulationManager
++from isaaclab.sensors import RayCaster, RayCasterCfg
++import isaaclab.sim as sim_utils
+ from isaaclab.utils import configclass
+ 
++from ..assets.robot_cfg import WHEEL_BODY_NAMES
+ from .imu import ImuSensorAdapter, ImuSensorCfg
+ from .lidar import LidarSensorAdapter, LidarSensorCfg
+ from .stereo_camera import StereoCameraAdapter, StereoCameraSensorCfg
+ 
+ 
++def _resolve_env_regex_ns(prim_path: str, scene) -> str:
++    """Resolve Isaac Lab's environment namespace placeholder for manually-built sensors."""
++
++    return prim_path.format(ENV_REGEX_NS=scene.env_regex_ns)
++
++
++def _resolve_ground_contact_filter_pattern(ground_prim_path: str) -> str:
++    """Resolve the exact collider prim used as the wheel-ground contact filter."""
++
++    ground_collision_prim = sim_utils.get_first_matching_child_prim(
++        ground_prim_path,
++        predicate=lambda prim: prim.GetTypeName() in {"Plane", "Mesh"},
++    )
++    if ground_collision_prim is None:
++        if sim_utils.is_prim_path_valid(ground_prim_path):
++            return ground_prim_path
++        raise RuntimeError(f"Failed to resolve a ground collision prim under '{ground_prim_path}'.")
++    return ground_collision_prim.GetPath().pathString
++
++
+ @configclass
+ class CompleteCarSensorSuiteCfg:
+     """集中描述 Stage0/1/2 需要绑定的传感器集合。"""
+@@ -56,30 +79,26 @@ class CompleteCarSensorSuiteRuntime:
+         self.stereo_camera = StereoCameraAdapter(cfg.stereo_camera)
+         self.lidar = LidarSensorAdapter(cfg.lidar, ground_prim_path)
+         self.height_scanner: RayCaster | None = None
+-        self.wheel_contact_sensor: ContactSensor | None = None
+-        self._wheel_contact_body_ids: torch.Tensor | None = None
++        self._wheel_contact_views: dict[str, object] = {}
++        self._wheel_contact_sim_dt: float | None = None
++        self._wheel_contact_env_glob_ns: str | None = None
++        self._wheel_contact_num_envs: int | None = None
++        self._wheel_contact_filter_patterns: list[str] = []
+         self._raw_output: dict[str, torch.Tensor | dict[str, torch.Tensor]] = {}
+ 
+     def build_scene_entities(self, scene) -> None:
++        self.cfg.imu.prim_path = _resolve_env_regex_ns(self.cfg.imu.prim_path, scene)
++        self.cfg.stereo_camera.prim_path = _resolve_env_regex_ns(self.cfg.stereo_camera.prim_path, scene)
++        self.cfg.lidar.prim_path = _resolve_env_regex_ns(self.cfg.lidar.prim_path, scene)
++        self.terrain_cfg.height_scanner_prim_path = _resolve_env_regex_ns(self.terrain_cfg.height_scanner_prim_path, scene)
++        self._wheel_contact_env_glob_ns = scene.env_regex_ns.replace(".*", "*")
++        self._wheel_contact_num_envs = scene.cfg.num_envs
++        self._wheel_contact_filter_patterns = [_resolve_ground_contact_filter_pattern(self.ground_prim_path)]
++
+         self.imu.build(scene)
+         self.stereo_camera.build(scene)
+         self.lidar.build(scene)
+ 
+-        self.wheel_contact_sensor = ContactSensor(
+-            ContactSensorCfg(
+-                prim_path=(
+-                    "{ENV_REGEX_NS}/Robot/"
+-                    "(body_car_wheel_left|body_car_wheel_right|"
+-                    "head_car_wheel_left|head_car_wheel_right|"
+-                    "tail_car_wheel_left|tail_car_wheel_right)"
+-                ),
+-                update_period=0.0,
+-                history_length=1,
+-                debug_vis=False,
+-            )
+-        )
+-        scene.sensors["wheel_contact_sensor"] = self.wheel_contact_sensor
+-
+         if self.cfg.enable_height_scanner:
+             height_cfg: RayCasterCfg = self.terrain_cfg.build_height_scanner_cfg(self.ground_prim_path)
+             height_cfg.debug_vis = self.cfg.height_scanner_debug_vis
+@@ -90,11 +109,70 @@ class CompleteCarSensorSuiteRuntime:
+         self.imu.reset(env_ids)
+         self.stereo_camera.reset(env_ids)
+         self.lidar.reset(env_ids)
+-        if self.wheel_contact_sensor is not None:
+-            self.wheel_contact_sensor.reset(env_ids)
+         if self.height_scanner is not None:
+             self.height_scanner.reset(env_ids)
+ 
++    def _initialize_wheel_contact_views_if_needed(self) -> None:
++        if self._wheel_contact_views:
++            return
++        if self._wheel_contact_env_glob_ns is None:
++            raise RuntimeError("Wheel contact env namespace has not been prepared.")
++        if self._wheel_contact_num_envs is None:
++            raise RuntimeError("Wheel contact env count has not been prepared.")
++
++        sim = sim_utils.SimulationContext.instance()
++        if sim is None:
++            raise RuntimeError("Simulation context is not initialized.")
++        physics_sim_view = SimulationManager.get_physics_sim_view()
++        self._wheel_contact_sim_dt = sim.get_physics_dt()
++        num_envs = self._wheel_contact_num_envs
++
++        for wheel_body_name in WHEEL_BODY_NAMES:
++            wheel_prim_glob = (
++                f"{self._wheel_contact_env_glob_ns}/Robot/complete_car_alternative/{wheel_body_name}"
++            )
++            body_view = physics_sim_view.create_rigid_body_view(wheel_prim_glob)
++            if body_view.count != num_envs:
++                raise RuntimeError(
++                    "Failed to initialize wheel rigid body view."
++                    f"\n\tWheel body : {wheel_body_name}"
++                    f"\n\tPrim glob  : {wheel_prim_glob}"
++                    f"\n\tBody count : {body_view.count}"
++                    f"\n\tNum envs   : {num_envs}"
++                )
++            self._wheel_contact_views[wheel_body_name] = physics_sim_view.create_rigid_contact_view(
++                wheel_prim_glob,
++                filter_patterns=self._wheel_contact_filter_patterns,
++                max_contact_data_count=16 * num_envs,
++            )
++
++    def _aggregate_contact_force_vectors(
++        self,
++        contact_forces: torch.Tensor,
++        contact_normals: torch.Tensor,
++        pair_counts: torch.Tensor,
++        pair_start_indices: torch.Tensor,
++    ) -> torch.Tensor:
++        """Aggregate detailed contact-point data into one normal-force vector per (env, filter) pair."""
++
++        num_envs = self._wheel_contact_num_envs
++        if num_envs is None:
++            raise RuntimeError("Wheel contact env count has not been prepared.")
++
++        force_vectors = contact_forces * contact_normals
++        counts = pair_counts.view(-1).to(dtype=torch.long)
++        starts = pair_start_indices.view(-1).to(dtype=torch.long)
++        num_pairs = counts.numel()
++        aggregated = torch.zeros((num_pairs, 3), device=force_vectors.device, dtype=force_vectors.dtype)
++        total_contacts = int(counts.sum().item())
++        if total_contacts > 0:
++            row_ids = torch.repeat_interleave(torch.arange(num_pairs, device=force_vectors.device), counts)
++            block_starts = counts.cumsum(0) - counts
++            deltas = torch.arange(total_contacts, device=force_vectors.device) - block_starts.repeat_interleave(counts)
++            flat_indices = starts[row_ids] + deltas
++            aggregated.index_add_(0, row_ids, force_vectors.index_select(0, flat_indices))
++        return aggregated.view(num_envs, -1, 3)
++
+     def get_height_features(self) -> torch.Tensor | None:
+         if self.height_scanner is None:
+             return None
+@@ -126,18 +204,25 @@ class CompleteCarSensorSuiteRuntime:
+         return features
+ 
+     def get_wheel_contact_forces_w(self, wheel_body_names: list[str]) -> torch.Tensor:
+-        if self.wheel_contact_sensor is None:
+-            raise RuntimeError("Wheel contact sensor has not been created.")
+-
+-        if self._wheel_contact_body_ids is None:
+-            body_ids, _ = self.wheel_contact_sensor.find_bodies(wheel_body_names, preserve_order=True)
+-            self._wheel_contact_body_ids = torch.as_tensor(
+-                body_ids,
+-                device=self.wheel_contact_sensor.data.net_forces_w.device,
+-                dtype=torch.long,
++        self._initialize_wheel_contact_views_if_needed()
++        if self._wheel_contact_sim_dt is None:
++            raise RuntimeError("Wheel contact sim dt has not been initialized.")
++
++        wheel_force_vectors = []
++        for wheel_body_name in wheel_body_names:
++            contact_view = self._wheel_contact_views[wheel_body_name]
++            normal_forces, _, contact_normals, _, pair_counts, pair_start_indices = contact_view.get_contact_data(
++                dt=self._wheel_contact_sim_dt
++            )
++            aggregated_force_vectors = self._aggregate_contact_force_vectors(
++                normal_forces,
++                contact_normals,
++                pair_counts,
++                pair_start_indices,
+             )
++            wheel_force_vectors.append(torch.sum(aggregated_force_vectors, dim=1, keepdim=True))
+ 
+-        net_forces_w = self.wheel_contact_sensor.data.net_forces_w[:, self._wheel_contact_body_ids]
++        net_forces_w = torch.cat(wheel_force_vectors, dim=1)
+         self._raw_output["wheel_contact_forces_w"] = net_forces_w
+         return net_forces_w
+ 
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+index a925629..d6fef70 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+@@ -34,9 +34,9 @@ class CompleteCarTerrainRuntimeCfg:
+     patch_rear_extent: float = 0.942209  # 中车参考点到整车后端的覆盖长度。
+     patch_half_width: float = 0.280374  # 半车宽。
+ 
+-    patch_preview_length: float = 0.40  # 车头前方多看出去的 preview。
++    patch_preview_length: float = 1.0  # 车头前方多看出去的 preview。
+     patch_rear_margin: float = 0.40  # 车尾后面多留一点余量。
+-    patch_side_margin: float = 0.04  # 左右多留一点余量。
++    patch_side_margin: float = 1.0 # 左右多留一点余量。
+ 
+     patch_origin_offset_xy: tuple[float, float] = (0.0, 0.0)  # patch 相对中车参考点的平移偏置。
+ 
+diff --git a/USD/complete_car.usd b/USD/complete_car.usd
+index 3456010..d419faa 100644
+Binary files a/USD/complete_car.usd and b/USD/complete_car.usd differ
+diff --git "a/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md" "b/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
+index bd45931..dab55e1 100644
+--- "a/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
++++ "b/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
+@@ -510,8 +510,17 @@ $$
+ 
+ 这里：
+ 
+-- $\mathbf{F}_{n,i}^{w}$ 是 Isaac Lab `ContactSensor.data.net_forces_w` 返回的第 `i` 个车轮净法向接触力向量
+-- Isaac Lab 文档已明确该量就是世界系下的法向接触力向量，而不是含摩擦的总接触力
++- $\mathbf{F}_{n,i}^{w}$ 是第 `i` 个车轮对地面所有接触点法向力的世界系合力向量
++- 当前运行时实现不再依赖 Isaac Lab `ContactSensor`
++- 当前直接对 PhysX `rigid_contact_view.get_contact_data(dt)` 返回的逐接触点数据做聚合：
++
++$$
++\mathbf{F}_{n,i}^{w} = \sum_k f_{n,i,k} \mathbf{n}_{i,k}
++$$
++
++这里：
++- $f_{n,i,k}$ 是第 `i` 个车轮第 `k` 个接触点的法向接触力标量
++- $\mathbf{n}_{i,k}$ 是对应接触点的世界系接触法向单位向量
+ 
+ 因此当前实现直接取这个法向力向量的模长，而不再使用世界坐标系竖直方向近似。
+ 
+diff --git a/docs/conversation_history.md b/docs/conversation_history.md
+index fa94351..8bef2ea 100644
+--- a/docs/conversation_history.md
++++ b/docs/conversation_history.md
+@@ -4,6 +4,58 @@ This file stores durable conclusions from past Codex sessions so that future ses
+ 
+ ## 2026-04-15
+ 
++### Wheel-ground contact force collection now uses runtime PhysX contact views instead of Isaac Lab `ContactSensor` in the active direct workflow
++- Updated:
++  - `USD/complete_car.usd`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `docs/current_status.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the six wheel rigid-body roots in `complete_car.usd` now explicitly carry `PhysxContactReportAPI`
++  - the verified wheel roots are:
++    - `body_car_wheel_left`
++    - `body_car_wheel_right`
++    - `head_car_wheel_left`
++    - `head_car_wheel_right`
++    - `tail_car_wheel_left`
++    - `tail_car_wheel_right`
++  - because the sensor suite is built manually at runtime instead of through `InteractiveSceneCfg`, `{ENV_REGEX_NS}` is not auto-expanded for these sensors
++  - the active runtime fix explicitly resolves `{ENV_REGEX_NS}` inside `sensors/sensor_cfg.py` before constructing:
++    - IMU
++    - stereo camera
++    - lidar
++    - height scanner
++  - we verified that the underlying PhysX rigid-body/contact-view patterns for the six wheel roots are valid under the default `64`-environment setup
++  - however, Isaac Lab `ContactSensor` still remained unstable in the full default direct-workflow startup path, even after:
++    - valid wheel-root contact-report APIs in USD
++    - correct `complete_car_alternative` path segment
++    - correct runtime namespace expansion
++  - therefore the active direct-workflow mainline no longer uses Isaac Lab `ContactSensor` for wheel-ground force collection
++  - the active implementation now creates one PhysX `rigid_contact_view` per wheel root at runtime and reads:
++    - `get_contact_data(dt)`
++    then reconstructs each wheel's world-frame normal-force resultant vector by summing:
++    - `normal_force_scalar * contact_normal_vector`
++    across all wheel-ground contact points
++  - the six reconstructed `(num_envs, 1, 3)` tensors are then concatenated into `(num_envs, 6, 3)`
++  - during this same debug round, `base/env.py` was corrected so `_total_vehicle_weight` is cached on `self.device`, avoiding CPU/CUDA mismatch when normalizing wheel contact forces
++  - after these fixes, the default real-GPU training command entered the continuous training loop successfully under the normal `64`-environment setup:
++    - `python scripts/train.py --task CompleteCar-Stage0 --headless`
++  - the verified run directory is:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-57-31`
++- Reason:
++  - the user manually repaired the USD to add wheel contact-report APIs, but the active Isaac Lab `ContactSensor` initialization path still remained unstable in the full default multi-env direct workflow
++- Impact:
++  - future wheel-contact debugging should first check:
++    - wheel-root `Contact Report API` in USD
++    - runtime `{ENV_REGEX_NS}` expansion
++    - presence of `complete_car_alternative` in the spawned wheel path
++    - device placement of the cached total-vehicle-weight tensor
++  - future wheel-ground force work in this repository should continue from the active PhysX contact-view path, not by reverting to Isaac Lab `ContactSensor` unless that path is explicitly revalidated under the default multi-env training configuration
++- Status:
++  - targeted `python3 -m py_compile` check passed
++  - real GPU default training startup passed and entered the training loop under `64` envs
++
+ ### The active reward trunk is now goal-conditioned and no longer centered on velocity-command tracking
+ - Updated:
+   - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+@@ -142,13 +194,12 @@ This file stores durable conclusions from past Codex sessions so that future ses
+     - the same low-speed protection
+     - clipping to `[-pi/2, pi/2]`
+     - units kept in radians
+-  - the normal contact force now uses the magnitude of `ContactSensor.data.net_forces_w`
+-    because Isaac Lab defines it as the summed normal contact-force vector in world frame
++  - the normal contact force now uses the magnitude of the wheel-ground normal-force resultant vector reconstructed from detailed PhysX contact-point data
+   - the active implementation is now:
+-    - `F_n = ||net_forces_w|| / (m_total * g)`
++    - `F_n = ||sum_k(f_{n,k} * n_k)|| / (m_total * g)`
+   - the active wheel radius reused by this observation path is:
+     - `0.19 m`
+-  - the robot USD spawn now enables contact sensors, and the env uses a dedicated `ContactSensor` bound to the six wheel bodies
++  - the robot USD spawn now enables contact reporting, and the env uses one runtime PhysX `rigid_contact_view` per wheel body
+   - the active single-frame observation sizes are now:
+     - `Stage0 actor = 48`
+     - `Stage0 critic = 48`
+@@ -158,7 +209,7 @@ This file stores durable conclusions from past Codex sessions so that future ses
+   - the user explicitly required adding wheel longitudinal slip, slip angle, and normalized normal contact force to the current RL observation space using the provided physical definitions
+ - Impact:
+   - future observation-dimension, scale, and TensorBoard discussions must treat the 18 wheel-ground contact dimensions as part of the active direct-workflow mainline
+-  - future contact-force interpretation should remember that the current implementation uses the magnitude of the summed normal-contact-force vector, not the previous world-z approximation
++  - future contact-force interpretation should remember that the current implementation uses the magnitude of the wheel-ground normal-force resultant reconstructed from detailed contact-point normals, not the previous world-z approximation
+ - Status:
+   - targeted `python3 -m py_compile` check passed for the modified direct-workflow files
+ 
+diff --git a/docs/current_status.md b/docs/current_status.md
+index 6cea55f..7d76512 100644
+--- a/docs/current_status.md
++++ b/docs/current_status.md
+@@ -18,6 +18,15 @@
+   - 命令空间已从速度命令切换为目标位姿命令
+   - 动作空间已从仅球铰 `6` 维扩成 `球铰 + 轮速` 共 `12` 维
+   - 观测中的命令项已切换为车体系下的 `[x_rel, y_rel, psi_rel]`
++  - 已完成一轮 wheel contact sensor 启动链路修复：
++  - 用户已在 `USD/complete_car.usd` 的 6 个轮子刚体根节点补入 `Contact Report API`
++  - runtime 手动创建的传感器已显式解析 `{ENV_REGEX_NS}`
++  - 已确认 Isaac Lab `ContactSensor` 在当前默认 `64` 环境 direct workflow 启动路径下仍不稳定
++  - 当前 wheel-ground contact force 已改为运行时直接使用 PhysX `rigid_contact_view`
++  - 当前轮地法向力实现已进一步收口为：
++    - 基于 `get_contact_data(dt)` 的逐接触点法向聚合
++  - `env.py` 中整车重量缓存已显式放到 `env device`
++  - `Stage0` 已再次通过真实 GPU 默认命令验证，并成功进入持续训练循环
+ 
+ ## 当前 RL 主线位置
+ - 当前活跃 RL 工作区：
+@@ -80,6 +89,27 @@
+ ## 本轮已确认
+ - 已新增本地文献补挂脚本：
+   - `scripts/literature/attach_local_pdfs_to_zotero_collection.py`
++- 已完成一轮 wheel contact sensor 启动修复验证：
++  - 当前 `complete_car.usd` 中以下 6 个 wheel body 根节点已确认带有 `Contact Report API`：
++    - `body_car_wheel_left`
++    - `body_car_wheel_right`
++    - `head_car_wheel_left`
++    - `head_car_wheel_right`
++    - `tail_car_wheel_left`
++    - `tail_car_wheel_right`
++  - `sensors/sensor_cfg.py` 已补充 runtime 侧 `{ENV_REGEX_NS}` 解析
++  - 当前 wheel-ground contact force 已不再依赖 Isaac Lab `ContactSensor`
++  - 当前实现改为：
++    - 运行时为 6 个轮子分别创建 PhysX `rigid_contact_view`
++    - 用 `get_contact_data(dt)` 读取逐接触点法向标量与接触法向
++    - 对每个轮子聚合 `normal_force_scalar * contact_normal_vector`
++    - 再按轮顺序拼接为 `(num_envs, 6, 3)` 的世界系法向合力向量
++  - `base/env.py` 已修正：
++    - `_total_vehicle_weight` 强制放到 `self.device`
++  - 当前真实验证命令：
++    - `python scripts/train.py --task CompleteCar-Stage0 --headless`
++  - 已通过并进入持续训练循环的 run：
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-57-31`
+ - 已完成当前 direct workflow 命令 / 动作主线重构：
+   - `CommandCfg.num_commands` 已由 `2` 改为 `3`
+   - 新命令语义为目标全局位姿：
+@@ -436,8 +466,9 @@
+   - policy 真正输入网络前的乘 scale 过程仍保留在 `mdp/observations.py`
+ - 当前 wheel contact sensor 已接入 active direct workflow：
+   - 机器人 USD spawn 已启用 `activate_contact_sensors`
+-  - env 通过 `ContactSensor` 读取 6 个 wheel body 的 `net_forces_w`
+-  - 当前法向力直接使用 `net_forces_w` 这个净法向接触力向量的模长，并按整车重量归一化
++  - env 不再依赖 Isaac Lab `ContactSensor`
++  - 当前通过 PhysX `rigid_contact_view.get_contact_data(dt)` 读取 6 个 wheel body 对地面的逐接触点法向数据
++  - 当前法向力先按每个接触点做 `normal_force_scalar * contact_normal_vector` 聚合成轮地法向合力向量，再取模长并按整车重量归一化
+ - 当前动作执行链已去除电机干扰项：
+   - `motor_strength` 不再参与 `policy_actions -> processed_actions`
+   - reset 时也不再为动作采样电机强度系数
+diff --git a/logs/daily_work_log.md b/logs/daily_work_log.md
+index bb32296..77d75fb 100644
+--- a/logs/daily_work_log.md
++++ b/logs/daily_work_log.md
+@@ -2,6 +2,89 @@
+ 
+ ## 2026-04-15
+ 
++已完成：
++- 将当前轮地法向接触力实现进一步改为“基于真实接触点法向的严格版本”。
++- 修改 `sensors/sensor_cfg.py`：
++  - wheel-ground contact view 不再直接调用 `get_net_contact_forces(dt)`
++  - 当前改为对 `get_contact_data(dt)` 返回的逐接触点法向标量与接触法向做聚合
++  - 每个轮子的世界系法向合力向量按：
++    - `sum(normal_force_scalar * contact_normal_vector)`
++    重建
++- 修改 `mdp/observations.py`：
++  - 保持观测接口不变
++  - 将“法向接触力”语义更新为上述聚合后法向合力向量的模长，并继续按整车重量归一化
++- 同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
++- `docs/RL阶段训练参数一览表.md`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前轮地法向接触力不再是“直接读取法向合力接口”的实现口径，而是显式基于真实接触点法向重建。
++- 当前观测与奖励仍沿用同一 6 维轮载输入接口，但其底层物理定义已经收口为逐接触点法向聚合版本。
++
++已完成：
++- 删除当前 critic 显式地形高度 patch 的“三车独立 patch 拼接”方案，不再保留可选分支。
++- `terrain/terrain_cfg.py` 已移除：
++  - `terrain.height_patch_scheme`
++  - 三 patch 总维度计算逻辑
++- `base/env.py` 已恢复为：
++  - 仅以中车参考系生成单份 patch
++  - 仅使用中车 yaw 做 patch 旋转
++  - 仅返回单份中车相对高度 patch 给 critic
++- 使用：
++  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  完成静态编译检查，检查通过。
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 critic 显式高度 patch 已恢复为只保留原始中车单 patch 方案。
++- 之后不再使用前 / 中 / 后三 patch 拼接方案。
++
++已完成：
++- 为当前 critic 显式地形高度 patch 新增一套可选的三车独立方案。
++- 保留原有：
++  - `terrain.height_patch_scheme = "body_single"`
++- 新增：
++  - `terrain.height_patch_scheme = "three_body_separate"`
++- 在新方案下：
++  - 分别以前车 / 中车 / 后车的质心为 patch 原点
++  - 三份 patch 分别跟随各自车体 yaw 旋转
++  - 三份 patch 按 `head -> body -> tail` 顺序展平后拼接进 critic 观测
++  - 每份 patch 的高度值相对各自车体质心高度计算
++- 已同步让：
++  - `terrain.get_num_height_points()`
++  按当前方案自动返回单 patch 或三 patch 拼接后的总维度
++- 使用：
++  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
++  完成静态编译检查，检查通过。
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 critic 显式高度 patch 已支持“中车单 patch”和“前中后三 patch 拼接”两套方案。
++- 默认行为仍保持原方案不变；如需启用新方案，只需在配置里切到：
++  - `terrain.height_patch_scheme = "three_body_separate"`
++
+ 已完成：
+ - 对当前三节关节小车 direct workflow 做了一轮 goal-conditioned 主线重构。
+ - 当前命令空间已从速度命令改为目标位姿命令：
+@@ -123,6 +206,35 @@
+ - 当前课题第一轮核心英文参考文献池已经落入 Zotero 主集合，后续继续做 cited-by 扩展、批注、读书笔记时可以直接从该集合接续。
+ - 若后续需要完整 PDF，仍需针对未自动附加的 5 篇做单篇补抓。
+ 
++已完成：
++- 重新检查 `USD/complete_car.usd` 的 6 个轮子刚体根节点，确认用户已手动补入 `Contact Report API`。
++- 修改 `sensors/sensor_cfg.py`：
++  - 为 runtime 手动创建的传感器补上 `{ENV_REGEX_NS}` 显式解析
++  - 初始尝试将 wheel contact sensor 的 prim 路径修正为：
++    - `{ENV_REGEX_NS}/Robot/complete_car_alternative/(body_car_wheel_left|...|tail_car_wheel_right)`
++  - 进一步确认 Isaac Lab `ContactSensor` 在默认 `64` 环境 direct workflow 启动场景下仍会报：
++    - `Failed to initialize contact reporter for specified bodies`
++  - 最终改为运行时直接创建 6 个 PhysX `rigid_contact_view`，不再依赖 `ContactSensor`
++- 修改 `base/env.py`：
++  - 将 `_total_vehicle_weight` 显式放到 `self.device`
++  - 修复轮地法向接触力归一化时的 CPU / CUDA 设备不一致问题
++- 使用以下命令完成真实 GPU 最小训练验证：
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless`
++- 本轮验证通过并进入持续训练循环的 run：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-57-31`
++
++修改文件：
++- `USD/complete_car.usd`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 wheel-ground contact force 主线已经切换为 PhysX 直接 contact view，不再依赖 Isaac Lab `ContactSensor`。
++- 当前默认训练命令已在真实 GPU 环境下成功进入持续训练循环。
++
+ ## 2026-04-13
+ 
+ 已完成：

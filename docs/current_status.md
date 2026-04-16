@@ -2,7 +2,7 @@
 
 ## 当前总目标
 - 将完整车 RL 主线收口到 `RL_Training/` 下的新 Isaac Lab direct workflow 架构。
-- 让训练入口、任务注册、共享环境主类、共享配置主干、Stage0/1/2 分阶段配置在同一套新结构下统一工作。
+- 固定 Stage0 当前默认配置，优先优化低滑移、低侧滑、低跳动、球铰平滑，再处理 critic 稳定性。
 
 ## 当前阶段
 - 已完成 `RL_Training/` 原地重构。
@@ -10,14 +10,174 @@
 - 已完成一轮真实训练入口冒烟，已清除启动链路中的 `configclass` / Hydra 配置阻塞。
 - 已完成 `Stage0` 在真实 GPU 环境下的最小训练启动验证。
 - 已完成一次真实 `Stage0` run 的日志诊断，并补齐训练日志 / TensorBoard 指标埋点。
-- 已完成一轮 Stage0 奖励收敛实验串行搜索，并确定当前最优已验证配置。
-- 当前进入“固定当前最优 Stage0 配置，并继续接入 MGDP 风格显式地形高度 patch 到 critic 观测”的阶段。
+- 已完成一轮 Stage0 run 诊断，已确认当前主要问题是高纵向滑移、高侧滑、球铰动作偏激进与 critic value loss 偏大。
+- 当前进入“固定新的 Stage0 稳定性优先配置，并继续做针对性训练验证”的阶段。
+- 已完成一轮完整 `300` iteration 真实 run 诊断：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-16_10-12-26`
+  - 当前确认：
+    - rollout 存活与目标推进已建立
+    - 姿态翻车与球铰限位已不是主阻塞
+    - 主要剩余问题转为：
+      - 高纵向滑移仍未解决
+      - 侧滑角较当前默认参考线更差
+      - 中后期车体倾斜偏大
+      - 轮地法向载荷分布仍不理想
+      - critic value loss 仍会出现瞬时尖峰
+  - 当前最新有效判断：
+    - 下一轮不应继续主要靠压 PPO 或继续压球铰来求稳
+    - 应优先改“轮速输出结构 / 轮地载荷分布 / 侧滑抑制逻辑”
+- 已完成新一轮短距离多目标 Stage0 run 诊断：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-16_13-20-05`
+  - 当前确认：
+    - rollout 生存已完全建立：
+      - `Train/mean_episode_length = 959 / 959`
+      - `Termination/time_out_rate = 1.0`
+    - 姿态与轮地总支撑相比上一版明显改善：
+      - `tilt_deg ≈ 6.6°`
+      - `wheel_normal_contact_force_sum_raw ≈ 0.94`
+    - 但主要问题变为：
+      - `Reward/progress` 末段接近 `0` 且近 10 轮均值为负
+      - `Reward/target_bonus` 占当前总回报主导
+      - `wheel_longitudinal_slip_abs_mean_raw ≈ 0.85`
+      - `wheel_slip_angle_abs_mean_raw ≈ 0.70 rad`
+      - `Loss/value` 在后段持续维持高位，末段约 `21`，近 10 轮均值约 `24`
+  - 当前最新有效判断：
+    - 新 Stage0 任务定义确实显著降低了“为追 20m 目标而激进驱动”的压力
+    - 但当前策略更像“稳定存活 + 偶尔吃到 target bonus”，还没有形成持续高质量的目标推进
+    - 当前第一主问题已转为：
+      - bonus 主导回报
+      - progress 弱
+      - critic 持续高 value loss
+      - traction 仍差
+- 已完成一轮 `goal_distance = 12.0` 的真实 GPU 快速验证：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-16_13-36-23_goaldist12_v1`
+  - 实际在 `iteration 13/300` 主动停止，因为问题在前期已足够明显：
+    - `Tracking/goal_pos_error: 12.02 -> 10.58`
+    - `Reward/progress ≈ 0.56`
+    - `Reward/gated_progress ≈ 0.008`
+    - `longitudinal_slip_gate ≈ 0.011`
+    - `lateral_slip_gate ≈ 0.192`
+    - `wheel_longitudinal_slip_abs_mean_raw ≈ 0.852`
+    - `wheel_slip_angle_abs_mean_raw ≈ 0.692`
+    - `tilt_deg ≈ 3.00°`
+  - 当前最新有效判断：
+    - 将目标距离拉回 `12m` 后，策略确实重新开始追求更强 progress
+    - 但有效推进几乎仍被 slip gate 吃掉
+    - 这说明长目标距离会重新把训练推回“堆 progress、牺牲 traction 质量”的方向
+- 已按用户要求调整 TensorBoard step metrics 埋点：
+  - `Command/*` 不再统计全部环境均值
+  - 当前改为只记录：
+    - `env_0`
+  - 已停止输出当前速度相关 step scalar：
+    - `Observation/base_lin_vel_x_raw`
+    - `Observation/base_ang_vel_yaw_raw`
+  - 旧 run 中的：
+    - `Tracking/ang_vel_yaw_abs_error`
+    - `Tracking/lin_vel_x_abs_error`
+    仅作为历史日志保留，不再属于当前主线埋点集合
+- 已按用户要求统一 termination 日志口径：
+  - 当前 TensorBoard 中保留的 `Termination/*`
+    - 已改为 reset 视角统计
+    - 含义等同于旧的 `episode_reset/*`
+  - 原先 step-level 的 `Termination/*` 已停止输出
+  - `episode_reset/*` 这组名字已删除，不再写入新 run
+  - 当前对“长期全零的 termination 原因指标”进一步收口：
+    - 若 `terminated_rate` / `bad_orientation_rate` / `ball_joint_limit_rate` 在整段 run 中始终为 `0`
+    - 则默认不再写入 TensorBoard
+    - 现有 run
+      - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-16_13-20-05`
+      已完成事件文件清理，当前只保留：
+      - `Termination/00_time_out_rate`
+- 已按用户要求继续精简 Observation 埋点：
+  - 已停止输出：
+    - `Observation/wheel_normal_contact_force_abs_mean_raw`
+- 已按用户要求重排训练日志显示优先级：
+  - 终端训练日志当前只保留高频必看的核心项
+    - 重点保留：
+      - `Reward/gated_progress`
+      - `Reward/progress`
+      - `Reward/longitudinal_slip_gate`
+      - `Reward/lateral_slip_gate`
+      - `Reward/force_gate`
+      - `Observation/wheel_longitudinal_slip_abs_mean_raw`
+      - `Observation/wheel_slip_angle_abs_mean_raw`
+      - `Observation/wheel_normal_contact_force_sum_raw`
+      - `Observation/tilt_deg`
+      - `Action/policy_abs_mean`
+      - `Action/policy_std`
+      - `Tracking/goal_pos_error`
+      - `Tracking/goal_yaw_error_abs`
+      - `Termination/*`
+  - 低频或参考价值重复的项仍可进入 TensorBoard，但不再在训练终端刷屏
+  - TensorBoard 当前已对高频必看项加排序前缀：
+    - 例如 `00_`、`01_`
+    - 用于把各分组最值得看的图排到最前面
+- 已完成本轮 slip / side-slip 定向实验：
+  - 已保留：
+    - `wheel_action_rate_gate`
+    - 平滑指数型 `longitudinal_slip_gate`
+    - 平滑指数型 `lateral_slip_gate`
+  - 已否决：
+    - `lateral_speed_gate`
+    - 在 `gated_progress` 外再次额外乘一次 `lateral_slip_gate`
+  - 当前默认仍以 `wheel_action_smooth_v1` 这条线作为最佳起点
+  - 新增训练日志指标：
+    - `Observation/base_lin_vel_y_raw`
 - 已完成一次 Zotero 文献库维护：
   - `核心参考-RL、Sim-to-Real` 集合中，已把 `docs/literature/` 内能匹配到的本地 PDF 补挂回缺失条目。
 - 已完成一轮 goal-conditioned 主线接线：
   - 命令空间已从速度命令切换为目标位姿命令
   - 动作空间已从仅球铰 `6` 维扩成 `球铰 + 轮速` 共 `12` 维
   - 观测中的命令项已切换为车体系下的 `[x_rel, y_rel, psi_rel]`
+  - 当前 Stage0 命令参数已改为：
+    - `episode_length_s = 16.0`
+    - `resampling_time = 5.3`
+    - `goal_distance = 3.0`
+    - `goal_direction_max_deg = 30.0`
+    - `goal_heading_delta_max_deg = 12.0`
+  - 当前一个 episode 内通常会重采样 `2 ~ 3` 次目标
+  - `baseline/complete_car_stage0_cfg.py` 已改为集中维护 Stage0 活跃参数的主文件
+  - 已完成一轮 wheel contact sensor 启动链路修复：
+  - 用户已在 `USD/complete_car.usd` 的 6 个轮子刚体根节点补入 `Contact Report API`
+  - runtime 手动创建的传感器已显式解析 `{ENV_REGEX_NS}`
+  - 已确认 Isaac Lab `ContactSensor` 在当前默认 `64` 环境 direct workflow 启动路径下仍不稳定
+  - 当前 wheel-ground contact force 已改为运行时直接使用 PhysX `rigid_contact_view`
+  - 当前轮地法向力实现已进一步收口为：
+    - 基于 `get_contact_data(dt)` 的逐接触点法向聚合
+  - 已确认 wheel-ground contact filter 不能直接使用 ground 根 prim
+    - 必须解析到真实碰撞 prim，例如 `Plane` 或 `Mesh`
+  - `env.py` 中整车重量缓存已显式放到 `env device`
+  - `Stage0` 已再次通过真实 GPU 默认命令验证，并成功进入持续训练循环
+  - `Stage0` 已加入新一轮“稳定性优先”配置：
+    - 训练轮数改为 `300`
+    - 新增 `vertical_speed_gate`
+    - 新增 `ball_joint_speed_gate`
+    - 收紧球铰动作范围
+    - 收紧球铰仿真速度上限与增大阻尼
+    - 收紧车轮仿真速度上限
+    - 收紧 PPO 的学习率、KL 与梯度范数
+  - 已确认 Stage0 在 `super().__post_init__()` 后修改 actuator 参数时，必须重新构建 `robot cfg`
+    - 否则 PhysX articulation 仍会使用 base cfg 里的旧驱动参数
+  - 最新最小验证 run：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-26-28`
+  - 最新完整诊断 run：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-16_10-12-26`
+    - 到 `iteration 299/300` 末段：
+      - `Train/mean_reward ≈ 55.87`
+      - `Train/mean_episode_length ≈ 903 / 959`
+      - `Tracking/goal_pos_error ≈ 7.96 m`
+      - `Observation/base_lin_vel_x_raw ≈ 1.28 m/s`
+      - `Observation/wheel_longitudinal_slip_abs_mean_raw ≈ 0.864`
+      - `Observation/wheel_slip_angle_abs_mean_raw ≈ 0.803 rad`
+      - `Observation/tilt_deg ≈ 19.89°`
+      - `Reward/longitudinal_slip_gate ≈ 0.0099`
+      - `Reward/lateral_slip_gate ≈ 0.145`
+      - `Reward/force_gate ≈ 0.288`
+      - `Loss/value ≈ 0.07`
+    - 中期曾出现 critic 尖峰：
+      - `iteration 148 ~ 157` 附近 `Loss/value` 一度升到 `O(10^2 ~ 10^3)`，随后自行回落
+    - 当前结论：
+      - 这是“能活、能前进，但 traction 质量差且中后期姿态偏激进”的 run
 
 ## 当前 RL 主线位置
 - 当前活跃 RL 工作区：
@@ -78,8 +238,74 @@
   - `utils/validate_wheel_speed_allocator.py`
 
 ## 本轮已确认
+- 已完成 Stage0 “稳定性优先”参数落地与真实 GPU 冒烟验证：
+  - `agents/rsl_rl_ppo_cfg.py`
+    - `max_iterations = 300`
+    - `save_interval = 100`
+    - `actor init_std = 0.35`
+    - `learning_rate = 2.0e-4`
+    - `num_learning_epochs = 4`
+    - `entropy_coef = 0.002`
+    - `desired_kl = 0.008`
+    - `value_loss_coef = 0.7`
+    - `max_grad_norm = 0.7`
+  - `baseline/complete_car_stage0_cfg.py`
+    - 球铰动作范围收紧到：
+      - `(-0.56, -1.30, -0.35, -0.56, -1.30, -0.35)` / `(0.56, 0.40, 0.35, 0.56, 0.40, 0.35)`
+    - 球铰阻尼改为 `20.0`
+    - 球铰仿真速度上限改为 `0.8 rad/s`
+    - 车轮仿真速度上限改为 `12.0 rad/s`
+    - PhysX：
+      - `max_velocity_iteration_count = 1`
+      - `enable_external_forces_every_iteration = True`
+    - 观测 scale 已针对 slip / gravity / last_action 做一轮收紧
+    - reward 已针对低滑移、低侧滑、低跳动、球铰平滑做一轮收紧
+  - `mdp/rewards.py`
+    - 当前 `gated_progress` 已变为：
+      - `progress * roll_gate * speed_gate * force_gate * vertical_speed_gate * ball_joint_speed_gate * wheel_action_rate_gate * composite_gate`
+    - 当前 slip gate 已从“易饱和为 0 的硬抑制”改为“基于平均 slip 的平滑指数门控”
+    - 已确认 `wheel_action_rate_gate` 能改善纵滑与 critic，但单独增加侧向速度 gate 或额外 lateral gate 权重，不能在中后期持续压住侧滑
+  - 已用：
+    - `python scripts/train.py --task CompleteCar-Stage0 --headless --max_iterations 1`
+    完成真实 GPU 启动验证
+  - 最新验证结果：
+    - env 初始化通过
+    - articulation 驱动参数已确认实际生效：
+      - 球铰阻尼 `20.0`
+      - 球铰速度上限 `0.8`
+      - 车轮速度上限 `12.0`
+  - 当前保留的最佳短跑验证 run：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-45-26_wheel_action_smooth_v1`
+  - 已否决的实验 run：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-48-41_lateral_speed_gate_v1`
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-50-45_lateral_slip_priority_v1`
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-52-30_lateral_slip_priority_v1_iter300`
+      - 实际在 `iteration 143/300` 后停止观察，趋势已足够清楚
+    - 完成 `Learning iteration 0/1`
 - 已新增本地文献补挂脚本：
   - `scripts/literature/attach_local_pdfs_to_zotero_collection.py`
+- 已完成一轮 wheel contact sensor 启动修复验证：
+  - 当前 `complete_car.usd` 中以下 6 个 wheel body 根节点已确认带有 `Contact Report API`：
+    - `body_car_wheel_left`
+    - `body_car_wheel_right`
+    - `head_car_wheel_left`
+    - `head_car_wheel_right`
+    - `tail_car_wheel_left`
+    - `tail_car_wheel_right`
+  - `sensors/sensor_cfg.py` 已补充 runtime 侧 `{ENV_REGEX_NS}` 解析
+  - 当前 wheel-ground contact force 已不再依赖 Isaac Lab `ContactSensor`
+  - 当前实现改为：
+    - 运行时为 6 个轮子分别创建 PhysX `rigid_contact_view`
+    - wheel-ground filter 运行时递归解析 `ground_prim_path` 下的真实碰撞 prim
+    - 用 `get_contact_data(dt)` 读取逐接触点法向标量与接触法向
+    - 对每个轮子聚合 `normal_force_scalar * contact_normal_vector`
+    - 再按轮顺序拼接为 `(num_envs, 6, 3)` 的世界系法向合力向量
+  - `base/env.py` 已修正：
+    - `_total_vehicle_weight` 强制放到 `self.device`
+  - 当前真实验证命令：
+    - `python scripts/train.py --task CompleteCar-Stage0 --headless --max_iterations 1`
+  - 已通过并进入持续训练循环的 run：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-10-27`
 - 已完成当前 direct workflow 命令 / 动作主线重构：
   - `CommandCfg.num_commands` 已由 `2` 改为 `3`
   - 新命令语义为目标全局位姿：
@@ -96,7 +322,7 @@
   - 当前 wheel allocator 已从 env 实际执行链路移除，保留在仓库中但不再参与当前动作到轮速目标的映射
   - 当前 reward 已从旧的速度跟踪主线重构为目标导向主线：
     - `target_bonus + gated_progress`
-    - 其中 `gated_progress = progress * roll_gate * speed_gate * force_gate * composite_gate`
+    - 其中 `gated_progress = progress * roll_gate * speed_gate * force_gate * vertical_speed_gate * ball_joint_speed_gate * wheel_action_rate_gate * composite_gate`
     - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
   - 已在当前 actor / critic 主线新增 18 维轮地接触相关观测：
     - 6 维各轮纵向滑移率
@@ -162,6 +388,30 @@
 - 当前 `RL_Training/` 下全部 Python 文件已通过：
   - `python3 -m py_compile $(find RL_Training -name '*.py' | sort)`
 - 最近已补充 `base/complete_car_cfg.py` 中 `CommandCfg` 与 `ControlCfg` 的中文工程注释，便于后续阅读配置语义与单位。
+- 最近已调整目标命令重采样逻辑：
+  - `commands.resampling_time` 不再在 env cfg 装配阶段被强制对齐到 `episode_length_s`
+  - env 预物理步会在 `resampling_time < episode_length_s` 时启用中途重采样
+  - 当前默认行为已变为：
+    - reset 时采样一次目标
+    - 一个 episode 内通常会经历 `2 ~ 3` 个目标段
+- 最近已清理一段旧的高度扫描死代码：
+  - 当前 active critic 高程 patch 的真实入口是：
+    - `base/env.py::_compute_critic_height_patch()`
+  - 旧的 `sensors/sensor_cfg.py::get_height_features()` 已删除
+  - 原因是：
+    - 当前 Stage0 / Stage1 / Stage2 都未启用 `height_scanner`
+    - 该函数返回值也未参与 actor / critic 观测拼接
+- 最近已修正 `play.py` 的一处回放路径解析问题：
+  - `--load_run` 现在既可接受：
+    - 纯 run 名，如 `2026-04-15_21-35-52`
+    - 带实验名前缀的相对路径，如 `complete_car_stage0/2026-04-15_21-35-52`
+    - 直接指向 run 目录的绝对路径
+  - 当前已确认原先的：
+    - `No runs present in the directory ... match ...`
+    属于 `load_run` 路径解析不够稳健，而不是日志目录缺失
+  - 修复后，回放流程已可越过 checkpoint 解析阶段
+  - 当前新的实际阻塞点是：
+    - 运行机器此刻没有可用 CUDA 设备，`play.py` 默认仍走 `cuda:0`
 - 最近已完成 terrain curriculum 重构：
   - 参数入口改为 `CurriculumCfg`
   - env 在 `_setup_scene()` / `_reset_idx()` 中调用 `mdp/curriculum.py`
@@ -304,9 +554,9 @@
   - 当前车轮动作直接按对称速度上限映射：
     - `wheel_target = action * wheel_joint_velocity_limit_sim`
   - 当前逐轴动作范围按关节顺序 `z, y, x, z, y, x` 为：
-    - `yaw in [-0.7, 0.7]`
-    - `pitch in [-1.6, 0.5]`
-    - `roll in [-0.5, 0.5]`
+    - `yaw in [-0.56, 0.56]`
+    - `pitch in [-1.30, 0.40]`
+    - `roll in [-0.35, 0.35]`
   - 当前新增动作随机化总开关：
     - `randomization.enable_action_randomization = False`
   - 因此当前默认不使用：
@@ -364,11 +614,13 @@
     - `roll_gate`
     - `speed_gate`
     - `force_gate`
+    - `vertical_speed_gate`
+    - `ball_joint_speed_gate`
     - `heading_gate`
     - `longitudinal_slip_gate`
     - `lateral_slip_gate`
   - 当前总奖励形式为：
-    - `target_bonus + progress * roll_gate * speed_gate * force_gate * ((heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3)`
+    - `target_bonus + progress * roll_gate * speed_gate * force_gate * vertical_speed_gate * ball_joint_speed_gate * wheel_action_rate_gate * ((heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3)`
   - `target_bonus` 触发条件：
     - 水平目标距离 `< 0.3 m`
     - 目标朝向误差 `< 9 deg`
@@ -416,6 +668,65 @@
     - 3 篇 PDF 自动附加成功
     - 5 篇 PDF 因站点重定向或 `403` 限制未自动附加
 - 当前对话终端本身不是可直接反复长时间试错 Isaac Lab 训练的 shell，因此后续每一轮训练修改仍应尽量保持单变量。
+- 最近已完成对真实 Stage0 run：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-35-52`
+    的完整离线诊断
+  - 当前已确认：
+    - 该 run 已明显建立存活与朝目标推进能力
+    - `Train/mean_episode_length` 已升至约 `941 / 959`
+    - `Train/mean_reward` 已升至约 `247`
+    - `Tracking/goal_pos_error` 已从约 `20 m` 降到约 `8.75 m`
+    - 当前主要剩余问题不是翻车，而是：
+      - 长期高纵向滑移
+      - 长期高侧滑角
+      - 动作幅值偏大
+      - 回合末 `ball_joint_limit` 占比抬升
+      - critic `value loss` 显著偏大
+  - 因此当前更准确的阶段判断应为：
+    - survival/progress 已建立
+    - traction quality 与 critic stability 仍未解决
+- 已完成一轮新的 Stage0 稳定性优先长跑中期验证：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-29-47_stability_v1_iter300`
+  - 当前实际跑到约 `iteration 85/300` 后手动停止，用于做中期趋势判断
+  - 当前已确认：
+    - critic 稳定性明显改善
+      - `Mean value loss` 仍维持在约 `0.13 ~ 0.18`
+    - 球铰速度更平滑
+      - `Observation/ball_joint_vel_abs_mean_raw` 约 `0.43 ~ 0.45`
+    - 竖向跳动约束生效
+      - `Reward/vertical_speed_gate` 约 `0.92 ~ 0.93`
+    - 姿态与限位都未成为主要问题
+      - `Termination/bad_orientation_rate = 0`
+      - `Termination/ball_joint_limit_rate = 0`
+    - 但轮胎滑移仍是核心瓶颈
+      - `Observation/wheel_longitudinal_slip_abs_mean_raw` 仍约 `0.81 ~ 0.87`
+      - `Observation/wheel_slip_angle_abs_mean_raw` 仍约 `0.64 ~ 0.75 rad`
+      - `Reward/longitudinal_slip_gate` 长期几乎为 `0`
+      - `Reward/lateral_slip_gate` 长期接近 `0`
+  - 因此这轮 tuning 的结论是：
+    - “平滑化 / critic 稳定”方向有效
+    - “低滑移 / 低侧滑”尚未真正解决
+- 已完成一轮 Stage0 “slip gate 去饱和”短训练验证：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-39-33_slip_gate_v1`
+  - 当前已确认：
+    - `longitudinal_slip_gate` 与 `lateral_slip_gate` 不再从一开始就长期塌到 `0`
+    - 到 `iteration 39/40` 时：
+      - `Observation/wheel_longitudinal_slip_abs_mean_raw ≈ 0.821`
+      - `Observation/base_lin_vel_x_raw ≈ 1.17`
+      - `Loss/value ≈ 0.15`
+    - 相比只靠稳定性优先 bundle 的早期阶段，这条线更早得到：
+      - 非零 slip gate
+      - 更高的前向速度
+      - 更低的纵向滑移
+    - 但侧滑角仍偏大：
+      - `Observation/wheel_slip_angle_abs_mean_raw ≈ 0.72 rad`
+- 已完成一轮 Stage0 “wheel cap 压到 8.5 rad/s” 的排除验证：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-37-02_slip_cap85_v1`
+  - 结论：
+    - 会明显压低 wheel speed
+    - 但会拖慢 progress
+    - 且不能充分解决纵向滑移
+  - 当前不保留为默认方案
 - 已完成对两个真实 run 的 observation scale 反推检查：
   - `2026-04-14_14-04-19_soft_limit_v1_orient3_lin22`
   - `2026-04-14_20-52-07`
@@ -436,8 +747,9 @@
   - policy 真正输入网络前的乘 scale 过程仍保留在 `mdp/observations.py`
 - 当前 wheel contact sensor 已接入 active direct workflow：
   - 机器人 USD spawn 已启用 `activate_contact_sensors`
-  - env 通过 `ContactSensor` 读取 6 个 wheel body 的 `net_forces_w`
-  - 当前法向力直接使用 `net_forces_w` 这个净法向接触力向量的模长，并按整车重量归一化
+  - env 不再依赖 Isaac Lab `ContactSensor`
+  - 当前通过 PhysX `rigid_contact_view.get_contact_data(dt)` 读取 6 个 wheel body 对地面的逐接触点法向数据
+  - 当前法向力先按每个接触点做 `normal_force_scalar * contact_normal_vector` 聚合成轮地法向合力向量，再取模长并按整车重量归一化
 - 当前动作执行链已去除电机干扰项：
   - `motor_strength` 不再参与 `policy_actions -> processed_actions`
   - reset 时也不再为动作采样电机强度系数
@@ -453,6 +765,19 @@
 - 当前 `RL_Training/` 结构已切换为新架构，后续不要再把旧的历史路径当作默认入口。
 
 ## 下一步优先级
+- 先围绕 `2026-04-15_22-29-47_stability_v1_iter300` 做下一轮单变量改动：
+  - 重点不再继续压球铰
+  - 重点转到车轮速度目标与真实车速的失配
+- 下一轮优先修改：
+  - 侧滑项设计方式
+  - 是否给 wheel action 增加更直接的平滑/增量约束
+- 下一轮诊断重点：
+  - `wheel_longitudinal_slip_abs_mean_raw`
+  - `wheel_slip_angle_abs_mean_raw`
+  - `base_lin_vel_x_raw / wheel_joint_vel_abs_mean_raw`
+  - `Reward/longitudinal_slip_gate`
+  - `Reward/lateral_slip_gate`
+  - `Loss/value`
 - 文献侧优先继续沿以下线索做二轮扩展：
   - `Hybrid Learning for Rough Terrain Navigation of Actively Articulated Wheeled Vehicles`
   - `Control of rough terrain vehicles using deep reinforcement learning`

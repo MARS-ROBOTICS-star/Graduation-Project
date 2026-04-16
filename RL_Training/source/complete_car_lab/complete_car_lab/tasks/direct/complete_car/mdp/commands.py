@@ -26,7 +26,7 @@ def resample_goal_commands(
     num_envs = env_ids.numel()
 
     goal_direction_max = math.radians(cfg.goal_direction_max_deg)
-    goal_heading_delta_max = math.radians(cfg.goal_direction_max_deg/2)
+    goal_heading_delta_max = math.radians(cfg.goal_heading_delta_max_deg)
 
     u = torch.rand(num_envs, device=device, dtype=dtype) #[0,1)均匀分布
     signs = torch.where(

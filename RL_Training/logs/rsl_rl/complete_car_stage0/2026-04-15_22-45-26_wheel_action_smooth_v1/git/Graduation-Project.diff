@@ -1,0 +1,2278 @@
+--- git commit ---
+fd8860716ca6509cb178ccc74db096325e394b79
+
+
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   RL_Training/scripts/play.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+	modified:   USD/complete_car.usd
+	modified:   "docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
+	modified:   docs/conversation_history.md
+	modified:   docs/current_status.md
+	modified:   logs/daily_work_log.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-44-35/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-57-31/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-08-59/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-10-27/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-35-52/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-23-39/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-25-02/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-26-28/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-29-47_stability_v1_iter300/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-36-37/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-37-02_slip_cap85_v1/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-39-13/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-39-33_slip_gate_v1/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-45-26_wheel_action_smooth_v1/
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/RL_Training/scripts/play.py b/RL_Training/scripts/play.py
+index 80d8e3c..fcea49c 100644
+--- a/RL_Training/scripts/play.py
++++ b/RL_Training/scripts/play.py
+@@ -4,6 +4,7 @@ from __future__ import annotations
+ 
+ import argparse
+ import os
++import re
+ import sys
+ import time
+ from pathlib import Path
+@@ -79,6 +80,43 @@ def _resolve_checkpoint_lookup_args(agent_cfg) -> tuple[str, str]:
+     return run_pattern, checkpoint_pattern
+ 
+ 
++def _resolve_checkpoint_path(log_root_path: str, run_pattern: str, checkpoint_pattern: str) -> str:
++    """Resolve checkpoints from either a run name or a direct run-directory-like path."""
++
++    def _try_existing_run_dir(candidate: Path) -> str | None:
++        if not candidate.is_dir():
++            return None
++        return get_checkpoint_path(str(candidate.parent), candidate.name, checkpoint_pattern)
++
++    if run_pattern in {"", ".*"}:
++        return get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
++
++    run_selector = Path(run_pattern)
++    direct_candidates = []
++    if run_selector.is_absolute():
++        direct_candidates.append(run_selector)
++    else:
++        direct_candidates.append(Path(run_pattern))
++        direct_candidates.append(Path(log_root_path) / run_selector)
++        direct_candidates.append(Path(log_root_path).parent / run_selector)
++
++    for candidate in direct_candidates:
++        resolved = _try_existing_run_dir(candidate)
++        if resolved is not None:
++            return resolved
++
++    if not run_selector.is_absolute():
++        normalized_pattern = str(run_selector).strip()
++        normalized_pattern = re.sub(r"^[./]+", "", normalized_pattern)
++        log_root_name = Path(log_root_path).name
++        duplicated_prefix = f"{log_root_name}/"
++        if normalized_pattern.startswith(duplicated_prefix):
++            normalized_pattern = normalized_pattern[len(duplicated_prefix) :]
++        return get_checkpoint_path(log_root_path, normalized_pattern, checkpoint_pattern)
++
++    return get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
++
++
+ def _parse_rsl_rl_version(version_str: str):
+     """Parse vendored rsl_rl versions robustly."""
+     try:
+@@ -99,7 +137,7 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
+         resume_path = retrieve_file_path(args_cli.checkpoint)
+     else:
+         run_pattern, checkpoint_pattern = _resolve_checkpoint_lookup_args(agent_cfg)
+-        resume_path = get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
++        resume_path = _resolve_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
+     log_dir = os.path.dirname(resume_path)
+     env_cfg.log_dir = log_dir
+ 
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py
+index 7b072eb..9530242 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py
+@@ -69,8 +69,8 @@ class LocalOnPolicyRunnerCfg:
+ class CompleteCarBasePPORunnerCfg(LocalOnPolicyRunnerCfg):
+     seed = 1
+     num_steps_per_env = 96
+-    max_iterations = 1000
+-    save_interval = 200
++    max_iterations = 300
++    save_interval = 100
+     experiment_name = "complete_car_direct"
+     run_name = ""
+     obs_groups = {"actor": ["actor"], "critic": ["critic"]}
+@@ -83,7 +83,7 @@ class CompleteCarBasePPORunnerCfg(LocalOnPolicyRunnerCfg):
+         hidden_dims=[256, 128, 64],
+         activation="elu",
+         obs_normalization=True,
+-        distribution_cfg=LocalGaussianDistributionCfg(init_std=0.4, std_type="scalar"),
++        distribution_cfg=LocalGaussianDistributionCfg(init_std=0.35, std_type="scalar"),
+     )
+     critic = LocalMlpModelCfg(
+         hidden_dims=[256, 128, 64],
+@@ -92,18 +92,18 @@ class CompleteCarBasePPORunnerCfg(LocalOnPolicyRunnerCfg):
+         distribution_cfg=None,
+     )
+     algorithm = LocalPpoAlgorithmCfg(
+-        value_loss_coef=1.0,
++        value_loss_coef=0.7,
+         use_clipped_value_loss=True,
+         clip_param=0.2,
+-        entropy_coef=0.003,
+-        num_learning_epochs=5,
++        entropy_coef=0.002,
++        num_learning_epochs=4,
+         num_mini_batches=4,
+-        learning_rate=3.0e-4,
++        learning_rate=2.0e-4,
+         schedule="adaptive",
+         gamma=0.99,
+         lam=0.95,
+-        desired_kl=0.01,
+-        max_grad_norm=1.0,
++        desired_kl=0.008,
++        max_grad_norm=0.7,
+     )
+ 
+ 
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
+index b87a477..df726a9 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
+@@ -25,7 +25,7 @@ class CommandCfg:
+     """目标位姿命令采样器配置。"""
+ 
+     num_commands: int = 3
+-    resampling_time: float = 5.0
++    resampling_time: float = 5.0  # 当前在 env cfg 装配阶段会对齐到 episode_length_s，使每回合只采样一次目标。
+     goal_distance: float = 20
+     goal_direction_max_deg: float = 18.43
+     zero_command: bool = False  # 为 True 时，本次采样出的目标会退化为当前位置和当前朝向。
+@@ -126,6 +126,9 @@ class RewardParamsCfg:
+     force_std_scale: float = 0.1
+     longitudinal_slip_scale: float = 0.3
+     lateral_slip_gain: float = 6.0
++    vertical_speed_scale: float = 0.35
++    ball_joint_speed_scale: float = 0.8
++    wheel_action_rate_scale: float = 0.35
+ 
+ 
+ @configclass
+@@ -277,6 +280,7 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
+ 
+         self.control.control_dt = self.control.sim_dt * self.control.decimation
+         self.decimation = self.control.decimation
++        self.commands.resampling_time = self.episode_length_s
+ 
+         self.action_space = total_dim(build_action_descriptor(self))
+         base_obs_dim = total_dim(build_observation_descriptor(self))
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+index c1dee53..948de28 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+@@ -45,7 +45,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
+         self._head_car_body_id = self._head_car_body_id[0]
+         self._tail_car_body_id = self._tail_car_body_id[0]
+         gravity_magnitude = abs(float(self.cfg.sim.gravity[2]))
+-        self._total_vehicle_weight = self.robot.data.default_mass.sum(dim=1, keepdim=True) * gravity_magnitude
++        self._total_vehicle_weight = (
++            self.robot.data.default_mass.sum(dim=1, keepdim=True).to(device=self.device) * gravity_magnitude
++        )
+ 
+         self.actions = torch.zeros((self.num_envs, self.cfg.action_space), device=self.device)
+         self.last_actions = torch.zeros_like(self.actions)
+@@ -109,12 +111,13 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             spawn_ground_plane(prim_path=ground_prim_path, cfg=GroundPlaneCfg())
+ 
+         self._sensor_runtime = CompleteCarSensorSuiteRuntime(self.cfg.sensors, self.cfg.terrain, ground_prim_path)
+-        self._sensor_runtime.build_scene_entities(self.scene)
+ 
+         self.scene.clone_environments(copy_from_source=False)
+         if str(self.device) == "cpu":
+             self.scene.filter_collisions(global_prim_paths=[])
+ 
++        self._sensor_runtime.build_scene_entities(self.scene)
++
+         if self._terrain_runtime.generator_enabled:
+             mdp_curriculum.initialize_terrain_curriculum(self.cfg.curriculum, self._terrain_runtime, self.scene)
+         else:
+@@ -131,24 +134,25 @@ class CompleteCarDirectEnv(DirectRLEnv):
+         self.actions.copy_(policy_actions)
+         self._processed_actions.copy_(processed_actions)
+ 
+-        resample_env_ids = mdp_commands.step_command_timer(self._command_time_left, self.step_dt)
+-        if resample_env_ids.numel() > 0:
+-            base_pos_xy_w = self.robot.data.root_link_pos_w[resample_env_ids, :2]
+-            base_yaw_w = quaternion_to_rpy(self.robot.data.root_link_quat_w[resample_env_ids])[:, 2]
+-            goal_direction_offsets, goal_heading_offsets = mdp_commands.resample_goal_commands(
+-                self.command_targets_w,
+-                self._command_time_left,
+-                resample_env_ids,
+-                base_pos_xy_w,
+-                base_yaw_w,
+-                self.cfg.commands,
+-            )
+-            self._goal_direction_offsets[resample_env_ids] = goal_direction_offsets
+-            self._goal_heading_offsets[resample_env_ids] = goal_heading_offsets
+-            self._previous_goal_distance[resample_env_ids] = torch.linalg.vector_norm(
+-                self.command_targets_w[resample_env_ids, :2] - base_pos_xy_w,
+-                dim=1,
+-            )
++        if self.cfg.commands.resampling_time < self.cfg.episode_length_s:
++            resample_env_ids = mdp_commands.step_command_timer(self._command_time_left, self.step_dt)
++            if resample_env_ids.numel() > 0:
++                base_pos_xy_w = self.robot.data.root_link_pos_w[resample_env_ids, :2]
++                base_yaw_w = quaternion_to_rpy(self.robot.data.root_link_quat_w[resample_env_ids])[:, 2]
++                goal_direction_offsets, goal_heading_offsets = mdp_commands.resample_goal_commands(
++                    self.command_targets_w,
++                    self._command_time_left,
++                    resample_env_ids,
++                    base_pos_xy_w,
++                    base_yaw_w,
++                    self.cfg.commands,
++                )
++                self._goal_direction_offsets[resample_env_ids] = goal_direction_offsets
++                self._goal_heading_offsets[resample_env_ids] = goal_heading_offsets
++                self._previous_goal_distance[resample_env_ids] = torch.linalg.vector_norm(
++                    self.command_targets_w[resample_env_ids, :2] - base_pos_xy_w,
++                    dim=1,
++                )
+ 
+         processed_ball_actions = self._processed_actions[:, : len(self._ball_joint_ids)]
+         processed_wheel_actions = self._processed_actions[:, len(self._ball_joint_ids) :]
+@@ -186,7 +190,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
+ 
+     def _get_observations(self) -> dict:
+         if self._sensor_runtime is not None:
+-            self._sensor_runtime.get_height_features()
+             wheel_contact_forces_w = self._sensor_runtime.get_wheel_contact_forces_w(WHEEL_BODY_NAMES)
+         else:
+             wheel_contact_forces_w = torch.zeros(
+@@ -274,6 +277,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             relative_goal_commands,
+             self._previous_goal_distance,
+             raw_obs_terms,
++            self._processed_actions,
+         )
+         for name, value in components.items():
+             self._episode_sums[name] += value
+@@ -370,6 +374,13 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             "Reward/roll_gate": float(torch.mean(self._last_reward_components["roll_gate"]).item()),
+             "Reward/speed_gate": float(torch.mean(self._last_reward_components["speed_gate"]).item()),
+             "Reward/force_gate": float(torch.mean(self._last_reward_components["force_gate"]).item()),
++            "Reward/vertical_speed_gate": float(torch.mean(self._last_reward_components["vertical_speed_gate"]).item()),
++            "Reward/ball_joint_speed_gate": float(
++                torch.mean(self._last_reward_components["ball_joint_speed_gate"]).item()
++            ),
++            "Reward/wheel_action_rate_gate": float(
++                torch.mean(self._last_reward_components["wheel_action_rate_gate"]).item()
++            ),
+             "Reward/heading_gate": float(torch.mean(self._last_reward_components["heading_gate"]).item()),
+             "Reward/longitudinal_slip_gate": float(
+                 torch.mean(self._last_reward_components["longitudinal_slip_gate"]).item()
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
+index 5eb3f22..52cf006 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
+@@ -3,6 +3,7 @@
+ from isaaclab.utils import configclass
+ 
+ from ..base.complete_car_cfg import CompleteCarEnvCfg
++from ..assets.robot_cfg import build_complete_car_robot_cfg
+ 
+ 
+ @configclass
+@@ -21,3 +22,38 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
+         self.sensors.lidar.enabled = False
+         self.sensors.enable_height_scanner = False
+         super().__post_init__()
++
++        # Stage0 tuning priority: lower slip, lower side-slip, smoother articulation motion,
++        # then improve critic stability under the same task definition.
++        self.control.ball_joint_action_lower_limits = (-0.56, -1.30, -0.35, -0.56, -1.30, -0.35)
++        self.control.ball_joint_action_upper_limits = (0.56, 0.40, 0.35, 0.56, 0.40, 0.35)
++        self.control.ball_joint_damping = 20.0
++        self.control.ball_joint_velocity_limit_sim = 0.8
++        self.control.wheel_joint_velocity_limit_sim = 12.0
++
++        self.observations.scales.base_ang_vel = 0.35
++        self.observations.scales.projected_gravity = 1.5
++        self.observations.scales.wheel_longitudinal_slip = 2.0
++        self.observations.scales.wheel_slip_angle = 1.5
++        self.observations.scales.wheel_normal_contact_force = 1.25
++        self.observations.scales.last_action = 1.5
++
++        self.rewards.params.target_bonus_ratio = 0.03
++        self.rewards.params.roll_free_deg = 3.0
++        self.rewards.params.roll_gaussian_scale = 3.141592653589793 / 24.0
++        self.rewards.params.speed_limit = 1.6
++        self.rewards.params.speed_gain = 3.0
++        self.rewards.params.force_std_scale = 0.08
++        self.rewards.params.longitudinal_slip_scale = 0.18
++        self.rewards.params.lateral_slip_gain = 8.0
++        self.rewards.params.vertical_speed_scale = 0.20
++        self.rewards.params.ball_joint_speed_scale = 0.55
++        self.rewards.params.wheel_action_rate_scale = 0.25
++
++        self.sim.physx.max_velocity_iteration_count = 1
++        self.sim.physx.enable_external_forces_every_iteration = True
++
++        # Base cfg rebuilds the articulation inside its own __post_init__().
++        # Stage0 overrides control-side actuator limits after that point, so we must
++        # rebuild the robot once more here to make the PhysX articulation use them.
++        self.robot = build_complete_car_robot_cfg(self.control, self.resets)
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py
+index 05712c6..ece51c0 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py
+@@ -41,8 +41,8 @@ def _compute_wheel_contact_observations(
+     wheel_slip_angle = torch.atan2(v_y, torch.abs(v_x) + slip_velocity_epsilon)
+     wheel_slip_angle = torch.clamp(wheel_slip_angle, -slip_angle_clip_rad, slip_angle_clip_rad)
+ 
+-    # ContactSensor.net_forces_w is already the summed normal contact-force vector in world frame.
+-    # Use its magnitude to obtain the load carried along the actual wheel-ground contact normal.
++    # The runtime sensor path reconstructs one wheel-ground normal-force resultant vector in world frame
++    # by summing all contact-point (normal_force_scalar * contact_normal_vector) terms for each wheel.
+     wheel_normal_contact_force = torch.linalg.vector_norm(wheel_contact_forces_w, dim=-1) / total_vehicle_weight
+ 
+     return wheel_longitudinal_slip, wheel_slip_angle, wheel_normal_contact_force
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py
+index 48ed0cf..1202e46 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py
+@@ -14,6 +14,9 @@ REWARD_TERM_NAMES = (
+     "roll_gate",
+     "speed_gate",
+     "force_gate",
++    "vertical_speed_gate",
++    "ball_joint_speed_gate",
++    "wheel_action_rate_gate",
+     "heading_gate",
+     "longitudinal_slip_gate",
+     "lateral_slip_gate",
+@@ -34,6 +37,7 @@ def compute_reward_terms(
+     commands: torch.Tensor,
+     previous_goal_distance: torch.Tensor,
+     raw_obs_terms: dict[str, torch.Tensor],
++    processed_actions: torch.Tensor,
+ ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+     params = cfg.rewards.params
+     current_goal_distance = torch.linalg.vector_norm(commands[:, :2], dim=1)
+@@ -69,29 +73,53 @@ def compute_reward_terms(
+         torch.exp(params.speed_gain * (params.speed_limit - horizontal_speed)),
+     )
+ 
++    vertical_speed = torch.abs(robot.data.root_link_lin_vel_w[:, 2])
++    vertical_speed_gate = torch.exp(
++        -0.5 * torch.square(vertical_speed / max(params.vertical_speed_scale, 1.0e-6))
++    )
++
+     normalized_wheel_forces = raw_obs_terms["wheel_normal_contact_force"]
+     force_std = torch.std(normalized_wheel_forces, dim=1, unbiased=False)
+     force_gate = torch.exp(-0.5 * torch.square(force_std / max(params.force_std_scale, 1.0e-6)))
+ 
++    ball_joint_speed = torch.mean(torch.abs(raw_obs_terms["ball_joint_vel"]), dim=1)
++    ball_joint_speed_gate = torch.exp(
++        -0.5 * torch.square(ball_joint_speed / max(params.ball_joint_speed_scale, 1.0e-6))
++    )
++
++    num_wheels = raw_obs_terms["wheel_longitudinal_slip"].shape[1] if "wheel_longitudinal_slip" in raw_obs_terms else 0
++    if num_wheels > 0:
++        current_wheel_actions = processed_actions[:, -num_wheels:]
++        last_wheel_actions = raw_obs_terms["last_actions"][:, -num_wheels:]
++        wheel_action_delta = torch.mean(torch.abs(current_wheel_actions - last_wheel_actions), dim=1)
++        wheel_action_rate_gate = torch.exp(
++            -wheel_action_delta / max(params.wheel_action_rate_scale, 1.0e-6)
++        )
++    else:
++        wheel_action_rate_gate = torch.ones_like(ball_joint_speed_gate)
++
+     wheel_longitudinal_slip = raw_obs_terms["wheel_longitudinal_slip"]
+-    longitudinal_slip_gate = torch.prod(
+-        torch.exp(-0.5 * torch.square(wheel_longitudinal_slip / max(params.longitudinal_slip_scale, 1.0e-6))),
+-        dim=1,
++    mean_longitudinal_slip = torch.mean(torch.abs(wheel_longitudinal_slip), dim=1)
++    longitudinal_slip_gate = torch.exp(
++        -mean_longitudinal_slip / max(params.longitudinal_slip_scale, 1.0e-6)
+     )
+ 
+     wheel_slip_angle = raw_obs_terms["wheel_slip_angle"]
+-    slip_angle_limit = math.pi / max(params.lateral_slip_gain, 1.0e-6)
+-    clipped_slip_angle = torch.clamp(wheel_slip_angle, -slip_angle_limit, slip_angle_limit)
+-    lateral_slip_terms = 0.5 * torch.cos(params.lateral_slip_gain * clipped_slip_angle) + 0.5
+-    lateral_slip_terms = torch.where(
+-        torch.abs(wheel_slip_angle) <= slip_angle_limit,
+-        lateral_slip_terms,
+-        torch.zeros_like(lateral_slip_terms),
+-    )
+-    lateral_slip_gate = torch.prod(lateral_slip_terms, dim=1)
++    slip_angle_scale = math.pi / max(params.lateral_slip_gain, 1.0e-6)
++    mean_slip_angle = torch.mean(torch.abs(wheel_slip_angle), dim=1)
++    lateral_slip_gate = torch.exp(-mean_slip_angle / max(slip_angle_scale, 1.0e-6))
+ 
+     composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3.0
+-    gated_progress = progress * roll_gate * speed_gate * force_gate * composite_gate
++    gated_progress = (
++        progress
++        * roll_gate
++        * speed_gate
++        * force_gate
++        * vertical_speed_gate
++        * ball_joint_speed_gate
++        * wheel_action_rate_gate
++        * composite_gate
++    )
+ 
+     components = {
+         "target_bonus": target_bonus,
+@@ -99,6 +127,9 @@ def compute_reward_terms(
+         "roll_gate": roll_gate,
+         "speed_gate": speed_gate,
+         "force_gate": force_gate,
++        "vertical_speed_gate": vertical_speed_gate,
++        "ball_joint_speed_gate": ball_joint_speed_gate,
++        "wheel_action_rate_gate": wheel_action_rate_gate,
+         "heading_gate": heading_gate,
+         "longitudinal_slip_gate": longitudinal_slip_gate,
+         "lateral_slip_gate": lateral_slip_gate,
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+index 93411e9..0ec9823 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py
+@@ -5,14 +5,37 @@ from __future__ import annotations
+ from dataclasses import field
+ 
+ import torch
+-from isaaclab.sensors import ContactSensor, ContactSensorCfg, RayCaster, RayCasterCfg
++from isaacsim.core.simulation_manager import SimulationManager
++from isaaclab.sensors import RayCaster, RayCasterCfg
++import isaaclab.sim as sim_utils
+ from isaaclab.utils import configclass
+ 
++from ..assets.robot_cfg import WHEEL_BODY_NAMES
+ from .imu import ImuSensorAdapter, ImuSensorCfg
+ from .lidar import LidarSensorAdapter, LidarSensorCfg
+ from .stereo_camera import StereoCameraAdapter, StereoCameraSensorCfg
+ 
+ 
++def _resolve_env_regex_ns(prim_path: str, scene) -> str:
++    """Resolve Isaac Lab's environment namespace placeholder for manually-built sensors."""
++
++    return prim_path.format(ENV_REGEX_NS=scene.env_regex_ns)
++
++
++def _resolve_ground_contact_filter_pattern(ground_prim_path: str) -> str:
++    """Resolve the exact collider prim used as the wheel-ground contact filter."""
++
++    ground_collision_prim = sim_utils.get_first_matching_child_prim(
++        ground_prim_path,
++        predicate=lambda prim: prim.GetTypeName() in {"Plane", "Mesh"},
++    )
++    if ground_collision_prim is None:
++        if sim_utils.is_prim_path_valid(ground_prim_path):
++            return ground_prim_path
++        raise RuntimeError(f"Failed to resolve a ground collision prim under '{ground_prim_path}'.")
++    return ground_collision_prim.GetPath().pathString
++
++
+ @configclass
+ class CompleteCarSensorSuiteCfg:
+     """集中描述 Stage0/1/2 需要绑定的传感器集合。"""
+@@ -23,13 +46,14 @@ class CompleteCarSensorSuiteCfg:
+     enable_height_scanner: bool = False
+     height_scanner_debug_vis: bool = False
+ 
++    # 计算策略网络（Actor）传感器特征的总维度
+     def get_policy_feature_dim(self) -> int:
+         return (
+             self.imu.get_policy_feature_dim()
+             + self.stereo_camera.get_policy_feature_dim()
+             + self.lidar.get_policy_feature_dim()
+         )
+-
++    #返回传感器维度的详细描述列表
+     def policy_descriptor(self) -> list[tuple[str, int]]:
+         descriptor: list[tuple[str, int]] = []
+         imu_dim = self.imu.get_policy_feature_dim()
+@@ -56,30 +80,26 @@ class CompleteCarSensorSuiteRuntime:
+         self.stereo_camera = StereoCameraAdapter(cfg.stereo_camera)
+         self.lidar = LidarSensorAdapter(cfg.lidar, ground_prim_path)
+         self.height_scanner: RayCaster | None = None
+-        self.wheel_contact_sensor: ContactSensor | None = None
+-        self._wheel_contact_body_ids: torch.Tensor | None = None
++        self._wheel_contact_views: dict[str, object] = {}
++        self._wheel_contact_sim_dt: float | None = None
++        self._wheel_contact_env_glob_ns: str | None = None
++        self._wheel_contact_num_envs: int | None = None
++        self._wheel_contact_filter_patterns: list[str] = []
+         self._raw_output: dict[str, torch.Tensor | dict[str, torch.Tensor]] = {}
+ 
+     def build_scene_entities(self, scene) -> None:
++        self.cfg.imu.prim_path = _resolve_env_regex_ns(self.cfg.imu.prim_path, scene)
++        self.cfg.stereo_camera.prim_path = _resolve_env_regex_ns(self.cfg.stereo_camera.prim_path, scene)
++        self.cfg.lidar.prim_path = _resolve_env_regex_ns(self.cfg.lidar.prim_path, scene)
++        self.terrain_cfg.height_scanner_prim_path = _resolve_env_regex_ns(self.terrain_cfg.height_scanner_prim_path, scene)
++        self._wheel_contact_env_glob_ns = scene.env_regex_ns.replace(".*", "*")
++        self._wheel_contact_num_envs = scene.cfg.num_envs
++        self._wheel_contact_filter_patterns = [_resolve_ground_contact_filter_pattern(self.ground_prim_path)]
++
+         self.imu.build(scene)
+         self.stereo_camera.build(scene)
+         self.lidar.build(scene)
+ 
+-        self.wheel_contact_sensor = ContactSensor(
+-            ContactSensorCfg(
+-                prim_path=(
+-                    "{ENV_REGEX_NS}/Robot/"
+-                    "(body_car_wheel_left|body_car_wheel_right|"
+-                    "head_car_wheel_left|head_car_wheel_right|"
+-                    "tail_car_wheel_left|tail_car_wheel_right)"
+-                ),
+-                update_period=0.0,
+-                history_length=1,
+-                debug_vis=False,
+-            )
+-        )
+-        scene.sensors["wheel_contact_sensor"] = self.wheel_contact_sensor
+-
+         if self.cfg.enable_height_scanner:
+             height_cfg: RayCasterCfg = self.terrain_cfg.build_height_scanner_cfg(self.ground_prim_path)
+             height_cfg.debug_vis = self.cfg.height_scanner_debug_vis
+@@ -90,21 +110,70 @@ class CompleteCarSensorSuiteRuntime:
+         self.imu.reset(env_ids)
+         self.stereo_camera.reset(env_ids)
+         self.lidar.reset(env_ids)
+-        if self.wheel_contact_sensor is not None:
+-            self.wheel_contact_sensor.reset(env_ids)
+         if self.height_scanner is not None:
+             self.height_scanner.reset(env_ids)
+-
+-    def get_height_features(self) -> torch.Tensor | None:
+-        if self.height_scanner is None:
+-            return None
+-        ray_hits_w = self.height_scanner.data.ray_hits_w
+-        pos_w = self.height_scanner.data.pos_w.unsqueeze(1)
+-        relative_height = pos_w[..., 2] - ray_hits_w[..., 2] - self.terrain_cfg.height_scanner_offset[2]
+-        height_features = torch.nan_to_num(relative_height, nan=0.0, posinf=0.0, neginf=0.0)
+-        self._raw_output["height_scanner"] = height_features
+-        return height_features
+-
++    # 监听车轮与地面的碰撞事件
++    def _initialize_wheel_contact_views(self) -> None:
++        if self._wheel_contact_views:
++            return
++        if self._wheel_contact_env_glob_ns is None:
++            raise RuntimeError("Wheel contact env namespace has not been prepared.")
++        if self._wheel_contact_num_envs is None:
++            raise RuntimeError("Wheel contact env count has not been prepared.")
++
++        sim = sim_utils.SimulationContext.instance()
++        if sim is None:
++            raise RuntimeError("Simulation context is not initialized.")
++        physics_sim_view = SimulationManager.get_physics_sim_view()
++        self._wheel_contact_sim_dt = sim.get_physics_dt()
++        num_envs = self._wheel_contact_num_envs
++
++        for wheel_body_name in WHEEL_BODY_NAMES:
++            wheel_prim_glob = (
++                f"{self._wheel_contact_env_glob_ns}/Robot/complete_car_alternative/{wheel_body_name}"
++            )
++            body_view = physics_sim_view.create_rigid_body_view(wheel_prim_glob)
++            if body_view.count != num_envs:
++                raise RuntimeError(
++                    "Failed to initialize wheel rigid body view."
++                    f"\n\tWheel body : {wheel_body_name}"
++                    f"\n\tPrim glob  : {wheel_prim_glob}"
++                    f"\n\tBody count : {body_view.count}"
++                    f"\n\tNum envs   : {num_envs}"
++                )
++            self._wheel_contact_views[wheel_body_name] = physics_sim_view.create_rigid_contact_view(
++                wheel_prim_glob,
++                filter_patterns=self._wheel_contact_filter_patterns,
++                max_contact_data_count=16 * num_envs,
++            )
++    #接触力张量聚合
++    def _aggregate_contact_force_vectors(
++        self,
++        contact_forces: torch.Tensor,
++        contact_normals: torch.Tensor,
++        pair_counts: torch.Tensor,
++        pair_start_indices: torch.Tensor,
++    ) -> torch.Tensor:
++        """Aggregate detailed contact-point data into one normal-force vector per (env, filter) pair."""
++
++        num_envs = self._wheel_contact_num_envs
++        if num_envs is None:
++            raise RuntimeError("Wheel contact env count has not been prepared.")
++
++        force_vectors = contact_forces * contact_normals
++        counts = pair_counts.view(-1).to(dtype=torch.long)
++        starts = pair_start_indices.view(-1).to(dtype=torch.long)
++        num_pairs = counts.numel()
++        aggregated = torch.zeros((num_pairs, 3), device=force_vectors.device, dtype=force_vectors.dtype)
++        total_contacts = int(counts.sum().item())
++        if total_contacts > 0:
++            row_ids = torch.repeat_interleave(torch.arange(num_pairs, device=force_vectors.device), counts)
++            block_starts = counts.cumsum(0) - counts
++            deltas = torch.arange(total_contacts, device=force_vectors.device) - block_starts.repeat_interleave(counts)
++            flat_indices = starts[row_ids] + deltas
++            aggregated.index_add_(0, row_ids, force_vectors.index_select(0, flat_indices))
++        return aggregated.view(num_envs, -1, 3)
++    
+     def get_policy_features(self) -> list[torch.Tensor]:
+         features: list[torch.Tensor] = []
+ 
+@@ -124,20 +193,27 @@ class CompleteCarSensorSuiteRuntime:
+             features.append(lidar_feature)
+ 
+         return features
+-
++    # 对外输出所有车轮的最终接触力
+     def get_wheel_contact_forces_w(self, wheel_body_names: list[str]) -> torch.Tensor:
+-        if self.wheel_contact_sensor is None:
+-            raise RuntimeError("Wheel contact sensor has not been created.")
+-
+-        if self._wheel_contact_body_ids is None:
+-            body_ids, _ = self.wheel_contact_sensor.find_bodies(wheel_body_names, preserve_order=True)
+-            self._wheel_contact_body_ids = torch.as_tensor(
+-                body_ids,
+-                device=self.wheel_contact_sensor.data.net_forces_w.device,
+-                dtype=torch.long,
++        self._initialize_wheel_contact_views()
++        if self._wheel_contact_sim_dt is None:
++            raise RuntimeError("Wheel contact sim dt has not been initialized.")
++
++        wheel_force_vectors = []
++        for wheel_body_name in wheel_body_names:
++            contact_view = self._wheel_contact_views[wheel_body_name]
++            normal_forces, _, contact_normals, _, pair_counts, pair_start_indices = contact_view.get_contact_data(
++                dt=self._wheel_contact_sim_dt
++            )
++            aggregated_force_vectors = self._aggregate_contact_force_vectors(
++                normal_forces,
++                contact_normals,
++                pair_counts,
++                pair_start_indices,
+             )
++            wheel_force_vectors.append(torch.sum(aggregated_force_vectors, dim=1, keepdim=True))
+ 
+-        net_forces_w = self.wheel_contact_sensor.data.net_forces_w[:, self._wheel_contact_body_ids]
++        net_forces_w = torch.cat(wheel_force_vectors, dim=1)
+         self._raw_output["wheel_contact_forces_w"] = net_forces_w
+         return net_forces_w
+ 
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+index a925629..d6fef70 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py
+@@ -34,9 +34,9 @@ class CompleteCarTerrainRuntimeCfg:
+     patch_rear_extent: float = 0.942209  # 中车参考点到整车后端的覆盖长度。
+     patch_half_width: float = 0.280374  # 半车宽。
+ 
+-    patch_preview_length: float = 0.40  # 车头前方多看出去的 preview。
++    patch_preview_length: float = 1.0  # 车头前方多看出去的 preview。
+     patch_rear_margin: float = 0.40  # 车尾后面多留一点余量。
+-    patch_side_margin: float = 0.04  # 左右多留一点余量。
++    patch_side_margin: float = 1.0 # 左右多留一点余量。
+ 
+     patch_origin_offset_xy: tuple[float, float] = (0.0, 0.0)  # patch 相对中车参考点的平移偏置。
+ 
+diff --git a/USD/complete_car.usd b/USD/complete_car.usd
+index 3456010..d419faa 100644
+Binary files a/USD/complete_car.usd and b/USD/complete_car.usd differ
+diff --git "a/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md" "b/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
+index bd45931..27c9882 100644
+--- "a/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
++++ "b/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
+@@ -69,6 +69,19 @@ Stage0 最重要的覆写只有几条：
+ - `curriculum.enabled = False`
+ - `terrain.measure_heights = False`
+ - 除 wheel contact sensor 以外，其余显式传感器关闭
++- 训练优先级改为稳定性优先：
++  - 低滑移
++  - 低侧滑
++  - 低跳动
++  - 球铰速度更平滑
++  - 然后再处理 critic 稳定性
++- Stage0 额外覆写：
++  - 收紧球铰动作上下界
++  - 球铰阻尼 `20.0`
++  - 球铰速度上限 `0.8 rad/s`
++  - 车轮速度上限 `12.0 rad/s`
++  - `PhysX max_velocity_iteration_count = 1`
++  - `enable_external_forces_every_iteration = True`
+ 
+ 所以 Stage0 的思路非常明确：  
+ 只保留最小可运行 RL 闭环，不引入 rough terrain、传感器、课程学习、显式高度图这些复杂因素。
+@@ -97,11 +110,12 @@ Stage0 最重要的覆写只有几条：
+ 
+ - `solver_type = 1`
+ - `max_position_iteration_count = 8`
+-- `max_velocity_iteration_count = 0`
++- `max_velocity_iteration_count = 1`
+ - `bounce_threshold_velocity = 0.2`
+ - `friction_offset_threshold = 0.04`
+ - `friction_correlation_distance = 0.025`
+ - `enable_stabilization = True`
++- `enable_external_forces_every_iteration = True`
+ 
+ ### 3.3 重力与接触材料
+ 
+@@ -185,16 +199,16 @@ Stage0 因为是平地，所以地面由 ground plane 直接生成。
+ 球铰执行器：
+ 
+ - 刚度：`100.0`
+-- 阻尼：`10.0`
++- 阻尼：`20.0`
+ - 力矩上限：`120.0`
+-- 速度上限：`6.0 rad/s`
++- 速度上限：`0.8 rad/s`
+ 
+ 车轮执行器：
+ 
+ - 刚度：`0.0`
+ - 阻尼：`1000.0`
+ - 力矩上限：`80.0`
+-- 速度上限：`20.0 rad/s`
++- 速度上限：`12.0 rad/s`
+ - 车轮半径：`0.19 m`
+ 
+ 这说明：
+@@ -342,25 +356,18 @@ $$
+ 
+ ### 7.3 命令重采样周期
+ 
+-- `resampling_time = 5.0 s`
++- `resampling_time = episode_length_s = 16.0 s`
+ 
+-也就是说每个环境每 `5` 秒重新采样一次命令。
++也就是说当前每个环境只在 episode reset 时采样一次目标；一个回合内不会再次更换目标。
+ 
+ ### 7.4 命令时钟逻辑
+ 
+-在每个控制步：
++当前主线已关闭“回合内定时重采样”。
+ 
+-$$
+-t_{left} \leftarrow t_{left} - \Delta t
+-$$
+-
+-如果：
+-
+-$$
+-t_{left} \le 0
+-$$
+-
+-则该环境重新采样命令。
++- reset 时仍会调用一次目标采样。
++- 预物理步内只有当 `resampling_time < episode_length_s` 时，才会启用定时器倒计时与中途重采样。
++- 由于当前已将 `resampling_time` 对齐到 `episode_length_s`，所以训练时实际行为是：
++  - 一个 episode 对应一个固定目标。
+ 
+ ### 7.5 观测中的相对命令表达
+ 
+@@ -510,8 +517,17 @@ $$
+ 
+ 这里：
+ 
+-- $\mathbf{F}_{n,i}^{w}$ 是 Isaac Lab `ContactSensor.data.net_forces_w` 返回的第 `i` 个车轮净法向接触力向量
+-- Isaac Lab 文档已明确该量就是世界系下的法向接触力向量，而不是含摩擦的总接触力
++- $\mathbf{F}_{n,i}^{w}$ 是第 `i` 个车轮对地面所有接触点法向力的世界系合力向量
++- 当前运行时实现不再依赖 Isaac Lab `ContactSensor`
++- 当前直接对 PhysX `rigid_contact_view.get_contact_data(dt)` 返回的逐接触点数据做聚合：
++
++$$
++\mathbf{F}_{n,i}^{w} = \sum_k f_{n,i,k} \mathbf{n}_{i,k}
++$$
++
++这里：
++- $f_{n,i,k}$ 是第 `i` 个车轮第 `k` 个接触点的法向接触力标量
++- $\mathbf{n}_{i,k}$ 是对应接触点的世界系接触法向单位向量
+ 
+ 因此当前实现直接取这个法向力向量的模长，而不再使用世界坐标系竖直方向近似。
+ 
+@@ -522,14 +538,14 @@ $$
+ 当前 scale：
+ 
+ - `base_lin_vel = 1.0`
+-- `base_ang_vel = 0.25`
+-- `projected_gravity = 1.0`
++- `base_ang_vel = 0.35`
++- `projected_gravity = 1.5`
+ - `ball_joint_pos = 1.0`
+-- `wheel_longitudinal_slip = 1.0`
+-- `wheel_slip_angle = 1.0`
+-- `wheel_normal_contact_force = 1.0`
++- `wheel_longitudinal_slip = 2.0`
++- `wheel_slip_angle = 1.5`
++- `wheel_normal_contact_force = 1.25`
+ - `commands = 1.0`
+-- `last_action = 1.0`
++- `last_action = 1.5`
+ 
+ 当前 slip 相关观测参数：
+ 
+@@ -649,16 +665,16 @@ $$
+ 
+ 按关节顺序 `z, y, x, z, y, x`：
+ 
+-- yaw：`[-0.7, 0.7]`
+-- pitch：`[-1.6, 0.5]`
+-- roll：`[-0.5, 0.5]`
++- yaw：`[-0.56, 0.56]`
++- pitch：`[-1.30, 0.40]`
++- roll：`[-0.35, 0.35]`
+ 
+ ### 9.6 车轮速度目标映射
+ 
+ 当前 policy 直接输出 6 个车轮速度目标的标准化动作。
+ 每个车轮动作仍先裁剪到 `[-1, 1]`，然后只按单一对称速度上限映射：
+ 
+-- 速度上限参数：`wheel_joint_velocity_limit_sim = 20 rad/s`
++- 速度上限参数：`wheel_joint_velocity_limit_sim = 12 rad/s`
+ 
+ 映射公式为：
+ 
+@@ -673,8 +689,8 @@ $$
+ 
+ 因此：
+ 
+-- `action = 1` -> `+20 rad/s`
+-- `action = -1` -> `-20 rad/s`
++- `action = 1` -> `+12 rad/s`
++- `action = -1` -> `-12 rad/s`
+ - `action = 0` -> `0`
+ 
+ 因此现在的控制结构是：
+@@ -691,14 +707,14 @@ $$
+ 当前 active reward 已经不再围绕速度命令跟踪展开，而是改成目标导向结构：
+ 
+ $$
+-R = r_{tar} + r_{prog} \cdot r_{roll} \cdot r_{speed} \cdot r_{forces} \cdot \left(\frac{r_{head} + r_{slip\parallel} + r_{slip\perp}}{3}\right)
++R = r_{tar} + r_{prog} \cdot r_{roll} \cdot r_{speed} \cdot r_{forces} \cdot r_{vertical} \cdot r_{ball\_speed} \cdot \left(\frac{r_{head} + r_{slip\parallel} + r_{slip\perp}}{3}\right)
+ $$
+ 
+ 其中：
+ 
+ - `r_tar` 是目标达成 bonus
+ - `r_prog` 是朝目标推进的 dense progress 主奖励
+-- `r_roll / r_speed / r_forces` 是乘性抑制项
++- `r_roll / r_speed / r_forces / r_vertical / r_ball_speed` 是乘性抑制项
+ - `r_head / r_slip_parallel / r_slip_perp` 先取平均，再作为复合乘子
+ 
+ ### 10.2 目标达成奖励
+@@ -729,7 +745,7 @@ $$
+ 当前代码里 `k_tar` 不是手填常数，而是按“最大无折扣回报的 5%”反解：
+ 
+ $$
+-k_{tar} = \frac{\rho \cdot (r_0 \cdot f_{control})}{1 - \rho}, \qquad \rho = 0.05
++k_{tar} = \frac{\rho \cdot (r_0 \cdot f_{control})}{1 - \rho}, \qquad \rho = 0.03
+ $$
+ 
+ 其中：
+@@ -785,8 +801,8 @@ $$
+ 
+ 当前：
+ 
+-- `roll_free_deg = 5°`
+-- `k_phi = \pi/16`
++- `roll_free_deg = 3°`
++- `k_phi = \pi/24`
+ 
+ 这项用于抑制过大侧倾。
+ 
+@@ -800,8 +816,8 @@ $$
+ 
+ 当前：
+ 
+-- `v_lim = 2 m/s`
+-- `k_speed = 2`
++- `v_lim = 1.6 m/s`
++- `k_speed = 3`
+ 
+ 这项不会额外奖励低速，只在速度过高时明显压低回报。
+ 
+@@ -821,66 +837,111 @@ $$
+ 
+ 当前：
+ 
+-- `k_forces = 0.1`
++- `k_forces = 0.08`
+ 
+ 这项鼓励六轮受力更均匀，降低悬空轮和单轮过载。
+ 
+ ### 10.8 纵向滑移项
+ 
+-对每个车轮纵向滑移率 $\lambda_i$，定义：
++当前实现不再对 6 个轮子的纵向滑移 gate 做乘积，否则在训练早期会非常容易整体塌到接近 `0`。
++
++先计算 6 个轮子纵向滑移率绝对值均值：
++
++$$
++\bar{\lambda} = \frac{1}{6}\sum_{i=1}^{6} |\lambda_i|
++$$
++
++再定义：
+ 
+ $$
+-r_{slip\parallel} = \prod_{i=1}^{6} \exp\left[-\frac{1}{2}\left(\frac{\lambda_i}{k_\lambda}\right)^2\right]
++r_{slip\parallel} = \exp\left(-\frac{\bar{\lambda}}{k_\lambda}\right)
+ $$
+ 
+ 当前：
+ 
+-- `k_lambda = 0.3`
++- `k_lambda = 0.18`
+ 
+-这是乘积结构，不是求和，所以任何一个轮子纵向滑移过大，整体项都会被明显压低。
++这样可以保持“滑移越大，gate 越小”的方向不变，同时避免 reward 在训练早期失去分辨率。
+ 
+ ### 10.9 侧滑角项
+ 
+-对每个车轮侧滑角 $\alpha_i$，先限制在：
++当前实现同样不再使用硬裁切余弦乘积，而是先计算 6 个轮子的侧滑角绝对值均值：
++
++$$
++\bar{\alpha} = \frac{1}{6}\sum_{i=1}^{6} |\alpha_i|
++$$
++
++再用：
++
++$$
++k_{\alpha,scale} = \frac{\pi}{k_\alpha}
++$$
++
++$$
++r_{slip\perp} = \exp\left(-\frac{\bar{\alpha}}{k_{\alpha,scale}}\right)
++$$
++
++当前：
++
++- `k_alpha = 8`
++
++也就是当前侧滑 gate 的指数衰减尺度为：
++
++$$
++\frac{\pi}{8} \approx 0.393\ \text{rad}
++$$
++
++### 10.10 竖向速度抑制项
++
++设中车世界系竖直速度为 $v_z$，则：
+ 
+ $$
+-\alpha_i \in \left[-\frac{\pi}{k_\alpha}, \frac{\pi}{k_\alpha}\right]
++r_{vertical} = \exp\left[-\frac{1}{2}\left(\frac{|v_z|}{k_{vertical}}\right)^2\right]
+ $$
+ 
+-超出这个范围时，该轮对应项直接记为 `0`。
+-范围内则定义：
++当前：
++
++- `k_vertical = 0.20`
++
++这项直接抑制上下跳动。
++
++### 10.11 球铰速度平滑项
++
++设 6 个球铰角速度绝对值均值为：
+ 
+ $$
+-r_{slip\perp,i} = 0.5 \cos(k_\alpha \alpha_i) + 0.5
++\bar{\omega}_{ball} = \frac{1}{6}\sum_{i=1}^{6} |\dot q_i|
+ $$
+ 
+-再对 6 个轮子取乘积：
++则：
+ 
+ $$
+-r_{slip\perp} = \prod_{i=1}^{6} r_{slip\perp,i}
++r_{ball\_speed} = \exp\left[-\frac{1}{2}\left(\frac{\bar{\omega}_{ball}}{k_{ball}}\right)^2\right]
+ $$
+ 
+ 当前：
+ 
+-- `k_alpha = 6`
++- `k_ball = 0.55`
+ 
+-### 10.10 当前配置参数总览
++### 10.12 当前配置参数总览
+ 
+ 当前 `RewardParamsCfg` 生效值为：
+ 
+-- `target_bonus_ratio = 0.05`
++- `target_bonus_ratio = 0.03`
+ - `target_position_tolerance = 0.3`
+ - `target_yaw_tolerance_deg = 9.0`
+ - `heading_distance_scale = 5.0`
+-- `roll_free_deg = 5.0`
+-- `roll_gaussian_scale = pi / 16`
+-- `speed_limit = 2.0`
+-- `speed_gain = 2.0`
+-- `force_std_scale = 0.1`
+-- `longitudinal_slip_scale = 0.3`
+-- `lateral_slip_gain = 6.0`
+-
+-### 10.11 当前 TensorBoard 奖励日志
++- `roll_free_deg = 3.0`
++- `roll_gaussian_scale = pi / 24`
++- `speed_limit = 1.6`
++- `speed_gain = 3.0`
++- `force_std_scale = 0.08`
++- `longitudinal_slip_scale = 0.18`
++- `lateral_slip_gain = 8.0`
++- `vertical_speed_scale = 0.20`
++- `ball_joint_speed_scale = 0.55`
++
++### 10.13 当前 TensorBoard 奖励日志
+ 
+ 当前 step 级别会输出：
+ 
+@@ -889,6 +950,8 @@ $$
+ - `Reward/roll_gate`
+ - `Reward/speed_gate`
+ - `Reward/force_gate`
++- `Reward/vertical_speed_gate`
++- `Reward/ball_joint_speed_gate`
+ - `Reward/heading_gate`
+ - `Reward/longitudinal_slip_gate`
+ - `Reward/lateral_slip_gate`
+@@ -1019,28 +1082,28 @@ Stage0 所有额外传感器关闭：
+ 
+ ### 15.1 Rollout 参数
+ 
+-- `num_steps_per_env = 48`
+-- `num_envs = 512`
++- `num_steps_per_env = 96`
++- `num_envs = 64`
+ 
+ 所以每轮 rollout 总样本数：
+ 
+ $$
+-48 \times 512 = 24576
++96 \times 64 = 6144
+ $$
+ 
+ ### 15.2 训练总轮数
+ 
+-- `max_iterations = 1000
++- `max_iterations = 300`
+ 
+ ### 15.3 Mini-batch
+ 
+-- `num_learning_epochs = 5`
++- `num_learning_epochs = 4`
+ - `num_mini_batches = 4`
+ 
+ 每个 mini-batch 大小：
+ 
+ $$
+-\frac{24576}{4} = 6144
++\frac{6144}{4} = 1536
+ $$
+ 
+ ### 15.4 折扣与 GAE
+@@ -1088,18 +1151,18 @@ $$
+ 
+ ### 15.6 学习率与 KL 调度
+ 
+-- `learning_rate = 3e-4`
++- `learning_rate = 2e-4`
+ - `schedule = "adaptive"`
+-- `desired_kl = 0.01`
++- `desired_kl = 0.008`
+ 
+ 这表示学习率会参考 KL 偏离程度自适应调整。
+ 
+ ### 15.7 其他 PPO 超参数
+ 
+-- `entropy_coef = 0.005`
+-- `value_loss_coef = 1.0`
++- `entropy_coef = 0.002`
++- `value_loss_coef = 0.7`
+ - `use_clipped_value_loss = True`
+-- `max_grad_norm = 1.0`
++- `max_grad_norm = 0.7`
+ 
+ ### 15.8 Actor / Critic 网络结构
+ 
+@@ -1109,7 +1172,7 @@ Actor：
+ - 激活函数：`ELU`
+ - 观测归一化：开启
+ - 输出分布：Gaussian
+-- 初始标准差：`0.7`
++- 初始标准差：`0.35`
+ - `std_type = "scalar"`
+ 
+ Critic：
+@@ -1147,7 +1210,7 @@ $$
+ 从训练流程角度，Stage0 每个控制周期的闭环如下：
+ 
+ 1. 如果命令计时器到期，重采样命令
+-2. 命令根据当前位姿采样一个目标全局位姿
++2. 当前默认仅在 reset 时根据当前位姿采样一个目标全局位姿
+ 3. env 把目标转成车体系下的 `[x_rel, y_rel, psi_rel]`
+ 4. policy 读取 48 维 actor 观测
+ 5. actor 输出 12 维标准化动作
+@@ -1184,7 +1247,7 @@ $$
+ ### 17.3 命令
+ 
+ - 命令维度：`3`
+-- 每 `5 s` 重采样一次
++- 每个 episode 只采样一次
+ - 目标距离固定 `12 m`
+ - 目标方向偏角范围 `[-18.43°, +18.43°]`
+ - 目标朝向附加偏置范围 `[-9.215°, +9.215°]`
+@@ -1194,23 +1257,25 @@ $$
+ - 总奖励：
+   - `target_bonus + gated_progress`
+ - 其中：
+-  - `gated_progress = progress * roll_gate * speed_gate * force_gate * composite_gate`
++  - `gated_progress = progress * roll_gate * speed_gate * force_gate * vertical_speed_gate * ball_joint_speed_gate * composite_gate`
+ - 其中：
+   - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
+ 
+ 当前关键参数为：
+ 
+-- `target_bonus_ratio = 0.05`
++- `target_bonus_ratio = 0.03`
+ - `target_position_tolerance = 0.3 m`
+ - `target_yaw_tolerance_deg = 9°`
+ - `heading_distance_scale = 5 m`
+-- `roll_free_deg = 5°`
+-- `roll_gaussian_scale = pi / 16`
+-- `speed_limit = 2.0 m/s`
+-- `speed_gain = 2.0`
+-- `force_std_scale = 0.1`
+-- `longitudinal_slip_scale = 0.3`
+-- `lateral_slip_gain = 6.0`
++- `roll_free_deg = 3°`
++- `roll_gaussian_scale = pi / 24`
++- `speed_limit = 1.6 m/s`
++- `speed_gain = 3.0`
++- `force_std_scale = 0.08`
++- `longitudinal_slip_scale = 0.18`
++- `lateral_slip_gain = 8.0`
++- `vertical_speed_scale = 0.20`
++- `ball_joint_speed_scale = 0.55`
+ 
+ ### 17.5 终止
+ 
+@@ -1220,10 +1285,10 @@ $$
+ 
+ ### 17.6 PPO
+ 
+-- `num_steps_per_env = 48`
+-- `num_learning_epochs = 5`
++- `num_steps_per_env = 96`
++- `num_learning_epochs = 4`
+ - `num_mini_batches = 4`
+-- `learning_rate = 3e-4`
++- `learning_rate = 2e-4`
+ - `gamma = 0.99`
+ - `lam = 0.95`
+ - `clip_param = 0.2`
+diff --git a/docs/conversation_history.md b/docs/conversation_history.md
+index fa94351..d681ab5 100644
+--- a/docs/conversation_history.md
++++ b/docs/conversation_history.md
+@@ -4,6 +4,350 @@ This file stores durable conclusions from past Codex sessions so that future ses
+ 
+ ## 2026-04-15
+ 
++### Stage0 default tuning is now shifted to a stability-first 300-iteration configuration, and actuator overrides after `super().__post_init__()` must rebuild the robot cfg
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - after diagnosing run `complete_car_stage0/2026-04-15_21-35-52`, the user-selected optimization priority became:
++    - lower longitudinal slip
++    - lower lateral slip
++    - lower vertical bounce
++    - smoother ball-joint motion
++    - then critic stability
++  - the active Stage0 PPO default is now:
++    - `max_iterations = 300`
++    - `save_interval = 100`
++    - actor `init_std = 0.35`
++    - `learning_rate = 2.0e-4`
++    - `num_learning_epochs = 4`
++    - `entropy_coef = 0.002`
++    - `desired_kl = 0.008`
++    - `value_loss_coef = 0.7`
++    - `max_grad_norm = 0.7`
++  - the active Stage0 environment-side tuning now includes:
++    - tighter ball-joint action range:
++      - lower `(-0.56, -1.30, -0.35, -0.56, -1.30, -0.35)`
++      - upper `(0.56, 0.40, 0.35, 0.56, 0.40, 0.35)`
++    - higher ball-joint damping:
++      - `20.0`
++    - lower ball-joint velocity limit:
++      - `0.8 rad/s`
++    - lower wheel velocity limit:
++      - `12.0 rad/s`
++    - PhysX velocity solve strengthened:
++      - `max_velocity_iteration_count = 1`
++      - `enable_external_forces_every_iteration = True`
++    - Stage0 reward now adds two new multiplicative gates:
++      - `vertical_speed_gate`
++      - `ball_joint_speed_gate`
++    - the active gated progress is now:
++      - `progress * roll_gate * speed_gate * force_gate * vertical_speed_gate * ball_joint_speed_gate * composite_gate`
++  - engineering caveat validated in this round:
++    - `CompleteCarEnvCfg.__post_init__()` rebuilds `self.robot` near the end
++    - therefore any stage cfg that overrides actuator-related `control` values after `super().__post_init__()` must rebuild:
++      - `self.robot = build_complete_car_robot_cfg(self.control, self.resets)`
++    - otherwise the spawned articulation silently keeps the old base actuator damping / velocity limits
++  - the latest real-GPU smoke validation run is:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-26-28`
++  - that run confirms:
++    - training startup passes
++    - `Learning iteration 0/1` completes
++    - articulation logs now show the intended Stage0 actuator values:
++      - ball-joint damping `20.0`
++      - ball-joint velocity limit `0.8`
++      - wheel velocity limit `12.0`
++- Reason:
++  - the user explicitly chose a stability-first tuning direction instead of a speed-first one
++  - the first smoke run revealed that part of the intended actuator tuning had not actually reached PhysX because the robot cfg had already been built in the base class
++- Impact:
++  - future Stage0 tuning should treat this 300-iteration stability-first bundle as the new default starting point
++  - future stage-specific actuator tuning must always verify the articulation log instead of assuming cfg edits propagated automatically
++- Status:
++  - targeted `python3 -m py_compile` checks passed
++  - real GPU smoke validation passed
++  - the next useful step is a full 300-iteration run and a fresh slip / stability / critic diagnosis against the previous `21-35-52` baseline
++
++### Mid-run validation of `2026-04-15_22-29-47_stability_v1_iter300` shows the new Stage0 bundle fixes smoothness/critic first, but not wheel slip
++- Updated:
++  - `docs/current_status.md`
++  - `logs/daily_work_log.md`
++- Durable diagnosis conclusion:
++  - the run directory is:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-29-47_stability_v1_iter300`
++  - this run was intentionally stopped around `iteration 85/300` because the trend was already clear enough for tuning decisions
++  - confirmed improvements relative to the earlier high-slip baseline:
++    - `Mean value loss` stays around `0.13 ~ 0.18` instead of blowing up into the previous very-large-value regime
++    - `Observation/ball_joint_vel_abs_mean_raw` stays around `0.43 ~ 0.45`, materially lower than the old late-run level near `0.8`
++    - `Reward/vertical_speed_gate` stays around `0.92 ~ 0.93`
++    - `Termination/bad_orientation_rate` remains `0`
++    - `Termination/ball_joint_limit_rate` remains `0`
++  - remaining failure mode is still wheel-ground traction quality:
++    - `Observation/wheel_longitudinal_slip_abs_mean_raw` remains around `0.81 ~ 0.87`
++    - `Observation/wheel_slip_angle_abs_mean_raw` remains around `0.64 ~ 0.75 rad`
++    - `Reward/longitudinal_slip_gate` stays near `0`
++    - `Reward/lateral_slip_gate` also stays near `0`
++  - the correct interpretation is:
++    - the new Stage0 bundle successfully stabilizes critic behavior and articulation/body smoothness
++    - but it does not yet solve the actual traction problem
++- Impact:
++  - next tuning should move away from further ball-joint suppression and focus on:
++    - wheel speed command range / mapping
++    - slip penalty structure
++    - wheel-action smoothness or delta limits
++- Status:
++  - no new startup blocker found
++  - run stopped manually after sufficient mid-run evidence was collected
++
++### Stage0 slip gates have been reshaped to avoid early saturation, and this works better than simply lowering the wheel-speed cap
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `logs/daily_work_log.md`
++- Durable diagnosis conclusion:
++  - two follow-up directions were tested after the stability-first bundle:
++    - lower wheel-speed cap to `8.5 rad/s`
++    - reshape the slip gates so they no longer collapse to near-zero immediately
++  - the wheel-cap-only run:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-37-02_slip_cap85_v1`
++    showed that reducing the wheel limit by itself lowers wheel speed, but also suppresses early progress and does not solve longitudinal slip well enough
++  - that wheel-cap-only direction is therefore rejected as the new default
++  - the active slip-gate update changes:
++    - longitudinal slip gate:
++      - from per-wheel Gaussian product
++      - to `exp(-mean(abs(longitudinal_slip)) / scale)`
++    - lateral slip gate:
++      - from hard-clipped cosine product
++      - to `exp(-mean(abs(slip_angle)) / (pi / lateral_slip_gain))`
++  - the short validation run:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-39-33_slip_gate_v1`
++    confirms this does what was intended:
++    - both slip gates remain non-zero and therefore provide usable reward signal
++    - by `iteration 39/40`, the run reaches roughly:
++      - `Observation/wheel_longitudinal_slip_abs_mean_raw ≈ 0.821`
++      - `Observation/base_lin_vel_x_raw ≈ 1.17`
++      - `Loss/value ≈ 0.15`
++    - compared with the earlier stability-first early-stage rollout, this is a better tradeoff:
++      - more forward progress
++      - lower longitudinal slip
++      - critic still stable
++    - however the lateral slip problem remains:
++      - `Observation/wheel_slip_angle_abs_mean_raw` is still around `0.72 rad`
++- Impact:
++  - keep the slip-gate reshaping in the active Stage0 default
++  - do not keep the `8.5 rad/s` wheel-cap-only experiment as default
++  - next traction work should target lateral slip shaping or wheel-action smoothness, not another blind wheel-cap reduction
++- Status:
++  - targeted `python3 -m py_compile` passed
++  - real GPU `0/1` startup passed
++  - real GPU `40`-iteration validation passed
++
++### Diagnosed run `complete_car_stage0/2026-04-15_21-35-52` shows strong survival/progress learning but persistent high slip and critic instability
++- Updated:
++  - `docs/current_status.md`
++  - `logs/daily_work_log.md`
++- Durable diagnosis conclusion:
++  - the run directory is:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-35-52`
++  - this run is not a startup failure and not a simple unhealthy-rollout case
++  - it reaches clear survival improvement:
++    - `Train/mean_episode_length` rises to about `941 / 959`
++    - `bad_orientation` stays at zero
++  - it also reaches clear task-progress improvement:
++    - `Train/mean_reward` rises to about `247`
++    - `Tracking/goal_pos_error` drops from about `20 m` to about `8.75 m`
++    - `Reward/progress` becomes clearly positive
++    - `Reward/target_bonus` becomes non-zero
++  - however, the policy remains traction-poor:
++    - `wheel_longitudinal_slip_abs_mean_raw` stays around `0.89`
++    - `wheel_slip_angle_abs_mean_raw` stays around `0.73 rad`
++    - the corresponding slip gates remain near zero
++  - the action style remains aggressive:
++    - `Action/policy_abs_mean` settles near `0.60`
++    - late-episode `ball_joint_limit` resets rise materially
++  - the critic is the main numerical weak point:
++    - `Loss/value` grows to very large values while policy std remains stable
++  - the correct interpretation is:
++    - the current policy has learned to survive and move toward the goal
++    - but it is still doing so with poor wheel-ground traction quality and an unstable value function
++- Impact:
++  - future tuning after this run should prioritize:
++    - slip-related behavior
++    - joint-limit pressure
++    - critic/value-loss stabilization
++- Status:
++  - offline TensorBoard export completed
++  - no new startup blocker found in the simulator log
++
++### `play.py` now resolves `--load_run` robustly from run names, experiment-prefixed paths, or absolute run directories
++- Updated:
++  - `RL_Training/scripts/play.py`
++  - `docs/current_status.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the replay entry no longer assumes `--load_run` is only a bare run directory name
++  - it now accepts all of these forms:
++    - `2026-04-15_21-35-52`
++    - `complete_car_stage0/2026-04-15_21-35-52`
++    - an absolute path pointing to the run directory
++  - when a direct existing run directory is detected, the script resolves checkpoints from that directory's parent plus basename instead of passing the raw string unchanged into Isaac Lab's `get_checkpoint_path()`
++  - this fixes the previous failure mode:
++    - `ValueError: No runs present in the directory ... match ...`
++    when users passed `--load_run` with the experiment-name prefix included
++- Reason:
++  - the user attempted replay with:
++    - `--load_run complete_car_stage0/2026-04-15_21-35-52`
++    and the run directory plus checkpoints did exist, but `play.py` forwarded the selector in a form Isaac Lab did not interpret correctly under the current `log_root_path`
++- Impact:
++  - future replay commands can use either the bare timestamp run name or the experiment-prefixed relative path without additional manual normalization
++  - if replay still fails after this fix, checkpoint lookup is no longer the first suspect; environment/runtime issues should be checked next
++- Status:
++  - targeted `python3 -m py_compile RL_Training/scripts/play.py` check passed
++  - real replay launch verified that checkpoint parsing now succeeds and proceeds into Isaac Sim startup
++  - the current machine then failed later because no CUDA GPU was available, which is a separate runtime issue
++
++### The active critic terrain-height patch path lives in `env._compute_critic_height_patch`, and the old `height_scanner.get_height_features()` path has been removed
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++  - `docs/current_status.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the active explicit terrain-height patch used by critic is computed in:
++    - `base/env.py::_compute_critic_height_patch()`
++  - this path:
++    - starts from the middle-body local patch grid
++    - rotates it by the middle-body yaw
++    - samples terrain height from `terrain_runtime.height_field_raw`
++    - concatenates the resulting relative heights into critic observation
++  - the old sensor-side helper:
++    - `sensors/sensor_cfg.py::get_height_features()`
++    has been removed
++  - reason it was removable:
++    - current Stage0 / Stage1 / Stage2 all set `enable_height_scanner = False`
++    - its return value was not consumed by actor or critic observation assembly
++- Reason:
++  - the user explicitly asked where the real patch logic lives and required deleting the pasted code if it was unused
++- Impact:
++  - future terrain-patch modifications should go to `base/env.py::_compute_critic_height_patch()` rather than reviving the deleted height-scanner helper by mistake
++- Status:
++  - targeted `python3 -m py_compile` check passed for the modified direct-workflow files
++
++### Goal-command resampling is now fixed to one target per episode in the active direct-workflow mainline
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the active command trunk no longer resamples target goals inside an episode by default
++  - `commands.resampling_time` is now aligned to `episode_length_s` during env-cfg assembly
++  - the env-side timer-based resampling path is now gated so it only runs when:
++    - `resampling_time < episode_length_s`
++  - therefore the current active behavior is:
++    - sample one goal at reset
++    - keep that goal fixed for the entire episode
++- Reason:
++  - the user explicitly required changing the target resampling behavior so each episode contains only one goal before further curriculum work
++- Impact:
++  - future curriculum design should treat episode outcome as corresponding to one single target by default
++  - future mixed-terrain success/failure logic can now be tied directly to per-episode goal completion without handling multiple goal switches inside one episode
++- Status:
++  - targeted `python3 -m py_compile` check passed for the modified direct-workflow files
++
++### Strict wheel normal-force reconstruction now uses detailed contact-point normals with the exact ground collider filter
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the active wheel normal-force implementation no longer stops at the PhysX aggregated net-force API
++  - it now reads detailed contact-point buffers from:
++    - `rigid_contact_view.get_contact_data(dt)`
++  - for each wheel, the world-frame normal-force resultant vector is reconstructed as:
++    - `sum(normal_force_scalar * contact_normal_vector)`
++  - the observation path still stores the scalar wheel load as:
++    - `||F_n|| / (m_total * g)`
++    so the PPO interface shape does not change
++  - the wheel-ground contact filter cannot be bound to the ground root prim directly
++  - the runtime must first resolve the exact collider prim under `ground_prim_path`:
++    - `Plane` for flat ground
++    - `Mesh` for generated terrain
++  - using the ground root prim or broad child wildcard patterns causes PhysX tensor filter mismatch / unsupported warnings and yields invalid zero wheel loads
++  - after resolving the exact collider prim, the default real-GPU startup validation succeeded and produced non-zero wheel normal-load observations under the standard `64`-env setup
++  - the verified run directory is:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-10-27`
++- Reason:
++  - the user explicitly required replacing the current wheel normal-force proxy with a stricter implementation based on real contact-point normals
++- Impact:
++  - future wheel-load work in this repository should preserve the exact-collider filter resolution step
++  - future rough-terrain extensions should continue using the same `Plane/Mesh` collider resolution rule rather than reverting to ground-root filters
++- Status:
++  - targeted `python3 -m py_compile` check passed
++  - real GPU default-64-env startup passed with non-zero wheel normal-load observations
++
++### Wheel-ground contact force collection now uses runtime PhysX contact views instead of Isaac Lab `ContactSensor` in the active direct workflow
++- Updated:
++  - `USD/complete_car.usd`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `docs/current_status.md`
++  - `logs/daily_work_log.md`
++- Durable implementation conclusion:
++  - the six wheel rigid-body roots in `complete_car.usd` now explicitly carry `PhysxContactReportAPI`
++  - the verified wheel roots are:
++    - `body_car_wheel_left`
++    - `body_car_wheel_right`
++    - `head_car_wheel_left`
++    - `head_car_wheel_right`
++    - `tail_car_wheel_left`
++    - `tail_car_wheel_right`
++  - because the sensor suite is built manually at runtime instead of through `InteractiveSceneCfg`, `{ENV_REGEX_NS}` is not auto-expanded for these sensors
++  - the active runtime fix explicitly resolves `{ENV_REGEX_NS}` inside `sensors/sensor_cfg.py` before constructing:
++    - IMU
++    - stereo camera
++    - lidar
++    - height scanner
++  - we verified that the underlying PhysX rigid-body/contact-view patterns for the six wheel roots are valid under the default `64`-environment setup
++  - however, Isaac Lab `ContactSensor` still remained unstable in the full default direct-workflow startup path, even after:
++    - valid wheel-root contact-report APIs in USD
++    - correct `complete_car_alternative` path segment
++    - correct runtime namespace expansion
++  - therefore the active direct-workflow mainline no longer uses Isaac Lab `ContactSensor` for wheel-ground force collection
++  - the active implementation now creates one PhysX `rigid_contact_view` per wheel root at runtime and reads:
++    - `get_contact_data(dt)`
++    then reconstructs each wheel's world-frame normal-force resultant vector by summing:
++    - `normal_force_scalar * contact_normal_vector`
++    across all wheel-ground contact points
++  - the six reconstructed `(num_envs, 1, 3)` tensors are then concatenated into `(num_envs, 6, 3)`
++  - during this same debug round, `base/env.py` was corrected so `_total_vehicle_weight` is cached on `self.device`, avoiding CPU/CUDA mismatch when normalizing wheel contact forces
++  - after these fixes, the default real-GPU training command entered the continuous training loop successfully under the normal `64`-environment setup:
++    - `python scripts/train.py --task CompleteCar-Stage0 --headless`
++  - the verified run directory is:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-57-31`
++- Reason:
++  - the user manually repaired the USD to add wheel contact-report APIs, but the active Isaac Lab `ContactSensor` initialization path still remained unstable in the full default multi-env direct workflow
++- Impact:
++  - future wheel-contact debugging should first check:
++    - wheel-root `Contact Report API` in USD
++    - runtime `{ENV_REGEX_NS}` expansion
++    - presence of `complete_car_alternative` in the spawned wheel path
++    - device placement of the cached total-vehicle-weight tensor
++  - future wheel-ground force work in this repository should continue from the active PhysX contact-view path, not by reverting to Isaac Lab `ContactSensor` unless that path is explicitly revalidated under the default multi-env training configuration
++- Status:
++  - targeted `python3 -m py_compile` check passed
++  - real GPU default training startup passed and entered the training loop under `64` envs
++
+ ### The active reward trunk is now goal-conditioned and no longer centered on velocity-command tracking
+ - Updated:
+   - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+@@ -142,13 +486,12 @@ This file stores durable conclusions from past Codex sessions so that future ses
+     - the same low-speed protection
+     - clipping to `[-pi/2, pi/2]`
+     - units kept in radians
+-  - the normal contact force now uses the magnitude of `ContactSensor.data.net_forces_w`
+-    because Isaac Lab defines it as the summed normal contact-force vector in world frame
++  - the normal contact force now uses the magnitude of the wheel-ground normal-force resultant vector reconstructed from detailed PhysX contact-point data
+   - the active implementation is now:
+-    - `F_n = ||net_forces_w|| / (m_total * g)`
++    - `F_n = ||sum_k(f_{n,k} * n_k)|| / (m_total * g)`
+   - the active wheel radius reused by this observation path is:
+     - `0.19 m`
+-  - the robot USD spawn now enables contact sensors, and the env uses a dedicated `ContactSensor` bound to the six wheel bodies
++  - the robot USD spawn now enables contact reporting, and the env uses one runtime PhysX `rigid_contact_view` per wheel body
+   - the active single-frame observation sizes are now:
+     - `Stage0 actor = 48`
+     - `Stage0 critic = 48`
+@@ -158,7 +501,7 @@ This file stores durable conclusions from past Codex sessions so that future ses
+   - the user explicitly required adding wheel longitudinal slip, slip angle, and normalized normal contact force to the current RL observation space using the provided physical definitions
+ - Impact:
+   - future observation-dimension, scale, and TensorBoard discussions must treat the 18 wheel-ground contact dimensions as part of the active direct-workflow mainline
+-  - future contact-force interpretation should remember that the current implementation uses the magnitude of the summed normal-contact-force vector, not the previous world-z approximation
++  - future contact-force interpretation should remember that the current implementation uses the magnitude of the wheel-ground normal-force resultant reconstructed from detailed contact-point normals, not the previous world-z approximation
+ - Status:
+   - targeted `python3 -m py_compile` check passed for the modified direct-workflow files
+ 
+diff --git a/docs/current_status.md b/docs/current_status.md
+index 6cea55f..f253a98 100644
+--- a/docs/current_status.md
++++ b/docs/current_status.md
+@@ -2,7 +2,7 @@
+ 
+ ## 当前总目标
+ - 将完整车 RL 主线收口到 `RL_Training/` 下的新 Isaac Lab direct workflow 架构。
+-- 让训练入口、任务注册、共享环境主类、共享配置主干、Stage0/1/2 分阶段配置在同一套新结构下统一工作。
++- 固定 Stage0 当前默认配置，优先优化低滑移、低侧滑、低跳动、球铰平滑，再处理 critic 稳定性。
+ 
+ ## 当前阶段
+ - 已完成 `RL_Training/` 原地重构。
+@@ -10,14 +10,39 @@
+ - 已完成一轮真实训练入口冒烟，已清除启动链路中的 `configclass` / Hydra 配置阻塞。
+ - 已完成 `Stage0` 在真实 GPU 环境下的最小训练启动验证。
+ - 已完成一次真实 `Stage0` run 的日志诊断，并补齐训练日志 / TensorBoard 指标埋点。
+-- 已完成一轮 Stage0 奖励收敛实验串行搜索，并确定当前最优已验证配置。
+-- 当前进入“固定当前最优 Stage0 配置，并继续接入 MGDP 风格显式地形高度 patch 到 critic 观测”的阶段。
++- 已完成一轮 Stage0 run 诊断，已确认当前主要问题是高纵向滑移、高侧滑、球铰动作偏激进与 critic value loss 偏大。
++- 当前进入“固定新的 Stage0 稳定性优先配置，并继续做针对性训练验证”的阶段。
+ - 已完成一次 Zotero 文献库维护：
+   - `核心参考-RL、Sim-to-Real` 集合中，已把 `docs/literature/` 内能匹配到的本地 PDF 补挂回缺失条目。
+ - 已完成一轮 goal-conditioned 主线接线：
+   - 命令空间已从速度命令切换为目标位姿命令
+   - 动作空间已从仅球铰 `6` 维扩成 `球铰 + 轮速` 共 `12` 维
+   - 观测中的命令项已切换为车体系下的 `[x_rel, y_rel, psi_rel]`
++  - 目标重采样已改为：
++    - 一个 episode 只采样一个目标
++  - 已完成一轮 wheel contact sensor 启动链路修复：
++  - 用户已在 `USD/complete_car.usd` 的 6 个轮子刚体根节点补入 `Contact Report API`
++  - runtime 手动创建的传感器已显式解析 `{ENV_REGEX_NS}`
++  - 已确认 Isaac Lab `ContactSensor` 在当前默认 `64` 环境 direct workflow 启动路径下仍不稳定
++  - 当前 wheel-ground contact force 已改为运行时直接使用 PhysX `rigid_contact_view`
++  - 当前轮地法向力实现已进一步收口为：
++    - 基于 `get_contact_data(dt)` 的逐接触点法向聚合
++  - 已确认 wheel-ground contact filter 不能直接使用 ground 根 prim
++    - 必须解析到真实碰撞 prim，例如 `Plane` 或 `Mesh`
++  - `env.py` 中整车重量缓存已显式放到 `env device`
++  - `Stage0` 已再次通过真实 GPU 默认命令验证，并成功进入持续训练循环
++  - `Stage0` 已加入新一轮“稳定性优先”配置：
++    - 训练轮数改为 `300`
++    - 新增 `vertical_speed_gate`
++    - 新增 `ball_joint_speed_gate`
++    - 收紧球铰动作范围
++    - 收紧球铰仿真速度上限与增大阻尼
++    - 收紧车轮仿真速度上限
++    - 收紧 PPO 的学习率、KL 与梯度范数
++  - 已确认 Stage0 在 `super().__post_init__()` 后修改 actuator 参数时，必须重新构建 `robot cfg`
++    - 否则 PhysX articulation 仍会使用 base cfg 里的旧驱动参数
++  - 最新最小验证 run：
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-26-28`
+ 
+ ## 当前 RL 主线位置
+ - 当前活跃 RL 工作区：
+@@ -78,8 +103,66 @@
+   - `utils/validate_wheel_speed_allocator.py`
+ 
+ ## 本轮已确认
++- 已完成 Stage0 “稳定性优先”参数落地与真实 GPU 冒烟验证：
++  - `agents/rsl_rl_ppo_cfg.py`
++    - `max_iterations = 300`
++    - `save_interval = 100`
++    - `actor init_std = 0.35`
++    - `learning_rate = 2.0e-4`
++    - `num_learning_epochs = 4`
++    - `entropy_coef = 0.002`
++    - `desired_kl = 0.008`
++    - `value_loss_coef = 0.7`
++    - `max_grad_norm = 0.7`
++  - `baseline/complete_car_stage0_cfg.py`
++    - 球铰动作范围收紧到：
++      - `(-0.56, -1.30, -0.35, -0.56, -1.30, -0.35)` / `(0.56, 0.40, 0.35, 0.56, 0.40, 0.35)`
++    - 球铰阻尼改为 `20.0`
++    - 球铰仿真速度上限改为 `0.8 rad/s`
++    - 车轮仿真速度上限改为 `12.0 rad/s`
++    - PhysX：
++      - `max_velocity_iteration_count = 1`
++      - `enable_external_forces_every_iteration = True`
++    - 观测 scale 已针对 slip / gravity / last_action 做一轮收紧
++    - reward 已针对低滑移、低侧滑、低跳动、球铰平滑做一轮收紧
++  - `mdp/rewards.py`
++    - 当前 `gated_progress` 已变为：
++      - `progress * roll_gate * speed_gate * force_gate * vertical_speed_gate * ball_joint_speed_gate * composite_gate`
++    - 当前 slip gate 已从“易饱和为 0 的硬抑制”改为“基于平均 slip 的平滑指数门控”
++  - 已用：
++    - `python scripts/train.py --task CompleteCar-Stage0 --headless --max_iterations 1`
++    完成真实 GPU 启动验证
++  - 最新验证结果：
++    - env 初始化通过
++    - articulation 驱动参数已确认实际生效：
++      - 球铰阻尼 `20.0`
++      - 球铰速度上限 `0.8`
++      - 车轮速度上限 `12.0`
++    - 完成 `Learning iteration 0/1`
+ - 已新增本地文献补挂脚本：
+   - `scripts/literature/attach_local_pdfs_to_zotero_collection.py`
++- 已完成一轮 wheel contact sensor 启动修复验证：
++  - 当前 `complete_car.usd` 中以下 6 个 wheel body 根节点已确认带有 `Contact Report API`：
++    - `body_car_wheel_left`
++    - `body_car_wheel_right`
++    - `head_car_wheel_left`
++    - `head_car_wheel_right`
++    - `tail_car_wheel_left`
++    - `tail_car_wheel_right`
++  - `sensors/sensor_cfg.py` 已补充 runtime 侧 `{ENV_REGEX_NS}` 解析
++  - 当前 wheel-ground contact force 已不再依赖 Isaac Lab `ContactSensor`
++  - 当前实现改为：
++    - 运行时为 6 个轮子分别创建 PhysX `rigid_contact_view`
++    - wheel-ground filter 运行时递归解析 `ground_prim_path` 下的真实碰撞 prim
++    - 用 `get_contact_data(dt)` 读取逐接触点法向标量与接触法向
++    - 对每个轮子聚合 `normal_force_scalar * contact_normal_vector`
++    - 再按轮顺序拼接为 `(num_envs, 6, 3)` 的世界系法向合力向量
++  - `base/env.py` 已修正：
++    - `_total_vehicle_weight` 强制放到 `self.device`
++  - 当前真实验证命令：
++    - `python scripts/train.py --task CompleteCar-Stage0 --headless --max_iterations 1`
++  - 已通过并进入持续训练循环的 run：
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-10-27`
+ - 已完成当前 direct workflow 命令 / 动作主线重构：
+   - `CommandCfg.num_commands` 已由 `2` 改为 `3`
+   - 新命令语义为目标全局位姿：
+@@ -162,6 +245,30 @@
+ - 当前 `RL_Training/` 下全部 Python 文件已通过：
+   - `python3 -m py_compile $(find RL_Training -name '*.py' | sort)`
+ - 最近已补充 `base/complete_car_cfg.py` 中 `CommandCfg` 与 `ControlCfg` 的中文工程注释，便于后续阅读配置语义与单位。
++- 最近已调整目标命令重采样逻辑：
++  - `commands.resampling_time` 会在 env cfg 装配阶段自动对齐到 `episode_length_s`
++  - env 预物理步仅在 `resampling_time < episode_length_s` 时才允许中途重采样
++  - 当前默认行为已变为：
++    - reset 时采样一次目标
++    - 一个 episode 内不再更换目标
++- 最近已清理一段旧的高度扫描死代码：
++  - 当前 active critic 高程 patch 的真实入口是：
++    - `base/env.py::_compute_critic_height_patch()`
++  - 旧的 `sensors/sensor_cfg.py::get_height_features()` 已删除
++  - 原因是：
++    - 当前 Stage0 / Stage1 / Stage2 都未启用 `height_scanner`
++    - 该函数返回值也未参与 actor / critic 观测拼接
++- 最近已修正 `play.py` 的一处回放路径解析问题：
++  - `--load_run` 现在既可接受：
++    - 纯 run 名，如 `2026-04-15_21-35-52`
++    - 带实验名前缀的相对路径，如 `complete_car_stage0/2026-04-15_21-35-52`
++    - 直接指向 run 目录的绝对路径
++  - 当前已确认原先的：
++    - `No runs present in the directory ... match ...`
++    属于 `load_run` 路径解析不够稳健，而不是日志目录缺失
++  - 修复后，回放流程已可越过 checkpoint 解析阶段
++  - 当前新的实际阻塞点是：
++    - 运行机器此刻没有可用 CUDA 设备，`play.py` 默认仍走 `cuda:0`
+ - 最近已完成 terrain curriculum 重构：
+   - 参数入口改为 `CurriculumCfg`
+   - env 在 `_setup_scene()` / `_reset_idx()` 中调用 `mdp/curriculum.py`
+@@ -304,9 +411,9 @@
+   - 当前车轮动作直接按对称速度上限映射：
+     - `wheel_target = action * wheel_joint_velocity_limit_sim`
+   - 当前逐轴动作范围按关节顺序 `z, y, x, z, y, x` 为：
+-    - `yaw in [-0.7, 0.7]`
+-    - `pitch in [-1.6, 0.5]`
+-    - `roll in [-0.5, 0.5]`
++    - `yaw in [-0.56, 0.56]`
++    - `pitch in [-1.30, 0.40]`
++    - `roll in [-0.35, 0.35]`
+   - 当前新增动作随机化总开关：
+     - `randomization.enable_action_randomization = False`
+   - 因此当前默认不使用：
+@@ -364,11 +471,13 @@
+     - `roll_gate`
+     - `speed_gate`
+     - `force_gate`
++    - `vertical_speed_gate`
++    - `ball_joint_speed_gate`
+     - `heading_gate`
+     - `longitudinal_slip_gate`
+     - `lateral_slip_gate`
+   - 当前总奖励形式为：
+-    - `target_bonus + progress * roll_gate * speed_gate * force_gate * ((heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3)`
++    - `target_bonus + progress * roll_gate * speed_gate * force_gate * vertical_speed_gate * ball_joint_speed_gate * ((heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3)`
+   - `target_bonus` 触发条件：
+     - 水平目标距离 `< 0.3 m`
+     - 目标朝向误差 `< 9 deg`
+@@ -416,6 +525,65 @@
+     - 3 篇 PDF 自动附加成功
+     - 5 篇 PDF 因站点重定向或 `403` 限制未自动附加
+ - 当前对话终端本身不是可直接反复长时间试错 Isaac Lab 训练的 shell，因此后续每一轮训练修改仍应尽量保持单变量。
++- 最近已完成对真实 Stage0 run：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-35-52`
++    的完整离线诊断
++  - 当前已确认：
++    - 该 run 已明显建立存活与朝目标推进能力
++    - `Train/mean_episode_length` 已升至约 `941 / 959`
++    - `Train/mean_reward` 已升至约 `247`
++    - `Tracking/goal_pos_error` 已从约 `20 m` 降到约 `8.75 m`
++    - 当前主要剩余问题不是翻车，而是：
++      - 长期高纵向滑移
++      - 长期高侧滑角
++      - 动作幅值偏大
++      - 回合末 `ball_joint_limit` 占比抬升
++      - critic `value loss` 显著偏大
++  - 因此当前更准确的阶段判断应为：
++    - survival/progress 已建立
++    - traction quality 与 critic stability 仍未解决
++- 已完成一轮新的 Stage0 稳定性优先长跑中期验证：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-29-47_stability_v1_iter300`
++  - 当前实际跑到约 `iteration 85/300` 后手动停止，用于做中期趋势判断
++  - 当前已确认：
++    - critic 稳定性明显改善
++      - `Mean value loss` 仍维持在约 `0.13 ~ 0.18`
++    - 球铰速度更平滑
++      - `Observation/ball_joint_vel_abs_mean_raw` 约 `0.43 ~ 0.45`
++    - 竖向跳动约束生效
++      - `Reward/vertical_speed_gate` 约 `0.92 ~ 0.93`
++    - 姿态与限位都未成为主要问题
++      - `Termination/bad_orientation_rate = 0`
++      - `Termination/ball_joint_limit_rate = 0`
++    - 但轮胎滑移仍是核心瓶颈
++      - `Observation/wheel_longitudinal_slip_abs_mean_raw` 仍约 `0.81 ~ 0.87`
++      - `Observation/wheel_slip_angle_abs_mean_raw` 仍约 `0.64 ~ 0.75 rad`
++      - `Reward/longitudinal_slip_gate` 长期几乎为 `0`
++      - `Reward/lateral_slip_gate` 长期接近 `0`
++  - 因此这轮 tuning 的结论是：
++    - “平滑化 / critic 稳定”方向有效
++    - “低滑移 / 低侧滑”尚未真正解决
++- 已完成一轮 Stage0 “slip gate 去饱和”短训练验证：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-39-33_slip_gate_v1`
++  - 当前已确认：
++    - `longitudinal_slip_gate` 与 `lateral_slip_gate` 不再从一开始就长期塌到 `0`
++    - 到 `iteration 39/40` 时：
++      - `Observation/wheel_longitudinal_slip_abs_mean_raw ≈ 0.821`
++      - `Observation/base_lin_vel_x_raw ≈ 1.17`
++      - `Loss/value ≈ 0.15`
++    - 相比只靠稳定性优先 bundle 的早期阶段，这条线更早得到：
++      - 非零 slip gate
++      - 更高的前向速度
++      - 更低的纵向滑移
++    - 但侧滑角仍偏大：
++      - `Observation/wheel_slip_angle_abs_mean_raw ≈ 0.72 rad`
++- 已完成一轮 Stage0 “wheel cap 压到 8.5 rad/s” 的排除验证：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-37-02_slip_cap85_v1`
++  - 结论：
++    - 会明显压低 wheel speed
++    - 但会拖慢 progress
++    - 且不能充分解决纵向滑移
++  - 当前不保留为默认方案
+ - 已完成对两个真实 run 的 observation scale 反推检查：
+   - `2026-04-14_14-04-19_soft_limit_v1_orient3_lin22`
+   - `2026-04-14_20-52-07`
+@@ -436,8 +604,9 @@
+   - policy 真正输入网络前的乘 scale 过程仍保留在 `mdp/observations.py`
+ - 当前 wheel contact sensor 已接入 active direct workflow：
+   - 机器人 USD spawn 已启用 `activate_contact_sensors`
+-  - env 通过 `ContactSensor` 读取 6 个 wheel body 的 `net_forces_w`
+-  - 当前法向力直接使用 `net_forces_w` 这个净法向接触力向量的模长，并按整车重量归一化
++  - env 不再依赖 Isaac Lab `ContactSensor`
++  - 当前通过 PhysX `rigid_contact_view.get_contact_data(dt)` 读取 6 个 wheel body 对地面的逐接触点法向数据
++  - 当前法向力先按每个接触点做 `normal_force_scalar * contact_normal_vector` 聚合成轮地法向合力向量，再取模长并按整车重量归一化
+ - 当前动作执行链已去除电机干扰项：
+   - `motor_strength` 不再参与 `policy_actions -> processed_actions`
+   - reset 时也不再为动作采样电机强度系数
+@@ -453,6 +622,19 @@
+ - 当前 `RL_Training/` 结构已切换为新架构，后续不要再把旧的历史路径当作默认入口。
+ 
+ ## 下一步优先级
++- 先围绕 `2026-04-15_22-29-47_stability_v1_iter300` 做下一轮单变量改动：
++  - 重点不再继续压球铰
++  - 重点转到车轮速度目标与真实车速的失配
++- 下一轮优先修改：
++  - 侧滑项设计方式
++  - 是否给 wheel action 增加更直接的平滑/增量约束
++- 下一轮诊断重点：
++  - `wheel_longitudinal_slip_abs_mean_raw`
++  - `wheel_slip_angle_abs_mean_raw`
++  - `base_lin_vel_x_raw / wheel_joint_vel_abs_mean_raw`
++  - `Reward/longitudinal_slip_gate`
++  - `Reward/lateral_slip_gate`
++  - `Loss/value`
+ - 文献侧优先继续沿以下线索做二轮扩展：
+   - `Hybrid Learning for Rough Terrain Navigation of Actively Articulated Wheeled Vehicles`
+   - `Control of rough terrain vehicles using deep reinforcement learning`
+diff --git a/logs/daily_work_log.md b/logs/daily_work_log.md
+index bb32296..978db29 100644
+--- a/logs/daily_work_log.md
++++ b/logs/daily_work_log.md
+@@ -2,6 +2,379 @@
+ 
+ ## 2026-04-15
+ 
++已完成：
++- 按用户指定，把 Stage0 默认优化方向改为：
++  - 先低纵向滑移
++  - 低侧滑
++  - 低跳动
++  - 球铰速度更平滑
++  - 再处理 critic 稳定性
++- 将默认训练轮数改为：
++  - `300`
++- 调整 Stage0 PPO：
++  - `save_interval = 100`
++  - `actor init_std = 0.35`
++  - `learning_rate = 2.0e-4`
++  - `num_learning_epochs = 4`
++  - `entropy_coef = 0.002`
++  - `desired_kl = 0.008`
++  - `value_loss_coef = 0.7`
++  - `max_grad_norm = 0.7`
++- 调整 Stage0 环境参数：
++  - 收紧球铰动作范围
++  - 球铰阻尼改为 `20.0`
++  - 球铰速度上限改为 `0.8 rad/s`
++  - 车轮速度上限改为 `12.0 rad/s`
++  - `PhysX max_velocity_iteration_count = 1`
++  - `enable_external_forces_every_iteration = True`
++- 调整 reward：
++  - 新增 `vertical_speed_gate`
++  - 新增 `ball_joint_speed_gate`
++  - `gated_progress` 当前变为：
++    - `progress * roll_gate * speed_gate * force_gate * vertical_speed_gate * ball_joint_speed_gate * composite_gate`
++- 调整 Stage0 观测 scale：
++  - `base_ang_vel = 0.35`
++  - `projected_gravity = 1.5`
++  - `wheel_longitudinal_slip = 2.0`
++  - `wheel_slip_angle = 1.5`
++  - `wheel_normal_contact_force = 1.25`
++  - `last_action = 1.5`
++- 发现并修复一个 Stage0 配置装配问题：
++  - `CompleteCarEnvCfg.__post_init__()` 会在末尾重建 `self.robot`
++  - 因此 Stage0 在 `super().__post_init__()` 后再修改 actuator 相关 `control` 参数时，必须额外再次执行：
++    - `self.robot = build_complete_car_robot_cfg(self.control, self.resets)`
++  - 否则 PhysX articulation 实际仍使用 base cfg 的旧驱动参数
++- 使用：
++  - `python3 -m py_compile`
++  完成相关 Python 文件静态编译检查，检查通过。
++- 使用：
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless --max_iterations 1`
++  完成两轮真实 GPU 冒烟验证。
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++- `docs/RL阶段训练参数一览表.md`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 第一轮冒烟已确认 reward / PPO / Stage0 cfg 改动不会阻塞训练启动。
++- 第二轮冒烟进一步确认 actuator 新参数真正下发到了 PhysX：
++  - 球铰阻尼 `20.0`
++  - 球铰速度上限 `0.8`
++  - 车轮速度上限 `12.0`
++- 最新通过验证的 run：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-26-28`
++- 当前新的默认 Stage0 起点已经从“progress 优先”切到“稳定性优先”。
++- 随后已启动一轮完整 `300` iteration 长跑用于中期趋势判断：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-29-47_stability_v1_iter300`
++  - 实际在约 `iteration 85/300` 手动停止
++- 当前长跑中期结论：
++  - critic 稳定性已明显改善：
++    - `Mean value loss` 约 `0.13 ~ 0.18`
++  - 球铰速度已明显更平滑：
++    - `ball_joint_vel_abs_mean_raw` 约 `0.43 ~ 0.45`
++  - 竖向跳动约束有效：
++    - `vertical_speed_gate` 约 `0.92 ~ 0.93`
++  - 姿态与球铰限位不再是主要问题：
++    - `bad_orientation_rate = 0`
++    - `ball_joint_limit_rate = 0`
++  - 但轮胎 traction 问题仍未解决：
++    - `wheel_longitudinal_slip_abs_mean_raw` 约 `0.81 ~ 0.87`
++    - `wheel_slip_angle_abs_mean_raw` 约 `0.64 ~ 0.75 rad`
++    - 两个 slip gate 长期接近 `0`
++- 下一步不应继续优先压球铰，而应转到：
++  - 车轮速度目标映射
++  - slip gate 结构
++  - wheel action 平滑/增量约束
++
++已完成：
++- 先做了一轮“只压 wheel cap”的排除实验：
++  - 临时将 Stage0 `wheel_joint_velocity_limit_sim` 改到 `8.5 rad/s`
++  - 依据是 `speed_limit = 1.6 m/s` 与 `wheel_radius = 0.19 m` 对应角速度约 `8.4 rad/s`
++- 使用：
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless --max_iterations 1`
++  完成真实 GPU 冒烟，并确认 PhysX articulation 中 wheel velocity limit 已变成 `8.5`
++- 再使用：
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless --max_iterations 40 --run_name slip_cap85_v1`
++  做短训练验证
++- 该实验结论：
++  - 确实压低了 wheel speed
++  - 但明显拖慢了前向推进
++  - 且纵向滑移没有得到足够改善
++  - 因此不保留为默认方案
++- 随后回退该临时 wheel cap 改动，改做“slip gate 去饱和”：
++  - `longitudinal_slip_gate` 从每轮乘积式 Gaussian 改为：
++    - `exp(-mean(abs(longitudinal_slip)) / scale)`
++  - `lateral_slip_gate` 从硬裁切余弦乘积改为：
++    - `exp(-mean(abs(slip_angle)) / (pi / lateral_slip_gain))`
++- 使用：
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless --max_iterations 1`
++  完成新的真实 GPU 冒烟验证
++- 使用：
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless --max_iterations 40 --run_name slip_gate_v1`
++  完成完整短训练验证
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++- `docs/RL阶段训练参数一览表.md`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- `8.5 rad/s` 的 wheel cap 方案被否决，不作为默认配置保留。
++- `slip_gate_v1` 这轮验证 run：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-39-33_slip_gate_v1`
++- `slip_gate_v1` 到 `iteration 39/40` 的关键信号：
++  - `Observation/wheel_longitudinal_slip_abs_mean_raw ≈ 0.821`
++  - `Observation/base_lin_vel_x_raw ≈ 1.17`
++  - `Observation/wheel_slip_angle_abs_mean_raw ≈ 0.72 rad`
++  - `Loss/value ≈ 0.15`
++- 这说明：
++  - slip gate 不再从一开始就塌到 `0`
++  - 纵向滑移与前向推进的折中明显比 `slip_cap85_v1` 更好
++  - critic 仍保持稳定
++  - 当前剩下的主要 traction 问题已集中到侧滑角，而不是纵向 gate 完全失效
++
++已完成：
++- 对真实 Stage0 run
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-35-52`
++  做了一轮完整离线诊断，重点检查了 `Observation/*_raw` 标量范围。
++- 已导出并读取：
++  - simulator log
++  - Hydra 配置
++  - `params/env.yaml`
++  - `params/agent.yaml`
++  - `tensorboard_export/latest_values.csv`
++  - `tensorboard_export/summary.json`
++  - 全部 `Observation/*_raw` scalar CSV
++
++修改文件：
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 该 run 已明显学会存活与朝目标推进：
++  - `mean_episode_length` 约升至 `941 / 959`
++  - `goal_pos_error` 约降至 `8.75 m`
++- 当前主要剩余问题是：
++  - 高纵向滑移
++  - 高侧滑角
++  - 动作幅值偏大
++  - 回合末球铰限位终止占比抬升
++  - critic `value loss` 偏大
++- 当前阶段判断更新为：
++  - survival/progress 已建立
++  - traction quality 与 critic stability 仍待解决
++
++已完成：
++- 修正 `RL_Training/scripts/play.py` 的 `--load_run` 路径解析逻辑。
++- 当前 `play.py` 已支持以下 `--load_run` 写法：
++  - 纯 run 目录名，如 `2026-04-15_21-35-52`
++  - 带实验名前缀的相对路径，如 `complete_car_stage0/2026-04-15_21-35-52`
++  - 直接指向 run 目录的绝对路径
++- 原问题已定位为：
++  - 旧脚本把 `--load_run complete_car_stage0/2026-04-15_21-35-52` 原样传给 Isaac Lab `get_checkpoint_path()`
++  - 但当时 `log_root_path` 已经是 `.../complete_car_stage0`
++  - 因此会错误拼出重复层级并报：
++    - `No runs present in the directory ... match ...`
++- 使用：
++  - `python3 -m py_compile RL_Training/scripts/play.py`
++  完成静态编译检查，检查通过。
++- 使用以下真实回放命令验证：
++  - `python scripts/play.py --task CompleteCar-Stage0 --load_run complete_car_stage0/2026-04-15_21-35-52 --num_envs 1 --headless`
++- 验证结果：
++  - 已确认回放流程不再卡在 checkpoint 路径解析
++  - 当前新的实际阻塞点变为：
++    - 运行机器当时无可用 CUDA 设备
++    - 报错为：
++      - `RuntimeError: No CUDA GPUs are available`
++
++修改文件：
++- `RL_Training/scripts/play.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 `play.py` 的回放路径解析问题已修复。
++- 若后续继续回放失败，应优先检查当前机器 GPU / driver / device 配置，而不是再怀疑 run 目录不存在。
++
++已完成：
++- 核对当前局部高程 patch 的真实实现入口，并删除一段无用的旧高度扫描代码。
++- 当前 active critic 高程 patch 真实写在：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - 函数：
++    - `_compute_critic_height_patch()`
++- 删除：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++  中未被主线使用的：
++  - `get_height_features()`
++- 同时删除 `env._get_observations()` 中对该函数的无效调用。
++- 删除原因：
++  - 当前 Stage0 / Stage1 / Stage2 都没有启用 `height_scanner`
++  - 该函数返回值没有进入 actor / critic 观测
++- 使用：
++  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  完成静态编译检查，检查通过。
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前局部高程 patch 的 active 主线只保留 `env._compute_critic_height_patch()`。
++- 旧的 `height_scanner.get_height_features()` 路径已确认是死代码并已移除。
++
++已完成：
++- 将目标命令重采样改为“一个 episode 只保留一个目标”。
++- 修改 `base/complete_car_cfg.py`：
++  - `commands.resampling_time` 当前会在 env cfg 装配阶段自动对齐到 `episode_length_s`
++- 修改 `base/env.py`：
++  - 预物理步中的 timer 重采样逻辑已加门控
++  - 仅当 `resampling_time < episode_length_s` 时才允许回合内中途重采样
++  - 当前默认行为因此变为：
++    - reset 时采样一次目标
++    - 一个回合内不再切换目标
++- 已同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- 使用：
++  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  完成静态编译检查，检查通过。
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- `docs/RL阶段训练参数一览表.md`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 goal-conditioned 主线已不再在一个 episode 内多次更换目标。
++- 后续课程学习可以直接按“单回合对应单目标”的口径设计成功 / 失败判据。
++
++已完成：
++- 将轮地法向接触力的 strict 版本补充到真实可用状态，并完成默认 `64` 环境训练启动验证。
++- 修正 `sensors/sensor_cfg.py`：
++  - wheel-ground filter 不再指向 ground 根 prim 或通配子树
++  - 当前运行时先递归解析 `ground_prim_path` 下的真实碰撞 prim
++  - 平地对应 `Plane`，generator terrain 对应 `Mesh`
++- 保留逐接触点法向聚合实现：
++  - `sum(normal_force_scalar * contact_normal_vector)`
++- 使用：
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless --max_iterations 1`
++  完成真实 GPU 启动验证。
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 strict 版本轮地法向力实现已可在默认 `64` 环境下正常启动训练。
++- 本轮验证 run：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_21-10-27`
++- 当前 `Observation/wheel_normal_contact_force_abs_mean_raw` 已恢复为非零，说明 ground filter 与逐接触点法向聚合链路生效。
++
++已完成：
++- 将当前轮地法向接触力实现进一步改为“基于真实接触点法向的严格版本”。
++- 修改 `sensors/sensor_cfg.py`：
++  - wheel-ground contact view 不再直接调用 `get_net_contact_forces(dt)`
++  - 当前改为对 `get_contact_data(dt)` 返回的逐接触点法向标量与接触法向做聚合
++  - 每个轮子的世界系法向合力向量按：
++    - `sum(normal_force_scalar * contact_normal_vector)`
++    重建
++- 修改 `mdp/observations.py`：
++  - 保持观测接口不变
++  - 将“法向接触力”语义更新为上述聚合后法向合力向量的模长，并继续按整车重量归一化
++- 同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
++- `docs/RL阶段训练参数一览表.md`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前轮地法向接触力不再是“直接读取法向合力接口”的实现口径，而是显式基于真实接触点法向重建。
++- 当前观测与奖励仍沿用同一 6 维轮载输入接口，但其底层物理定义已经收口为逐接触点法向聚合版本。
++
++已完成：
++- 删除当前 critic 显式地形高度 patch 的“三车独立 patch 拼接”方案，不再保留可选分支。
++- `terrain/terrain_cfg.py` 已移除：
++  - `terrain.height_patch_scheme`
++  - 三 patch 总维度计算逻辑
++- `base/env.py` 已恢复为：
++  - 仅以中车参考系生成单份 patch
++  - 仅使用中车 yaw 做 patch 旋转
++  - 仅返回单份中车相对高度 patch 给 critic
++- 使用：
++  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  完成静态编译检查，检查通过。
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 critic 显式高度 patch 已恢复为只保留原始中车单 patch 方案。
++- 之后不再使用前 / 中 / 后三 patch 拼接方案。
++
++已完成：
++- 为当前 critic 显式地形高度 patch 新增一套可选的三车独立方案。
++- 保留原有：
++  - `terrain.height_patch_scheme = "body_single"`
++- 新增：
++  - `terrain.height_patch_scheme = "three_body_separate"`
++- 在新方案下：
++  - 分别以前车 / 中车 / 后车的质心为 patch 原点
++  - 三份 patch 分别跟随各自车体 yaw 旋转
++  - 三份 patch 按 `head -> body -> tail` 顺序展平后拼接进 critic 观测
++  - 每份 patch 的高度值相对各自车体质心高度计算
++- 已同步让：
++  - `terrain.get_num_height_points()`
++  按当前方案自动返回单 patch 或三 patch 拼接后的总维度
++- 使用：
++  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
++  完成静态编译检查，检查通过。
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 critic 显式高度 patch 已支持“中车单 patch”和“前中后三 patch 拼接”两套方案。
++- 默认行为仍保持原方案不变；如需启用新方案，只需在配置里切到：
++  - `terrain.height_patch_scheme = "three_body_separate"`
++
+ 已完成：
+ - 对当前三节关节小车 direct workflow 做了一轮 goal-conditioned 主线重构。
+ - 当前命令空间已从速度命令改为目标位姿命令：
+@@ -123,6 +496,35 @@
+ - 当前课题第一轮核心英文参考文献池已经落入 Zotero 主集合，后续继续做 cited-by 扩展、批注、读书笔记时可以直接从该集合接续。
+ - 若后续需要完整 PDF，仍需针对未自动附加的 5 篇做单篇补抓。
+ 
++已完成：
++- 重新检查 `USD/complete_car.usd` 的 6 个轮子刚体根节点，确认用户已手动补入 `Contact Report API`。
++- 修改 `sensors/sensor_cfg.py`：
++  - 为 runtime 手动创建的传感器补上 `{ENV_REGEX_NS}` 显式解析
++  - 初始尝试将 wheel contact sensor 的 prim 路径修正为：
++    - `{ENV_REGEX_NS}/Robot/complete_car_alternative/(body_car_wheel_left|...|tail_car_wheel_right)`
++  - 进一步确认 Isaac Lab `ContactSensor` 在默认 `64` 环境 direct workflow 启动场景下仍会报：
++    - `Failed to initialize contact reporter for specified bodies`
++  - 最终改为运行时直接创建 6 个 PhysX `rigid_contact_view`，不再依赖 `ContactSensor`
++- 修改 `base/env.py`：
++  - 将 `_total_vehicle_weight` 显式放到 `self.device`
++  - 修复轮地法向接触力归一化时的 CPU / CUDA 设备不一致问题
++- 使用以下命令完成真实 GPU 最小训练验证：
++  - `python scripts/train.py --task CompleteCar-Stage0 --headless`
++- 本轮验证通过并进入持续训练循环的 run：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_20-57-31`
++
++修改文件：
++- `USD/complete_car.usd`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 wheel-ground contact force 主线已经切换为 PhysX 直接 contact view，不再依赖 Isaac Lab `ContactSensor`。
++- 当前默认训练命令已在真实 GPU 环境下成功进入持续训练循环。
++
+ ## 2026-04-13
+ 
+ 已完成：

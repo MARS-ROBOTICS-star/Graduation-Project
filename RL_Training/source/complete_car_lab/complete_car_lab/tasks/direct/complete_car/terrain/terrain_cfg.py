@@ -34,9 +34,9 @@ class CompleteCarTerrainRuntimeCfg:
     patch_rear_extent: float = 0.942209  # 中车参考点到整车后端的覆盖长度。
     patch_half_width: float = 0.280374  # 半车宽。
 
-    patch_preview_length: float = 0.40  # 车头前方多看出去的 preview。
+    patch_preview_length: float = 1.0  # 车头前方多看出去的 preview。
     patch_rear_margin: float = 0.40  # 车尾后面多留一点余量。
-    patch_side_margin: float = 0.04  # 左右多留一点余量。
+    patch_side_margin: float = 1.0 # 左右多留一点余量。
 
     patch_origin_offset_xy: tuple[float, float] = (0.0, 0.0)  # patch 相对中车参考点的平移偏置。
 

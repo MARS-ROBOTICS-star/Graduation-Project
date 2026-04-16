@@ -41,8 +41,8 @@ def _compute_wheel_contact_observations(
     wheel_slip_angle = torch.atan2(v_y, torch.abs(v_x) + slip_velocity_epsilon)
     wheel_slip_angle = torch.clamp(wheel_slip_angle, -slip_angle_clip_rad, slip_angle_clip_rad)
 
-    # ContactSensor.net_forces_w is already the summed normal contact-force vector in world frame.
-    # Use its magnitude to obtain the load carried along the actual wheel-ground contact normal.
+    # The runtime sensor path reconstructs one wheel-ground normal-force resultant vector in world frame
+    # by summing all contact-point (normal_force_scalar * contact_normal_vector) terms for each wheel.
     wheel_normal_contact_force = torch.linalg.vector_norm(wheel_contact_forces_w, dim=-1) / total_vehicle_weight
 
     return wheel_longitudinal_slip, wheel_slip_angle, wheel_normal_contact_force

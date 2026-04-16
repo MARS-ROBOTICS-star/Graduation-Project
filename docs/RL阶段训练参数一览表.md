@@ -61,14 +61,35 @@ Stage0 训练时的配置继承关系是：
 4. `CompleteCarStage0PPORunnerCfg`
 5. 继承 `CompleteCarBasePPORunnerCfg`
 
-Stage0 最重要的覆写只有几条：
+当前 Stage0 不再只保留少量覆写。  
+为便于后续直接在 `baseline/complete_car_stage0_cfg.py` 中维护参数，当前已经把 Stage0 活跃参数显式集中在该文件内。
+
+当前最重要的 Stage0 生效值包括：
 
 - `scene.num_envs = 64`
 - `terrain.enabled = False`
 - `terrain.mode = "plane"`
 - `curriculum.enabled = False`
 - `terrain.measure_heights = False`
+- `episode_length_s = 16.0`
+- `commands.resampling_time = 5.3`
+- `commands.goal_distance = 12.0`
+- `commands.goal_direction_max_deg = 30.0`
+- `commands.goal_heading_delta_max_deg = 12.0`
 - 除 wheel contact sensor 以外，其余显式传感器关闭
+- 训练优先级改为稳定性优先：
+  - 低滑移
+  - 低侧滑
+  - 低跳动
+  - 球铰速度更平滑
+  - 然后再处理 critic 稳定性
+- Stage0 额外覆写：
+  - 收紧球铰动作上下界
+  - 球铰阻尼 `20.0`
+  - 球铰速度上限 `0.8 rad/s`
+  - 车轮速度上限 `12.0 rad/s`
+  - `PhysX max_velocity_iteration_count = 1`
+  - `enable_external_forces_every_iteration = True`
 
 所以 Stage0 的思路非常明确：  
 只保留最小可运行 RL 闭环，不引入 rough terrain、传感器、课程学习、显式高度图这些复杂因素。
@@ -97,11 +118,12 @@ Stage0 最重要的覆写只有几条：
 
 - `solver_type = 1`
 - `max_position_iteration_count = 8`
-- `max_velocity_iteration_count = 0`
+- `max_velocity_iteration_count = 1`
 - `bounce_threshold_velocity = 0.2`
 - `friction_offset_threshold = 0.04`
 - `friction_correlation_distance = 0.025`
 - `enable_stabilization = True`
+- `enable_external_forces_every_iteration = True`
 
 ### 3.3 重力与接触材料
 
@@ -185,16 +207,16 @@ Stage0 因为是平地，所以地面由 ground plane 直接生成。
 球铰执行器：
 
 - 刚度：`100.0`
-- 阻尼：`10.0`
+- 阻尼：`20.0`
 - 力矩上限：`120.0`
-- 速度上限：`6.0 rad/s`
+- 速度上限：`0.8 rad/s`
 
 车轮执行器：
 
 - 刚度：`0.0`
 - 阻尼：`1000.0`
 - 力矩上限：`80.0`
-- 速度上限：`20.0 rad/s`
+- 速度上限：`12.0 rad/s`
 - 车轮半径：`0.19 m`
 
 这说明：
@@ -300,9 +322,9 @@ $$
 
 ### 7.2 当前目标采样规则
 
-- 目标距离固定：`12 m`
-- 目标方向相对当前起始航向的偏角范围：`[-18.43°, +18.43°]`
-- 目标朝向相对目标连线方向的偏置范围：`[-9.215°, +9.215°]`
+- 目标距离固定：`12.0 m`
+- 目标方向相对当前车头的偏角范围：`[-30°, +30°]`
+- 目标朝向相对目标连线方向的偏置范围：`[-12°, +12°]`
 
 工程实现：
 
@@ -311,7 +333,7 @@ $$
 3. 目标方向偏角：
 
 $$
-\phi = s \cdot 18.43^\circ \cdot \sqrt{u}
+\phi = s \cdot 30^\circ \cdot \sqrt{u}
 $$
 
 这里采用的是“偏向扇区边缘的二次分布”实现，使接近边缘角的目标比接近正前方的目标更常出现。
@@ -323,7 +345,7 @@ $$
 $$
 
 $$
-\delta \sim U(-9.215^\circ, 9.215^\circ)
+\delta \sim U(-12^\circ, 12^\circ)
 $$
 
 $$
@@ -333,34 +355,28 @@ $$
 目标点坐标为：
 
 $$
-x_t = x_0 + 12 \cos(\theta_{los})
+x_t = x_0 + 12.0 \cos(\theta_{los})
 $$
 
 $$
-y_t = y_0 + 12 \sin(\theta_{los})
+y_t = y_0 + 12.0 \sin(\theta_{los})
 $$
 
 ### 7.3 命令重采样周期
 
-- `resampling_time = 5.0 s`
+- `episode_length_s = 16.0 s`
+- `resampling_time = 5.3 s`
 
-也就是说每个环境每 `5` 秒重新采样一次命令。
+也就是说当前每个环境会在 reset 时采样一次目标，并在回合中途继续重采样，单个 episode 通常会经历 `2 ~ 3` 个目标段。
 
 ### 7.4 命令时钟逻辑
 
-在每个控制步：
+当前主线已重新启用“回合内定时重采样”。
 
-$$
-t_{left} \leftarrow t_{left} - \Delta t
-$$
-
-如果：
-
-$$
-t_{left} \le 0
-$$
-
-则该环境重新采样命令。
+- reset 时会调用一次目标采样。
+- 预物理步内当 `resampling_time < episode_length_s` 时，会启用定时器倒计时与中途重采样。
+- 当前实际行为是：
+  - 一个 episode 内通常包含 `2 ~ 3` 个目标。
 
 ### 7.5 观测中的相对命令表达
 
@@ -510,8 +526,17 @@ $$
 
 这里：
 
-- $\mathbf{F}_{n,i}^{w}$ 是 Isaac Lab `ContactSensor.data.net_forces_w` 返回的第 `i` 个车轮净法向接触力向量
-- Isaac Lab 文档已明确该量就是世界系下的法向接触力向量，而不是含摩擦的总接触力
+- $\mathbf{F}_{n,i}^{w}$ 是第 `i` 个车轮对地面所有接触点法向力的世界系合力向量
+- 当前运行时实现不再依赖 Isaac Lab `ContactSensor`
+- 当前直接对 PhysX `rigid_contact_view.get_contact_data(dt)` 返回的逐接触点数据做聚合：
+
+$$
+\mathbf{F}_{n,i}^{w} = \sum_k f_{n,i,k} \mathbf{n}_{i,k}
+$$
+
+这里：
+- $f_{n,i,k}$ 是第 `i` 个车轮第 `k` 个接触点的法向接触力标量
+- $\mathbf{n}_{i,k}$ 是对应接触点的世界系接触法向单位向量
 
 因此当前实现直接取这个法向力向量的模长，而不再使用世界坐标系竖直方向近似。
 
@@ -522,14 +547,14 @@ $$
 当前 scale：
 
 - `base_lin_vel = 1.0`
-- `base_ang_vel = 0.25`
-- `projected_gravity = 1.0`
+- `base_ang_vel = 0.35`
+- `projected_gravity = 1.5`
 - `ball_joint_pos = 1.0`
-- `wheel_longitudinal_slip = 1.0`
-- `wheel_slip_angle = 1.0`
-- `wheel_normal_contact_force = 1.0`
+- `wheel_longitudinal_slip = 2.0`
+- `wheel_slip_angle = 1.5`
+- `wheel_normal_contact_force = 1.25`
 - `commands = 1.0`
-- `last_action = 1.0`
+- `last_action = 1.5`
 
 当前 slip 相关观测参数：
 
@@ -649,16 +674,16 @@ $$
 
 按关节顺序 `z, y, x, z, y, x`：
 
-- yaw：`[-0.7, 0.7]`
-- pitch：`[-1.6, 0.5]`
-- roll：`[-0.5, 0.5]`
+- yaw：`[-0.56, 0.56]`
+- pitch：`[-1.30, 0.40]`
+- roll：`[-0.35, 0.35]`
 
 ### 9.6 车轮速度目标映射
 
 当前 policy 直接输出 6 个车轮速度目标的标准化动作。
 每个车轮动作仍先裁剪到 `[-1, 1]`，然后只按单一对称速度上限映射：
 
-- 速度上限参数：`wheel_joint_velocity_limit_sim = 20 rad/s`
+- 速度上限参数：`wheel_joint_velocity_limit_sim = 12 rad/s`
 
 映射公式为：
 
@@ -673,8 +698,8 @@ $$
 
 因此：
 
-- `action = 1` -> `+20 rad/s`
-- `action = -1` -> `-20 rad/s`
+- `action = 1` -> `+12 rad/s`
+- `action = -1` -> `-12 rad/s`
 - `action = 0` -> `0`
 
 因此现在的控制结构是：
@@ -691,14 +716,14 @@ $$
 当前 active reward 已经不再围绕速度命令跟踪展开，而是改成目标导向结构：
 
 $$
-R = r_{tar} + r_{prog} \cdot r_{roll} \cdot r_{speed} \cdot r_{forces} \cdot \left(\frac{r_{head} + r_{slip\parallel} + r_{slip\perp}}{3}\right)
+R = r_{tar} + r_{prog} \cdot r_{roll} \cdot r_{speed} \cdot r_{forces} \cdot r_{vertical} \cdot r_{ball\_speed} \cdot \left(\frac{r_{head} + r_{slip\parallel} + r_{slip\perp}}{3}\right)
 $$
 
 其中：
 
 - `r_tar` 是目标达成 bonus
 - `r_prog` 是朝目标推进的 dense progress 主奖励
-- `r_roll / r_speed / r_forces` 是乘性抑制项
+- `r_roll / r_speed / r_forces / r_vertical / r_ball_speed` 是乘性抑制项
 - `r_head / r_slip_parallel / r_slip_perp` 先取平均，再作为复合乘子
 
 ### 10.2 目标达成奖励
@@ -729,7 +754,7 @@ $$
 当前代码里 `k_tar` 不是手填常数，而是按“最大无折扣回报的 5%”反解：
 
 $$
-k_{tar} = \frac{\rho \cdot (r_0 \cdot f_{control})}{1 - \rho}, \qquad \rho = 0.05
+k_{tar} = \frac{\rho \cdot (r_0 \cdot f_{control})}{1 - \rho}, \qquad \rho = 0.03
 $$
 
 其中：
@@ -785,8 +810,8 @@ $$
 
 当前：
 
-- `roll_free_deg = 5°`
-- `k_phi = \pi/16`
+- `roll_free_deg = 3°`
+- `k_phi = \pi/24`
 
 这项用于抑制过大侧倾。
 
@@ -800,8 +825,8 @@ $$
 
 当前：
 
-- `v_lim = 2 m/s`
-- `k_speed = 2`
+- `v_lim = 1.6 m/s`
+- `k_speed = 3`
 
 这项不会额外奖励低速，只在速度过高时明显压低回报。
 
@@ -821,66 +846,111 @@ $$
 
 当前：
 
-- `k_forces = 0.1`
+- `k_forces = 0.08`
 
 这项鼓励六轮受力更均匀，降低悬空轮和单轮过载。
 
 ### 10.8 纵向滑移项
 
-对每个车轮纵向滑移率 $\lambda_i$，定义：
+当前实现不再对 6 个轮子的纵向滑移 gate 做乘积，否则在训练早期会非常容易整体塌到接近 `0`。
+
+先计算 6 个轮子纵向滑移率绝对值均值：
 
 $$
-r_{slip\parallel} = \prod_{i=1}^{6} \exp\left[-\frac{1}{2}\left(\frac{\lambda_i}{k_\lambda}\right)^2\right]
+\bar{\lambda} = \frac{1}{6}\sum_{i=1}^{6} |\lambda_i|
+$$
+
+再定义：
+
+$$
+r_{slip\parallel} = \exp\left(-\frac{\bar{\lambda}}{k_\lambda}\right)
 $$
 
 当前：
 
-- `k_lambda = 0.3`
+- `k_lambda = 0.18`
 
-这是乘积结构，不是求和，所以任何一个轮子纵向滑移过大，整体项都会被明显压低。
+这样可以保持“滑移越大，gate 越小”的方向不变，同时避免 reward 在训练早期失去分辨率。
 
 ### 10.9 侧滑角项
 
-对每个车轮侧滑角 $\alpha_i$，先限制在：
+当前实现同样不再使用硬裁切余弦乘积，而是先计算 6 个轮子的侧滑角绝对值均值：
 
 $$
-\alpha_i \in \left[-\frac{\pi}{k_\alpha}, \frac{\pi}{k_\alpha}\right]
+\bar{\alpha} = \frac{1}{6}\sum_{i=1}^{6} |\alpha_i|
 $$
 
-超出这个范围时，该轮对应项直接记为 `0`。
-范围内则定义：
+再用：
 
 $$
-r_{slip\perp,i} = 0.5 \cos(k_\alpha \alpha_i) + 0.5
+k_{\alpha,scale} = \frac{\pi}{k_\alpha}
 $$
 
-再对 6 个轮子取乘积：
-
 $$
-r_{slip\perp} = \prod_{i=1}^{6} r_{slip\perp,i}
+r_{slip\perp} = \exp\left(-\frac{\bar{\alpha}}{k_{\alpha,scale}}\right)
 $$
 
 当前：
 
-- `k_alpha = 6`
+- `k_alpha = 8`
 
-### 10.10 当前配置参数总览
+也就是当前侧滑 gate 的指数衰减尺度为：
+
+$$
+\frac{\pi}{8} \approx 0.393\ \text{rad}
+$$
+
+### 10.10 竖向速度抑制项
+
+设中车世界系竖直速度为 $v_z$，则：
+
+$$
+r_{vertical} = \exp\left[-\frac{1}{2}\left(\frac{|v_z|}{k_{vertical}}\right)^2\right]
+$$
+
+当前：
+
+- `k_vertical = 0.20`
+
+这项直接抑制上下跳动。
+
+### 10.11 球铰速度平滑项
+
+设 6 个球铰角速度绝对值均值为：
+
+$$
+\bar{\omega}_{ball} = \frac{1}{6}\sum_{i=1}^{6} |\dot q_i|
+$$
+
+则：
+
+$$
+r_{ball\_speed} = \exp\left[-\frac{1}{2}\left(\frac{\bar{\omega}_{ball}}{k_{ball}}\right)^2\right]
+$$
+
+当前：
+
+- `k_ball = 0.55`
+
+### 10.12 当前配置参数总览
 
 当前 `RewardParamsCfg` 生效值为：
 
-- `target_bonus_ratio = 0.05`
+- `target_bonus_ratio = 0.03`
 - `target_position_tolerance = 0.3`
 - `target_yaw_tolerance_deg = 9.0`
 - `heading_distance_scale = 5.0`
-- `roll_free_deg = 5.0`
-- `roll_gaussian_scale = pi / 16`
-- `speed_limit = 2.0`
-- `speed_gain = 2.0`
-- `force_std_scale = 0.1`
-- `longitudinal_slip_scale = 0.3`
-- `lateral_slip_gain = 6.0`
+- `roll_free_deg = 3.0`
+- `roll_gaussian_scale = pi / 24`
+- `speed_limit = 1.6`
+- `speed_gain = 3.0`
+- `force_std_scale = 0.08`
+- `longitudinal_slip_scale = 0.18`
+- `lateral_slip_gain = 8.0`
+- `vertical_speed_scale = 0.20`
+- `ball_joint_speed_scale = 0.55`
 
-### 10.11 当前 TensorBoard 奖励日志
+### 10.13 当前 TensorBoard 奖励日志
 
 当前 step 级别会输出：
 
@@ -889,6 +959,8 @@ $$
 - `Reward/roll_gate`
 - `Reward/speed_gate`
 - `Reward/force_gate`
+- `Reward/vertical_speed_gate`
+- `Reward/ball_joint_speed_gate`
 - `Reward/heading_gate`
 - `Reward/longitudinal_slip_gate`
 - `Reward/lateral_slip_gate`
@@ -1019,28 +1091,28 @@ Stage0 所有额外传感器关闭：
 
 ### 15.1 Rollout 参数
 
-- `num_steps_per_env = 48`
-- `num_envs = 512`
+- `num_steps_per_env = 96`
+- `num_envs = 64`
 
 所以每轮 rollout 总样本数：
 
 $$
-48 \times 512 = 24576
+96 \times 64 = 6144
 $$
 
 ### 15.2 训练总轮数
 
-- `max_iterations = 1000
+- `max_iterations = 300`
 
 ### 15.3 Mini-batch
 
-- `num_learning_epochs = 5`
+- `num_learning_epochs = 4`
 - `num_mini_batches = 4`
 
 每个 mini-batch 大小：
 
 $$
-\frac{24576}{4} = 6144
+\frac{6144}{4} = 1536
 $$
 
 ### 15.4 折扣与 GAE
@@ -1088,18 +1160,18 @@ $$
 
 ### 15.6 学习率与 KL 调度
 
-- `learning_rate = 3e-4`
+- `learning_rate = 2e-4`
 - `schedule = "adaptive"`
-- `desired_kl = 0.01`
+- `desired_kl = 0.008`
 
 这表示学习率会参考 KL 偏离程度自适应调整。
 
 ### 15.7 其他 PPO 超参数
 
-- `entropy_coef = 0.005`
-- `value_loss_coef = 1.0`
+- `entropy_coef = 0.002`
+- `value_loss_coef = 0.7`
 - `use_clipped_value_loss = True`
-- `max_grad_norm = 1.0`
+- `max_grad_norm = 0.7`
 
 ### 15.8 Actor / Critic 网络结构
 
@@ -1109,7 +1181,7 @@ Actor：
 - 激活函数：`ELU`
 - 观测归一化：开启
 - 输出分布：Gaussian
-- 初始标准差：`0.7`
+- 初始标准差：`0.35`
 - `std_type = "scalar"`
 
 Critic：
@@ -1147,7 +1219,7 @@ $$
 从训练流程角度，Stage0 每个控制周期的闭环如下：
 
 1. 如果命令计时器到期，重采样命令
-2. 命令根据当前位姿采样一个目标全局位姿
+2. 当前默认仅在 reset 时根据当前位姿采样一个目标全局位姿
 3. env 把目标转成车体系下的 `[x_rel, y_rel, psi_rel]`
 4. policy 读取 48 维 actor 观测
 5. actor 输出 12 维标准化动作
@@ -1184,7 +1256,7 @@ $$
 ### 17.3 命令
 
 - 命令维度：`3`
-- 每 `5 s` 重采样一次
+- 每个 episode 只采样一次
 - 目标距离固定 `12 m`
 - 目标方向偏角范围 `[-18.43°, +18.43°]`
 - 目标朝向附加偏置范围 `[-9.215°, +9.215°]`
@@ -1194,23 +1266,40 @@ $$
 - 总奖励：
   - `target_bonus + gated_progress`
 - 其中：
-  - `gated_progress = progress * roll_gate * speed_gate * force_gate * composite_gate`
+  - `gated_progress = progress * roll_gate * speed_gate * force_gate * vertical_speed_gate * ball_joint_speed_gate * wheel_action_rate_gate * composite_gate`
 - 其中：
   - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
 
 当前关键参数为：
 
-- `target_bonus_ratio = 0.05`
+- `target_bonus_ratio = 0.03`
 - `target_position_tolerance = 0.3 m`
 - `target_yaw_tolerance_deg = 9°`
 - `heading_distance_scale = 5 m`
-- `roll_free_deg = 5°`
-- `roll_gaussian_scale = pi / 16`
-- `speed_limit = 2.0 m/s`
-- `speed_gain = 2.0`
-- `force_std_scale = 0.1`
-- `longitudinal_slip_scale = 0.3`
-- `lateral_slip_gain = 6.0`
+- `roll_free_deg = 3°`
+- `vertical_speed_scale = 0.20`
+- `ball_joint_speed_scale = 0.55`
+- `wheel_action_rate_scale = 0.25`
+
+### 17.5 当前这一轮定向实验的保留/否决项
+
+- 当前保留在默认代码里的 reward 结构：
+  - 平滑指数型 `longitudinal_slip_gate`
+  - 平滑指数型 `lateral_slip_gate`
+  - `wheel_action_rate_gate`
+- 当前已否决、不在默认代码里的 reward 结构：
+  - `lateral_speed_gate`
+  - 在 `gated_progress` 外再次额外乘一次 `lateral_slip_gate`
+- 当前最佳短跑参考 run：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-45-26_wheel_action_smooth_v1`
+- `roll_gaussian_scale = pi / 24`
+- `speed_limit = 1.6 m/s`
+- `speed_gain = 3.0`
+- `force_std_scale = 0.08`
+- `longitudinal_slip_scale = 0.18`
+- `lateral_slip_gain = 8.0`
+- `vertical_speed_scale = 0.20`
+- `ball_joint_speed_scale = 0.55`
 
 ### 17.5 终止
 
@@ -1220,10 +1309,10 @@ $$
 
 ### 17.6 PPO
 
-- `num_steps_per_env = 48`
-- `num_learning_epochs = 5`
+- `num_steps_per_env = 96`
+- `num_learning_epochs = 4`
 - `num_mini_batches = 4`
-- `learning_rate = 3e-4`
+- `learning_rate = 2e-4`
 - `gamma = 0.99`
 - `lam = 0.95`
 - `clip_param = 0.2`

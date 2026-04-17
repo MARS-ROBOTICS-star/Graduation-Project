@@ -364,6 +364,16 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self.last_actions,
         )
         tilt_deg = torch.rad2deg(torch.acos(torch.clamp(-raw_obs_terms["projected_gravity"][:, 2], -1.0, 1.0)))
+        planar_speed = torch.linalg.vector_norm(raw_obs_terms["base_lin_vel"][:, :2], dim=1)
+        yaw_rate_abs = torch.abs(raw_obs_terms["base_ang_vel"][:, 2])
+        turn_radius_raw = torch.zeros_like(planar_speed)
+        valid_turn_mask = (planar_speed > 0.2) & (yaw_rate_abs > 0.05)
+        turn_radius_raw[valid_turn_mask] = planar_speed[valid_turn_mask] / yaw_rate_abs[valid_turn_mask]
+        mean_turn_radius_raw = (
+            float(torch.mean(turn_radius_raw[valid_turn_mask]).item())
+            if torch.any(valid_turn_mask)
+            else 0.0
+        )
         goal_pos_error = torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1)
         goal_yaw_error_abs = torch.abs(relative_goal_commands[:, 2])
         # TensorBoard command traces are intentionally anchored to env_0 instead of the
@@ -392,6 +402,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Command/goal_direction_offset_deg": float(torch.rad2deg(self._goal_direction_offsets[command_env_id]).item()),
             "Command/goal_heading_offset_deg": float(torch.rad2deg(self._goal_heading_offsets[command_env_id]).item()),
             "Observation/base_lin_vel_y_raw": float(torch.mean(raw_obs_terms["base_lin_vel"][:, 1]).item()),
+            "Observation/turn_radius_raw": mean_turn_radius_raw,
             "Observation/tilt_deg": float(torch.mean(tilt_deg).item()),
             "Observation/projected_gravity_xy_norm_raw": float(
                 torch.mean(torch.linalg.vector_norm(raw_obs_terms["projected_gravity"][:, :2], dim=1)).item()

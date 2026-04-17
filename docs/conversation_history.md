@@ -4,6 +4,37 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-17
 
+### Stage0 TensorBoard step metrics now include the middle-module planar turn-radius diagnostic `Observation/turn_radius_raw`
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active step-metric surface now includes:
+    - `Observation/turn_radius_raw`
+  - its physical meaning is:
+    - the middle-module COM planar instantaneous turning radius in the body frame
+  - the active implementation uses:
+    - $v_x = \texttt{raw\_obs\_terms["base\_lin\_vel"][:, 0]}$
+    - $v_y = \texttt{raw\_obs\_terms["base\_lin\_vel"][:, 1]}$
+    - $\omega_z = \texttt{raw\_obs\_terms["base\_ang\_vel"][:, 2]}$
+  - the active diagnostic formula is:
+    - $R = \sqrt{v_x^2 + v_y^2} / |\omega_z|$
+  - to avoid straight-line divergence, the metric only averages envs that satisfy:
+    - $\sqrt{v_x^2 + v_y^2} > 0.2$
+    - $|\omega_z| > 0.05$
+  - if no env satisfies the turning condition at that step, the logged value is currently:
+    - `0.0`
+- Reason:
+  - the user wanted the current Isaac Lab environment to expose the small car's turning-radius diagnostic directly in TensorBoard
+- Impact:
+  - future Stage0 run analysis can now relate progress, slip, and posture to an explicit turning-radius observable
+  - this metric should be interpreted as a COM-based planar motion diagnostic, not as an Ackermann geometric radius or a strict $O_2$-origin radius unless COM and $O_2$ are treated as coincident
+- Status:
+  - targeted `py_compile` passed for `env.py` and `logger.py`
+
 ### Stage0 active reward trunk is now hard-simplified to `target_bonus + progress * heading_gate`
 - Updated:
   - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`

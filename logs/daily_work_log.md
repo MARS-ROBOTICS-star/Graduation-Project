@@ -3,6 +3,26 @@
 ## 2026-04-17
 
 已完成：
+- 按用户要求把小车平面转弯半径接入当前 TensorBoard step metrics：
+  - 修改：
+    - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+    - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- 当前新增指标：
+  - `Observation/turn_radius_raw`
+- 当前物理口径定义为：
+  - 中模块 COM 在车体系下的平面瞬时转弯半径
+  - $R = \sqrt{v_x^2 + v_y^2} / |\omega_z|$
+- 当前环境变量取自：
+  - `raw_obs_terms["base_lin_vel"][:, 0]`
+  - `raw_obs_terms["base_lin_vel"][:, 1]`
+  - `raw_obs_terms["base_ang_vel"][:, 2]`
+- 为避免直行时半径发散，当前只在满足以下条件的 env 上统计均值：
+  - `sqrt(v_x^2 + v_y^2) > 0.2`
+  - `|\omega_z| > 0.05`
+  - 若当前 step 没有有效转弯样本，则写入 `0.0`
+- 使用：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  完成静态编译检查，检查通过。
 - 按用户要求将当前 Stage0 active reward 主线强制收口为：
   - `target_bonus + progress * heading_gate`
 - 修改 reward 实现：

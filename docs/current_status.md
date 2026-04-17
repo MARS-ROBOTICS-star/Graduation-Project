@@ -104,6 +104,19 @@
 - 已按用户要求继续精简 Observation 埋点：
   - 已停止输出：
     - `Observation/wheel_normal_contact_force_abs_mean_raw`
+- 已按用户要求新增平面转弯半径 step metric：
+  - 当前新增：
+    - `Observation/turn_radius_raw`
+  - 当前口径定义为：
+    - 中模块 COM 在车体系下的平面瞬时转弯半径
+    - $R = \sqrt{v_x^2 + v_y^2} / |\omega_z|$
+  - 当前状态变量取自：
+    - `raw_obs_terms["base_lin_vel"][:, 0:2]`
+    - `raw_obs_terms["base_ang_vel"][:, 2]`
+  - 为避免直行时半径发散，当前仅在：
+    - `sqrt(v_x^2 + v_y^2) > 0.2`
+    - `|\omega_z| > 0.05`
+    的有效转弯样本上统计均值写入 TensorBoard
 - 已按用户要求重排训练日志显示优先级：
   - 终端训练日志当前只保留高频必看的核心项
     - 重点保留：

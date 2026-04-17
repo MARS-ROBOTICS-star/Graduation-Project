@@ -120,16 +120,6 @@ class RewardParamsCfg:
     target_position_tolerance: float = 0.3
     target_yaw_tolerance_deg: float = 9.0
     heading_distance_scale: float = 5.0
-    roll_free_deg: float = 5.0
-    roll_gaussian_scale: float = math.pi / 16.0
-    speed_limit: float = 2.0
-    speed_gain: float = 2.0
-    force_std_scale: float = 0.1
-    longitudinal_slip_scale: float = 0.3
-    lateral_slip_gain: float = 6.0
-    vertical_speed_scale: float = 0.35
-    ball_joint_speed_scale: float = 0.8
-    wheel_action_rate_scale: float = 0.35
 
 
 @configclass

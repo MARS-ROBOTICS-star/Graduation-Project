@@ -2,7 +2,8 @@
 
 ## 当前总目标
 - 将完整车 RL 主线收口到 `RL_Training/` 下的新 Isaac Lab direct workflow 架构。
-- 固定 Stage0 当前默认配置，优先优化低滑移、低侧滑、低跳动、球铰平滑，再处理 critic 稳定性。
+- 固定 Stage0 当前默认配置，并先验证最小 reward 主线：
+  - `target_bonus + progress * heading_gate`
 
 ## 当前阶段
 - 已完成 `RL_Training/` 原地重构。
@@ -11,7 +12,19 @@
 - 已完成 `Stage0` 在真实 GPU 环境下的最小训练启动验证。
 - 已完成一次真实 `Stage0` run 的日志诊断，并补齐训练日志 / TensorBoard 指标埋点。
 - 已完成一轮 Stage0 run 诊断，已确认当前主要问题是高纵向滑移、高侧滑、球铰动作偏激进与 critic value loss 偏大。
-- 当前进入“固定新的 Stage0 稳定性优先配置，并继续做针对性训练验证”的阶段。
+- 已按用户要求将当前 Stage0 reward 主线收口为：
+  - `target_bonus + progress * heading_gate`
+  - 已从 active reward 中移除：
+    - `roll_gate`
+    - `speed_gate`
+    - `force_gate`
+    - `vertical_speed_gate`
+    - `ball_joint_speed_gate`
+    - `wheel_action_rate_gate`
+    - `longitudinal_slip_gate`
+    - `lateral_slip_gate`
+    - `composite_gate`
+- 当前进入“固定新的最小 reward 主线，并观察纯 target/progress/heading 学习行为”的阶段。
 - 已完成一轮完整 `300` iteration 真实 run 诊断：
   - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-16_10-12-26`
   - 当前确认：
@@ -322,8 +335,7 @@
   - 当前 wheel allocator 已从 env 实际执行链路移除，保留在仓库中但不再参与当前动作到轮速目标的映射
   - 当前 reward 已从旧的速度跟踪主线重构为目标导向主线：
     - `target_bonus + gated_progress`
-    - 其中 `gated_progress = progress * roll_gate * speed_gate * force_gate * vertical_speed_gate * ball_joint_speed_gate * wheel_action_rate_gate * composite_gate`
-    - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
+    - 其中 `gated_progress = progress * heading_gate`
   - 已在当前 actor / critic 主线新增 18 维轮地接触相关观测：
     - 6 维各轮纵向滑移率
     - 6 维各轮侧滑角
@@ -786,17 +798,11 @@
 - 在真实 Isaac Lab 环境里先验证新的 goal-conditioned reward：
   - `Reward/target_bonus`
   - `Reward/progress`
-  - `Reward/roll_gate`
-  - `Reward/speed_gate`
-  - `Reward/force_gate`
   - `Reward/heading_gate`
-  - `Reward/longitudinal_slip_gate`
-  - `Reward/lateral_slip_gate`
-  - `Reward/composite_gate`
   - `Reward/gated_progress`
 - 重点检查新的主 reward 是否出现：
   - `progress` 长期为负
-  - 乘性 gate 长期塌到接近 `0`
+  - `heading_gate` 长期塌到接近 `0`
   - `target_bonus` 长时间从不触发
 - 继续把显式地形高度 patch 从 terrain runtime 接到 env / critic 观测：
   - 验证 `critic` 维度大于 `actor`

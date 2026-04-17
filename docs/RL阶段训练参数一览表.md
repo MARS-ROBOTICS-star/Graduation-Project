@@ -940,15 +940,6 @@ $$
 - `target_position_tolerance = 0.3`
 - `target_yaw_tolerance_deg = 9.0`
 - `heading_distance_scale = 5.0`
-- `roll_free_deg = 3.0`
-- `roll_gaussian_scale = pi / 24`
-- `speed_limit = 1.6`
-- `speed_gain = 3.0`
-- `force_std_scale = 0.08`
-- `longitudinal_slip_scale = 0.18`
-- `lateral_slip_gain = 8.0`
-- `vertical_speed_scale = 0.20`
-- `ball_joint_speed_scale = 0.55`
 
 ### 10.13 当前 TensorBoard 奖励日志
 
@@ -956,15 +947,7 @@ $$
 
 - `Reward/target_bonus`
 - `Reward/progress`
-- `Reward/roll_gate`
-- `Reward/speed_gate`
-- `Reward/force_gate`
-- `Reward/vertical_speed_gate`
-- `Reward/ball_joint_speed_gate`
 - `Reward/heading_gate`
-- `Reward/longitudinal_slip_gate`
-- `Reward/lateral_slip_gate`
-- `Reward/composite_gate`
 - `Reward/gated_progress`
 - `Reward/total`
 
@@ -1266,9 +1249,7 @@ $$
 - 总奖励：
   - `target_bonus + gated_progress`
 - 其中：
-  - `gated_progress = progress * roll_gate * speed_gate * force_gate * vertical_speed_gate * ball_joint_speed_gate * wheel_action_rate_gate * composite_gate`
-- 其中：
-  - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
+  - `gated_progress = progress * heading_gate`
 
 当前关键参数为：
 
@@ -1276,30 +1257,26 @@ $$
 - `target_position_tolerance = 0.3 m`
 - `target_yaw_tolerance_deg = 9°`
 - `heading_distance_scale = 5 m`
-- `roll_free_deg = 3°`
-- `vertical_speed_scale = 0.20`
-- `ball_joint_speed_scale = 0.55`
-- `wheel_action_rate_scale = 0.25`
 
 ### 17.5 当前这一轮定向实验的保留/否决项
 
-- 当前保留在默认代码里的 reward 结构：
-  - 平滑指数型 `longitudinal_slip_gate`
-  - 平滑指数型 `lateral_slip_gate`
+- 当前默认 reward 已按用户要求收口为最小主线：
+  - `r_tar + r_prog * r_head`
+- 当前 active reward 组件只有：
+  - `target_bonus`
+  - `progress`
+  - `heading_gate`
+  - `gated_progress`
+- 以下旧 gate 已退出 active reward 主线：
+  - `roll_gate`
+  - `speed_gate`
+  - `force_gate`
+  - `vertical_speed_gate`
+  - `ball_joint_speed_gate`
   - `wheel_action_rate_gate`
-- 当前已否决、不在默认代码里的 reward 结构：
-  - `lateral_speed_gate`
-  - 在 `gated_progress` 外再次额外乘一次 `lateral_slip_gate`
-- 当前最佳短跑参考 run：
-  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-15_22-45-26_wheel_action_smooth_v1`
-- `roll_gaussian_scale = pi / 24`
-- `speed_limit = 1.6 m/s`
-- `speed_gain = 3.0`
-- `force_std_scale = 0.08`
-- `longitudinal_slip_scale = 0.18`
-- `lateral_slip_gain = 8.0`
-- `vertical_speed_scale = 0.20`
-- `ball_joint_speed_scale = 0.55`
+  - `longitudinal_slip_gate`
+  - `lateral_slip_gate`
+  - `composite_gate`
 
 ### 17.5 终止
 

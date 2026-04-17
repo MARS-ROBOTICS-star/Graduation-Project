@@ -2,6 +2,49 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-17
+
+### Stage0 active reward trunk is now hard-simplified to `target_bonus + progress * heading_gate`
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active Stage0 reward no longer uses any auxiliary stability/traction gates beyond heading alignment
+  - the active reward is now:
+    - `target_bonus + gated_progress`
+  - with:
+    - `gated_progress = progress * heading_gate`
+  - the only active reward components are now:
+    - `target_bonus`
+    - `progress`
+    - `heading_gate`
+    - `gated_progress`
+  - these former active gates are no longer part of the reward computation:
+    - `roll_gate`
+    - `speed_gate`
+    - `force_gate`
+    - `vertical_speed_gate`
+    - `ball_joint_speed_gate`
+    - `wheel_action_rate_gate`
+    - `longitudinal_slip_gate`
+    - `lateral_slip_gate`
+    - `composite_gate`
+  - the active TensorBoard/console reward surface has been reduced accordingly
+- Reason:
+  - the user explicitly required collapsing the reward to the minimal form `r_tar + r_prog * r_head`
+- Impact:
+  - future Stage0 analysis should stop attributing current policy behavior to slip/force/roll gates, because they are now historical only
+  - current traction/smoothness tendencies must now be interpreted as emerging from action/observation/task design rather than direct reward gating
+- Status:
+  - targeted `py_compile` passed for the modified reward/config/logger files
+
 ## 2026-04-16
 
 ### Sparse-zero TensorBoard termination tags are now suppressed, and run `2026-04-16_13-20-05` has already been rewritten to remove the empty cards

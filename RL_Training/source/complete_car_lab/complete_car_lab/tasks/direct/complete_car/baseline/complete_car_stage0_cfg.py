@@ -88,16 +88,6 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.rewards.params.target_position_tolerance = 0.3
         self.rewards.params.target_yaw_tolerance_deg = 9.0
         self.rewards.params.heading_distance_scale = 5.0
-        self.rewards.params.roll_free_deg = 3.0
-        self.rewards.params.roll_gaussian_scale = math.pi / 24.0
-        self.rewards.params.speed_limit = 1.6
-        self.rewards.params.speed_gain = 3.0
-        self.rewards.params.force_std_scale = 0.08
-        self.rewards.params.longitudinal_slip_scale = 0.18
-        self.rewards.params.lateral_slip_gain = 8.0
-        self.rewards.params.vertical_speed_scale = 0.20
-        self.rewards.params.ball_joint_speed_scale = 0.55
-        self.rewards.params.wheel_action_rate_scale = 0.25
 
         self.terminations.orientation_limit_deg = 45.0
         self.terminations.ball_joint_pos_lower_limits = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)

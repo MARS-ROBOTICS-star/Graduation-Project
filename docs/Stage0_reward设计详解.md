@@ -1,5 +1,15 @@
 # Stage0 Reward设计详解
 
+> 2026-04-17 更新：
+> 当前 active Stage0 reward 已不再使用本文后续展开的多 gate 版本。
+> 当前默认代码已收口为：
+> `R = r_tar + r_prog * r_head`
+> 其中：
+> `r_tar = target_bonus`
+> `r_prog = progress`
+> `r_head = heading_gate`
+> 本文其余内容保留为 2026-04-16 的历史说明，仅用于回溯旧实验。
+
 本文档整理当前 active `Stage0` 的 reward 设计。  
 目标是把每一项奖励的：
 

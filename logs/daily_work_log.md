@@ -1,5 +1,83 @@
 # 每日工作日志
 
+## 2026-04-17
+
+已完成：
+- 按用户要求将当前 Stage0 active reward 主线强制收口为：
+  - `target_bonus + progress * heading_gate`
+- 修改 reward 实现：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - 当前 reward component 只保留：
+    - `target_bonus`
+    - `progress`
+    - `heading_gate`
+    - `gated_progress`
+- 当前已从 active reward 计算链路中移除：
+  - `roll_gate`
+  - `speed_gate`
+  - `force_gate`
+  - `vertical_speed_gate`
+  - `ball_joint_speed_gate`
+  - `wheel_action_rate_gate`
+  - `longitudinal_slip_gate`
+  - `lateral_slip_gate`
+  - `composite_gate`
+- 同步修改 step metrics 与 TensorBoard / 终端 logger：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - 当前 reward 日志面板只保留：
+    - `Reward/target_bonus`
+    - `Reward/progress`
+    - `Reward/heading_gate`
+    - `Reward/gated_progress`
+    - `Reward/total`
+- 同步精简 reward 配置项：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - 当前 `RewardParamsCfg` 只保留 active 参数：
+    - `target_bonus_ratio`
+    - `target_position_tolerance`
+    - `target_yaw_tolerance_deg`
+    - `heading_distance_scale`
+- 已同步更新：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/Stage0_reward设计详解.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 使用：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  完成静态编译检查，检查通过。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/Stage0_reward设计详解.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 reward 已不再直接用 reward gate 去压滑移、受力、滚转、球铰速度和平滑性。
+- 后续若训练行为发生变化，应优先从：
+  - 目标任务定义
+  - 观测
+  - 动作输出结构
+  - 终止条件
+ 角度解释，而不是再把原因归到旧 gate。
+
+下一步：
+- 基于新的最小 reward 主线，重新观察：
+  - `progress`
+  - `heading_gate`
+  - `goal_pos_error`
+  - `goal_yaw_error_abs`
+  与实际滑移/姿态指标之间的耦合关系。
+
 ## 2026-04-16
 
 已完成：

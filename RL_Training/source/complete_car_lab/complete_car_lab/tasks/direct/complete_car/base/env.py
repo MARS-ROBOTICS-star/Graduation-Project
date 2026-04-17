@@ -374,22 +374,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Reward/total": float(torch.mean(self._last_total_reward).item()),
             "Reward/target_bonus": float(torch.mean(self._last_reward_components["target_bonus"]).item()),
             "Reward/progress": float(torch.mean(self._last_reward_components["progress"]).item()),
-            "Reward/roll_gate": float(torch.mean(self._last_reward_components["roll_gate"]).item()),
-            "Reward/speed_gate": float(torch.mean(self._last_reward_components["speed_gate"]).item()),
-            "Reward/force_gate": float(torch.mean(self._last_reward_components["force_gate"]).item()),
-            "Reward/vertical_speed_gate": float(torch.mean(self._last_reward_components["vertical_speed_gate"]).item()),
-            "Reward/ball_joint_speed_gate": float(
-                torch.mean(self._last_reward_components["ball_joint_speed_gate"]).item()
-            ),
-            "Reward/wheel_action_rate_gate": float(
-                torch.mean(self._last_reward_components["wheel_action_rate_gate"]).item()
-            ),
             "Reward/heading_gate": float(torch.mean(self._last_reward_components["heading_gate"]).item()),
-            "Reward/longitudinal_slip_gate": float(
-                torch.mean(self._last_reward_components["longitudinal_slip_gate"]).item()
-            ),
-            "Reward/lateral_slip_gate": float(torch.mean(self._last_reward_components["lateral_slip_gate"]).item()),
-            "Reward/composite_gate": float(torch.mean(self._last_reward_components["composite_gate"]).item()),
             "Reward/gated_progress": float(torch.mean(self._last_reward_components["gated_progress"]).item()),
             "Tracking/goal_pos_error": float(torch.mean(goal_pos_error).item()),
             "Tracking/goal_yaw_error_abs": float(torch.mean(goal_yaw_error_abs).item()),

@@ -12,7 +12,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.noise import GaussianNoiseCfg, NoiseModelCfg, NoiseModelWithAdditiveBiasCfg
 
-from ..assets.robot_cfg import BALL_JOINT_NAMES, CONTROLLED_JOINT_NAMES, WHEEL_JOINT_NAMES, WHEEL_RADIUS, build_complete_car_robot_cfg
+from ..assets.robot_cfg import BALL_JOINT_NAMES, WHEEL_JOINT_NAMES, WHEEL_RADIUS, build_complete_car_robot_cfg
 from ..mdp.observations import PerComponentUniformNoiseCfg
 from ..sensors.sensor_cfg import CompleteCarSensorSuiteCfg
 from ..terrain.terrain_cfg import CompleteCarTerrainRuntimeCfg
@@ -43,6 +43,7 @@ class ControlCfg:
 
     ball_joint_names: tuple[str, ...] = tuple(BALL_JOINT_NAMES)
     wheel_joint_names: tuple[str, ...] = tuple(WHEEL_JOINT_NAMES)
+    base_command_dim: int = 2
 
     ball_joint_action_lower_limits: tuple[float, ...] = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)
     ball_joint_action_upper_limits: tuple[float, ...] = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
@@ -56,6 +57,17 @@ class ControlCfg:
     wheel_joint_effort_limit_sim: float = 80.0  # 车轮驱动器力矩上限，单位：N*m。
     wheel_joint_velocity_limit_sim: float = 20.0  # 车轮驱动器速度上限，单位：rad/s。
     wheel_radius: float = WHEEL_RADIUS
+    traction_aware_wheel_limit_enabled: bool = False
+    traction_limit_min_scale: float = 0.35
+    traction_limit_longitudinal_slip_start: float = 0.6
+    traction_limit_longitudinal_slip_full: float = 1.5
+    traction_limit_slip_angle_start_deg: float = 12.0
+    traction_limit_slip_angle_full_deg: float = 28.0
+    traction_limit_contact_force_low: float = 0.05
+    traction_limit_contact_force_high: float = 0.12
+    base_forward_velocity_max: float = 1.2  # 底盘前向速度命令上限，单位：m/s。
+    base_yaw_rate_max: float = 0.6  # 底盘偏航角速度命令上限，单位：rad/s。
+    base_allow_reverse: bool = False  # 当前默认前进优先，不允许倒车命令。
 
 
 @configclass
@@ -120,6 +132,19 @@ class RewardParamsCfg:
     target_position_tolerance: float = 0.3
     target_yaw_tolerance_deg: float = 9.0
     heading_distance_scale: float = 5.0
+    roll_gate_activation_roll_deg: float = 5.0
+    body_car_roll_gate: float = math.pi / 16.0
+    use_slip_gates: bool = True
+    longitudinal_slip_gate_scale: float = 0.3
+    lateral_slip_gate_scale: float = 6.0
+    use_explicit_slip_cost: bool = False
+    longitudinal_slip_cost_weight: float = 0.0
+    lateral_slip_cost_weight: float = 0.0
+    capture_reward_scale: float = 1.0
+    capture_distance_sigma: float = 0.6
+    capture_yaw_sigma_deg: float = 6.0
+    capture_planar_speed_sigma: float = 0.20
+    capture_yaw_rate_sigma: float = 0.20
 
 
 @configclass
@@ -135,6 +160,14 @@ class TerminationCfg:
     """终止条件阈值。"""
 
     orientation_limit_deg: float = 45.0 #整车最大侧倾角
+    head_tail_roll_limit_deg: float = 35.0
+    capture_switch_distance: float = 2.0
+    capture_base_forward_velocity_max: float = 0.40
+    capture_base_yaw_rate_max: float = 0.25
+    capture_allow_reverse: bool = True
+    success_planar_speed_tolerance: float = 0.12
+    success_yaw_rate_tolerance: float = 0.12
+    success_dwell_steps: int = 12
     ball_joint_pos_lower_limits: tuple[float, ...] = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)#球铰yaw,pitch,roll的限制
     ball_joint_pos_upper_limits: tuple[float, ...] = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
 
@@ -216,7 +249,7 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
 
     stage_name: str = "stage0"
     episode_length_s: float = 16.0 #control_dt = 1/60 s 理论最大控制步数：16 × 60 = 960 步
-    action_space: int = len(CONTROLLED_JOINT_NAMES)
+    action_space: int = len(BALL_JOINT_NAMES) + 2
     observation_space: dict[str, int] | int = 0
     state_space: int = 0 #critic state 或 privileged state 的维度
     decimation: int = 2

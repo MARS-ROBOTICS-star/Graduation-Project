@@ -12,6 +12,7 @@ from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 
 from ..assets.robot_cfg import BALL_JOINT_NAMES, WHEEL_BODY_NAMES, WHEEL_JOINT_NAMES
+from ..kinematics import TorchWheelSpeedAllocator
 from ..mdp import actions as mdp_actions
 from ..mdp import commands as mdp_commands
 from ..mdp import curriculum as mdp_curriculum
@@ -59,6 +60,22 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._goal_direction_offsets = torch.zeros(self.num_envs, device=self.device)
         self._goal_heading_offsets = torch.zeros(self.num_envs, device=self.device)
         self._previous_goal_distance = torch.zeros(self.num_envs, device=self.device)
+        self._capture_phase_mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._success_hold_steps = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self._base_planar_command = torch.zeros((self.num_envs, self.cfg.control.base_command_dim), device=self.device)
+        self._base_planar_command_transformed = torch.zeros_like(self._base_planar_command)
+        self._traction_limit_scale = torch.ones((self.num_envs, len(WHEEL_JOINT_NAMES)), device=self.device)
+        self._traction_limit_longitudinal_scale = torch.ones_like(self._traction_limit_scale)
+        self._traction_limit_lateral_scale = torch.ones_like(self._traction_limit_scale)
+        self._traction_limit_contact_scale = torch.ones_like(self._traction_limit_scale)
+        self._traction_limit_velocity = torch.full_like(
+            self._traction_limit_scale,
+            self.cfg.control.wheel_joint_velocity_limit_sim,
+        )
+        self._wheel_speed_allocator = TorchWheelSpeedAllocator(
+            device=self.device,
+            dtype=self.robot.data.default_joint_pos.dtype,
+        )
 
         self._joint_pos_targets = self.robot.data.default_joint_pos.clone()
         self._joint_vel_targets = self.robot.data.default_joint_vel.clone()
@@ -68,7 +85,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._episode_total_reward_sum = torch.zeros(self.num_envs, device=self.device)
         self._last_done_terms = {
             "bad_orientation": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
+            "head_tail_roll_out_of_bounds": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             "ball_joint_out_of_bounds": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
+            "success": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             "time_out": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
         }
         self._last_critic_height_patch: torch.Tensor | None = None
@@ -155,7 +174,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 )
 
         processed_ball_actions = self._processed_actions[:, : len(self._ball_joint_ids)]
-        processed_wheel_actions = self._processed_actions[:, len(self._ball_joint_ids) :]
+        processed_base_actions = self._processed_actions[:, len(self._ball_joint_ids) :]
 
         self._joint_pos_targets = mdp_actions.apply_ball_joint_targets(
             self.robot,
@@ -165,11 +184,108 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self.cfg.control.ball_joint_action_lower_limits,
             self.cfg.control.ball_joint_action_upper_limits,
         )
+
+        relative_goal_commands = self._compute_relative_goal_commands()
+        current_goal_distance = torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1)
+        capture_phase_mask = current_goal_distance < self.cfg.terminations.capture_switch_distance
+        self._capture_phase_mask.copy_(capture_phase_mask)
+        base_forward_velocity_max = torch.full(
+            (self.num_envs,),
+            self.cfg.control.base_forward_velocity_max,
+            device=self.device,
+            dtype=self._processed_actions.dtype,
+        )
+        base_yaw_rate_max = torch.full(
+            (self.num_envs,),
+            self.cfg.control.base_yaw_rate_max,
+            device=self.device,
+            dtype=self._processed_actions.dtype,
+        )
+        base_allow_reverse = torch.full(
+            (self.num_envs,),
+            self.cfg.control.base_allow_reverse,
+            device=self.device,
+            dtype=torch.bool,
+        )
+        base_forward_velocity_max = torch.where(
+            capture_phase_mask,
+            torch.full_like(base_forward_velocity_max, self.cfg.terminations.capture_base_forward_velocity_max),
+            base_forward_velocity_max,
+        )
+        base_yaw_rate_max = torch.where(
+            capture_phase_mask,
+            torch.full_like(base_yaw_rate_max, self.cfg.terminations.capture_base_yaw_rate_max),
+            base_yaw_rate_max,
+        )
+        base_allow_reverse = torch.where(
+            capture_phase_mask,
+            torch.full_like(base_allow_reverse, self.cfg.terminations.capture_allow_reverse),
+            base_allow_reverse,
+        )
+
+        base_planar_command = mdp_actions.map_base_actions_to_planar_command(
+            processed_base_actions,
+            base_forward_velocity_max,
+            base_yaw_rate_max,
+            allow_reverse=base_allow_reverse,
+        )
+        transformed_planar_command = mdp_actions.transform_planar_command(base_planar_command)
+        self._base_planar_command.copy_(base_planar_command)
+        self._base_planar_command_transformed.copy_(transformed_planar_command)
+
+        ball_joint_pos = wrap_to_pi_tensor(self.robot.data.joint_pos[:, self._ball_joint_ids])
+        ball_joint_vel = self.robot.data.joint_vel[:, self._ball_joint_ids]
+        wheel_targets = self._wheel_speed_allocator.compute_wheel_speed_targets_from_planar_command(
+            ball_joint_pos,
+            ball_joint_vel,
+            transformed_planar_command,
+        )
+        if self._sensor_runtime is not None:
+            wheel_contact_forces_w = self._sensor_runtime.get_wheel_contact_forces_w(WHEEL_BODY_NAMES)
+        else:
+            wheel_contact_forces_w = torch.zeros(
+                (self.num_envs, len(self._wheel_body_ids), 3),
+                device=self.device,
+                dtype=self.robot.data.root_link_pos_w.dtype,
+            )
+        raw_obs_terms = collect_raw_observation_terms(
+            self.cfg,
+            self.robot,
+            self._ball_joint_ids,
+            self._wheel_joint_ids,
+            self._wheel_body_ids,
+            self._head_car_body_id,
+            self._tail_car_body_id,
+            wheel_contact_forces_w,
+            self._total_vehicle_weight,
+            self._joint_pos_targets[:, self._ball_joint_ids],
+            relative_goal_commands,
+            self.last_actions,
+        )
+        traction_limit_velocity, traction_limit_components = mdp_actions.compute_traction_aware_wheel_velocity_limit(
+            raw_obs_terms["wheel_longitudinal_slip"],
+            raw_obs_terms["wheel_slip_angle"],
+            raw_obs_terms["wheel_normal_contact_force"],
+            self.cfg.control.wheel_joint_velocity_limit_sim,
+            enabled=self.cfg.control.traction_aware_wheel_limit_enabled,
+            min_scale=self.cfg.control.traction_limit_min_scale,
+            longitudinal_slip_start=self.cfg.control.traction_limit_longitudinal_slip_start,
+            longitudinal_slip_full=self.cfg.control.traction_limit_longitudinal_slip_full,
+            slip_angle_start_deg=self.cfg.control.traction_limit_slip_angle_start_deg,
+            slip_angle_full_deg=self.cfg.control.traction_limit_slip_angle_full_deg,
+            contact_force_low=self.cfg.control.traction_limit_contact_force_low,
+            contact_force_high=self.cfg.control.traction_limit_contact_force_high,
+        )
+        self._traction_limit_velocity.copy_(traction_limit_velocity)
+        self._traction_limit_scale.copy_(traction_limit_components["combined_scale"])
+        self._traction_limit_longitudinal_scale.copy_(traction_limit_components["longitudinal_scale"])
+        self._traction_limit_lateral_scale.copy_(traction_limit_components["lateral_scale"])
+        self._traction_limit_contact_scale.copy_(traction_limit_components["contact_scale"])
         self._joint_vel_targets = mdp_actions.apply_wheel_velocity_targets(
             self._joint_vel_targets,
             self._wheel_joint_ids,
-            processed_wheel_actions,
-            self.cfg.control.wheel_joint_velocity_limit_sim,
+            wheel_targets,
+            traction_limit_velocity,
         )
 
     # 用底层PD控制器跟踪动作目标
@@ -289,18 +405,39 @@ class CompleteCarDirectEnv(DirectRLEnv):
         return total_reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
+        relative_goal_commands = self._compute_relative_goal_commands()
+        goal_distance = torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1)
+        goal_yaw_error_abs = torch.abs(relative_goal_commands[:, 2])
+        planar_speed = torch.linalg.vector_norm(self.robot.data.root_com_lin_vel_b[:, :2], dim=1)
+        yaw_rate_abs = torch.abs(self.robot.data.root_com_ang_vel_b[:, 2])
+        success_condition = (
+            (goal_distance < self.cfg.rewards.params.target_position_tolerance)
+            & (goal_yaw_error_abs < torch.deg2rad(goal_distance.new_full(goal_distance.shape, self.cfg.rewards.params.target_yaw_tolerance_deg)))
+            & (planar_speed < self.cfg.terminations.success_planar_speed_tolerance)
+            & (yaw_rate_abs < self.cfg.terminations.success_yaw_rate_tolerance)
+        )
+        self._success_hold_steps = torch.where(
+            success_condition,
+            self._success_hold_steps + 1,
+            torch.zeros_like(self._success_hold_steps),
+        )
         done_terms = compute_done_terms(
             self.cfg,
             self.robot,
             self._ball_joint_ids,
+            self._head_car_body_id,
+            self._tail_car_body_id,
             self.episode_length_buf,
             self.max_episode_length,
+            self._success_hold_steps,
         )
         for key, value in done_terms.items():
             self._last_done_terms[key].copy_(value)
         terminated = (
             done_terms["bad_orientation"]
+            | done_terms["head_tail_roll_out_of_bounds"]
             | done_terms["ball_joint_out_of_bounds"]
+            | done_terms["success"]
         )
         return terminated, done_terms["time_out"]
 
@@ -324,16 +461,22 @@ class CompleteCarDirectEnv(DirectRLEnv):
         extras["episode/goal_heading_offset_deg"] = float(torch.mean(torch.rad2deg(self._goal_heading_offsets[env_ids])).item())
         terminated = (
             self._last_done_terms["bad_orientation"][env_ids]
+            | self._last_done_terms["head_tail_roll_out_of_bounds"][env_ids]
             | self._last_done_terms["ball_joint_out_of_bounds"][env_ids]
+            | self._last_done_terms["success"][env_ids]
         )
         extras["Termination/terminated_rate"] = float(torch.mean(terminated.float()).item())
         extras["Termination/time_out_rate"] = float(torch.mean(self._last_done_terms["time_out"][env_ids].float()).item())
         extras["Termination/bad_orientation_rate"] = float(
             torch.mean(self._last_done_terms["bad_orientation"][env_ids].float()).item()
         )
+        extras["Termination/head_tail_roll_limit_rate"] = float(
+            torch.mean(self._last_done_terms["head_tail_roll_out_of_bounds"][env_ids].float()).item()
+        )
         extras["Termination/ball_joint_limit_rate"] = float(
             torch.mean(self._last_done_terms["ball_joint_out_of_bounds"][env_ids].float()).item()
         )
+        extras["Termination/success_rate"] = float(torch.mean(self._last_done_terms["success"][env_ids].float()).item())
         if terrain_metrics is not None:
             extras.update({f"terrain/{key}": value for key, value in terrain_metrics.items()})
         return extras
@@ -363,7 +506,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             relative_goal_commands,
             self.last_actions,
         )
-        tilt_deg = torch.rad2deg(torch.acos(torch.clamp(-raw_obs_terms["projected_gravity"][:, 2], -1.0, 1.0)))
+        middle_roll_deg = torch.rad2deg(torch.abs(quaternion_to_rpy(self.robot.data.root_link_quat_w)[:, 0]))
         planar_speed = torch.linalg.vector_norm(raw_obs_terms["base_lin_vel"][:, :2], dim=1)
         yaw_rate_abs = torch.abs(raw_obs_terms["base_ang_vel"][:, 2])
         turn_radius_raw = torch.zeros_like(planar_speed)
@@ -376,6 +519,18 @@ class CompleteCarDirectEnv(DirectRLEnv):
         )
         goal_pos_error = torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1)
         goal_yaw_error_abs = torch.abs(relative_goal_commands[:, 2])
+        nominal_goal_distance = goal_pos_error.new_full(goal_pos_error.shape, self.cfg.commands.goal_distance)
+        goal_distance_covered = torch.clamp(nominal_goal_distance - goal_pos_error, min=0.0)
+        goal_completion_pct = 100.0 * goal_distance_covered / torch.clamp(nominal_goal_distance, min=1.0e-6)
+        ball_joint_pos = raw_obs_terms["ball_joint_pos"]
+        ball_joint_lower_limits = ball_joint_pos.new_tensor(self.cfg.terminations.ball_joint_pos_lower_limits).unsqueeze(0)
+        ball_joint_upper_limits = ball_joint_pos.new_tensor(self.cfg.terminations.ball_joint_pos_upper_limits).unsqueeze(0)
+        active_ball_joint_limits = torch.where(
+            ball_joint_pos >= 0.0,
+            ball_joint_upper_limits,
+            torch.abs(ball_joint_lower_limits),
+        )
+        ball_joint_limit_usage = torch.abs(ball_joint_pos) / torch.clamp(active_ball_joint_limits, min=1.0e-6)
         # TensorBoard command traces are intentionally anchored to env_0 instead of the
         # cross-env mean so the curve reflects one concrete command trajectory.
         command_env_id = 0
@@ -385,14 +540,39 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Reward/target_bonus": float(torch.mean(self._last_reward_components["target_bonus"]).item()),
             "Reward/progress": float(torch.mean(self._last_reward_components["progress"]).item()),
             "Reward/heading_gate": float(torch.mean(self._last_reward_components["heading_gate"]).item()),
+            "Reward/longitudinal_slip_gate": float(
+                torch.mean(self._last_reward_components["longitudinal_slip_gate"]).item()
+            ),
+            "Reward/lateral_slip_gate": float(torch.mean(self._last_reward_components["lateral_slip_gate"]).item()),
+            "Reward/longitudinal_slip_cost": float(
+                torch.mean(self._last_reward_components["longitudinal_slip_cost"]).item()
+            ),
+            "Reward/lateral_slip_cost": float(torch.mean(self._last_reward_components["lateral_slip_cost"]).item()),
+            "Reward/slip_cost_penalty": float(torch.mean(self._last_reward_components["slip_cost_penalty"]).item()),
+            "Reward/composite_gate": float(torch.mean(self._last_reward_components["composite_gate"]).item()),
+            "Reward/roll_gate": float(torch.mean(self._last_reward_components["roll_gate"]).item()),
             "Reward/gated_progress": float(torch.mean(self._last_reward_components["gated_progress"]).item()),
+            "Reward/capture_reward": float(torch.mean(self._last_reward_components["capture_reward"]).item()),
             "Tracking/goal_pos_error": float(torch.mean(goal_pos_error).item()),
             "Tracking/goal_yaw_error_abs": float(torch.mean(goal_yaw_error_abs).item()),
             "Tracking/goal_progress": float(torch.mean(self._last_reward_components["progress"]).item()),
+            "Tracking/goal_completion_pct": float(torch.mean(goal_completion_pct).item()),
+            "Phase/capture_rate": float(torch.mean(self._capture_phase_mask.float()).item()),
             "Action/policy_abs_mean": float(torch.mean(torch.abs(self.actions)).item()),
             "Action/processed_abs_mean": float(torch.mean(torch.abs(self._processed_actions)).item()),
             "Action/policy_std": float(self.actions.std(unbiased=False).item()),
             "Action/processed_std": float(self._processed_actions.std(unbiased=False).item()),
+            "Action/traction_limit_scale_mean": float(torch.mean(self._traction_limit_scale).item()),
+            "Action/traction_longitudinal_scale_mean": float(
+                torch.mean(self._traction_limit_longitudinal_scale).item()
+            ),
+            "Action/traction_lateral_scale_mean": float(
+                torch.mean(self._traction_limit_lateral_scale).item()
+            ),
+            "Action/traction_contact_scale_mean": float(
+                torch.mean(self._traction_limit_contact_scale).item()
+            ),
+            "Action/traction_limit_velocity_mean_raw": float(torch.mean(self._traction_limit_velocity).item()),
             "Command/goal_target_x_world": float(self.command_targets_w[command_env_id, 0].item()),
             "Command/goal_target_y_world": float(self.command_targets_w[command_env_id, 1].item()),
             "Command/goal_target_yaw_world": float(self.command_targets_w[command_env_id, 2].item()),
@@ -403,7 +583,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Command/goal_heading_offset_deg": float(torch.rad2deg(self._goal_heading_offsets[command_env_id]).item()),
             "Observation/base_lin_vel_y_raw": float(torch.mean(raw_obs_terms["base_lin_vel"][:, 1]).item()),
             "Observation/turn_radius_raw": mean_turn_radius_raw,
-            "Observation/tilt_deg": float(torch.mean(tilt_deg).item()),
+            "Observation/tilt_deg": float(torch.mean(middle_roll_deg).item()),
             "Observation/projected_gravity_xy_norm_raw": float(
                 torch.mean(torch.linalg.vector_norm(raw_obs_terms["projected_gravity"][:, :2], dim=1)).item()
             ),
@@ -434,7 +614,16 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Observation/goal_rel_y_raw": float(torch.mean(raw_obs_terms["relative_goal_commands"][:, 1]).item()),
             "Observation/goal_rel_psi_raw": float(torch.mean(raw_obs_terms["relative_goal_commands"][:, 2]).item()),
             "Observation/last_action_abs_mean_raw": float(torch.mean(torch.abs(raw_obs_terms["last_actions"])).item()),
+            "Termination/success_rate": float(torch.mean(self._last_done_terms["success"].float()).item()),
         }
+        for joint_index, joint_name in enumerate(BALL_JOINT_NAMES):
+            metrics[f"Observation/{joint_name}_pos_raw"] = float(torch.mean(ball_joint_pos[:, joint_index]).item())
+            metrics[f"Observation/{joint_name}_limit_usage_mean_raw"] = float(
+                torch.mean(ball_joint_limit_usage[:, joint_index]).item()
+            )
+            metrics[f"Observation/{joint_name}_limit_usage_max_raw"] = float(
+                torch.max(ball_joint_limit_usage[:, joint_index]).item()
+            )
         if self._last_critic_height_patch is not None:
             metrics["Critic/height_patch_mean"] = float(torch.mean(self._last_critic_height_patch).item())
             metrics["Critic/height_patch_max"] = float(
@@ -496,6 +685,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
             reset_yaw_w,
         )
         self._previous_goal_distance[env_ids] = torch.linalg.vector_norm(self.commands[env_ids, :2], dim=1)
+        self._capture_phase_mask[env_ids] = False
+        self._success_hold_steps[env_ids] = 0
 
         self.actions[env_ids] = 0.0
         self.last_actions[env_ids] = 0.0

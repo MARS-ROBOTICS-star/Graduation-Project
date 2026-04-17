@@ -3,11 +3,15 @@
 > 2026-04-17 更新：
 > 当前 active Stage0 reward 已不再使用本文后续展开的多 gate 版本。
 > 当前默认代码已收口为：
-> `R = r_tar + r_prog * r_head`
+> `R = r_tar + r_prog * r_comp * r_roll`
 > 其中：
 > `r_tar = target_bonus`
 > `r_prog = progress`
 > `r_head = heading_gate`
+> `r_long = longitudinal_slip_gate`
+> `r_lat = lateral_slip_gate`
+> `r_comp = (r_head + r_long + r_lat) / 3`
+> `r_roll = roll_gate`
 > 本文其余内容保留为 2026-04-16 的历史说明，仅用于回溯旧实验。
 
 本文档整理当前 active `Stage0` 的 reward 设计。  
@@ -137,9 +141,7 @@ g_{\mathrm{lat}}
 
 最终总奖励是：
 
-- \[
-  R = B + G
-  \]
+- `reward = target_bonus + gated_progress`
 
 ---
 
@@ -150,17 +152,11 @@ g_{\mathrm{lat}}
 - `target_bonus_ratio = 0.03`
 - `target_position_tolerance = 0.3`
 - `target_yaw_tolerance_deg = 9.0`
-- `heading_distance_scale = 5.0`
-- `roll_free_deg = 3.0`
-- `roll_gaussian_scale = pi / 24`
-- `speed_limit = 1.6`
-- `speed_gain = 3.0`
-- `force_std_scale = 0.08`
-- `longitudinal_slip_scale = 0.18`
-- `lateral_slip_gain = 8.0`
-- `vertical_speed_scale = 0.20`
-- `ball_joint_speed_scale = 0.55`
-- `wheel_action_rate_scale = 0.25`
+- `heading_distance_scale = 12.0`
+- `roll_gate_activation_roll_deg = 5.0`
+- `body_car_roll_gate = pi / 16`
+- `longitudinal_slip_gate_scale = 0.3`
+- `lateral_slip_gate_scale = 4.0`
 
 同时当前 Stage0 命令和控制相关值为：
 

@@ -2,29 +2,628 @@
 
 ## 当前总目标
 - 将完整车 RL 主线收口到 `RL_Training/` 下的新 Isaac Lab direct workflow 架构。
-- 固定 Stage0 当前默认配置，并先验证最小 reward 主线：
-  - `target_bonus + progress * heading_gate`
+- 当前 Stage0 已切入显式 terminal phase 主线，并已完成首轮真实验证：
+  - 远距离 tracking phase：
+    - `target_bonus + progress * composite_gate * roll_gate`
+  - 近目标 capture phase：
+    - `target_bonus + capture_reward`
+- 当前 step/终端日志已新增：
+  - `Tracking/goal_completion_pct`
+  - 口径为当前目标段的距离收缩百分比：
+    - `max(goal_distance - goal_pos_error, 0) / goal_distance * 100%`
 
 ## 当前阶段
+- 已完成 `traction-aware wheel limit` 第一版实现，当前做法是：
+  - 不改 allocator Jacobian 主体
+  - 只在 `wheel_targets` 写入前增加逐轮动态速度上限
+  - 该上限当前同时受三类运行态信号约束：
+    - 纵滑
+    - 侧滑
+    - 归一化法向接触力
+  - 当前 Stage0 已开启参数：
+    - `traction_limit_min_scale = 0.35`
+    - `longitudinal_slip_start/full = 0.6 / 1.5`
+    - `slip_angle_start/full = 12° / 28°`
+    - `contact_force_low/high = 0.05 / 0.12`
+  - 当前新增日志：
+    - `Action/traction_limit_scale_mean`
+    - `Action/traction_longitudinal_scale_mean`
+    - `Action/traction_lateral_scale_mean`
+    - `Action/traction_contact_scale_mean`
+    - `Action/traction_limit_velocity_mean_raw`
+  - 已补充参数可视化脚本与示意图：
+    - 脚本：
+      - `scripts/plot_traction_limit_curves.py`
+    - 输出：
+      - `results/traction_limit/traction_limit_curves_stage0.png`
+    - 当前图中已画出：
+      - 纵滑 -> scale 曲线
+      - 侧滑角 -> scale 曲线
+      - 归一化接触力 -> scale 曲线
+      - 动态轮速上限随 scale 收紧的示意
+  - 已完成最小真实训练冒烟：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_21-20-08_traction_limit_smoke_v1`
+    - `max_iterations = 1`
+    - 训练入口、环境创建、actor/critic、reward 和 wheel-target 写入链路均正常
+  - 当前状态：
+    - 代码已接入
+    - 静态编译已通过
+    - 真实训练只完成了 1 轮冒烟
+    - 还没有做完整效果验证 run
+- 已完成 terminal phase 首轮真实训练验证：
+  - run：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_20-21-01_terminal_phase_verify_v1`
+  - Isaac Lab log：
+    - `/tmp/isaaclab/logs/isaaclab_2026-04-17_20-21-01.log`
+  - 本轮完整跑满：
+    - `600 / 600`
+  - TensorBoard 离线导出已补齐：
+    - `tensorboard_export/`
+  - 当前最终结果：
+    - `Train/mean_reward ≈ 593.35`
+    - `Train/mean_episode_length = 1439.0`
+    - `Termination/time_out_rate = 1.0`
+    - `Termination/ball_joint_limit_rate = 0.0`
+    - `Termination/success_rate = 0.0`
+    - `Tracking/goal_pos_error ≈ 6.94 m`
+    - `Tracking/goal_completion_pct ≈ 42.18%`
+    - `Tracking/goal_yaw_error_abs ≈ 0.0698 rad`
+    - `Reward/progress ≈ 1.247`
+    - `Reward/gated_progress ≈ 0.421`
+    - `Reward/heading_gate ≈ 0.984`
+    - `Reward/longitudinal_slip_gate ≈ 0.0209`
+    - `Reward/lateral_slip_gate ≈ 0.0091`
+    - `Reward/composite_gate ≈ 0.338`
+    - `Reward/capture_reward ≈ 0.00335`
+    - `Phase/capture_rate ≈ 0.0091`
+    - `Reward/target_bonus = 0.0`
+    - `Loss/value ≈ 0.189`
+  - 当前最新有效判断：
+    - terminal phase 代码改造没有把当前 Stage0 训练主线打坏
+    - 这轮 run 说明：
+      - tracking 分支继续健康收敛
+      - critic 保持稳定
+      - 后段 `ball_joint_limit` 没有成为持续主矛盾
+    - 但 terminal capture 仍未真正学成：
+      - `success_rate` 全程为 `0`
+      - `target_bonus` 全程为 `0`
+      - `capture_rate` 直到约 `iteration 299` 才首次非零
+      - 后段虽能偶发进入 capture phase，但占比仍很低：
+        - 峰值约 `0.0247`
+        - 末段约 `0.0091`
+    - 当前更准确的问题收口为：
+      - 策略已经能稳定学会远距离 tracking 与对准
+      - 但几乎进不了或停不住在当前 terminal capture 成功区
+    - 基于当前结果的直接推断是：
+      - 当前 `capture_switch_distance = 2.0 m`
+      - 而本轮平均 `goal_pos_error` 末段仍在 `6 ~ 7 m`
+      - 所以 terminal phase 对大多数 rollout 来说触发过晚、触发过少
+    - 本轮球铰限位问题的新口径是：
+      - 仍会在早中期短暂抬升
+      - 峰值约出现在：
+        - `iteration 155`
+        - `ball_joint_limit_rate ≈ 0.917`
+      - 但后段已经完全退出主矛盾
+    - 分轴 probe 口径在这轮仍然成立：
+      - 前模块轴仍更容易先逼近边界
+      - 当前峰值最高的是：
+        - `spm1_platform_joint_z_limit_usage_max_raw ≈ 0.979`
+        - `spm1_platform_joint_y_limit_usage_max_raw ≈ 0.976`
+      - 末段最高的是：
+        - `spm1_platform_joint_x_limit_usage_max_raw ≈ 0.539`
+- 已按用户确认完成 Stage0 terminal phase 代码改造，并已完成真实验证训练：
+  - capture 切换距离：
+    - `capture_switch_distance = 2.0 m`
+  - capture 期底盘命令上限：
+    - `capture_base_forward_velocity_max = 0.40 m/s`
+    - `capture_base_yaw_rate_max = 0.25 rad/s`
+    - `capture_allow_reverse = True`
+  - capture reward 当前直接奖励：
+    - 距离更小
+    - 朝向更准
+    - 平面速度更低
+    - 偏航角速度更低
+  - 当前已新增成功驻留终止：
+    - `target_position_tolerance = 0.3 m`
+    - `target_yaw_tolerance_deg = 9°`
+    - `success_planar_speed_tolerance = 0.12 m/s`
+    - `success_yaw_rate_tolerance = 0.12 rad/s`
+    - `success_dwell_steps = 12`
+  - 已同步修改：
+    - `complete_car_cfg.py`
+    - `complete_car_stage0_cfg.py`
+    - `mdp/actions.py`
+    - `mdp/rewards.py`
+    - `mdp/terminations.py`
+    - `base/env.py`
+    - `logger.py`
+  - `python3 -m py_compile` 已通过
+- 已完成一轮新的分轴球铰限位利用率探针训练：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-02-38_axis_usage_probe_v1`
+  - 本轮完整跑满：
+    - `600 / 600`
+  - 当前最终结果：
+    - `Train/mean_reward ≈ 616.77`
+    - `Train/mean_episode_length = 1439.0`
+    - `Termination/time_out_rate = 1.0`
+    - `Termination/ball_joint_limit_rate = 0.0`
+    - `Tracking/goal_pos_error ≈ 7.09 m`
+    - `Tracking/goal_yaw_error_abs ≈ 0.0629 rad`
+    - `Reward/progress ≈ 1.226`
+    - `Reward/gated_progress ≈ 0.436`
+    - `Reward/heading_gate ≈ 0.988`
+    - `Reward/longitudinal_slip_gate ≈ 0.0565`
+    - `Reward/lateral_slip_gate ≈ 0.0230`
+    - `Reward/composite_gate ≈ 0.356`
+    - `Reward/target_bonus = 0.0`
+    - `Loss/value ≈ 0.315`
+  - 当前最新有效判断：
+    - 8 维动作空间 + allocator 主线目前是当前最健康的 Stage0 主线
+    - 相比前两轮中期 run，这轮完整训练后：
+      - `ball_joint_limit` 没有在后段持续抬升
+      - `critic` 继续保持稳定
+      - `slip gate` 在后段显著高于前两轮
+    - 当前 ball-joint 问题更准确的口径不再是“后段必然抬升”，而是：
+      - 只在早中期短暂出现
+      - 后段已自行退出主矛盾
+    - 分轴探针显示：
+      - 早中期逼近边界的主导责任轴是前模块 `yaw`
+      - 也就是：
+        - `spm1_platform_joint_z`
+      - 在有 `ball_joint_limit_rate` 的 step 上，这一轴的 `limit_usage_max_raw` 持续最高，峰值约：
+        - `0.966`
+      - 后段最终各轴都回落到安全区，末段最高的是：
+        - `spm1_platform_joint_x_limit_usage_max_raw ≈ 0.582`
+    - 当前新的主问题已经收口为：
+      - 虽然 rollout 生存、yaw 对准、progress、数值稳定性都明显更好
+      - 但 `target_bonus` 仍然全程没有触发
+      - 说明策略学会了高质量接近目标和对准目标，但还没稳定进入“到点成功区”
+- 已完成 `kd = 6` 的短训练验证：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_19-48-06_kd6_v1`
+  - 本轮在约 `26 / 600` 停止，原因是趋势已经足够明确：
+    - `goal_yaw_error_abs` 快速恶化到约 `1.07 ~ 1.22 rad`
+    - `ball_joint_limit_rate` 在 `iteration 26` 直接抬到约 `0.781`
+    - `heading_gate` 中期只剩约 `0.70 ~ 0.75`
+    - `target_bonus` 仍为 `0`
+  - 当前结论：
+    - 把 `heading_distance_scale (kd)` 从 `12` 降到 `6`，确实整体放宽了前期航向门
+    - 但也把中后段航向约束一起放宽过头
+    - 结果策略更愿意带着大 yaw 误差和更激进球铰动作去拿 progress
+    - 当前表现明显差于 `kd = 12` 的健康主线
+  - 因此当前 active 默认仍保持：
+    - `heading_distance_scale = 12.0`
+- 已围绕“把 Stage0 从追踪任务改成终端捕获任务”做了 4 轮自动化短实验，当前结论是否定的：
+  - 实验 1：
+    - `2026-04-17_18-35-19_capture_holdgoal_v1`
+    - 只把命令机制改成单目标保持到 episode 结束，保留 `goal_distance = 12 m`
+    - 结果：
+      - `mean_reward ≈ 89.68`
+      - `ball_joint_limit_rate ≈ 0.339`
+      - `target_bonus = 0`
+    - 结论：
+      - 只改成单目标保持，会把当前 Stage0 直接推向更难的长距离终端任务，训练质量明显下降
+  - 实验 2：
+    - `2026-04-17_18-38-44_capture_holdgoal_goal6_v1`
+    - 在单目标保持基础上把 `goal_distance` 缩短到 `6 m`
+    - 结果：
+      - `goal_pos_error ≈ 4.41 m`
+      - `target_bonus = 0`
+    - 结论：
+      - 策略会停在离目标数米处，仍然没有学成终端捕获
+  - 实验 3：
+    - `2026-04-17_18-41-26_capture_holdgoal_goal6_bonus10_v1`
+    - 在实验 2 基础上把 `target_bonus_ratio` 提到 `0.10`
+    - 结果：
+      - `progress` 已经接近或跌到负值
+      - `target_bonus = 0`
+    - 结论：
+      - 仅增大 terminal bonus 仍不足以把当前策略从“接近”推成“捕获”
+  - 实验 4：
+    - `2026-04-17_18-44-04_capture_holdgoal_goal6_bonus10_reverse_v1`
+    - 在实验 3 基础上再放开倒车
+    - 结果：
+      - `target_bonus` 仅偶发非零
+      - `goal_yaw_error_abs` 恶化到约 `0.71 rad`
+      - `Loss/value` 爆到约 `214.7`
+    - 结论：
+      - 末端修正自由度不是当前第一瓶颈；在现有 reward 下直接放开倒车反而把训练打坏
+- 当前最新有效判断：
+  - 不能只靠命令保持、缩短目标距离、放大奖励、开放倒车这类局部改动，把当前 Stage0 直接改造成终端捕获任务
+  - 这几轮结果说明：
+    - 当前 active Stage0 的 reward / command / control 结构本质上仍然是“追踪式 shaping”
+    - 直接把 command 改成单目标终端捕获，会让训练质量显著下降
+  - 当前这条旧结论已落实到新代码：
+    - 不再只改命令几何
+    - 直接引入显式 terminal phase 机制
+- 已按用户要求修改当前 active `tilt` 语义：
+  - `Observation/tilt_deg`
+  - `bad_orientation`
+  当前都只看中车 `body_car_chassis` 的 `|roll|`
+  - 不再把中车 `pitch` 计入坏姿态
+  - 因此新 run 中的 `tilt_deg` 已不再等同于旧 run 的“总倾角”
+- 已按用户要求调整 Stage0 时间配置，当前默认改为：
+  - `episode_length_s = 24.0`
+  - `resampling_time = 8.0`
+  - 在 `goal_distance = 12.0` 下，当前默认目标是：
+    - 让单目标可用时间明显长于当前约 `7.3 s` 的距离收缩时间量级
+    - 同时保持一个 episode 内默认经历 `3` 个目标段
+- 已按用户确认将当前 Stage0 动作链切为：
+  - `6 维球铰目标 + 2 维底盘平面命令`
+  - 当前 policy 不再直接输出 `6` 个轮速
+  - 当前 env 会先把后 `2` 维动作映射成：
+    - `[v_x_cmd, yaw_rate_cmd]`
+  - 再通过 wheel allocator 结合：
+    - 当前球铰位置
+    - 当前球铰速度
+    生成 `6` 个轮速目标
+  - 当前 Stage0 默认底盘命令上限：
+    - `base_forward_velocity_max = 1.2 m/s`
+    - `base_yaw_rate_max = 0.6 rad/s`
+    - `base_allow_reverse = False`
+- 已完成当前 8 维动作空间的一轮真实训练验证：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-28-36_action8_allocator_v1`
+  - 本轮未跑满 `600` iteration，当前在约：
+    - `66 / 600`
+    停止并导出中期结果
+  - 当前确认：
+    - 动作空间切换后，训练启动链路与 actor/critic 维度自洽：
+      - actor obs dim = `44`
+      - critic obs dim = `44`
+      - action dim = `8`
+    - 相比上一轮 `slipclip3_latk4_v1`，当前最大的正变化是：
+      - `longitudinal_slip_gate` 不再近似为 `0`
+        - 当前约：
+          - `0.0079`
+        - 上一轮约：
+          - `5.27e-06`
+      - `lateral_slip_gate` 也不再近似为 `0`
+        - 当前约：
+          - `0.0062`
+        - 上一轮约：
+          - `7.74e-04`
+      - `ball_joint_limit_rate` 当前末段为：
+        - `0.0`
+        - 上一轮末段约：
+          - `0.719`
+      - `Loss/value` 当前约：
+        - `4.26`
+        - 上一轮末段约：
+          - `312.94`
+    - 当前中期任务质量仍不如上一轮后段：
+      - `Train/mean_reward ≈ 248.79`
+      - `Tracking/goal_pos_error ≈ 8.59 m`
+      - `Tracking/goal_yaw_error_abs ≈ 0.498 rad`
+      - `Reward/target_bonus = 0`
+    - 但当前这一轮更像是：
+      - reward 不再被 slip gate 从一开始压死
+      - critic 明显更稳
+      - 姿态和球铰也更稳
+  - 当前最新有效判断：
+    - 动作空间从“6 个独立轮速输出”切到“2 维底盘平面命令 + allocator 重建轮速”是有效方向
+    - 它明显缓解了：
+      - slip gate 长期塌缩
+      - critic value loss 爆高
+      - 后段 ball joint limit 抬升
+    - 当前新的主要问题已不再是训练结构本身失衡，而是：
+      - 任务推进速度仍偏慢
+      - 到点 bonus 还没有触发
+      - 需要继续看更长一点的收敛趋势，但已经不需要再把“动作空间本身是否合理”当成主要怀疑对象
+- 已完成动作空间主线下的另一轮更长中期验证：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-33-20`
+  - 当前约跑到：
+    - `162 / 600`
+  - 当前确认：
+    - rollout 生存质量总体较好，但末段出现球铰越界回升：
+      - `Train/mean_episode_length ≈ 1380.19 / 1439`
+      - `Termination/time_out_rate ≈ 0.50`
+      - `Termination/ball_joint_limit_rate ≈ 0.50`
+    - 任务推进相比上一轮中期更进一步：
+      - `Train/mean_reward ≈ 501.59`
+      - `Tracking/goal_pos_error ≈ 7.75 m`
+      - `Tracking/goal_yaw_error_abs ≈ 0.136 rad`
+    - slip gate 仍然不再塌到近零：
+      - `Reward/03_longitudinal_slip_gate ≈ 0.0055`
+      - `Reward/04_lateral_slip_gate ≈ 0.0028`
+      - `Reward/05_composite_gate ≈ 0.324`
+    - 姿态与 critic 依旧很稳：
+      - `Observation/03_tilt_deg ≈ 0.081°`
+      - `Loss/00_value ≈ 2.07`
+      - `head_tail_roll_limit_rate = 0.0`
+    - 但 `Reward/target_bonus = 0`
+  - 当前最新有效判断：
+    - 新动作空间方向是对的，当前主要优点仍然成立：
+      - slip gate 有效值恢复
+      - critic 稳定
+      - 中车姿态稳定
+    - 当前更真实的主要问题已经收口为：
+      - 末段 `ball_joint_limit` 重新抬升
+      - 说明随着策略继续学会推进和对准目标，它又开始更激进地吃球铰余量
+    - 因此当前主矛盾不再是“动作空间不合理”，而是：
+      - 在新的动作空间下，如何抑制后段球铰越界，同时不把已恢复的 slip gate 和 critic 稳定性重新打坏
+- 对“为什么更接近目标后球铰越界开始抬升”的当前针对性结论是：
+  - 当前更准确的表述不是“快到点最后几米必然越界”，而是：
+    - 随着策略更会推进和对准目标，它开始更主动地消耗球铰姿态余量
+  - 证据是：
+    - `heading_gate` 后段升到约 `0.96`
+    - `progress` 升到约 `1.14`
+    - `Action/policy_abs_mean` 升到约 `0.57`
+    - `ball_joint_target_error_abs_mean_raw` 与 `ball_joint_pos_abs_mean_raw` 也同步抬升
+  - 同时：
+    - `tilt_deg` 仍很低
+    - `roll_gate = 1.0`
+    - `head_tail_roll_limit_rate = 0.0`
+    - `Loss/value` 仍低
+  - 因此当前主因不是：
+    - 姿态失稳
+    - critic 发散
+  - 而是：
+    - reward 里没有“接近球铰限位”的软约束
+    - 新动作空间下球铰姿态又成为帮助 allocator 实现有效转向/推进的直接杠杆
+    - 策略于是会用更大的球铰动作去换更高的 `progress` 和 `heading_gate`
+  - 还要注意：
+    - 当前日志里 `ball_joint_pos_abs_mean_raw ≈ 0.17 ~ 0.18 rad`
+      并不代表关节整体安全
+    - 因为 termination 只要任一 6 维球铰坐标超界就会触发
+    - 单个轴接近极限会被均值掩盖
+- 已补充分轴球铰日志埋点到当前 env：
+  - 新增每个球铰轴的：
+    - 实际位置 `Observation/<joint_name>_pos_raw`
+    - 平均限位利用率 `Observation/<joint_name>_limit_usage_mean_raw`
+    - 最大限位利用率 `Observation/<joint_name>_limit_usage_max_raw`
+  - 当前 joint 顺序与物理含义是：
+    - `spm1_platform_joint_z / y / x`
+    - `spm2_platform_joint_z / y / x`
+    - 也就是前模块 `yaw / pitch / roll` 与后模块 `yaw / pitch / roll`
+  - 因此下一轮训练开始后，可以直接从 TensorBoard 判断：
+    - 到底是前/后模块的哪一轴先逼近边界
 - 已完成 `RL_Training/` 原地重构。
 - 已按用户要求把旧 `IK/FK`、本地 `rsl_rl` 本体、旧辅助脚本重新迁入新架构内部。
 - 已完成一轮真实训练入口冒烟，已清除启动链路中的 `configclass` / Hydra 配置阻塞。
 - 已完成 `Stage0` 在真实 GPU 环境下的最小训练启动验证。
 - 已完成一次真实 `Stage0` run 的日志诊断，并补齐训练日志 / TensorBoard 指标埋点。
 - 已完成一轮 Stage0 run 诊断，已确认当前主要问题是高纵向滑移、高侧滑、球铰动作偏激进与 critic value loss 偏大。
-- 已按用户要求将当前 Stage0 reward 主线收口为：
-  - `target_bonus + progress * heading_gate`
-  - 已从 active reward 中移除：
+- 已按用户要求将当前 Stage0 reward 主线调整为：
+  - `target_bonus + progress * composite_gate * roll_gate`
+  - 其中：
+    - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
+    - 当 `|中车 roll| <= 5°` 时，`roll_gate = 1`
+    - 当 `|中车 roll| > 5°` 时，`roll_gate = exp[-1/2 * (航向误差 / (pi/16))^2]`
+  - 当前 active reward 中已保留：
+    - `heading_gate`
+    - `longitudinal_slip_gate`
+    - `lateral_slip_gate`
+    - `composite_gate`
     - `roll_gate`
+  - 已从 active reward 中移除：
     - `speed_gate`
     - `force_gate`
     - `vertical_speed_gate`
     - `ball_joint_speed_gate`
     - `wheel_action_rate_gate`
-    - `longitudinal_slip_gate`
-    - `lateral_slip_gate`
+- 已完成当前 slip-gate 主线下的一轮完整 `600` iteration 真实 run 诊断：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_16-29-08`
+  - 当前确认：
+    - rollout 生存与基本到点能力已建立：
+      - `Train/mean_episode_length ≈ 1335.64 / 1439`
+      - `Termination/time_out_rate = 1.0`
+      - `Tracking/goal_pos_error ≈ 4.88 m`
+      - `Tracking/goal_yaw_error_abs ≈ 0.259 rad`
+      - `Reward/target_bonus` 末段非零
+    - 中车与前后车姿态当前不是主问题：
+      - `Observation/tilt_deg ≈ 0.31°`
+      - `Observation/head_roll_pitch_abs_mean_raw ≈ 0.083 rad`
+      - `Observation/tail_roll_pitch_abs_mean_raw ≈ 0.084 rad`
+      - `Termination/head_tail_roll_limit_rate = 0.0`
+      - `Termination/ball_joint_limit_rate = 0.0`
+    - 当前主要问题已经转成：
+      - `longitudinal_slip_gate` 长期几乎为 `0`
+      - `lateral_slip_gate` 长期几乎为 `0`
+      - `composite_gate` 末段仅约 `0.215`
+      - `Reward/01_progress ≈ 1.123`
+      - `Reward/00_gated_progress ≈ 0.364`
+      - `Loss/value` 末段约 `852`
+    - 当前对应观测量级是：
+      - `wheel_longitudinal_slip_abs_mean_raw ≈ 2.68`
+      - `wheel_slip_angle_abs_mean_raw ≈ 0.76 rad`
+  - 当前最新有效判断：
+    - 这轮不是“不会走”，而是“能活、能靠近目标，但新的滑移门几乎把 progress 奖励长期关死”
+    - 当前主问题不是 `heading_gate` 或 `roll_gate`：
+      - `heading_gate` 末段约 `0.646`
+      - `roll_gate` 末段约 `1.0`
+    - 当前第一主因是：
+      - 纵滑与侧滑 gate 使用 6 轮乘积
+      - 同时观测侧已取消 slip 裁切
+      - 在当前 `0.3` 与 `6.0` 参数下，乘积项对当前滑移量级过于苛刻
+      - 导致 reward 面几乎退化为“姿态稳定但 progress 被重度衰减”
+    - 当前第二主因是：
+      - critic 需要在近零 slip gate 下拟合一个被强压缩的回报分布
+      - value loss 因此重新显著抬升
+- 已按用户要求把航向奖励中的 `kd` 改为由任务几何自动计算的转弯半径尺度：
+  - 当前对应配置项：
+    - `heading_distance_scale`
+  - 当前计算口径：
+    - `heading_distance_scale = goal_distance / (2 sin(goal_direction_max_deg))`
+  - 在当前 Stage0 参数下：
+    - `goal_distance = 12.0`
+    - `goal_direction_max_deg = 30.0`
+    - 因此 `heading_distance_scale = 12.0 m`
+- 已按用户要求进一步把终止条件中的：
+  - `orientation_limit_deg`
+  从 `45°` 收紧为：
+  - `30°`
+- 已按用户要求重新设定当前 Stage0 球铰越界终止范围：
+  - yaw：`[-0.6, 0.6]`
+  - pitch：`[-1.0, 0.4]`
+  - roll：`[-0.5, 0.5]`
+  - 只要任一球铰关节超出该范围就直接终止
+- 已按用户要求新增前后车 absolute `roll` 终止：
+  - 当前前车或后车 absolute `|roll| > 35°` 时直接终止
+  - 当前对应 termination 指标：
+    - `Termination/head_tail_roll_limit_rate`
+- 当前进入“固定新的 roll 约束 reward 主线，并观察 target/progress/heading/roll 耦合行为”的阶段。
+- 当前最新 reward 任务语义是：
+  - 中车继续只用现有 `roll_gate`
+  - 航向、纵向滑移率、侧滑角当前共同组成：
     - `composite_gate`
-- 当前进入“固定新的最小 reward 主线，并观察纯 target/progress/heading 学习行为”的阶段。
+  - 不启用 `straighten_gate`
+  - 前后车 absolute `roll` 不再进入 active reward
+  - 前后车 absolute `roll` 当前改为 termination 安全边界
+- 当前 active 新增 reward 参数：
+  - `longitudinal_slip_gate_scale = 0.3`
+  - `lateral_slip_gate_scale = 4.0`
+- 当前训练日志与 TensorBoard 已补齐新 reward 埋点：
+  - `Reward/longitudinal_slip_gate`
+  - `Reward/lateral_slip_gate`
+  - `Reward/composite_gate`
+- 已按用户要求调整当前观测口径：
+  - `wheel_longitudinal_slip`
+    - 当前已恢复在 observation 路径按：
+      - `[-3.0, +3.0]`
+      裁切
+  - `wheel_slip_angle`
+    - 当前不再在 observation 路径裁切
+    - 仅在 reward 的 `lateral_slip_gate` 内部保留裁切
+- 已完成一轮新的 Stage0 部分训练验证：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-02-10_slipclip3_latk4_v1`
+  - 本轮未跑满 `600` iteration，用户要求“跑过一段看出问题即可”，当前停在约：
+    - `527 / 600`
+  - 当前确认：
+    - 纵向滑移率 observation 裁切到 `±3.0` 后，纵滑均值显著低于上一轮：
+      - 上一轮 `2026-04-17_16-29-08`：
+        - `wheel_longitudinal_slip_abs_mean_raw ≈ 2.79`
+      - 当前轮：
+        - `wheel_longitudinal_slip_abs_mean_raw ≈ 1.80`
+    - 任务推进与到点质量明显改善：
+      - `Train/mean_reward ≈ 1019.56`
+      - `Tracking/goal_pos_error ≈ 5.21 m`
+      - `Tracking/goal_yaw_error_abs ≈ 0.150 rad`
+      - `Reward/target_bonus ≈ 0.130`
+    - 但当前主问题没有消失：
+      - `Reward/03_longitudinal_slip_gate ≈ 5.27e-06`
+      - `Reward/04_lateral_slip_gate ≈ 7.74e-04`
+      - 两个 slip gate 仍长期接近 `0`
+      - `Loss/value ≈ 312.94`
+      - 且末段出现：
+        - `Termination/ball_joint_limit_rate ≈ 0.719`
+  - 当前最新有效判断：
+    - `±3.0` 纵滑 observation 裁切是有效的，它确实把纵滑原始量级拉下来了
+    - `k = 4` 比 `k = 6` 更宽容，但在当前约 `0.72 rad` 的侧滑量级下，6 轮乘积后的 `lateral_slip_gate` 仍几乎为 `0`
+    - 当前 slip-gate 的核心问题已经不是 observation 输入太极端，而是：
+      - 6 轮连乘聚合仍然过严
+      - reward 面仍被 slip gate 长期强压
+    - 同时策略后段开始重新吃到：
+      - `ball_joint_limit`
+      说明当前改动把主要矛盾从“极端纵滑”推回到了“reward 过严 + 球铰后段越界”
+- 已按用户要求把当前 Stage0 观测 scale 全部收口到：
+  - `1.0`
+- 已完成新一轮 `head_tail_roll_gate` 真实 run 对比诊断：
+  - 上一轮：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_14-12-39`
+  - 当前轮：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_15-30-13`
+  - 当前确认：
+    - 新 reward 确实强力压低了姿态激进性：
+      - `tilt_deg` 末 10 轮均值：
+        - `15.83° -> 0.21°`
+      - `head_roll_pitch_abs_mean_raw` 末 10 轮均值：
+        - `0.709 -> 0.081 rad`
+      - `ball_joint_pos_abs_mean_raw` 末 10 轮均值：
+        - `0.406 -> 0.232`
+      - `Reward/roll_gate` 与 `episode_per_step/head_tail_roll_gate` 末 10 轮均接近：
+        - `1.0`
+    - 但任务完成质量反而下降：
+      - `Train/mean_reward` 末 10 轮均值：
+        - `1582.62 -> 1351.16`
+      - `Tracking/goal_pos_error` 末 10 轮均值：
+        - `5.64 -> 5.94 m`
+      - `Tracking/goal_yaw_error_abs` 末 10 轮均值：
+        - `0.338 -> 0.664 rad`
+      - `Reward/target_bonus` 末 10 轮均值：
+        - `0.0203 -> 0.0`
+    - 牵引质量没有根本改善：
+      - `wheel_longitudinal_slip_abs_mean_raw` 略降：
+        - `0.831 -> 0.810`
+      - `wheel_slip_angle_abs_mean_raw` 基本不变且仍高：
+        - `0.740 -> 0.742 rad`
+      - `wheel_normal_contact_force_sum_raw` 末 10 轮均值反而下降：
+        - `0.948 -> 0.838`
+  - 当前最新有效判断：
+    - `head_tail_roll_gate` 没有失败，它成功把策略从“姿态激进换推进”推到了“低 roll、低构型偏转”的新策略
+    - 但当前主要问题变成：
+      - 策略为了维持低前后车姿态，明显削弱了转向/构型使用
+      - 导致航向修正能力变差、到点 bonus 消失、总回报下降
+    - 更准确地说，当前不是 gate 在末段还在持续压奖励，而是：
+      - gate 在训练过程中改变了策略搜索方向
+      - 最后收敛到一个“姿态很好但任务完成度更差”的局部最优
+    - 下一轮如果继续沿当前主线调，不应再把“进一步压前后车 absolute roll”当成主方向
+    - 更应优先区分：
+      - 哪些前后车姿态变化是转向所必需的
+      - 哪些才是真正应被抑制的危险姿态
+- 已完成新一轮 `roll_gate + 30° orientation limit` 真实 run 诊断：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_14-12-39`
+  - 相比上一轮
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_13-21-54`
+    当前确认：
+    - rollout 生存显著改善：
+      - `Train/mean_episode_length ≈ 1400.44 / 1439`
+      - `Termination/time_out_rate ≈ 1.0`
+      - `Termination/ball_joint_limit_rate ≈ 0.0`
+    - 目标推进也进一步改善：
+      - `Train/mean_reward ≈ 1599.41`
+      - `Tracking/goal_pos_error ≈ 5.38 m`
+      - `Reward/target_bonus` 已非零
+    - 姿态与支撑相比上一轮有改善但仍不够低：
+      - `tilt_deg ≈ 15.96°`
+      - 上一轮约 `21.21°`
+      - `wheel_normal_contact_force_sum_raw ≈ 0.936`
+    - 但当前仍存在：
+      - `tilt_deg` 仍稳定在 `15°~16°` 量级
+      - `wheel_longitudinal_slip_abs_mean_raw ≈ 0.83`，比上一轮更差
+      - `wheel_slip_angle_abs_mean_raw ≈ 0.74 rad`，仍然偏高
+      - `head_roll_pitch_abs_mean_raw ≈ 0.73 rad`，前车姿态仍偏大
+      - `Loss/value` 末段约 `203`，明显高于上一轮
+  - 当前最新有效判断：
+    - `roll_gate` 没有失败，但它只把策略从“高倾斜+频繁越界”拉回到“中等倾斜但可长期存活”
+    - `tilt` 之所以没有继续明显下降，主因不是约束完全无效，而是：
+      - `roll_gate` 只在 `|body_car_roll| > 5°` 时启用
+      - 且只通过“航向误差”间接衰减推进，不直接随 `tilt` 大小继续加重惩罚
+      - 当前 `Reward/roll_gate ≈ 0.95`，说明平均抑制强度偏弱
+      - `tilt` 是总倾斜量，包含 pitch 贡献；当前 gate 只看 `body_car_roll`
+      - `orientation_limit_deg = 30°` 仍高于当前常见姿态区间，因此几乎不触发坏姿态终止
+- 已完成当前最小 reward 主线下的一轮完整 `300` iteration 真实 run 诊断：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_13-21-54`
+  - 当前确认：
+    - 该 run 已明显学会持续目标推进：
+      - `Train/mean_reward ≈ 1365.38`
+      - `Train/mean_episode_length ≈ 845.94 / 959`
+      - `Reward/gated_progress ≈ 1.60`
+      - `Tracking/goal_pos_error ≈ 7.38 m`
+    - 但末段生存质量反而恶化：
+      - `Termination/time_out_rate ≈ 0.57`
+      - `Termination/ball_joint_limit_rate ≈ 0.43`
+      - `bad_orientation_rate` 未出现
+    - 当前主要问题转为：
+      - 球铰限位终止重新成为主要 reset 来源
+      - `tilt_deg` 末段约 `21.2°`，姿态明显变激进
+      - `wheel_slip_angle_abs_mean_raw ≈ 0.77 rad`，侧滑偏高
+      - `wheel_longitudinal_slip_abs_mean_raw ≈ 0.80`，纵滑仍高
+      - `Loss/value` 末段约 `47.8`，近 `10` 轮均值约 `98.6`
+  - 当前最新有效判断：
+    - 在当前 `goal_distance = 12.0` 与最小 reward 主线下，策略会重新明显偏向“强 progress 优先”
+    - 当前第一主问题已经不是“不前进”，而是“为前进而牺牲姿态裕度、球铰余量与稳定性”
+    - `Observation/turn_radius_raw` 当前应解释为：
+      - 车体系平面瞬时运动曲率半径诊断
+      - 不是几何最小转弯半径
+    - 本轮 run 中：
+      - `turn_radius_raw` 末段约 `10.05 m`
+      - 近 `10` 轮均值约 `9.94 m`
+    - 结合当前任务几何：
+      - `goal_distance = 12.0`
+      - `goal_direction_max_deg = 30.0`
+      可知该量级更接近“大半径弧线转向/浅转弯”而不是“小半径急转”
+    - 从本轮训练趋势看：
+      - 随着 `turn_radius_raw` 上升，`tilt_deg` 与侧滑同步上升
+      - 说明策略更像在用较大的前进速度配合较小偏航率做宽弧推进，而不是形成高质量紧凑转向
 - 已完成一轮完整 `300` iteration 真实 run 诊断：
   - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-16_10-12-26`
   - 当前确认：
@@ -676,6 +1275,61 @@
     - `critic = 45 + num_height_points`
 
 ## 当前阻塞 / 风险
+- 当前动作空间主线的最新判断已更新为：
+  - `6 维球铰 + 2 维底盘命令 + allocator`
+    这一动作语义本身没有出现新的训练阻塞
+  - 真实 run `2026-04-17_17-28-36_action8_allocator_v1` 已显示：
+    - slip gate 不再长期塌缩到近零
+    - critic 明显更稳定
+    - ball joint limit 不再早早抬升
+  - 因此当前更值得继续观察的是：
+    - 收敛速度
+    - target bonus 何时开始触发
+    - 中后段 progress 是否继续上升
+- 当前对 active Stage0 观测与 slip 裁切的最新判断是：
+  - 当前 actor 观测 scale 虽全部设为 `1.0`，但由于:
+    - `agent.yaml` 中 actor / critic 仍启用 `obs_normalization = true`
+    大多数非 slip 观测项并没有成为新的主失衡源
+  - 当前真正超出常规量级的仍是：
+    - `wheel_longitudinal_slip`
+      - 最新 run 中约：
+        - mean `2.79`
+        - max `5.69`
+    - `wheel_slip_angle`
+      - 最新 run 中约：
+        - mean `0.75 rad`
+  - 因此如果下一轮要恢复 observation-path 裁切，当前最优先考虑的是：
+    - 纵向滑移率裁切
+      - 第一版建议先试：
+        - `[-3.0, +3.0]`
+    - 侧滑角 reward-side 裁切不要单独改宽
+      - 当前 `0.5 * cos(k * alpha) + 0.5` 形式下
+      - clip 应与 `k` 绑定为：
+        - `[-pi/k, +pi/k]`
+      - 也就是说当前若保持：
+        - `k = 6`
+        就应保持：
+        - `[-pi/6, +pi/6]`
+      - 如果希望放宽 reward 的有效侧滑区间，应优先改：
+        - `k`
+        而不是只改单独的 clip
+- 当前最新 Stage0 主阻塞已更新为：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_16-29-08`
+  - 当前 reward 主线虽然建立了：
+    - 存活
+    - 朝目标推进
+    - 末段 target bonus 触发
+  - 但新增的：
+    - `longitudinal_slip_gate`
+    - `lateral_slip_gate`
+    在当前量级下长期接近 `0`
+  - 直接结果是：
+    - `composite_gate` 长期偏低
+    - `gated_progress` 被显著压缩
+    - critic `value loss` 末段抬升到约 `852`
+  - 因此当前真正的风险不是姿态约束过弱，而是：
+    - 当前 slip-gate 结构和参数把 reward 面压得过狠
+    - 继续在这个设置上长跑，容易把训练推向“能存活但 reward 学不顺”的状态
 - 已完成一轮 Google Scholar 分批粗检索（2026-04-14）：
   - 按 3 组 query 各抓取 Scholar 第 1 页，共得到 30 篇候选
   - 当前候选文献明显分成 3 类：
@@ -790,6 +1444,17 @@
 - 当前 `RL_Training/` 结构已切换为新架构，后续不要再把旧的历史路径当作默认入口。
 
 ## 下一步优先级
+- 先围绕 `2026-04-17_16-29-08` 做下一轮单变量改动：
+  - 不再继续加新的姿态 gate
+  - 重点回到当前 slip-gate 的强度与聚合方式是否合理
+- 下一轮诊断重点：
+  - `Reward/03_longitudinal_slip_gate`
+  - `Reward/04_lateral_slip_gate`
+  - `Reward/05_composite_gate`
+  - `Reward/00_gated_progress / Reward/01_progress`
+  - `Observation/wheel_longitudinal_slip_abs_mean_raw`
+  - `Observation/wheel_slip_angle_abs_mean_raw`
+  - `Loss/value`
 - 先围绕 `2026-04-15_22-29-47_stability_v1_iter300` 做下一轮单变量改动：
   - 重点不再继续压球铰
   - 重点转到车轮速度目标与真实车速的失配

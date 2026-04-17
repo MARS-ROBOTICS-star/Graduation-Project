@@ -39,11 +39,21 @@ TENSORBOARD_TAG_ALIASES = {
     "Reward/gated_progress": "Reward/00_gated_progress",
     "Reward/progress": "Reward/01_progress",
     "Reward/heading_gate": "Reward/02_heading_gate",
-    "Reward/target_bonus": "Reward/03_target_bonus",
-    "Reward/total": "Reward/04_total",
+    "Reward/longitudinal_slip_gate": "Reward/03_longitudinal_slip_gate",
+    "Reward/lateral_slip_gate": "Reward/04_lateral_slip_gate",
+    "Reward/longitudinal_slip_cost": "Reward/05_longitudinal_slip_cost",
+    "Reward/lateral_slip_cost": "Reward/06_lateral_slip_cost",
+    "Reward/slip_cost_penalty": "Reward/07_slip_cost_penalty",
+    "Reward/composite_gate": "Reward/08_composite_gate",
+    "Reward/roll_gate": "Reward/09_roll_gate",
+    "Reward/capture_reward": "Reward/10_capture_reward",
+    "Reward/target_bonus": "Reward/11_target_bonus",
+    "Reward/total": "Reward/12_total",
+    "Phase/capture_rate": "Phase/00_capture_rate",
     "Tracking/goal_pos_error": "Tracking/00_goal_pos_error",
     "Tracking/goal_progress": "Tracking/01_goal_progress",
     "Tracking/goal_yaw_error_abs": "Tracking/02_goal_yaw_error_abs",
+    "Tracking/goal_completion_pct": "Tracking/03_goal_completion_pct",
     "Action/policy_abs_mean": "Action/00_policy_abs_mean",
     "Action/policy_std": "Action/01_policy_std",
     "Action/processed_abs_mean": "Action/02_processed_abs_mean",
@@ -59,15 +69,27 @@ TENSORBOARD_TAG_ALIASES = {
     "Termination/time_out_rate": "Termination/00_time_out_rate",
     "Termination/terminated_rate": "Termination/01_terminated_rate",
     "Termination/bad_orientation_rate": "Termination/02_bad_orientation_rate",
-    "Termination/ball_joint_limit_rate": "Termination/03_ball_joint_limit_rate",
+    "Termination/head_tail_roll_limit_rate": "Termination/03_head_tail_roll_limit_rate",
+    "Termination/ball_joint_limit_rate": "Termination/04_ball_joint_limit_rate",
+    "Termination/success_rate": "Termination/05_success_rate",
 }
 
 CONSOLE_PRIORITY_TAGS = (
     "Reward/gated_progress",
     "Reward/progress",
     "Reward/heading_gate",
+    "Reward/longitudinal_slip_gate",
+    "Reward/lateral_slip_gate",
+    "Reward/longitudinal_slip_cost",
+    "Reward/lateral_slip_cost",
+    "Reward/slip_cost_penalty",
+    "Reward/composite_gate",
+    "Reward/roll_gate",
+    "Reward/capture_reward",
     "Reward/target_bonus",
+    "Phase/capture_rate",
     "Tracking/goal_pos_error",
+    "Tracking/goal_completion_pct",
     "Tracking/goal_yaw_error_abs",
     "Observation/wheel_longitudinal_slip_abs_mean_raw",
     "Observation/wheel_slip_angle_abs_mean_raw",
@@ -79,7 +101,9 @@ CONSOLE_PRIORITY_TAGS = (
     "Termination/time_out_rate",
     "Termination/terminated_rate",
     "Termination/bad_orientation_rate",
+    "Termination/head_tail_roll_limit_rate",
     "Termination/ball_joint_limit_rate",
+    "Termination/success_rate",
 )
 
 CONSOLE_VISIBLE_TAGS = set(CONSOLE_PRIORITY_TAGS)
@@ -91,7 +115,9 @@ SPARSE_ZERO_SCALARS = frozenset(
     {
         "Termination/terminated_rate",
         "Termination/bad_orientation_rate",
+        "Termination/head_tail_roll_limit_rate",
         "Termination/ball_joint_limit_rate",
+        "Termination/success_rate",
     }
 )
 

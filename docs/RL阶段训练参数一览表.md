@@ -37,13 +37,13 @@
 ### 1.3 当前关键维度
 
 - 并行环境数：`64`
-- 动作维度：`12`
-- Actor 单帧观测维度：`48`
-- Critic 单帧观测维度：`48`
+- 动作维度：`8`
+- Actor 单帧观测维度：`44`
+- Critic 单帧观测维度：`44`
 - state space 维度：`0`
 - 控制频率：`60 Hz`
-- 单回合时长：`16 s`
-- 单回合最大控制步数：`16 × 60 = 960`
+- 单回合时长：`24 s`
+- 单回合最大控制步数：`24 × 60 = 1440`
 
 ---
 
@@ -71,8 +71,8 @@ Stage0 训练时的配置继承关系是：
 - `terrain.mode = "plane"`
 - `curriculum.enabled = False`
 - `terrain.measure_heights = False`
-- `episode_length_s = 16.0`
-- `commands.resampling_time = 5.3`
+- `episode_length_s = 24.0`
+- `commands.resampling_time = 8.0`
 - `commands.goal_distance = 12.0`
 - `commands.goal_direction_max_deg = 30.0`
 - `commands.goal_heading_delta_max_deg = 12.0`
@@ -88,6 +88,7 @@ Stage0 训练时的配置继承关系是：
   - 球铰阻尼 `20.0`
   - 球铰速度上限 `0.8 rad/s`
   - 车轮速度上限 `12.0 rad/s`
+  - 开启 traction-aware wheel limit
   - `PhysX max_velocity_iteration_count = 1`
   - `enable_external_forces_every_iteration = True`
 
@@ -192,15 +193,16 @@ Stage0 因为是平地，所以地面由 ground plane 直接生成。
 
 ### 5.3 控制关节
 
-当前 RL policy 直接控制全部 `12` 个执行量：
+当前 RL policy 直接控制 `8` 个高层执行量：
 
 - 6 个球铰姿态目标
-- 6 个车轮速度目标
+- 2 个底盘平面命令
 
 所以：
 
-- 动作维度 = `12`
-- policy 直接输出轮速目标
+- 动作维度 = `8`
+- policy 不再直接输出 6 个轮速
+- 当前 6 个轮速由 wheel allocator 根据球铰状态和底盘平面命令生成
 
 ### 5.4 驱动器参数
 
@@ -223,6 +225,58 @@ Stage0 因为是平地，所以地面由 ground plane 直接生成。
 
 - 球铰是典型位置控制
 - 车轮更接近速度控制
+
+### 5.6 当前 traction-aware wheel limit
+
+当前 `Stage0` 已在 wheel target 写入前增加一层动态轮速上限。
+
+逻辑位置：
+
+- `env.py`
+  - 在 allocator 给出 `wheel_targets` 后
+  - 先根据上一拍观测到的轮地状态生成每个轮子的动态速度上限
+  - 再对 `wheel_targets` 做逐轮限幅
+
+当前生效参数：
+
+- `traction_aware_wheel_limit_enabled = True`
+- `traction_limit_min_scale = 0.35`
+- `traction_limit_longitudinal_slip_start = 0.6`
+- `traction_limit_longitudinal_slip_full = 1.5`
+- `traction_limit_slip_angle_start_deg = 12.0`
+- `traction_limit_slip_angle_full_deg = 28.0`
+- `traction_limit_contact_force_low = 0.05`
+- `traction_limit_contact_force_high = 0.12`
+
+含义：
+
+- 当某轮 absolute 纵滑超过 `0.6` 后，开始收紧该轮速度上限
+- 当 absolute 纵滑达到 `1.5` 后，该通道会把该轮上限压到名义上限的 `35%`
+- 当某轮 absolute 侧滑角超过 `12°` 后，开始收紧该轮速度上限
+- 当 absolute 侧滑角达到 `28°` 后，该通道也会把该轮上限压到名义上限的 `35%`
+- 当某轮归一化法向接触力低于 `0.12` 时，会开始收紧该轮速度上限
+- 当该轮归一化法向接触力低到 `0.05` 时，该通道同样会把该轮上限压到名义上限的 `35%`
+- 三个通道最终取更严格的那个限幅结果
+
+所以当前实际 wheel target 限幅不再只是统一的：
+
+- `[-12.0, 12.0] rad/s`
+
+而是逐轮动态变成：
+
+- `[-12.0 * traction_scale_i, 12.0 * traction_scale_i] rad/s`
+
+当前新增运行态诊断指标：
+
+- `Action/traction_limit_scale_mean`
+- `Action/traction_longitudinal_scale_mean`
+- `Action/traction_lateral_scale_mean`
+- `Action/traction_contact_scale_mean`
+- `Action/traction_limit_velocity_mean_raw`
+
+这组指标的目的不是直接证明“牵引已经改善”，而是先验证：
+
+- 执行层是否已经开始根据滑移和接触状态主动回收无效轮速命令
 
 ### 5.5 初始姿态
 
@@ -364,10 +418,10 @@ $$
 
 ### 7.3 命令重采样周期
 
-- `episode_length_s = 16.0 s`
-- `resampling_time = 5.3 s`
+- `episode_length_s = 24.0 s`
+- `resampling_time = 8.0 s`
 
-也就是说当前每个环境会在 reset 时采样一次目标，并在回合中途继续重采样，单个 episode 通常会经历 `2 ~ 3` 个目标段。
+也就是说当前每个环境会在 reset 时采样一次目标，并在回合中途继续重采样，单个 episode 当前默认会经历 `3` 个目标段。
 
 ### 7.4 命令时钟逻辑
 
@@ -376,7 +430,10 @@ $$
 - reset 时会调用一次目标采样。
 - 预物理步内当 `resampling_time < episode_length_s` 时，会启用定时器倒计时与中途重采样。
 - 当前实际行为是：
-  - 一个 episode 内通常包含 `2 ~ 3` 个目标。
+  - 一个 episode 内默认包含 `3` 个目标段：
+    - `t = 0 s`
+    - `t = 8 s`
+    - `t = 16 s`
 
 ### 7.5 观测中的相对命令表达
 
@@ -547,19 +604,23 @@ $$
 当前 scale：
 
 - `base_lin_vel = 1.0`
-- `base_ang_vel = 0.35`
-- `projected_gravity = 1.5`
+- `base_ang_vel = 1.0`
+- `projected_gravity = 1.0`
 - `ball_joint_pos = 1.0`
-- `wheel_longitudinal_slip = 2.0`
-- `wheel_slip_angle = 1.5`
-- `wheel_normal_contact_force = 1.25`
+- `ball_joint_vel = 1.0`
+- `ball_joint_target_error = 1.0`
+- `module_roll_pitch = 1.0`
+- `wheel_joint_vel = 1.0`
+- `wheel_longitudinal_slip = 1.0`
+- `wheel_slip_angle = 1.0`
+- `wheel_normal_contact_force = 1.0`
 - `commands = 1.0`
-- `last_action = 1.5`
+- `last_action = 1.0`
 
 当前 slip 相关观测参数：
 
 - `wheel_slip_epsilon = 0.1`
-- `wheel_longitudinal_slip_clip = 1.0`
+- `wheel_longitudinal_slip_clip = 3.0`
 - `wheel_slip_angle_clip_rad = π / 2`
 
 ### 8.5 观测噪声
@@ -605,13 +666,13 @@ $$
 
 ### 9.1 动作维度
 
-动作维度为 `12`：
+动作维度为 `8`：
 
 - 前 6 维：6 个球铰姿态目标
-- 后 6 维：6 个车轮速度目标
+- 后 2 维：底盘平面命令 `a_base = [a_v, a_w]`
 
 $$
-\mathbf{a}_t \in \mathbb{R}^{12}
+\mathbf{a}_t \in \mathbb{R}^{8}
 $$
 
 ### 9.2 动作裁剪
@@ -678,34 +739,52 @@ $$
 - pitch：`[-1.30, 0.40]`
 - roll：`[-0.35, 0.35]`
 
-### 9.6 车轮速度目标映射
+### 9.6 底盘平面命令映射
 
-当前 policy 直接输出 6 个车轮速度目标的标准化动作。
-每个车轮动作仍先裁剪到 `[-1, 1]`，然后只按单一对称速度上限映射：
-
-- 速度上限参数：`wheel_joint_velocity_limit_sim = 12 rad/s`
-
-映射公式为：
+当前 policy 的后 2 维动作不再直接表示 6 个车轮速度，而是：
 
 $$
-\omega_{target,i} = a_i \cdot \omega_{max}
+\mathbf a_{base} = [a_v, a_w], \quad a_v, a_w \in [-1,1]
 $$
 
-其中：
+当前 Stage0 默认采用“前进优先、不允许倒车”的映射：
 
-- `a_i` 是第 `i` 个标准化车轮动作
-- `\omega_{max}` 是统一车轮速度上限
+$$
+v_{x,cmd} = 0.5(a_v + 1.0) v_{x,max}
+$$
+
+$$
+\omega_{z,cmd} = a_w \, \omega_{z,max}
+$$
+
+其中当前默认参数为：
+
+- `base_forward_velocity_max = 1.2 m/s`
+- `base_yaw_rate_max = 0.6 rad/s`
+- `base_allow_reverse = False`
 
 因此：
 
-- `action = 1` -> `+12 rad/s`
-- `action = -1` -> `-12 rad/s`
-- `action = 0` -> `0`
+- `a_v = -1` -> `v_{x,cmd} = 0`
+- `a_v = 1` -> `v_{x,cmd} = 1.2 m/s`
+- `a_w = -1` -> `\omega_{z,cmd} = -0.6 rad/s`
+- `a_w = 1` -> `\omega_{z,cmd} = +0.6 rad/s`
 
-因此现在的控制结构是：
+### 9.7 wheel allocator 轮速生成
 
-- 高层 RL：同时输出球铰目标角和车轮速度目标
-- wheel allocator：保留在仓库里，但当前执行链路不再参与 env 控制
+当前执行链路中，policy 不再直接输出 6 个轮速。
+环境会先把 `[v_{x,cmd}, \omega_{z,cmd}]` 经过 measured planar-command transform，
+然后调用 wheel allocator，根据：
+
+- 当前球铰位置
+- 当前球铰速度
+- 变换后的底盘平面命令
+
+生成 `6` 个车轮速度目标，并最终再按：
+
+- `wheel_joint_velocity_limit_sim = 12 rad/s`
+
+统一限幅。
 
 ---
 
@@ -939,7 +1018,11 @@ $$
 - `target_bonus_ratio = 0.03`
 - `target_position_tolerance = 0.3`
 - `target_yaw_tolerance_deg = 9.0`
-- `heading_distance_scale = 5.0`
+- `heading_distance_scale = goal_distance / (2 sin(goal_direction_max_deg))`
+- 在当前 Stage0 下：
+  - `heading_distance_scale = 12.0 / (2 sin 30°) = 12.0`
+- `roll_gate_activation_roll_deg = 5.0`
+- `body_car_roll_gate = pi / 16`
 
 ### 10.13 当前 TensorBoard 奖励日志
 
@@ -948,6 +1031,7 @@ $$
 - `Reward/target_bonus`
 - `Reward/progress`
 - `Reward/heading_gate`
+- `Reward/roll_gate`
 - `Reward/gated_progress`
 - `Reward/total`
 
@@ -956,6 +1040,38 @@ $$
 - `only_positive_rewards = False`
 
 所以不会对总奖励做非负截断。
+
+### 10.14 当前 Tracking 日志补充项
+
+当前 step 级别额外输出：
+
+- `Tracking/goal_completion_pct`
+
+其定义为：
+
+$$
+\mathrm{goal\_completion\_pct}
+=
+\frac{\max(d_{\mathrm{goal}} - e_{\mathrm{pos}}, 0)}{d_{\mathrm{goal}}} \times 100\%
+$$
+
+其中：
+
+- $d_{\mathrm{goal}}$ 是当前 Stage0 配置中的标称目标距离
+- $e_{\mathrm{pos}}$ 是当前 `goal_pos_error`
+
+在当前默认 Stage0 下：
+
+- `d_goal = 12.0 m`
+
+因此这个指标表示：
+
+- 当前目标段已经收缩掉的目标距离百分比
+
+它不是：
+
+- 车轮真实累计轨迹长度
+- 跨多个重采样目标段的累计完成率
 
 ---
 
@@ -982,26 +1098,36 @@ $$
 
 ### 11.2 姿态终止
 
-令 body-frame 重力投影为 $\mathbf{g}_b$，则倾角计算为：
+当前 active 版本不再用“总倾角”判断坏姿态，而是只看中车 `body_car_chassis` 的横滚角。
+
+令中车 roll 为 $\phi_{\mathrm{body}}$，则当前坏姿态判定为：
 
 $$
-\theta = \arccos(\mathrm{clip}(-g_z,-1,1))
+\left|\phi_{\mathrm{body}}\right|
 $$
 
 若：
 
 $$
-\theta > 45^\circ
+\left|\phi_{\mathrm{body}}\right| > 30^\circ
 $$
 
 则失败终止。
 
+对应地，当前 TensorBoard 中的：
+
+- `Observation/tilt_deg`
+
+也不再表示中车总倾角，而是表示：
+
+- 中车 `|roll|` 的角度值
+
 ### 11.3 球铰越界终止
 
-当前球铰上下界与动作上下界一致：
+当前球铰越界终止使用单独的终止范围。
 
-- yaw：`[-0.7, 0.7]`
-- pitch：`[-1.6, 0.5]`
+- yaw：`[-0.6, 0.6]`
+- pitch：`[-1.0, 0.4]`
 - roll：`[-0.5, 0.5]`
 
 对任意关节 $q_i$，若：
@@ -1204,16 +1330,17 @@ $$
 1. 如果命令计时器到期，重采样命令
 2. 当前默认仅在 reset 时根据当前位姿采样一个目标全局位姿
 3. env 把目标转成车体系下的 `[x_rel, y_rel, psi_rel]`
-4. policy 读取 48 维 actor 观测
-5. actor 输出 12 维标准化动作
+4. policy 读取 44 维 actor 观测
+5. actor 输出 8 维标准化动作
 6. 动作先裁剪到 `[-1, 1]`
 7. 前 6 维映射成 6 个球铰目标角
-8. 后 6 维映射成 6 个车轮速度目标
-9. Isaac Sim 执行球铰位置控制和轮速控制
-10. 环境读取新状态，生成下一时刻观测
-11. 按当前 reward 配置计算当前奖励
-12. 判断是否终止或超时
-13. PPO 存 rollout，周期性更新 actor/critic
+8. 后 2 维映射成 `[v_{x,cmd}, \omega_{z,cmd}]`
+9. env 调用 wheel allocator 生成 6 个车轮速度目标
+10. Isaac Sim 执行球铰位置控制和轮速控制
+11. 环境读取新状态，生成下一时刻观测
+12. 按当前 reward 配置计算当前奖励
+13. 判断是否终止或超时
+14. PPO 存 rollout，周期性更新 actor/critic
 
 ---
 
@@ -1224,64 +1351,163 @@ $$
 ### 17.1 环境与仿真
 
 - `num_envs = 64`
-- `episode_length_s = 16`
+- `episode_length_s = 24`
 - `sim_dt = 1/120`
 - `control_dt = 1/60`
 - 平地
 
 ### 17.2 动作与观测
 
-- 动作维度：`12`
-- Actor 观测维度：`48`
-- Critic 观测维度：`48`
-- 动作范围：逐轴 `[-1, 1]` 标准化，球铰映射到各自角度上下界，车轮映射到对称速度上限
+- 动作维度：`8`
+- Actor 观测维度：`44`
+- Critic 观测维度：`44`
+- 动作范围：逐轴 `[-1, 1]` 标准化，球铰映射到各自角度上下界，底盘分支映射到 `[v_{x,cmd}, \omega_{z,cmd}]`
 
 ### 17.3 命令
 
 - 命令维度：`3`
-- 每个 episode 只采样一次
+- 每个 episode 默认覆盖 `3` 个目标段
+- `resampling_time = 8.0 s`
 - 目标距离固定 `12 m`
-- 目标方向偏角范围 `[-18.43°, +18.43°]`
-- 目标朝向附加偏置范围 `[-9.215°, +9.215°]`
+- 目标方向偏角范围 `[-30°, +30°]`
+- 目标朝向附加偏置范围 `[-12°, +12°]`
 
 ### 17.4 奖励
 
 - 总奖励：
-  - `target_bonus + gated_progress`
+  - 远距离 tracking phase：
+    - `target_bonus + gated_progress`
+  - 近目标 capture phase：
+    - `target_bonus + capture_reward`
 - 其中：
-  - `gated_progress = progress * heading_gate`
+- `target_bonus` 只在同时满足“到点 + 朝向误差足够小”时触发
+  - `target_bonus = (goal_distance / control_dt) * target_bonus_ratio / (1 - target_bonus_ratio)`
+  - `progress = (previous_goal_distance - current_goal_distance) / control_dt`
+  - `heading_gate = exp[-1/2 * (goal_yaw_error / (current_goal_distance / heading_distance_scale))^2]`
+  - `longitudinal_slip_gate = 六个轮子分别按 exp[-1/2 * (longitudinal_slip / longitudinal_slip_gate_scale)^2] 计算后取乘积`
+    - 当前这里直接使用 observation 路径中已裁到：
+      - `[-3.0, +3.0]`
+      的纵向滑移率
+  - `lateral_slip_gate = 六个轮子分别按 0.5 * cos(lateral_slip_gate_scale * clipped_slip_angle) + 0.5 计算后取乘积`
+  - `clipped_slip_angle` 当前按：
+    - `[-pi / lateral_slip_gate_scale, +pi / lateral_slip_gate_scale]`
+    截断
+    - 当前只有 reward 内部保留这一步裁切
+  - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
+  - `gated_progress = progress * composite_gate * roll_gate`
+  - 当 `|middle_roll| <= 5°` 时：
+    - `roll_gate = 1`
+  - 当 `|middle_roll| > 5°` 时：
+    - `roll_gate = exp[-1/2 * (goal_yaw_error / body_car_roll_gate)^2]`
+  - 当 `goal_distance < capture_switch_distance` 时进入 capture phase
+  - `capture_reward = capture_reward_scale * (capture_distance_gate + capture_yaw_gate + capture_planar_speed_gate + capture_yaw_rate_gate) / 4`
+  - 其中：
+    - `capture_distance_gate = exp[-1/2 * (goal_distance / capture_distance_sigma)^2]`
+    - `capture_yaw_gate = exp[-1/2 * (goal_yaw_error / capture_yaw_sigma)^2]`
+    - `capture_planar_speed_gate = exp[-1/2 * (planar_speed / capture_planar_speed_sigma)^2]`
+    - `capture_yaw_rate_gate = exp[-1/2 * (yaw_rate_abs / capture_yaw_rate_sigma)^2]`
+
+也就是说，当前 reward 的物理含义是：
+
+- 先奖励“目标距离是否在缩短”
+- 再分别用：
+  - `heading_gate`
+  - `longitudinal_slip_gate`
+  - `lateral_slip_gate`
+  约束“推进方向是否对、纵滑是否过大、侧滑是否过大”
+- 然后把三者平均成：
+  - `composite_gate`
+  作为统一推进乘子
+- 再用 `roll_gate` 抑制“中车已经明显侧倾时还继续激进推进”
+- 当车已经进入近目标区域后，不再以 `progress` 作为主导项，而是改为直接奖励：
+  - 距离更小
+  - 朝向更准
+  - 线速度更低
+  - 角速度更低
+- 若已经到达目标点且朝向也进入容差，则额外给一次 `target_bonus`
 
 当前关键参数为：
 
 - `target_bonus_ratio = 0.03`
 - `target_position_tolerance = 0.3 m`
 - `target_yaw_tolerance_deg = 9°`
-- `heading_distance_scale = 5 m`
-
-### 17.5 当前这一轮定向实验的保留/否决项
-
-- 当前默认 reward 已按用户要求收口为最小主线：
-  - `r_tar + r_prog * r_head`
-- 当前 active reward 组件只有：
-  - `target_bonus`
-  - `progress`
-  - `heading_gate`
-  - `gated_progress`
-- 以下旧 gate 已退出 active reward 主线：
-  - `roll_gate`
-  - `speed_gate`
-  - `force_gate`
-  - `vertical_speed_gate`
-  - `ball_joint_speed_gate`
-  - `wheel_action_rate_gate`
-  - `longitudinal_slip_gate`
-  - `lateral_slip_gate`
-  - `composite_gate`
+- `heading_distance_scale = goal_distance / (2 sin(goal_direction_max_deg))`
+- 当前 Stage0 下等于：
+  - `12.0 m`
+- `roll_gate_activation_roll_deg = 5°`
+- `body_car_roll_gate = pi / 16`
+  - 约等于：
+    - `0.19635 rad`
+    - `11.25°`
+- `longitudinal_slip_gate_scale = 0.3`
+- `lateral_slip_gate_scale = 4.0`
+  - 当前侧滑角逐轮截断范围等于：
+    - `[-pi/4, +pi/4]`
+    - 约 `[-45°, +45°]`
+- `capture_reward_scale = 1.0`
+- `capture_distance_sigma = 0.6 m`
+- `capture_yaw_sigma_deg = 6°`
+- `capture_planar_speed_sigma = 0.20 m/s`
+- `capture_yaw_rate_sigma = 0.20 rad/s`
+- `target_bonus`
+  - 当前计算为：
+    - `(12.0 / (1/60)) * 0.03 / (1 - 0.03)`
+  - 当前约等于：
+    - `22.27`
 
 ### 17.5 终止
 
-- 姿态倾角 > `45°`
-- 球铰越界
+- 中车 `|roll| > 30°`：
+  - `bad_orientation`
+- 前车或后车 absolute `|roll| > 35°`：
+  - `head_tail_roll_out_of_bounds`
+- 任一球铰关节越界：
+  - `ball_joint_out_of_bounds`
+- 成功驻留终止：
+  - 位置进入：
+    - `target_position_tolerance = 0.3 m`
+  - 朝向进入：
+    - `target_yaw_tolerance_deg = 9°`
+  - 且：
+    - `planar_speed < 0.12 m/s`
+    - `yaw_rate_abs < 0.12 rad/s`
+  - 连续保持：
+    - `success_dwell_steps = 12`
+    - 在当前 `control_dt = 1/60 s` 下约等于 `0.2 s`
+- 当前球铰越界终止范围：
+  - yaw：`[-0.6, 0.6]`
+  - pitch：`[-1.0, 0.4]`
+  - roll：`[-0.5, 0.5]`
+- 当前 capture phase 切换参数：
+  - `capture_switch_distance = 2.0 m`
+- 当前 capture phase 底盘命令上限：
+  - `capture_base_forward_velocity_max = 0.40 m/s`
+  - `capture_base_yaw_rate_max = 0.25 rad/s`
+  - `capture_allow_reverse = True`
+
+### 17.6 观测口径
+
+- 当前 `wheel_longitudinal_slip`：
+  - 在 observation 路径按：
+    - `[-3.0, +3.0]`
+    裁切
+- 当前 `wheel_slip_angle`：
+  - 在 observation 路径不再裁切
+  - 只在 reward 的 `lateral_slip_gate` 内部按：
+    - `[-pi / lateral_slip_gate_scale, +pi / lateral_slip_gate_scale]`
+    裁切
+- 当前 Stage0 所有 observation scale 已统一为：
+  - `1.0`
+
+关于 `heading_distance_scale` 的解释：
+
+- 如果你的本意是让它代表“当前目标几何对应的常曲率弧线半径量级”，
+  - 那么 `goal_distance / (2 sin(goal_direction_max_deg))` 是合理的一阶近似
+- 但如果你的本意是让它代表“小车真实最小转弯半径”或“车辆机构学意义下的转弯半径”，
+  - 那这个公式并不严格正确
+- 当前代码里它更适合作为：
+  - `heading_gate` 的几何尺度参数
+  - 而不是车辆真实性能指标
 - 或超时
 
 ### 17.6 PPO

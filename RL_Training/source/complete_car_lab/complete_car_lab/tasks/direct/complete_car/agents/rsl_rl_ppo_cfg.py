@@ -69,8 +69,8 @@ class LocalOnPolicyRunnerCfg:
 class CompleteCarBasePPORunnerCfg(LocalOnPolicyRunnerCfg):
     seed = 1
     num_steps_per_env = 96
-    max_iterations = 300
-    save_interval = 100
+    max_iterations = 600
+    save_interval = 200
     experiment_name = "complete_car_direct"
     run_name = ""
     obs_groups = {"actor": ["actor"], "critic": ["critic"]}

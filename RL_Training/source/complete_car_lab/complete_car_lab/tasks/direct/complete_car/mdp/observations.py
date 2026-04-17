@@ -16,8 +16,7 @@ def _compute_wheel_contact_observations(
     wheel_contact_forces_w: torch.Tensor,
     wheel_radius: float,
     slip_velocity_epsilon: float,
-    slip_ratio_clip: float,
-    slip_angle_clip_rad: float,
+    wheel_longitudinal_slip_clip: float,
     total_vehicle_weight: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     x_axis_local = torch.zeros_like(wheel_body_lin_vel_w)
@@ -35,11 +34,15 @@ def _compute_wheel_contact_observations(
     safe_longitudinal_speed = torch.maximum(torch.abs(v_x), torch.full_like(v_x, slip_velocity_epsilon))
 
     # Reflect wheel-ground traction state, including tire spin, braking slip, and obstacle-climb adhesion loss.
-    wheel_longitudinal_slip = torch.clamp((v_x - v_surface) / safe_longitudinal_speed, -slip_ratio_clip, slip_ratio_clip)
+    wheel_longitudinal_slip = (v_x - v_surface) / safe_longitudinal_speed
+    wheel_longitudinal_slip = torch.clamp(
+        wheel_longitudinal_slip,
+        min=-wheel_longitudinal_slip_clip,
+        max=wheel_longitudinal_slip_clip,
+    )
 
     # Describe the mismatch angle between wheel heading and actual travel direction.
     wheel_slip_angle = torch.atan2(v_y, torch.abs(v_x) + slip_velocity_epsilon)
-    wheel_slip_angle = torch.clamp(wheel_slip_angle, -slip_angle_clip_rad, slip_angle_clip_rad)
 
     # The runtime sensor path reconstructs one wheel-ground normal-force resultant vector in world frame
     # by summing all contact-point (normal_force_scalar * contact_normal_vector) terms for each wheel.
@@ -75,8 +78,7 @@ def collect_raw_observation_terms(
         wheel_contact_forces_w=wheel_contact_forces_w,
         wheel_radius=cfg.control.wheel_radius,
         slip_velocity_epsilon=cfg.observations.wheel_slip_epsilon,
-        slip_ratio_clip=cfg.observations.wheel_longitudinal_slip_clip,
-        slip_angle_clip_rad=cfg.observations.wheel_slip_angle_clip_rad,
+        wheel_longitudinal_slip_clip=cfg.observations.wheel_longitudinal_slip_clip,
         total_vehicle_weight=total_vehicle_weight,
     )
 

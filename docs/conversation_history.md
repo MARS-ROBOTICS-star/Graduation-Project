@@ -4,6 +4,1347 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-17
 
+### Stage0 traction-aware wheel-limit parameters now have a dedicated plotting script and generated reference figure for direct visual explanation
+- Updated:
+  - `scripts/plot_traction_limit_curves.py`
+  - `results/traction_limit/traction_limit_curves_stage0.png`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - a standalone plotting helper now renders the current Stage0 traction-limit mapping as a static figure
+  - the figure explicitly shows:
+    - absolute longitudinal slip -> scale
+    - absolute slip angle -> scale
+    - normalized wheel normal-contact force -> scale
+    - resulting dynamic wheel-velocity limit under the current nominal `12 rad/s` cap
+  - the script now sets `MPLCONFIGDIR=/tmp/matplotlib` by default to avoid local cache-permission warnings in this workspace
+- Reason:
+  - the user asked for the limit logic to be explained visually rather than only numerically
+- Impact:
+  - future discussions of threshold tuning can point to one fixed artifact instead of verbally reconstructing the piecewise curves each time
+- Status:
+  - implemented
+  - figure generated successfully
+
+### Stage0 now has a first traction-aware wheel-limit layer that shrinks per-wheel velocity targets using observed slip and contact strength before wheel commands are written
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - instead of rewriting the wheel allocator Jacobian, the first execution-layer intervention is added outside the allocator:
+    - allocator still computes nominal `wheel_targets`
+    - then env computes a per-wheel dynamic velocity limit from runtime traction signals
+    - then wheel targets are clamped by those per-wheel limits before being sent to the wheel joints
+  - the current traction-aware limit uses three channels:
+    - absolute longitudinal slip
+    - absolute slip angle
+    - normalized wheel normal-contact force
+  - each channel maps to a scale in:
+    - `[0.35, 1.0]`
+  - the final per-wheel scale takes the strictest one:
+    - `min(longitudinal_scale, lateral_scale, contact_scale)`
+  - current active Stage0 parameters are:
+    - `longitudinal_slip_start/full = 0.6 / 1.5`
+    - `slip_angle_start/full = 12° / 28°`
+    - `contact_force_low/high = 0.05 / 0.12`
+    - `min_scale = 0.35`
+  - new runtime diagnostics are exported for:
+    - `Action/traction_limit_scale_mean`
+    - `Action/traction_longitudinal_scale_mean`
+    - `Action/traction_lateral_scale_mean`
+    - `Action/traction_contact_scale_mean`
+    - `Action/traction_limit_velocity_mean_raw`
+- Reason:
+  - the current allocator is purely kinematic and does not react to attachment loss or wheel-ground mismatch
+  - this first patch is meant to test whether execution-layer feedback alone can suppress obviously ineffective wheel-speed commands
+- Impact:
+  - future full runs can now directly answer:
+    - whether reducing commanded wheel speed under high slip / low contact improves net progress quality
+  - this does not yet prove effectiveness; it only changes the execution path and observability
+- Validation:
+  - static compile check passed
+  - real training smoke run passed:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_21-20-08_traction_limit_smoke_v1`
+    - `max_iterations = 1`
+- Status:
+  - implemented
+  - smoke-validated
+  - full-run effect still pending
+
+### Run `2026-04-17_20-21-01_terminal_phase_verify_v1` validates that the explicit terminal-phase Stage0 remains trainable, but terminal capture is still effectively absent because the policy almost never reaches the current capture trigger region
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Diagnosed run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_20-21-01_terminal_phase_verify_v1`
+  - Isaac log:
+    - `/tmp/isaaclab/logs/isaaclab_2026-04-17_20-21-01.log`
+- Validation scope:
+  - the run completed the full budget:
+    - `600 / 600`
+  - TensorBoard offline export was generated for the run
+- Durable diagnosis:
+  - startup and articulation creation are healthy:
+    - correct GPU device:
+      - `cuda:0`
+    - env count:
+      - `64`
+    - actor / critic obs dim:
+      - `44 / 44`
+    - action dim:
+      - `8`
+    - no startup-level articulation or actuator failure occurred
+  - the tracking branch remains healthy under the new terminal-phase code:
+    - `Train/mean_reward` rises from about:
+      - `2.42 -> 593.35`
+    - `Train/mean_episode_length` rises from about:
+      - `27.75 -> 1439.0`
+    - `Termination/time_out_rate` ends at:
+      - `1.0`
+    - `goal_pos_error` improves to about:
+      - `6.94 m`
+    - `goal_completion_pct` improves to about:
+      - `42.18%`
+    - `goal_yaw_error_abs` improves to about:
+      - `0.0698 rad`
+    - `Loss/00_value` stays numerically healthy and ends near:
+      - `0.189`
+  - terminal capture is still not learned:
+    - `Termination/success_rate` stays:
+      - `0.0`
+    - `Reward/target_bonus` stays:
+      - `0.0`
+    - `Phase/capture_rate` stays exactly zero until about:
+      - `iteration 299`
+    - even near the end, `capture_rate` remains low:
+      - last about `0.0091`
+      - peak about `0.0247`
+    - `capture_reward` becomes only weakly nonzero late in training:
+      - last about `0.00335`
+      - peak about `0.00749`
+  - inference from the metrics:
+    - the current Stage0 policy is learning to approach and align with the target
+    - but the current capture trigger is reached too rarely for the success dwell logic to become trainable
+    - this inference is supported by:
+      - current trigger:
+        - `capture_switch_distance = 2.0 m`
+      - while the run's late average `goal_pos_error` is still around:
+        - `6 ~ 7 m`
+  - ball-joint pressure is no longer the late dominant failure mode in this run:
+    - `ball_joint_limit_rate` first becomes nonzero around:
+      - `iteration 25`
+    - its peak is about:
+      - `0.917` at `iteration 155`
+    - but it returns to:
+      - `0.0`
+      in the final stage
+    - the most limit-critical axes in this run are still front-module axes:
+      - `spm1_platform_joint_z_limit_usage_max_raw` peak about:
+        - `0.979`
+      - `spm1_platform_joint_y_limit_usage_max_raw` peak about:
+        - `0.976`
+- Reason:
+  - the explicit terminal-phase implementation changes task definition in the intended direction
+  - but on the current geometry and reward scales, the policy mostly remains in the tracking regime and only occasionally touches capture mode
+- Impact:
+  - the next design discussion should focus primarily on:
+    - how to make capture-phase entry substantially more frequent
+  - not primarily on:
+    - startup robustness
+    - PPO numerical stability
+    - or late persistent ball-joint collapse
+- Status:
+  - diagnosed
+
+### Stage0 now has an explicit terminal phase implementation instead of trying to force terminal capture through command-side local tweaks alone
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - previous short experiments already showed that Stage0 cannot be turned into a terminal-capture task by only changing:
+    - command hold time
+    - goal distance
+    - target bonus ratio
+    - global reverse allowance
+  - by user confirmation, Stage0 now explicitly separates:
+    - far-goal tracking phase
+    - near-goal capture phase
+  - the current capture-phase trigger is:
+    - `goal_distance < 2.0 m`
+  - inside capture phase:
+    - base planar command limits are tightened to:
+      - `vx_max = 0.40 m/s`
+      - `yaw_rate_max = 0.25 rad/s`
+    - reverse is allowed only in this phase
+    - reward no longer uses `progress` as the main term
+    - reward switches to a dense capture reward that directly favors:
+      - smaller distance error
+      - smaller yaw error
+      - lower planar speed
+      - lower yaw-rate
+  - success is no longer only a sparse one-step bonus condition
+  - Stage0 now has a success dwell termination that requires:
+    - distance tolerance satisfied
+    - yaw tolerance satisfied
+    - low planar speed
+    - low yaw-rate
+    - continuous hold for `12` control steps
+  - new logging is exposed for:
+    - `Reward/capture_reward`
+    - `Phase/capture_rate`
+    - `Termination/success_rate`
+- Reason:
+  - the previous active Stage0 learned a healthy tracking solution but not terminal capture
+  - the new implementation moves the task definition itself from single-phase tracking toward two-phase tracking-plus-capture
+- Impact:
+  - next validation should focus on whether:
+    - `success_rate` becomes nonzero
+    - `target_bonus` starts to appear stably
+    - capture phase lowers terminal overshoot without reintroducing:
+      - critic instability
+      - late ball-joint saturation
+- Status:
+  - implemented
+  - static compile check passed
+
+### Stage0 terminal logs now include current-target completion percentage so each run can directly show how much of the nominal goal distance has been closed
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - Stage0 step metrics now export:
+    - `Tracking/goal_completion_pct`
+  - metric definition is:
+    - `max(goal_distance - goal_pos_error, 0) / goal_distance * 100%`
+  - this is not cumulative wheel-path length
+  - it is the percentage of the current nominal target distance that has already been closed in the active target segment
+  - the metric is now also added to:
+    - terminal console priority tags
+    - TensorBoard tracking aliases
+- Reason:
+  - raw `goal_pos_error` shows remaining distance, but it is less intuitive when judging whether the policy has completed roughly `20%`, `50%`, or `80%` of a target segment
+- Impact:
+  - future runs can read “distance-closed percentage” directly from the terminal without manually converting from remaining meters
+- Status:
+  - implemented
+  - static compile check pending
+
+### Per-axis ball-joint position and limit-usage metrics are now exported so future runs can identify exactly which articulation axis saturates first
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - the previous Stage0 logs only exposed:
+    - `ball_joint_pos_abs_mean_raw`
+    - `ball_joint_target_error_abs_mean_raw`
+    - `ball_joint_limit_rate`
+  - these are sufficient to diagnose articulation-margin consumption in aggregate
+  - but they are insufficient to identify which one of the six ball-joint coordinates reaches its bound first
+  - the env now exports, for each of the six ball-joint coordinates:
+    - signed mean joint position:
+      - `Observation/<joint_name>_pos_raw`
+    - mean active-side limit usage:
+      - `Observation/<joint_name>_limit_usage_mean_raw`
+    - max active-side limit usage across envs:
+      - `Observation/<joint_name>_limit_usage_max_raw`
+  - the joint order is:
+    - `spm1_platform_joint_z`
+    - `spm1_platform_joint_y`
+    - `spm1_platform_joint_x`
+    - `spm2_platform_joint_z`
+    - `spm2_platform_joint_y`
+    - `spm2_platform_joint_x`
+  - physically this maps to:
+    - front module `yaw / pitch / roll`
+    - rear module `yaw / pitch / roll`
+- Reason:
+  - aggregate mean position can hide single-axis saturation, while termination triggers on any single coordinate exceeding bounds
+- Impact:
+  - the next training run can directly answer:
+    - which articulation axis is saturating first
+  - future diagnosis no longer needs to infer the responsible axis indirectly from aggregate metrics
+- Status:
+  - implemented
+  - static compile check passed
+
+### In run `2026-04-17_17-33-20`, the late rise of `ball_joint_limit_rate` is best explained as articulation-margin consumption by a more goal-effective policy, not by posture instability
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Targeted analysis based on:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-33-20`
+  - especially the aligned time series of:
+    - `ball_joint_limit_rate`
+    - `goal_pos_error`
+    - `goal_yaw_error_abs`
+    - `progress`
+    - `heading_gate`
+    - `ball_joint_pos_abs_mean_raw`
+    - `ball_joint_target_error_abs_mean_raw`
+    - `ball_joint_vel_abs_mean_raw`
+    - `Action/policy_abs_mean`
+- Durable conclusion:
+  - the late-stage ball-joint-limit rise is not driven by body-roll instability:
+    - `tilt_deg` stays extremely low
+    - `roll_gate` stays exactly:
+      - `1.0`
+    - `head_tail_roll_limit_rate` stays:
+      - `0.0`
+  - it is also not a critic-collapse phenomenon:
+    - `Loss/00_value` stays low
+  - the more likely mechanism is:
+    - as the policy becomes better at aligning with the target, `heading_gate` rises close to:
+      - `0.96`
+    - `progress` rises to about:
+      - `1.14`
+    - action magnitude also increases:
+      - from roughly `0.43` in earlier spiking regions to about `0.57` near the end
+    - at the same time:
+      - `ball_joint_target_error_abs_mean_raw` creeps upward
+      - `ball_joint_pos_abs_mean_raw` trends upward
+    - because the reward has no soft penalty on approaching ball-joint limits, the policy is free to spend articulation margin to gain more progress and heading correction
+  - the current action semantics reinforce this mechanism:
+    - the policy now outputs:
+      - `6` ball-joint targets
+      - `2` planar commands
+    - the wheel allocator reconstructs wheel targets from:
+      - current articulation state
+      - current articulation velocity
+      - commanded planar motion
+    - therefore articulation is now a direct lever for producing useful turning behavior
+  - one more important interpretation detail:
+    - `ball_joint_pos_abs_mean_raw` remaining around `0.17 ~ 0.18 rad` does not mean the joints are globally safe
+    - termination is triggered by any one of the six ball-joint coordinates exceeding bounds
+    - so a single saturating axis can be hidden inside a moderate mean value
+- Impact:
+  - the late main problem should now be understood as:
+    - aggressive use of articulation margin for target-effective motion
+  - not as:
+    - posture collapse
+    - slip-gate collapse
+    - or general training instability
+- Status:
+  - diagnosed
+
+### Run `2026-04-17_17-33-20` confirms that the new `8`-dim action semantics remain healthy deeper into training, but ball-joint-limit pressure returns once the policy becomes more goal-effective
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Diagnosed run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-33-20`
+- Validation scope:
+  - this run reached about:
+    - `162 / 600`
+  - it is long enough for a meaningful mid-stage diagnosis
+- Durable diagnosis:
+  - the core benefits of the new action chain persist:
+    - `longitudinal_slip_gate` stays at a real nonzero level:
+      - last about `0.0055`
+    - `lateral_slip_gate` also stays nonzero:
+      - last about `0.0028`
+    - `Loss/00_value` remains healthy:
+      - last about `2.07`
+    - middle-body and outer-body posture remain very stable:
+      - `tilt_deg` last about `0.081°`
+      - `head_tail_roll_limit_rate` last:
+        - `0.0`
+  - task effectiveness improves over the shorter run:
+    - `Train/mean_reward` last about:
+      - `501.59`
+    - `goal_pos_error` last about:
+      - `7.75 m`
+    - `goal_yaw_error_abs` last about:
+      - `0.136 rad`
+    - `heading_gate` last about:
+      - `0.965`
+  - the new dominant issue is no longer slip-gate collapse or critic instability
+  - instead, late-stage failure pressure shifts back toward:
+    - `ball_joint_limit_rate`
+      - last about:
+        - `0.50`
+    - while `time_out_rate` drops to about:
+      - `0.50`
+  - `target_bonus` still remains:
+    - `0.0`
+- Reason:
+  - the new action semantics reduce wheel-level coordination burden and keep the reward surface trainable
+  - once the policy becomes better at approaching and aligning with the target, it again starts consuming articulation margin more aggressively
+- Impact:
+  - the mainline question is no longer:
+    - “does the new action space help”
+  - that is now effectively validated as yes
+  - the next tuning focus should move to:
+    - how to contain late ball-joint-limit growth under the new action semantics
+    without destroying:
+      - recovered slip-gate values
+      - critic stability
+- Status:
+  - diagnosed
+
+### The new `8`-dim action semantics (`6` ball-joint targets + `2` base planar commands through the allocator) have now passed a real training validation and materially improve slip-gate health, critic stability, and ball-joint-limit behavior
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Validated run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-28-36_action8_allocator_v1`
+- Validation scope:
+  - the run was intentionally stopped early after the trend became clear
+  - exported range is about:
+    - `66 / 600`
+- Durable diagnosis:
+  - the action-chain change is runtime-valid:
+    - actor observation dim:
+      - `44`
+    - critic observation dim:
+      - `44`
+    - action dim:
+      - `8`
+  - compared with the previous partial run
+    - `2026-04-17_17-02-10_slipclip3_latk4_v1`
+    the main improvements are structural rather than marginal:
+    - `Reward/03_longitudinal_slip_gate` no longer collapses to near-zero:
+      - current last:
+        - `0.0079`
+      - previous last:
+        - `5.27e-06`
+    - `Reward/04_lateral_slip_gate` also recovers from near-zero:
+      - current last:
+        - `0.0062`
+      - previous last:
+        - `7.74e-04`
+    - `Termination/04_ball_joint_limit_rate` no longer dominates at the current stage:
+      - current last:
+        - `0.0`
+      - previous last:
+        - `0.719`
+    - critic value learning becomes much healthier:
+      - current `Loss/00_value` last:
+        - `4.26`
+      - previous last:
+        - `312.94`
+    - middle and outer-body posture stay very stable:
+      - `Observation/03_tilt_deg` last:
+        - `0.094`
+      - `Observation/head_roll_pitch_abs_mean_raw` last:
+        - `0.0297`
+      - `Observation/tail_roll_pitch_abs_mean_raw` last:
+        - `0.0309`
+  - current task-level progress is still only mid-stage:
+    - `Train/mean_reward` last:
+      - `248.79`
+    - `goal_pos_error` last:
+      - `8.59 m`
+    - `goal_yaw_error_abs` last:
+      - `0.498 rad`
+    - `target_bonus` has not triggered yet
+- Reason:
+  - replacing six direct wheel-speed actions with two high-level planar-command actions lets the actor focus on:
+    - target-oriented command generation
+    instead of simultaneously solving:
+    - wheel-level allocation
+    - articulation coordination
+  - the wheel allocator then reconstructs physically more coherent wheel targets from:
+    - current articulation state
+    - commanded planar motion
+- Impact:
+  - future Stage0 tuning should treat the new action semantics as the current preferred mainline
+  - the main research question is no longer “is direct 6-wheel action output causing the slip-gate collapse”
+  - the next tuning focus should move to:
+    - convergence speed
+    - target-bonus activation
+    - whether longer training preserves the same critic stability
+- Status:
+  - partially validated on GPU
+
+### Stage0 action chain now uses `6` ball-joint actions plus `2` base planar-command actions, and wheel targets are reconstructed through the wheel allocator instead of being output directly by the policy
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user confirmation, active Stage0 no longer uses:
+    - direct `12`-dim action semantics with `6` wheel-speed outputs
+  - the current active action semantics are now:
+    - first `6` dims: ball-joint target actions
+    - last `2` dims: base planar-command actions
+  - Stage0 action dimension is now:
+    - `8`
+  - under the current Stage0 defaults, the base branch maps to:
+    - `v_x_cmd` with `base_forward_velocity_max = 1.2 m/s`
+    - `yaw_rate_cmd` with `base_yaw_rate_max = 0.6 rad/s`
+    - `base_allow_reverse = False`
+  - the env then applies the measured planar-command transform and calls:
+    - `TorchWheelSpeedAllocator.compute_wheel_speed_targets_from_planar_command(...)`
+    using:
+    - current ball-joint position
+    - current ball-joint velocity
+    - transformed planar command
+  - the allocator output is finally clamped by:
+    - `wheel_joint_velocity_limit_sim`
+- Reason:
+  - the previous direct wheel-speed branch forced the actor to solve:
+    - target tracking
+    - wheel-level coordination
+    at the same time
+  - this was judged too direct for the current goal-tracking Stage0 task and inconsistent with the user's confirmed use of a wheel-speed allocator
+- Impact:
+  - future Stage0 runs should interpret wheel-speed behavior as:
+    - a deterministic downstream reconstruction from high-level planar commands
+    - not as six independent wheel actions selected directly by the actor
+  - because `last_action` shrank from `12` to `8`, the current single-frame observation sizes are now:
+    - actor `44`
+    - critic `44`
+  - comparisons with older Stage0 runs that used direct 12-dim wheel actions must explicitly note the changed action semantics
+- Status:
+  - implemented
+  - static `py_compile` check passed
+  - full runtime validation pending a new training run
+
+### Stage0 now clips observation-path longitudinal slip to `[-3, 3]`, reduces lateral-slip cosine factor from `6` to `4`, and the partial validation run shows lower raw longitudinal slip but still near-zero slip gates due to the 6-wheel product
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/Stage0_reward设计详解.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, active Stage0 now:
+    - clips observation-path `wheel_longitudinal_slip` to:
+      - `[-3.0, +3.0]`
+    - keeps observation-path `wheel_slip_angle` unclipped
+    - changes:
+      - `lateral_slip_gate_scale = 4.0`
+    - therefore reward-side lateral-slip clip becomes:
+      - `[-pi/4, +pi/4]`
+  - a real GPU training run was launched:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-02-10_slipclip3_latk4_v1`
+  - the user explicitly stopped the run early once the failure mode was visible
+  - the exported partial run ends around:
+    - `527 / 600`
+- Durable diagnosis from the partial run:
+  - raw longitudinal slip improves significantly relative to the previous run:
+    - previous `2026-04-17_16-29-08` mean:
+      - about `2.79`
+    - current partial run mean:
+      - about `1.80`
+  - task-level metrics also improve versus the previous run:
+    - `Train/mean_reward` reaches about:
+      - `1019.56`
+    - `goal_pos_error` reaches about:
+      - `5.21 m`
+    - `goal_yaw_error_abs` reaches about:
+      - `0.150 rad`
+    - `target_bonus` becomes clearly nonzero
+  - but both slip gates still remain effectively collapsed:
+    - `Reward/03_longitudinal_slip_gate` last:
+      - `5.27e-06`
+    - `Reward/04_lateral_slip_gate` last:
+      - `7.74e-04`
+    - `Reward/05_composite_gate` last:
+      - `0.241`
+  - value learning is still unhealthy:
+    - `Loss/00_value` last:
+      - `312.94`
+    - max value loss exceeds:
+      - `3000`
+  - late in the partial run, the dominant termination pressure shifts back toward:
+    - `ball_joint_limit_rate`
+      - last about:
+        - `0.719`
+- Reason:
+  - clipping longitudinal slip to `±3` removes the worst raw outliers from the observation path and helps reduce the learned slip magnitude
+  - reducing lateral-slip cosine factor from `6` to `4` is a real relaxation
+  - however, with current slip levels and six-wheel multiplicative aggregation, both slip gates are still too small to behave like soft shaping terms
+- Impact:
+  - future tuning should treat the main remaining problem as:
+    - overly harsh slip-gate aggregation
+    - plus late ball-joint-limit pressure
+  - the next useful design question is no longer “should `k` be smaller than `6`”
+  - it is now “should the six-wheel product remain the aggregation rule”
+- Status:
+  - implemented and partially validated on GPU
+
+### After setting all active Stage0 observation scales to `1.0`, the dominant effect on the latest run comes mainly from unclipped slip observations rather than from the other observation terms
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - in the active Stage0 actor trunk, the main observation groups are defined in:
+    - `mdp/observations.py`
+  - the current Stage0 config sets all observation scales to:
+    - `1.0`
+    in:
+    - `complete_car_stage0_cfg.py`
+  - the current runner still enables observation normalization:
+    - `actor.obs_normalization = true`
+    - `critic.obs_normalization = true`
+    in the run-time `agent.yaml`
+  - therefore, changing all scales to `1.0` is not neutral, but its effect is moderated by empirical observation normalization
+  - under the latest diagnosed run `2026-04-17_16-29-08`, most non-slip active observation terms still stay in roughly reasonable magnitude bands:
+    - projected gravity / body posture / last action:
+      - mostly `O(1)`
+    - ball-joint position:
+      - mostly `O(1)`
+    - relative goal commands:
+      - mainly `O(1) ~ O(10)`
+    - wheel normal-contact-force terms:
+      - mainly `O(0.1) ~ O(1)`
+  - the clearly oversized active observation term is still:
+    - `wheel_longitudinal_slip`
+      - observed aggregated magnitude around:
+        - mean `2.79`
+        - max `5.69`
+  - `wheel_slip_angle` also stays high:
+    - around:
+      - mean `0.75 rad`
+  - durable interpretation:
+    - the latest run is affected much more by the unclipped slip observations and the harsh slip-gate reward than by setting the other observation scales to `1.0`
+- Reason:
+  - most active observation groups remain within moderate ranges and are normalized by the model-side empirical normalizer
+  - raw slip observations, especially longitudinal slip, are the main source of large-magnitude outliers
+- Impact:
+  - future analysis should not over-attribute the latest degradation to “all scales = 1.0” in general
+  - the primary attention should stay on:
+    - raw slip magnitude
+    - slip clipping policy
+    - slip-gate shaping strength
+- Status:
+  - diagnosed
+
+### If longitudinal-slip clipping is restored for observation, the first reasonable symmetric trial range should be around `[-3.0, 3.0]`, not the old small clip
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - based on the latest run `2026-04-17_16-29-08`:
+    - `wheel_longitudinal_slip_abs_mean_raw` is about:
+      - mean `2.79`
+      - last `2.68`
+      - max `5.69`
+  - if observation-path clipping is reintroduced, a first reasonable trial is:
+    - `wheel_longitudinal_slip_clip = 3.0`
+    - i.e. clip to:
+      - `[-3.0, +3.0]`
+  - durable interpretation:
+    - this clip is not meant to define “good slip”
+    - it is meant to suppress large outliers while keeping the current main operating band distinguishable to the policy
+- Reason:
+  - clipping back to a small range like `[-1, 1]` would collapse too much of the current operating distribution into saturation
+  - leaving the term fully unclipped exposes the normalizer and policy input to very large tail values that are not the main control signal
+- Impact:
+  - if the user chooses to re-enable longitudinal-slip clipping, the first test should be around `±3` rather than immediately returning to very small bounds
+- Status:
+  - recommended, not yet implemented
+
+### The lateral-slip reward clip should stay tied to the cosine parameter; with the current cosine factor `6`, the mathematically consistent clip is still `[-pi/6, +pi/6]`
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - the active lateral-slip gate is:
+    - `0.5 * cos(k * slip_angle) + 0.5`
+  - to keep this gate monotonic from `1` down to `0` without reward “rebound”, the reward-side clip should match:
+    - `[-pi / k, +pi / k]`
+  - therefore, with the current:
+    - `k = 6`
+    the reward-side clip:
+    - `[-pi/6, +pi/6]`
+    is mathematically correct and should not be widened independently
+  - if the user wants a wider effective lateral-slip reward region, the correct change is:
+    - reduce `k`
+    rather than only widening the clip
+  - a practical next candidate would be:
+    - `k = 4`
+    - clip:
+      - `[-pi/4, +pi/4]`
+    because the latest run has slip-angle magnitude near:
+      - `0.75 rad`
+    and `pi/4 ≈ 0.785 rad`
+- Reason:
+  - widening the clip while keeping `k = 6` would move the cosine past its single descending half-wave and create non-monotonic reward behavior
+- Impact:
+  - future tuning must treat:
+    - `lateral_slip_gate_scale`
+    - reward-side lateral-slip clip
+    as a coupled design choice rather than separate knobs
+- Status:
+  - diagnosed
+
+### Run `2026-04-17_16-29-08` shows that the new slip-gated Stage0 reward preserves survival and target approach, but the slip gates are so harsh that they nearly shut off progress reward and destabilize the critic
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Diagnosed run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_16-29-08`
+- Durable diagnosis:
+  - this run does learn a workable survival-and-approach policy:
+    - `Train/mean_episode_length` reaches about:
+      - `1335.64 / 1439`
+    - `Termination/time_out_rate` ends at:
+      - `1.0`
+    - `Tracking/goal_pos_error` falls to about:
+      - `4.88 m`
+    - `Tracking/goal_yaw_error_abs` falls to about:
+      - `0.259 rad`
+    - `Reward/target_bonus` is nonzero at the end
+  - posture and articulation safety are not the end-stage bottleneck in this run:
+    - `Observation/tilt_deg` stays around:
+      - `0.31°`
+    - `Observation/head_roll_pitch_abs_mean_raw` ends around:
+      - `0.083 rad`
+    - `Observation/tail_roll_pitch_abs_mean_raw` ends around:
+      - `0.084 rad`
+    - `Termination/head_tail_roll_limit_rate` ends at:
+      - `0.0`
+    - `Termination/ball_joint_limit_rate` ends at:
+      - `0.0`
+  - the dominant failure mode has moved into the reward surface itself:
+    - `Reward/01_progress` ends around:
+      - `1.123`
+    - `Reward/00_gated_progress` ends around:
+      - `0.364`
+    - `Reward/03_longitudinal_slip_gate` ends near:
+      - `2.58e-4`
+    - `Reward/04_lateral_slip_gate` ends near:
+      - `1.94e-4`
+    - `Reward/05_composite_gate` ends around:
+      - `0.215`
+    - `Reward/06_roll_gate` stays effectively:
+      - `1.0`
+  - the observation magnitudes explain why the gates collapse:
+    - `Observation/wheel_longitudinal_slip_abs_mean_raw` ends around:
+      - `2.68`
+    - `Observation/wheel_slip_angle_abs_mean_raw` ends around:
+      - `0.76 rad`
+    - with the current design:
+      - six-wheel multiplicative aggregation
+      - `longitudinal_slip_gate_scale = 0.3`
+      - `lateral_slip_gate_scale = 6.0`
+    - these slip magnitudes make both slip gates almost zero for most of training
+  - critic stability degrades severely under this reward shape:
+    - `Loss/value` ends around:
+      - `852`
+    - max value loss exceeds:
+      - `1000`
+- Reason:
+  - by user request, the observation path now exposes unclipped longitudinal slip and slip angle
+  - the active slip gates still use very strict scales and multiply all six wheel terms together
+  - this combination makes the slip-based reward terms function less like soft regularizers and more like near-binary shutdown factors
+  - as a result, the policy can survive and approach the goal, but the progress reward is heavily attenuated and the critic fits a badly compressed return distribution
+- Impact:
+  - future runs under the current slip-gate bundle should be interpreted as:
+    - survival and target approach are not the main blocker
+    - the main blocker is that the slip gates are too harsh for the current slip magnitude distribution
+  - further tuning should focus on the slip-gate strength and aggregation logic before adding more reward terms
+- Status:
+  - diagnosed
+
+### Stage0 wheel-slip observations are now unclipped in the observation path, reward keeps only the lateral-slip clip, and all active Stage0 observation scales are set to `1.0`
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the observation path no longer clips:
+    - `wheel_longitudinal_slip`
+    - `wheel_slip_angle`
+  - raw wheel-slip values are now passed directly into the observation pipeline
+  - the reward path still clips lateral slip internally for the cosine gate:
+    - `[-pi / lateral_slip_gate_scale, +pi / lateral_slip_gate_scale]`
+  - the longitudinal-slip reward uses the now-unclipped slip values directly
+  - all active Stage0 observation scales are now set to:
+    - `1.0`
+- Reason:
+  - the user explicitly wanted the policy to see raw wheel-slip states, while keeping only the reward-specific lateral-slip clipping logic
+- Impact:
+  - new runs are no longer directly comparable to previous Stage0 runs on the magnitude distribution of:
+    - `wheel_longitudinal_slip`
+    - `wheel_slip_angle`
+    inside the policy observation input
+  - future interpretation should distinguish:
+    - observation-path slip values
+    - reward-path clipped lateral-slip values
+- Status:
+  - implemented
+  - static compile check passed
+
+### Stage0 reward now adds longitudinal-slip and lateral-slip wheel-product gates, and averages them with `heading_gate` into the active `composite_gate`
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active Stage0 reward trunk is now:
+    - `target_bonus + progress * composite_gate * roll_gate`
+  - where:
+    - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
+  - the new longitudinal-slip gate is defined as:
+    - for each wheel:
+      - `exp[-1/2 * (longitudinal_slip / scale)^2]`
+    - then multiply all six wheel terms together
+    - active parameter:
+      - `longitudinal_slip_gate_scale = 0.3`
+  - the new lateral-slip gate is defined as:
+    - first clip each wheel slip angle to:
+      - `[-pi / scale, +pi / scale]`
+    - then per wheel compute:
+      - `0.5 * cos(scale * slip_angle) + 0.5`
+    - then multiply all six wheel terms together
+    - active parameter:
+      - `lateral_slip_gate_scale = 6.0`
+  - the middle-body `roll_gate` remains unchanged
+- Reason:
+  - the user explicitly decided to add traction-quality shaping back into the reward, but now in the form of wheel-wise multiplicative gates rather than the older removed gate bundle
+- Impact:
+  - future Stage0 diagnosis should explicitly watch:
+    - `Reward/heading_gate`
+    - `Reward/longitudinal_slip_gate`
+    - `Reward/lateral_slip_gate`
+    - `Reward/composite_gate`
+    - `Reward/roll_gate`
+  - reward interpretation is no longer the previous:
+    - `heading_gate * roll_gate`
+    trunk
+- Status:
+  - implemented
+  - static compile check passed
+
+### Stage0 active design is now rolled back to the middle-body-only reward gate, while front/rear absolute roll is moved into termination with a `35°` limit
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/Stage0_reward设计详解.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active Stage0 reward trunk is rolled back to:
+    - `target_bonus + progress * heading_gate * roll_gate`
+  - the temporary:
+    - `head_roll_gate`
+    - `tail_roll_gate`
+    - `head_tail_roll_gate`
+    are removed from the active reward path
+  - front/rear absolute world-roll is now handled by termination instead:
+    - if either front or rear module has `|roll| > 35°`, the episode terminates immediately
+  - a new termination metric is now exported:
+    - `Termination/head_tail_roll_limit_rate`
+- Reason:
+  - the previous reward comparison showed that front/rear absolute-roll shaping pushed the policy into a low-roll but lower-task-quality local optimum
+  - the user therefore decided that front/rear absolute roll should be treated as a safety boundary, not as a continuous reward-shaping term
+- Impact:
+  - future Stage0 runs should be interpreted against the restored reward trunk, not against the short-lived front/rear roll-gated reward version
+  - front/rear absolute roll is now part of the active failure definition rather than the progress reward surface
+- Status:
+  - implemented
+  - static compile check passed
+
+### Comparing `2026-04-17_14-12-39` against `2026-04-17_15-30-13` shows that the newly added front/rear absolute-roll gate successfully suppresses posture excursions, but pushes Stage0 into a lower-roll yet lower-task-quality local optimum
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Compared runs:
+  - previous:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_14-12-39`
+  - current:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_15-30-13`
+- Important comparability note:
+  - these runs are not strictly same-config:
+    - `14-12-39` still uses only the middle-body `roll_gate`
+    - `15-30-13` adds:
+      - `head_roll_gate`
+      - `tail_roll_gate`
+      - `head_tail_roll_gate`
+    - and its reward config now includes the new front/rear roll parameters
+- Durable diagnosis:
+  - the new front/rear roll shaping strongly reduced posture excursions:
+    - middle-body roll metric `tilt_deg` last-10 mean:
+      - `15.83° -> 0.21°`
+    - front-module roll/pitch magnitude last-10 mean:
+      - `0.709 -> 0.081 rad`
+    - ball-joint position magnitude last-10 mean:
+      - `0.406 -> 0.232`
+  - but task-level quality degraded:
+    - `Train/mean_reward` last-10 mean:
+      - `1582.62 -> 1351.16`
+    - `goal_pos_error` last-10 mean:
+      - `5.64 -> 5.94 m`
+    - `goal_yaw_error_abs` last-10 mean:
+      - `0.338 -> 0.664 rad`
+    - `target_bonus` last-10 mean:
+      - `0.0203 -> 0.0`
+  - control-quality gains are limited and mixed:
+    - longitudinal slip improves only slightly:
+      - `0.831 -> 0.810`
+    - slip angle stays high and roughly unchanged:
+      - `0.740 -> 0.742 rad`
+    - total normal-contact-force ratio gets worse:
+      - `0.948 -> 0.838`
+  - the new gates are not strongly active at the converged end regime:
+    - `episode_per_step/head_tail_roll_gate` last-10 mean is already:
+      - `1.0`
+    - `Reward/roll_gate` last-10 mean is also nearly:
+      - `1.0`
+  - therefore the main mechanism is:
+    - not “the gate keeps suppressing reward at the end”
+    - but “the gate reshapes exploration and training toward a more conservative low-roll strategy”
+- Reason:
+  - for this articulated vehicle, front/rear module posture excursions are partly coupled with turning and heading correction
+  - constraining front/rear absolute world-roll throughout the whole trajectory suppresses not only dangerous posture, but also useful articulation that helps reorientation and approach
+  - this is why the learned policy becomes:
+    - lower roll
+    - smaller articulation amplitude
+    - smaller action amplitude
+    - but worse heading correction and weaker target completion
+- Impact:
+  - future tuning should not interpret front/rear absolute-roll suppression as a free improvement
+  - the next design step should separate:
+    - dangerous posture to suppress
+    - versus turning-essential posture that should remain available
+- Status:
+  - diagnosed
+
+### Stage0 reward now keeps the existing middle-body `roll_gate`, does not enable `straighten_gate`, and adds a symmetric front/rear absolute-roll gate to the progress trunk
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/Stage0_reward设计详解.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active Stage0 reward trunk is now:
+    - `target_bonus + progress * heading_gate * roll_gate * head_tail_roll_gate`
+  - the existing middle-body `roll_gate` stays unchanged:
+    - when `|middle_roll| <= 5°`, `roll_gate = 1`
+    - when `|middle_roll| > 5°`, `roll_gate = exp[-1/2 * (goal_yaw_error / body_car_roll_gate)^2]`
+  - `straighten_gate` is intentionally not enabled in the active code path
+  - a new front/rear absolute-roll gate now suppresses progress when either outer module rolls too far in world frame:
+    - `head_roll_gate = 1` inside the free zone
+    - `head_roll_gate = exp[-1/2 * ((|head_roll| - head_roll_free_deg) / head_roll_sigma_deg)^2]` outside the free zone
+    - `tail_roll_gate` is defined the same way
+    - `head_tail_roll_gate = min(head_roll_gate, tail_roll_gate)`
+  - the user explicitly approved symmetric initial parameters:
+    - `head_roll_free_deg = 8.0`
+    - `tail_roll_free_deg = 8.0`
+    - `head_roll_sigma_deg = 6.0`
+    - `tail_roll_sigma_deg = 6.0`
+- Reason:
+  - the active task definition now requires the front and rear modules to stay within a stable absolute-roll envelope, but more softly than the middle body
+  - the user decided not to activate the near-goal straightening term yet
+- Impact:
+  - future Stage0 diagnoses should watch:
+    - `Reward/head_roll_gate`
+    - `Reward/tail_roll_gate`
+    - `Reward/head_tail_roll_gate`
+    alongside the existing middle-body `roll_gate`
+  - the new reward is no longer directly comparable to runs that only used:
+    - `target_bonus + progress * heading_gate * roll_gate`
+- Status:
+  - implemented
+  - static compile check passed
+
+### Stage0 logging and TensorBoard now expose the new front/rear roll-gate metrics explicitly
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active step-metric export now includes:
+    - `Reward/head_roll_gate`
+    - `Reward/tail_roll_gate`
+    - `Reward/head_tail_roll_gate`
+  - these metrics are now available both in:
+    - terminal training logs
+    - TensorBoard event files
+  - the TensorBoard alias ordering was expanded so the new reward cards appear in the intended reward block
+- Reason:
+  - once front/rear absolute-roll gates were added into the reward trunk, the user needed direct visibility into whether the front gate, rear gate, or their minimum was actually suppressing progress
+- Impact:
+  - future run diagnosis can now separate:
+    - middle-body roll suppression
+    - front-module roll suppression
+    - rear-module roll suppression
+    - combined head-tail suppression
+- Status:
+  - implemented
+  - static compile check passed
+
+### Stage0 ball-joint termination bounds are now tightened to `yaw[-0.6,0.6]`, `pitch[-1.0,0.4]`, `roll[-0.5,0.5]`, and any violation now directly ends the episode
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active Stage0 ball-joint termination limits are now:
+    - yaw: `[-0.6, 0.6]`
+    - pitch: `[-1.0, 0.4]`
+    - roll: `[-0.5, 0.5]`
+  - these limits are used directly by the termination path:
+    - once any controlled ball-joint position exceeds the configured range, the episode is terminated immediately
+  - this change only updates the termination bounds:
+    - it does not change the action target limits in the current Stage0 config
+- Reason:
+  - the user explicitly wanted the tighter ball-joint range to define the direct episode-ending condition
+- Impact:
+  - future Stage0 runs should expect earlier termination on aggressive pitch/yaw excursions than before
+  - documentation should no longer claim that the ball-joint termination bounds are identical to the action bounds
+- Status:
+  - implemented
+  - static compile check pending this session's final verification
+
+### Active `tilt` semantics and `bad_orientation` now use middle-body absolute roll only; middle-body pitch is no longer part of the posture-failure definition
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active posture semantics are now roll-only:
+    - `Observation/tilt_deg` now means:
+      - middle-body `|roll|` in degrees
+    - `bad_orientation` now triggers on:
+      - middle-body `|roll| > orientation_limit_deg`
+  - middle-body pitch is no longer counted by this active posture metric or termination path
+- Reason:
+  - the user explicitly decided that pitch should be allowed and the current active posture constraint should focus on roll only
+- Impact:
+  - old runs and new runs are no longer directly comparable on:
+    - `Observation/tilt_deg`
+    - `Termination/bad_orientation_rate`
+    unless you remember this semantics change
+  - future analysis of posture should now distinguish clearly between:
+    - middle-body roll
+    - middle-body pitch
+    - front/rear module roll-pitch behavior
+- Status:
+  - implemented
+  - static compile check pending this session's final verification
+
+### Run `2026-04-17_14-12-39` shows that adding `roll_gate` plus tightening `orientation_limit_deg` to `30°` materially improves survival and goal reaching, but does not drive the policy into a genuinely low-tilt regime
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Compared runs:
+  - previous:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_13-21-54`
+  - current:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_14-12-39`
+- Durable diagnosis:
+  - survival improved strongly:
+    - `mean_episode_length last: 845.94 -> 1400.44`
+    - `time_out_rate last: 0.57 -> 1.00`
+    - `ball_joint_limit_rate last: 0.43 -> 0.00`
+  - goal reaching also improved:
+    - `goal_pos_error last: 7.38 m -> 5.38 m`
+    - `target_bonus` became non-zero
+  - posture improved, but only from a high-tilt regime to a medium-tilt regime:
+    - `tilt_deg last: 21.21° -> 15.96°`
+  - other control-quality tradeoffs remain:
+    - longitudinal slip worsened:
+      - `0.79 -> 0.83`
+    - lateral slip improved only slightly:
+      - `0.77 rad -> 0.74 rad`
+    - front-module roll/pitch became even larger:
+      - `head_roll_pitch_abs_mean_raw last: 0.57 -> 0.73 rad`
+    - critic value loss deteriorated sharply:
+      - `47.8 -> 203.3`
+- Why tilt still does not come down enough:
+  - the active `roll_gate` is only a conditional indirect gate:
+    - it activates only when `|body_car_roll| > 5°`
+    - once activated, it depends on `goal_yaw_error`, not on the actual roll magnitude beyond the threshold
+  - in this run, the active gate stayed weak on average:
+    - `Reward/roll_gate last ≈ 0.955`
+    - meaning progress is still only mildly attenuated in the common late-stage regime
+  - the measured `tilt` is total middle-body inclination, while the gate only watches:
+    - `body_car_roll`
+    so pitch-driven tilt is not directly punished by this gate
+  - the tightened bad-orientation threshold:
+    - `30°`
+    is still well above the learned operating regime around:
+    - `15° ~ 16°`
+    so it almost never becomes an active constraint
+- Impact:
+  - future tuning should not assume that making `roll_gate` exist is sufficient to produce low-tilt behavior
+  - if the target is to reduce `tilt` much further, the next change must either:
+    - strengthen the roll gate itself
+    - start gating directly on `tilt`
+    - or penalize the posture/slip mechanism more directly
+- Status:
+  - diagnosed
+
+### Stage0 reward clarification: `roll_gate` angular scale is already parameterized, current `target_bonus` is about `22.27`, and `heading_distance_scale` should be read as a geometric scale rather than the vehicle's true minimum turning radius
+- Updated:
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - the `pi / 16` used by the active `roll_gate` is already a named reward parameter:
+    - `body_car_roll_gate`
+  - under the current Stage0 configuration:
+    - `goal_distance = 12.0`
+    - `control_dt = 1 / 60`
+    - `target_bonus_ratio = 0.03`
+  - the active target bonus magnitude is:
+    - `(goal_distance / control_dt) * ratio / (1 - ratio)`
+    - about `22.27`
+  - the current:
+    - `heading_distance_scale = goal_distance / (2 sin(goal_direction_max_deg))`
+    should be interpreted as:
+    - a geometric scale for the heading gate
+    - not the robot's true minimum turning radius in a strict vehicle-kinematics sense
+- Reason:
+  - the user asked to verify whether the reward-angle scale had a named parameter, how large the current target bonus is, and whether the heading scale formula is physically correct
+- Impact:
+  - future reward tuning can directly modify:
+    - `body_car_roll_gate`
+  - future thesis or diagnosis writing should avoid overstating:
+    - `heading_distance_scale`
+    as a measured vehicle turning-radius capability
+- Status:
+  - documented
+
+### Stage0 active reward is no longer pure `target_bonus + progress * heading_gate`; it now adds a conditional middle-roll gate, and the bad-orientation termination threshold is tightened to `30°`
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/Stage0_reward设计详解.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active Stage0 reward trunk is now:
+    - `target_bonus + progress * heading_gate * roll_gate`
+  - the new `roll_gate` activates only when the absolute middle-body roll exceeds:
+    - `5°`
+  - once activated, it is computed as:
+    - `exp[-1/2 * (goal_yaw_error / (pi/16))^2]`
+  - the middle-body roll is read from the articulation root orientation, i.e. the current middle body:
+    - `body_car_chassis`
+  - by user request, the bad-orientation termination threshold is now tightened from:
+    - `45°`
+    to:
+    - `30°`
+- Reason:
+  - the user wanted progress to be further gated once the middle body begins to roll noticeably, and wanted the environment to terminate earlier on aggressive whole-body tilt
+- Impact:
+  - future Stage0 runs should no longer be interpreted against the previous “minimal reward only” baseline without noting the new roll-dependent gate
+  - `Reward/roll_gate` is now part of the active TensorBoard / console reward surface
+  - future post-run diagnosis should watch the interaction among:
+    - `heading_gate`
+    - `roll_gate`
+    - `gated_progress`
+    - `Termination/bad_orientation_rate`
+- Status:
+  - implemented
+  - static compile check pending this session's final verification
+
+### Stage0 command timing has been updated to `episode_length_s = 24.0` and `resampling_time = 8.0` so one episode now spans three target segments while each 12 m target gets a longer reachable window
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the active Stage0 command timing is now:
+    - `episode_length_s = 24.0`
+    - `resampling_time = 8.0`
+  - the current geometry remains:
+    - `goal_distance = 12.0`
+    - `goal_direction_max_deg = 30.0`
+    - `goal_heading_delta_max_deg = 12.0`
+  - under this timing, one episode now covers three target segments by default:
+    - reset sample at `t = 0 s`
+    - resample at `t = 8 s`
+    - resample at `t = 16 s`
+- Reason:
+  - the user explicitly required:
+    - increasing the single-episode duration
+    - increasing the target resampling interval
+    - ensuring the vehicle has enough time to reach each sampled target
+    - keeping at least three target samplings within one episode
+  - the latest minimal-reward run showed the learned distance-closing rate was about:
+    - `Reward/progress last ≈ 1.64 m/s`
+  - which implies roughly:
+    - `12 / 1.64 ≈ 7.3 s`
+    to close a full `12 m` target at that late-stage rate
+  - therefore `8.0 s` is a direct timing change aligned with the user's current objective
+- Impact:
+  - future Stage0 runs should no longer be interpreted using the old:
+    - `16.0 s / 5.3 s`
+    timing bundle
+  - `Train/mean_episode_length` and timeout-related readings will no longer be directly comparable in absolute scale to runs collected under the old bundle
+  - the next diagnosis should focus on whether the new timing actually converts already learned progress into:
+    - non-zero `target_bonus`
+    - lower terminal `goal_pos_error`
+    - fewer ball-joint-limit terminations before target arrival
+- Status:
+  - implemented
+  - static compile check pending this session's final verification
+
+### Stage0 heading reward `kd` is no longer a fixed constant and is now tied to the task-geometry turn-radius scale
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by user request, the heading reward scale:
+    - `heading_distance_scale`
+    should no longer stay at a hand-tuned constant
+  - it is now computed from the current Stage0 command geometry as:
+    - `heading_distance_scale = goal_distance / (2 sin(goal_direction_max_deg))`
+  - under the current Stage0 command bundle:
+    - `goal_distance = 12.0`
+    - `goal_direction_max_deg = 30.0`
+  - the resulting active value is:
+    - `heading_distance_scale = 12.0`
+- Reason:
+  - the user wanted the heading reward's `kd` to reflect the same turn-radius scale implied by the target geometry, instead of using the previous fixed value:
+    - `5.0`
+- Impact:
+  - future Stage0 command-geometry changes will now automatically propagate into the heading gate scale
+  - reward interpretation should now treat `heading_gate` as being normalized by the current geometric turn-radius scale, not by a stale manual constant
+- Status:
+  - implemented
+  - static compile check pending this session's final verification
+
+### Full minimal-reward Stage0 run `2026-04-17_13-21-54` confirms strong progress learning, but the active bottleneck has shifted back to ball-joint-limit terminations, aggressive posture, and high critic value loss
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_13-21-54`
+- Durable diagnosis:
+  - under the current minimal reward trunk:
+    - `target_bonus + progress * heading_gate`
+  - and the current Stage0 command bundle:
+    - `goal_distance = 12.0`
+    - `goal_direction_max_deg = 30.0`
+    - `goal_heading_delta_max_deg = 12.0`
+  - the policy clearly learned sustained goal-directed motion:
+    - `Train/mean_reward last ≈ 1365.38`
+    - `Train/mean_episode_length last ≈ 845.94 / 959`
+    - `Reward/gated_progress last ≈ 1.60`
+    - `Tracking/goal_pos_error last ≈ 7.38 m`
+  - however the late-stage survival quality degraded again:
+    - `Termination/time_out_rate last ≈ 0.57`
+    - `Termination/terminated_rate last ≈ 0.43`
+    - `Termination/ball_joint_limit_rate last ≈ 0.43`
+    - `Termination/bad_orientation_rate` stayed zero and was not emitted
+  - this means the dominant reset cause in this run is:
+    - ball-joint-out-of-bounds
+    - not direct bad-orientation termination
+  - posture and traction quality remain poor:
+    - `tilt_deg last ≈ 21.21°`
+    - `wheel_slip_angle_abs_mean_raw last ≈ 0.766 rad`
+    - `wheel_longitudinal_slip_abs_mean_raw last ≈ 0.790`
+    - `wheel_normal_contact_force_sum_raw last ≈ 0.912`
+  - critic stability is still a live issue rather than a harmless transient:
+    - `Loss/value last ≈ 47.8`
+    - `Loss/value last10 ≈ 98.6`
+- Turn-radius interpretation:
+  - the active metric:
+    - `Observation/turn_radius_raw`
+    is currently a COM-based planar instantaneous curvature-radius diagnostic:
+    - `R = ||v_xy|| / |yaw_rate|`
+  - it is only averaged over envs that satisfy:
+    - `||v_xy|| > 0.2 m/s`
+    - `|yaw_rate| > 0.05 rad/s`
+  - therefore it should not be interpreted as:
+    - the robot's geometric minimum turning radius
+    - an Ackermann-style steering radius
+  - in this run:
+    - `turn_radius_raw last ≈ 10.05 m`
+    - `turn_radius_raw last10 ≈ 9.94 m`
+  - against the current task geometry, this value is physically plausible as a broad-arc turning regime:
+    - with `goal_distance = 12.0 m` and `goal_direction_max_deg = 30°`, a simple constant-curvature point-reaching arc has radius on the order of:
+      - `R = d / (2 sin alpha)`
+      - which gives about `12 m` at `alpha = 30°`
+  - practical interpretation:
+    - the policy is not currently demonstrating a tight-turn capability
+    - it is more consistent with wide-arc forward motion that trades yaw agility for speed
+    - across training iterations, rising `turn_radius_raw` coincides with rising `tilt_deg` and lateral slip, so this metric currently reads more like “wide, aggressive arcing motion” than “clean controlled steering”
+- Impact:
+  - future Stage0 analysis should stop reading this branch as “can progress and therefore is healthy”
+  - the active next question is now:
+    - how to keep the recovered progress signal without driving the ball joints into limit and without letting posture/side-slip deteriorate
+  - when using `turn_radius_raw`, always distinguish:
+    - curvature-radius diagnosis
+    - versus true minimum-turning-radius capability
+- Status:
+  - diagnosed
+  - should guide the next Stage0 task/control iteration
+
 ### Stage0 TensorBoard step metrics now include the middle-module planar turn-radius diagnostic `Observation/turn_radius_raw`
 - Updated:
   - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
@@ -5366,3 +6707,119 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - code structure updated
   - static syntax validation passed
   - static syntax validation passed
+
+### Full 600-iteration probe run confirms the active 8D action-space mainline is stable, and front-module yaw is the dominant temporary ball-joint pressure axis
+- Date:
+  - 2026-04-17
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-02-38_axis_usage_probe_v1`
+- Decision / conclusion:
+  - with the active Stage0 stack:
+    - `6` ball-joint target actions
+    - `2` planar base commands
+    - allocator-generated wheel speeds
+  - a full `600 / 600` run now finishes with:
+    - `Train/mean_reward ≈ 616.77`
+    - `Train/mean_episode_length = 1439.0`
+    - `Termination/time_out_rate = 1.0`
+    - `Termination/ball_joint_limit_rate = 0.0`
+    - `Tracking/goal_pos_error ≈ 7.09 m`
+    - `Tracking/goal_yaw_error_abs ≈ 0.0629 rad`
+    - `Reward/target_bonus = 0.0`
+    - `Loss/value ≈ 0.315`
+  - therefore, the latest durable reading is:
+    - the active 8D action-space mainline is currently the healthiest Stage0 mainline
+    - late-stage `ball_joint_limit` resurgence is not a durable default conclusion under the current stack
+    - ball-joint-limit pressure can appear transiently in early/mid training, but it no longer persists to the end of training in this full run
+- Axis-level conclusion:
+  - the newly added per-axis limit-usage metrics show that the dominant temporary pressure axis is:
+    - `spm1_platform_joint_z`
+  - physical meaning:
+    - front-module `yaw`
+  - during nonzero `ball_joint_limit_rate` steps, this axis consistently had the highest `limit_usage_max_raw`
+  - its observed peak was approximately:
+    - `0.966`
+  - by the end of training, all six axes had fallen back into a safe region
+- Reason:
+  - the probe run was added because aggregate metrics could not tell which ball-joint coordinate was being consumed first
+  - the new axis-level logs were sufficient to identify the dominant pressure axis
+- Impact:
+  - future Stage0 tuning should no longer treat “late ball-joint resurgence” as the default main blocker
+  - the new main blocker is:
+    - the policy learns strong progress and yaw alignment, but still does not stably enter the terminal success region
+  - if future tuning needs ball-joint soft regularization, prioritize the front-module `yaw` axis first rather than treating all six axes as equally suspicious
+- Status:
+  - durable conclusion promoted from a full completed run
+
+### Directly converting Stage0 from tracking to terminal capture by command-side local edits failed across four short runs
+- Date:
+  - 2026-04-17
+- Runs:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-35-19_capture_holdgoal_v1`
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-38-44_capture_holdgoal_goal6_v1`
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-41-26_capture_holdgoal_goal6_bonus10_v1`
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-44-04_capture_holdgoal_goal6_bonus10_reverse_v1`
+- Decision / conclusion:
+  - starting from the healthy active Stage0 mainline, the following capture-oriented edits were tested in sequence:
+    - hold one goal for the whole episode instead of resampling every `8 s`
+    - shorten `goal_distance` from `12 m` to `6 m`
+    - raise `target_bonus_ratio` from `0.03` to `0.10`
+    - allow reverse planar commands
+  - all four short runs degraded training instead of improving terminal capture
+- Key findings:
+  - `holdgoal12`:
+    - `mean_reward ≈ 89.68`
+    - `ball_joint_limit_rate ≈ 0.339`
+    - `target_bonus = 0`
+  - `holdgoal6`:
+    - `goal_pos_error ≈ 4.41 m`
+    - `target_bonus = 0`
+    - policy stalled far from the success zone
+  - `holdgoal6_bonus10`:
+    - `progress` already collapsed to around zero / negative
+    - `target_bonus = 0`
+  - `holdgoal6_bonus10_reverse`:
+    - `target_bonus` became only occasional and weak
+    - `goal_yaw_error_abs` worsened to about `0.71 rad`
+    - `value loss` exploded to about `214.7`
+- Durable interpretation:
+  - the current Stage0 stack is still fundamentally a tracking-style shaped task
+  - it cannot be turned into a stable terminal-capture task by command-side local edits alone
+  - simply holding a goal longer, shrinking the target distance, boosting terminal bonus, or enabling reverse does not solve the structural mismatch
+- Impact:
+  - keep the active default Stage0 config on the previously healthy mainline:
+    - `resampling_time = 8.0`
+    - `goal_distance = 12.0`
+    - `target_bonus_ratio = 0.03`
+    - `base_allow_reverse = False`
+  - future terminal-capture work should not start from more command-geometry tweaks alone
+  - the next research question has shifted to:
+    - whether Stage0 needs an explicit terminal phase / terminal objective design instead of only reshaping current command semantics
+- Status:
+  - active defaults restored after experiments
+
+### Lowering `heading_distance_scale (kd)` from `12` to `6` is too permissive and degrades the healthy Stage0 mainline
+- Date:
+  - 2026-04-17
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_19-48-06_kd6_v1`
+- Decision / conclusion:
+  - setting `heading_distance_scale = 6.0` was tested as a direct way to make the heading gate more tolerant in the early phase
+  - the run was stopped around `26 / 600` because the failure trend was already clear
+- Key findings:
+  - `goal_yaw_error_abs` deteriorated quickly to about `1.07 ~ 1.22 rad`
+  - `heading_gate` mid-run dropped to around `0.70 ~ 0.75`
+  - `ball_joint_limit_rate` spiked to about `0.781` by iteration `26`
+  - `target_bonus` remained `0`
+- Durable interpretation:
+  - reducing `kd` from `12` to `6` does widen the heading gate in the early stage
+  - but it also relaxes the mid/late-stage heading constraint too much
+  - the policy then becomes more willing to keep large yaw error and consume ball-joint margin in exchange for progress
+  - this is clearly worse than the healthy `kd = 12` mainline
+- Impact:
+  - keep the active default at:
+    - `heading_distance_scale = 12.0`
+  - future heading-gate work should not continue by blindly shrinking `kd`
+  - if more early-phase tolerance is needed, the mechanism must separate early and late behavior instead of globally relaxing the same denominator
+- Status:
+  - active default restored after the run

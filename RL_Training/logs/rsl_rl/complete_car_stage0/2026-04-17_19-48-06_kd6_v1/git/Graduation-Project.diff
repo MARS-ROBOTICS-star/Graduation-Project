@@ -1,0 +1,3886 @@
+--- git commit ---
+7133d3f25f7eb9e0ddefe3d45d77cba26c0e9a41
+
+
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py
+	modified:   RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py
+	modified:   "docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
+	modified:   "docs/Stage0_reward\350\256\276\350\256\241\350\257\246\350\247\243.md"
+	modified:   docs/conversation_history.md
+	modified:   docs/current_status.md
+	modified:   logs/daily_work_log.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_13-21-54/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_14-12-39/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_15-30-13/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_16-29-08/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-02-10_slipclip3_latk4_v1/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-28-36_action8_allocator_v1/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-33-20/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-02-38_axis_usage_probe_v1/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-35-19_capture_holdgoal_v1/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-38-44_capture_holdgoal_goal6_v1/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-41-26_capture_holdgoal_goal6_bonus10_v1/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-44-04_capture_holdgoal_goal6_bonus10_reverse_v1/
+	RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_19-48-06_kd6_v1/
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py
+index 9530242..83aa44b 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py
+@@ -69,8 +69,8 @@ class LocalOnPolicyRunnerCfg:
+ class CompleteCarBasePPORunnerCfg(LocalOnPolicyRunnerCfg):
+     seed = 1
+     num_steps_per_env = 96
+-    max_iterations = 300
+-    save_interval = 100
++    max_iterations = 600
++    save_interval = 200
+     experiment_name = "complete_car_direct"
+     run_name = ""
+     obs_groups = {"actor": ["actor"], "critic": ["critic"]}
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
+index 36f03a5..ed37405 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py
+@@ -12,7 +12,7 @@ from isaaclab.scene import InteractiveSceneCfg
+ from isaaclab.utils import configclass
+ from isaaclab.utils.noise import GaussianNoiseCfg, NoiseModelCfg, NoiseModelWithAdditiveBiasCfg
+ 
+-from ..assets.robot_cfg import BALL_JOINT_NAMES, CONTROLLED_JOINT_NAMES, WHEEL_JOINT_NAMES, WHEEL_RADIUS, build_complete_car_robot_cfg
++from ..assets.robot_cfg import BALL_JOINT_NAMES, WHEEL_JOINT_NAMES, WHEEL_RADIUS, build_complete_car_robot_cfg
+ from ..mdp.observations import PerComponentUniformNoiseCfg
+ from ..sensors.sensor_cfg import CompleteCarSensorSuiteCfg
+ from ..terrain.terrain_cfg import CompleteCarTerrainRuntimeCfg
+@@ -43,6 +43,7 @@ class ControlCfg:
+ 
+     ball_joint_names: tuple[str, ...] = tuple(BALL_JOINT_NAMES)
+     wheel_joint_names: tuple[str, ...] = tuple(WHEEL_JOINT_NAMES)
++    base_command_dim: int = 2
+ 
+     ball_joint_action_lower_limits: tuple[float, ...] = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)
+     ball_joint_action_upper_limits: tuple[float, ...] = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
+@@ -56,6 +57,9 @@ class ControlCfg:
+     wheel_joint_effort_limit_sim: float = 80.0  # 车轮驱动器力矩上限，单位：N*m。
+     wheel_joint_velocity_limit_sim: float = 20.0  # 车轮驱动器速度上限，单位：rad/s。
+     wheel_radius: float = WHEEL_RADIUS
++    base_forward_velocity_max: float = 1.2  # 底盘前向速度命令上限，单位：m/s。
++    base_yaw_rate_max: float = 0.6  # 底盘偏航角速度命令上限，单位：rad/s。
++    base_allow_reverse: bool = False  # 当前默认前进优先，不允许倒车命令。
+ 
+ 
+ @configclass
+@@ -120,6 +124,10 @@ class RewardParamsCfg:
+     target_position_tolerance: float = 0.3
+     target_yaw_tolerance_deg: float = 9.0
+     heading_distance_scale: float = 5.0
++    roll_gate_activation_roll_deg: float = 5.0
++    body_car_roll_gate: float = math.pi / 16.0
++    longitudinal_slip_gate_scale: float = 0.3
++    lateral_slip_gate_scale: float = 6.0
+ 
+ 
+ @configclass
+@@ -135,6 +143,7 @@ class TerminationCfg:
+     """终止条件阈值。"""
+ 
+     orientation_limit_deg: float = 45.0 #整车最大侧倾角
++    head_tail_roll_limit_deg: float = 35.0
+     ball_joint_pos_lower_limits: tuple[float, ...] = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)#球铰yaw,pitch,roll的限制
+     ball_joint_pos_upper_limits: tuple[float, ...] = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
+ 
+@@ -216,7 +225,7 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
+ 
+     stage_name: str = "stage0"
+     episode_length_s: float = 16.0 #control_dt = 1/60 s 理论最大控制步数：16 × 60 = 960 步
+-    action_space: int = len(CONTROLLED_JOINT_NAMES)
++    action_space: int = len(BALL_JOINT_NAMES) + 2
+     observation_space: dict[str, int] | int = 0
+     state_space: int = 0 #critic state 或 privileged state 的维度
+     decimation: int = 2
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+index 0fd1d42..baff432 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py
+@@ -12,6 +12,7 @@ from isaaclab.envs import DirectRLEnv
+ from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
+ 
+ from ..assets.robot_cfg import BALL_JOINT_NAMES, WHEEL_BODY_NAMES, WHEEL_JOINT_NAMES
++from ..kinematics import TorchWheelSpeedAllocator
+ from ..mdp import actions as mdp_actions
+ from ..mdp import commands as mdp_commands
+ from ..mdp import curriculum as mdp_curriculum
+@@ -59,6 +60,12 @@ class CompleteCarDirectEnv(DirectRLEnv):
+         self._goal_direction_offsets = torch.zeros(self.num_envs, device=self.device)
+         self._goal_heading_offsets = torch.zeros(self.num_envs, device=self.device)
+         self._previous_goal_distance = torch.zeros(self.num_envs, device=self.device)
++        self._base_planar_command = torch.zeros((self.num_envs, self.cfg.control.base_command_dim), device=self.device)
++        self._base_planar_command_transformed = torch.zeros_like(self._base_planar_command)
++        self._wheel_speed_allocator = TorchWheelSpeedAllocator(
++            device=self.device,
++            dtype=self.robot.data.default_joint_pos.dtype,
++        )
+ 
+         self._joint_pos_targets = self.robot.data.default_joint_pos.clone()
+         self._joint_vel_targets = self.robot.data.default_joint_vel.clone()
+@@ -68,6 +75,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
+         self._episode_total_reward_sum = torch.zeros(self.num_envs, device=self.device)
+         self._last_done_terms = {
+             "bad_orientation": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
++            "head_tail_roll_out_of_bounds": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
+             "ball_joint_out_of_bounds": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
+             "time_out": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
+         }
+@@ -155,7 +163,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
+                 )
+ 
+         processed_ball_actions = self._processed_actions[:, : len(self._ball_joint_ids)]
+-        processed_wheel_actions = self._processed_actions[:, len(self._ball_joint_ids) :]
++        processed_base_actions = self._processed_actions[:, len(self._ball_joint_ids) :]
+ 
+         self._joint_pos_targets = mdp_actions.apply_ball_joint_targets(
+             self.robot,
+@@ -165,10 +173,28 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             self.cfg.control.ball_joint_action_lower_limits,
+             self.cfg.control.ball_joint_action_upper_limits,
+         )
++
++        base_planar_command = mdp_actions.map_base_actions_to_planar_command(
++            processed_base_actions,
++            self.cfg.control.base_forward_velocity_max,
++            self.cfg.control.base_yaw_rate_max,
++            allow_reverse=self.cfg.control.base_allow_reverse,
++        )
++        transformed_planar_command = mdp_actions.transform_planar_command(base_planar_command)
++        self._base_planar_command.copy_(base_planar_command)
++        self._base_planar_command_transformed.copy_(transformed_planar_command)
++
++        ball_joint_pos = wrap_to_pi_tensor(self.robot.data.joint_pos[:, self._ball_joint_ids])
++        ball_joint_vel = self.robot.data.joint_vel[:, self._ball_joint_ids]
++        wheel_targets = self._wheel_speed_allocator.compute_wheel_speed_targets_from_planar_command(
++            ball_joint_pos,
++            ball_joint_vel,
++            transformed_planar_command,
++        )
+         self._joint_vel_targets = mdp_actions.apply_wheel_velocity_targets(
+             self._joint_vel_targets,
+             self._wheel_joint_ids,
+-            processed_wheel_actions,
++            wheel_targets,
+             self.cfg.control.wheel_joint_velocity_limit_sim,
+         )
+ 
+@@ -293,6 +319,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             self.cfg,
+             self.robot,
+             self._ball_joint_ids,
++            self._head_car_body_id,
++            self._tail_car_body_id,
+             self.episode_length_buf,
+             self.max_episode_length,
+         )
+@@ -300,6 +328,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             self._last_done_terms[key].copy_(value)
+         terminated = (
+             done_terms["bad_orientation"]
++            | done_terms["head_tail_roll_out_of_bounds"]
+             | done_terms["ball_joint_out_of_bounds"]
+         )
+         return terminated, done_terms["time_out"]
+@@ -324,6 +353,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
+         extras["episode/goal_heading_offset_deg"] = float(torch.mean(torch.rad2deg(self._goal_heading_offsets[env_ids])).item())
+         terminated = (
+             self._last_done_terms["bad_orientation"][env_ids]
++            | self._last_done_terms["head_tail_roll_out_of_bounds"][env_ids]
+             | self._last_done_terms["ball_joint_out_of_bounds"][env_ids]
+         )
+         extras["Termination/terminated_rate"] = float(torch.mean(terminated.float()).item())
+@@ -331,6 +361,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
+         extras["Termination/bad_orientation_rate"] = float(
+             torch.mean(self._last_done_terms["bad_orientation"][env_ids].float()).item()
+         )
++        extras["Termination/head_tail_roll_limit_rate"] = float(
++            torch.mean(self._last_done_terms["head_tail_roll_out_of_bounds"][env_ids].float()).item()
++        )
+         extras["Termination/ball_joint_limit_rate"] = float(
+             torch.mean(self._last_done_terms["ball_joint_out_of_bounds"][env_ids].float()).item()
+         )
+@@ -363,7 +396,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             relative_goal_commands,
+             self.last_actions,
+         )
+-        tilt_deg = torch.rad2deg(torch.acos(torch.clamp(-raw_obs_terms["projected_gravity"][:, 2], -1.0, 1.0)))
++        middle_roll_deg = torch.rad2deg(torch.abs(quaternion_to_rpy(self.robot.data.root_link_quat_w)[:, 0]))
+         planar_speed = torch.linalg.vector_norm(raw_obs_terms["base_lin_vel"][:, :2], dim=1)
+         yaw_rate_abs = torch.abs(raw_obs_terms["base_ang_vel"][:, 2])
+         turn_radius_raw = torch.zeros_like(planar_speed)
+@@ -376,6 +409,15 @@ class CompleteCarDirectEnv(DirectRLEnv):
+         )
+         goal_pos_error = torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1)
+         goal_yaw_error_abs = torch.abs(relative_goal_commands[:, 2])
++        ball_joint_pos = raw_obs_terms["ball_joint_pos"]
++        ball_joint_lower_limits = ball_joint_pos.new_tensor(self.cfg.terminations.ball_joint_pos_lower_limits).unsqueeze(0)
++        ball_joint_upper_limits = ball_joint_pos.new_tensor(self.cfg.terminations.ball_joint_pos_upper_limits).unsqueeze(0)
++        active_ball_joint_limits = torch.where(
++            ball_joint_pos >= 0.0,
++            ball_joint_upper_limits,
++            torch.abs(ball_joint_lower_limits),
++        )
++        ball_joint_limit_usage = torch.abs(ball_joint_pos) / torch.clamp(active_ball_joint_limits, min=1.0e-6)
+         # TensorBoard command traces are intentionally anchored to env_0 instead of the
+         # cross-env mean so the curve reflects one concrete command trajectory.
+         command_env_id = 0
+@@ -385,6 +427,12 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             "Reward/target_bonus": float(torch.mean(self._last_reward_components["target_bonus"]).item()),
+             "Reward/progress": float(torch.mean(self._last_reward_components["progress"]).item()),
+             "Reward/heading_gate": float(torch.mean(self._last_reward_components["heading_gate"]).item()),
++            "Reward/longitudinal_slip_gate": float(
++                torch.mean(self._last_reward_components["longitudinal_slip_gate"]).item()
++            ),
++            "Reward/lateral_slip_gate": float(torch.mean(self._last_reward_components["lateral_slip_gate"]).item()),
++            "Reward/composite_gate": float(torch.mean(self._last_reward_components["composite_gate"]).item()),
++            "Reward/roll_gate": float(torch.mean(self._last_reward_components["roll_gate"]).item()),
+             "Reward/gated_progress": float(torch.mean(self._last_reward_components["gated_progress"]).item()),
+             "Tracking/goal_pos_error": float(torch.mean(goal_pos_error).item()),
+             "Tracking/goal_yaw_error_abs": float(torch.mean(goal_yaw_error_abs).item()),
+@@ -403,7 +451,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             "Command/goal_heading_offset_deg": float(torch.rad2deg(self._goal_heading_offsets[command_env_id]).item()),
+             "Observation/base_lin_vel_y_raw": float(torch.mean(raw_obs_terms["base_lin_vel"][:, 1]).item()),
+             "Observation/turn_radius_raw": mean_turn_radius_raw,
+-            "Observation/tilt_deg": float(torch.mean(tilt_deg).item()),
++            "Observation/tilt_deg": float(torch.mean(middle_roll_deg).item()),
+             "Observation/projected_gravity_xy_norm_raw": float(
+                 torch.mean(torch.linalg.vector_norm(raw_obs_terms["projected_gravity"][:, :2], dim=1)).item()
+             ),
+@@ -435,6 +483,14 @@ class CompleteCarDirectEnv(DirectRLEnv):
+             "Observation/goal_rel_psi_raw": float(torch.mean(raw_obs_terms["relative_goal_commands"][:, 2]).item()),
+             "Observation/last_action_abs_mean_raw": float(torch.mean(torch.abs(raw_obs_terms["last_actions"])).item()),
+         }
++        for joint_index, joint_name in enumerate(BALL_JOINT_NAMES):
++            metrics[f"Observation/{joint_name}_pos_raw"] = float(torch.mean(ball_joint_pos[:, joint_index]).item())
++            metrics[f"Observation/{joint_name}_limit_usage_mean_raw"] = float(
++                torch.mean(ball_joint_limit_usage[:, joint_index]).item()
++            )
++            metrics[f"Observation/{joint_name}_limit_usage_max_raw"] = float(
++                torch.max(ball_joint_limit_usage[:, joint_index]).item()
++            )
+         if self._last_critic_height_patch is not None:
+             metrics["Critic/height_patch_mean"] = float(torch.mean(self._last_critic_height_patch).item())
+             metrics["Critic/height_patch_max"] = float(
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
+index 460a176..0018735 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py
+@@ -18,7 +18,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
+         # Stage0 keeps a full local copy of the active tunables so future tuning can
+         # stay inside this file without bouncing back to the base template.
+         self.stage_name = "stage0"
+-        self.episode_length_s = 16.0
++        self.episode_length_s = 24.0
+         self.decimation = 2
+ 
+         self.scene.num_envs = 64
+@@ -27,7 +27,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
+         self.scene.clone_in_fabric = True
+ 
+         self.commands.num_commands = 3
+-        self.commands.resampling_time = 5.3
++        self.commands.resampling_time = 8.0
+         self.commands.goal_distance = 12.0
+         self.commands.goal_direction_max_deg = 30.0
+         self.commands.goal_heading_delta_max_deg = 12.0
+@@ -47,27 +47,29 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
+         self.control.wheel_joint_damping = 1.0e3
+         self.control.wheel_joint_effort_limit_sim = 80.0
+         self.control.wheel_joint_velocity_limit_sim = 12.0
++        self.control.base_forward_velocity_max = 1.2
++        self.control.base_yaw_rate_max = 0.6
++        self.control.base_allow_reverse = False
+ 
+         self.observations.use_history = False
+         self.observations.history_length = 1
+         self.observations.clip_observations = 100.0
+         self.observations.clip_actions = 1.0
+         self.observations.wheel_slip_epsilon = 0.1
+-        self.observations.wheel_longitudinal_slip_clip = 1.0
+-        self.observations.wheel_slip_angle_clip_rad = math.pi / 2.0
++        self.observations.wheel_longitudinal_slip_clip = 3.0
+         self.observations.scales.base_lin_vel = 1.0
+-        self.observations.scales.base_ang_vel = 0.35
+-        self.observations.scales.projected_gravity = 1.5
++        self.observations.scales.base_ang_vel = 1.0
++        self.observations.scales.projected_gravity = 1.0
+         self.observations.scales.ball_joint_pos = 1.0
+-        self.observations.scales.ball_joint_vel = 0.05
++        self.observations.scales.ball_joint_vel = 1.0
+         self.observations.scales.ball_joint_target_error = 1.0
+         self.observations.scales.module_roll_pitch = 1.0
+-        self.observations.scales.wheel_joint_vel = 0.05
+-        self.observations.scales.wheel_longitudinal_slip = 2.0
+-        self.observations.scales.wheel_slip_angle = 1.5
+-        self.observations.scales.wheel_normal_contact_force = 1.25
++        self.observations.scales.wheel_joint_vel = 1.0
++        self.observations.scales.wheel_longitudinal_slip = 1.0
++        self.observations.scales.wheel_slip_angle = 1.0
++        self.observations.scales.wheel_normal_contact_force = 1.0
+         self.observations.scales.commands = 1.0
+-        self.observations.scales.last_action = 1.5
++        self.observations.scales.last_action = 1.0
+         self.observations.noise.enabled = False
+         self.observations.noise.level = 1.0
+         self.observations.noise.base_lin_vel = 0.1
+@@ -87,11 +89,16 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
+         self.rewards.params.target_bonus_ratio = 0.03
+         self.rewards.params.target_position_tolerance = 0.3
+         self.rewards.params.target_yaw_tolerance_deg = 9.0
+-        self.rewards.params.heading_distance_scale = 5.0
+-
+-        self.terminations.orientation_limit_deg = 45.0
+-        self.terminations.ball_joint_pos_lower_limits = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)
+-        self.terminations.ball_joint_pos_upper_limits = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
++        self.rewards.params.heading_distance_scale = 6.0
++        self.rewards.params.roll_gate_activation_roll_deg = 5.0
++        self.rewards.params.body_car_roll_gate = math.pi / 16.0
++        self.rewards.params.longitudinal_slip_gate_scale = 0.3
++        self.rewards.params.lateral_slip_gate_scale = 4.0
++
++        self.terminations.orientation_limit_deg = 30.0
++        self.terminations.head_tail_roll_limit_deg = 35.0
++        self.terminations.ball_joint_pos_lower_limits = (-0.6, -1.0, -0.5, -0.6, -1.0, -0.5)
++        self.terminations.ball_joint_pos_upper_limits = (0.6, 0.4, 0.5, 0.6, 0.4, 0.5)
+ 
+         self.resets.root_pos = (0.0, 0.0, 0.30)
+         self.resets.root_lin_vel = (0.0, 0.0, 0.0)
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py
+index 461b145..59788dd 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py
+@@ -4,6 +4,8 @@ from __future__ import annotations
+ 
+ import torch
+ 
++from ..kinematics.wheel_speed_allocator import PLANAR_COMMAND_TRANSFORM
++
+ 
+ def preprocess_policy_actions(actions: torch.Tensor, clip_actions: float) -> tuple[torch.Tensor, torch.Tensor]:
+     """返回限幅后的标准化动作与实际执行动作。"""
+@@ -13,6 +15,52 @@ def preprocess_policy_actions(actions: torch.Tensor, clip_actions: float) -> tup
+     return policy_actions, processed_actions
+ 
+ 
++def map_base_actions_to_planar_command(
++    processed_base_actions: torch.Tensor,
++    forward_velocity_max: float,
++    yaw_rate_max: float,
++    *,
++    allow_reverse: bool,
++) -> torch.Tensor:
++    """Map normalized base actions to physical planar commands [vx, yaw_rate]."""
++
++    if processed_base_actions.shape[1] != 2:
++        raise ValueError("Base planar action branch must have shape (N, 2).")
++
++    forward_action = processed_base_actions[:, 0]
++    yaw_action = processed_base_actions[:, 1]
++
++    if allow_reverse:
++        vx_cmd = forward_action * forward_velocity_max
++    else:
++        vx_cmd = 0.5 * (forward_action + 1.0) * forward_velocity_max
++
++    yaw_rate_cmd = yaw_action * yaw_rate_max
++    return torch.stack((vx_cmd, yaw_rate_cmd), dim=-1)
++
++
++def transform_planar_command(planar_command: torch.Tensor) -> torch.Tensor:
++    """Apply the measured planar-command transform expected by the wheel allocator."""
++
++    if planar_command.shape[1] != 2:
++        raise ValueError("Planar command tensor must have shape (N, 2).")
++
++    planar_command_xyz = torch.zeros(
++        (planar_command.shape[0], 3),
++        device=planar_command.device,
++        dtype=planar_command.dtype,
++    )
++    planar_command_xyz[:, 0] = planar_command[:, 0]
++    planar_command_xyz[:, 2] = planar_command[:, 1]
++    transform = torch.as_tensor(
++        PLANAR_COMMAND_TRANSFORM,
++        device=planar_command.device,
++        dtype=planar_command.dtype,
++    )
++    transformed_xyz = planar_command_xyz @ transform.T
++    return torch.stack((transformed_xyz[:, 0], transformed_xyz[:, 2]), dim=1)
++
++
+ def apply_ball_joint_targets(
+     robot,
+     joint_pos_targets: torch.Tensor,
+@@ -46,9 +94,9 @@ def apply_ball_joint_targets(
+ def apply_wheel_velocity_targets(
+     wheel_ang_vel_targets: torch.Tensor,
+     wheel_joint_ids,
+-    processed_wheel_actions: torch.Tensor,
++    wheel_targets: torch.Tensor,
+     wheel_velocity_limit: float,
+ ) -> torch.Tensor:
+-    wheel_targets = processed_wheel_actions * wheel_velocity_limit
+-    wheel_ang_vel_targets[:, wheel_joint_ids] = wheel_targets
++    clamped_targets = torch.clamp(wheel_targets, min=-wheel_velocity_limit, max=wheel_velocity_limit)
++    wheel_ang_vel_targets[:, wheel_joint_ids] = clamped_targets
+     return wheel_ang_vel_targets
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py
+index ece51c0..7812f4c 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py
+@@ -16,8 +16,7 @@ def _compute_wheel_contact_observations(
+     wheel_contact_forces_w: torch.Tensor,
+     wheel_radius: float,
+     slip_velocity_epsilon: float,
+-    slip_ratio_clip: float,
+-    slip_angle_clip_rad: float,
++    wheel_longitudinal_slip_clip: float,
+     total_vehicle_weight: torch.Tensor,
+ ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+     x_axis_local = torch.zeros_like(wheel_body_lin_vel_w)
+@@ -35,11 +34,15 @@ def _compute_wheel_contact_observations(
+     safe_longitudinal_speed = torch.maximum(torch.abs(v_x), torch.full_like(v_x, slip_velocity_epsilon))
+ 
+     # Reflect wheel-ground traction state, including tire spin, braking slip, and obstacle-climb adhesion loss.
+-    wheel_longitudinal_slip = torch.clamp((v_x - v_surface) / safe_longitudinal_speed, -slip_ratio_clip, slip_ratio_clip)
++    wheel_longitudinal_slip = (v_x - v_surface) / safe_longitudinal_speed
++    wheel_longitudinal_slip = torch.clamp(
++        wheel_longitudinal_slip,
++        min=-wheel_longitudinal_slip_clip,
++        max=wheel_longitudinal_slip_clip,
++    )
+ 
+     # Describe the mismatch angle between wheel heading and actual travel direction.
+     wheel_slip_angle = torch.atan2(v_y, torch.abs(v_x) + slip_velocity_epsilon)
+-    wheel_slip_angle = torch.clamp(wheel_slip_angle, -slip_angle_clip_rad, slip_angle_clip_rad)
+ 
+     # The runtime sensor path reconstructs one wheel-ground normal-force resultant vector in world frame
+     # by summing all contact-point (normal_force_scalar * contact_normal_vector) terms for each wheel.
+@@ -75,8 +78,7 @@ def collect_raw_observation_terms(
+         wheel_contact_forces_w=wheel_contact_forces_w,
+         wheel_radius=cfg.control.wheel_radius,
+         slip_velocity_epsilon=cfg.observations.wheel_slip_epsilon,
+-        slip_ratio_clip=cfg.observations.wheel_longitudinal_slip_clip,
+-        slip_angle_clip_rad=cfg.observations.wheel_slip_angle_clip_rad,
++        wheel_longitudinal_slip_clip=cfg.observations.wheel_longitudinal_slip_clip,
+         total_vehicle_weight=total_vehicle_weight,
+     )
+ 
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py
+index 8a25276..e526792 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py
+@@ -6,12 +6,16 @@ import math
+ 
+ import torch
+ 
+-from ..utils.math_utils import wrap_to_pi_tensor
++from ..utils.math_utils import quaternion_to_rpy, wrap_to_pi_tensor
+ 
+ REWARD_TERM_NAMES = (
+     "target_bonus",
+     "progress",
+     "heading_gate",
++    "longitudinal_slip_gate",
++    "lateral_slip_gate",
++    "composite_gate",
++    "roll_gate",
+     "gated_progress",
+ )
+ 
+@@ -48,12 +52,41 @@ def compute_reward_terms(
+         min=1.0e-6,
+     )
+     heading_gate = torch.exp(-0.5 * torch.square(goal_yaw_error / heading_denominator))
+-    gated_progress = progress * heading_gate
++
++    longitudinal_slip_gate_scale = max(params.longitudinal_slip_gate_scale, 1.0e-6)
++    longitudinal_slip_gate_per_wheel = torch.exp(
++        -0.5 * torch.square(raw_obs_terms["wheel_longitudinal_slip"] / longitudinal_slip_gate_scale)
++    )
++    longitudinal_slip_gate = torch.prod(longitudinal_slip_gate_per_wheel, dim=1)
++
++    lateral_slip_gate_scale = max(params.lateral_slip_gate_scale, 1.0e-6)
++    lateral_slip_clip_rad = math.pi / lateral_slip_gate_scale
++    clipped_wheel_slip_angle = torch.clamp(
++        raw_obs_terms["wheel_slip_angle"],
++        min=-lateral_slip_clip_rad,
++        max=lateral_slip_clip_rad,
++    )
++    lateral_slip_gate_per_wheel = 0.5 * torch.cos(lateral_slip_gate_scale * clipped_wheel_slip_angle) + 0.5
++    lateral_slip_gate = torch.prod(lateral_slip_gate_per_wheel, dim=1)
++
++    composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3.0
++    middle_roll = quaternion_to_rpy(robot.data.root_link_quat_w)[:, 0]
++    roll_gate = torch.ones_like(progress)
++    roll_gate_activation_roll_rad = math.radians(params.roll_gate_activation_roll_deg)
++    roll_gate_mask = torch.abs(middle_roll) > roll_gate_activation_roll_rad
++    roll_gate_heading_scale = max(params.body_car_roll_gate, 1.0e-6)
++    gated_roll_value = torch.exp(-0.5 * torch.square(goal_yaw_error / roll_gate_heading_scale))
++    roll_gate = torch.where(roll_gate_mask, gated_roll_value, roll_gate)
++    gated_progress = progress * composite_gate * roll_gate
+ 
+     components = {
+         "target_bonus": target_bonus,
+         "progress": progress,
+         "heading_gate": heading_gate,
++        "longitudinal_slip_gate": longitudinal_slip_gate,
++        "lateral_slip_gate": lateral_slip_gate,
++        "composite_gate": composite_gate,
++        "roll_gate": roll_gate,
+         "gated_progress": gated_progress,
+     }
+     total_reward = target_bonus + gated_progress
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py
+index 6210626..d8f34b3 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py
+@@ -4,23 +4,33 @@ from __future__ import annotations
+ 
+ import torch
+ 
+-from ..utils.math_utils import wrap_to_pi_tensor
++from ..utils.math_utils import quaternion_to_rpy, wrap_to_pi_tensor
+ 
+ 
+ def compute_done_terms(
+     cfg,
+     robot,
+     ball_joint_ids,
++    head_car_body_id: int,
++    tail_car_body_id: int,
+     episode_length_buf: torch.Tensor,
+     max_episode_length: int,
+ ) -> dict[str, torch.Tensor]:
+-    projected_gravity = robot.data.projected_gravity_b
+     ball_joint_pos = wrap_to_pi_tensor(robot.data.joint_pos[:, ball_joint_ids])
++    middle_roll = quaternion_to_rpy(robot.data.root_link_quat_w)[:, 0]
++    head_roll = quaternion_to_rpy(robot.data.body_quat_w[:, head_car_body_id])[:, 0]
++    tail_roll = quaternion_to_rpy(robot.data.body_quat_w[:, tail_car_body_id])[:, 0]
+ 
+     time_out = episode_length_buf >= max_episode_length - 1
+-    tilt_angle = torch.acos(torch.clamp(-projected_gravity[:, 2], -1.0, 1.0))
+-    bad_orientation = tilt_angle > torch.deg2rad(
+-        torch.full_like(tilt_angle, cfg.terminations.orientation_limit_deg, dtype=torch.float)
++    middle_roll_abs = torch.abs(middle_roll)
++    bad_orientation = middle_roll_abs > torch.deg2rad(
++        torch.full_like(middle_roll_abs, cfg.terminations.orientation_limit_deg, dtype=torch.float)
++    )
++    head_tail_roll_limit_rad = torch.deg2rad(
++        torch.full_like(middle_roll_abs, cfg.terminations.head_tail_roll_limit_deg, dtype=torch.float)
++    )
++    head_tail_roll_out_of_bounds = (torch.abs(head_roll) > head_tail_roll_limit_rad) | (
++        torch.abs(tail_roll) > head_tail_roll_limit_rad
+     )
+     lower_limits = ball_joint_pos.new_tensor(cfg.terminations.ball_joint_pos_lower_limits)
+     upper_limits = ball_joint_pos.new_tensor(cfg.terminations.ball_joint_pos_upper_limits)
+@@ -35,15 +45,33 @@ def compute_done_terms(
+ 
+     return {
+         "bad_orientation": bad_orientation,
++        "head_tail_roll_out_of_bounds": head_tail_roll_out_of_bounds,
+         "ball_joint_out_of_bounds": ball_joint_out_of_bounds,
+         "time_out": time_out,
+     }
+ 
+ 
+-def compute_dones(cfg, robot, ball_joint_ids, episode_length_buf: torch.Tensor, max_episode_length: int) -> tuple[torch.Tensor, torch.Tensor]:
+-    done_terms = compute_done_terms(cfg, robot, ball_joint_ids, episode_length_buf, max_episode_length)
++def compute_dones(
++    cfg,
++    robot,
++    ball_joint_ids,
++    head_car_body_id: int,
++    tail_car_body_id: int,
++    episode_length_buf: torch.Tensor,
++    max_episode_length: int,
++) -> tuple[torch.Tensor, torch.Tensor]:
++    done_terms = compute_done_terms(
++        cfg,
++        robot,
++        ball_joint_ids,
++        head_car_body_id,
++        tail_car_body_id,
++        episode_length_buf,
++        max_episode_length,
++    )
+     terminated = (
+         done_terms["bad_orientation"]
++        | done_terms["head_tail_roll_out_of_bounds"]
+         | done_terms["ball_joint_out_of_bounds"]
+     )
+     return terminated, done_terms["time_out"]
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py
+index c0c9b0a..5376916 100755
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py
+@@ -39,8 +39,12 @@ TENSORBOARD_TAG_ALIASES = {
+     "Reward/gated_progress": "Reward/00_gated_progress",
+     "Reward/progress": "Reward/01_progress",
+     "Reward/heading_gate": "Reward/02_heading_gate",
+-    "Reward/target_bonus": "Reward/03_target_bonus",
+-    "Reward/total": "Reward/04_total",
++    "Reward/longitudinal_slip_gate": "Reward/03_longitudinal_slip_gate",
++    "Reward/lateral_slip_gate": "Reward/04_lateral_slip_gate",
++    "Reward/composite_gate": "Reward/05_composite_gate",
++    "Reward/roll_gate": "Reward/06_roll_gate",
++    "Reward/target_bonus": "Reward/07_target_bonus",
++    "Reward/total": "Reward/08_total",
+     "Tracking/goal_pos_error": "Tracking/00_goal_pos_error",
+     "Tracking/goal_progress": "Tracking/01_goal_progress",
+     "Tracking/goal_yaw_error_abs": "Tracking/02_goal_yaw_error_abs",
+@@ -59,13 +63,18 @@ TENSORBOARD_TAG_ALIASES = {
+     "Termination/time_out_rate": "Termination/00_time_out_rate",
+     "Termination/terminated_rate": "Termination/01_terminated_rate",
+     "Termination/bad_orientation_rate": "Termination/02_bad_orientation_rate",
+-    "Termination/ball_joint_limit_rate": "Termination/03_ball_joint_limit_rate",
++    "Termination/head_tail_roll_limit_rate": "Termination/03_head_tail_roll_limit_rate",
++    "Termination/ball_joint_limit_rate": "Termination/04_ball_joint_limit_rate",
+ }
+ 
+ CONSOLE_PRIORITY_TAGS = (
+     "Reward/gated_progress",
+     "Reward/progress",
+     "Reward/heading_gate",
++    "Reward/longitudinal_slip_gate",
++    "Reward/lateral_slip_gate",
++    "Reward/composite_gate",
++    "Reward/roll_gate",
+     "Reward/target_bonus",
+     "Tracking/goal_pos_error",
+     "Tracking/goal_yaw_error_abs",
+@@ -79,6 +88,7 @@ CONSOLE_PRIORITY_TAGS = (
+     "Termination/time_out_rate",
+     "Termination/terminated_rate",
+     "Termination/bad_orientation_rate",
++    "Termination/head_tail_roll_limit_rate",
+     "Termination/ball_joint_limit_rate",
+ )
+ 
+@@ -91,6 +101,7 @@ SPARSE_ZERO_SCALARS = frozenset(
+     {
+         "Termination/terminated_rate",
+         "Termination/bad_orientation_rate",
++        "Termination/head_tail_roll_limit_rate",
+         "Termination/ball_joint_limit_rate",
+     }
+ )
+diff --git a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py
+index 637d262..35c59b8 100644
+--- a/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py
++++ b/RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py
+@@ -8,7 +8,7 @@ from ..assets.robot_cfg import BALL_JOINT_NAMES, WHEEL_JOINT_NAMES
+ def build_action_descriptor(cfg) -> list[tuple[str, int]]:
+     return [
+         ("ball_joint_targets", len(cfg.control.ball_joint_names)),
+-        ("wheel_joint_velocity_targets", len(cfg.control.wheel_joint_names)),
++        ("base_planar_command", cfg.control.base_command_dim),
+     ]
+ 
+ 
+diff --git "a/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md" "b/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
+index 58797d6..04fff14 100644
+--- "a/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
++++ "b/docs/RL\351\230\266\346\256\265\350\256\255\347\273\203\345\217\202\346\225\260\344\270\200\350\247\210\350\241\250.md"
+@@ -37,13 +37,13 @@
+ ### 1.3 当前关键维度
+ 
+ - 并行环境数：`64`
+-- 动作维度：`12`
+-- Actor 单帧观测维度：`48`
+-- Critic 单帧观测维度：`48`
++- 动作维度：`8`
++- Actor 单帧观测维度：`44`
++- Critic 单帧观测维度：`44`
+ - state space 维度：`0`
+ - 控制频率：`60 Hz`
+-- 单回合时长：`16 s`
+-- 单回合最大控制步数：`16 × 60 = 960`
++- 单回合时长：`24 s`
++- 单回合最大控制步数：`24 × 60 = 1440`
+ 
+ ---
+ 
+@@ -71,8 +71,8 @@ Stage0 训练时的配置继承关系是：
+ - `terrain.mode = "plane"`
+ - `curriculum.enabled = False`
+ - `terrain.measure_heights = False`
+-- `episode_length_s = 16.0`
+-- `commands.resampling_time = 5.3`
++- `episode_length_s = 24.0`
++- `commands.resampling_time = 8.0`
+ - `commands.goal_distance = 12.0`
+ - `commands.goal_direction_max_deg = 30.0`
+ - `commands.goal_heading_delta_max_deg = 12.0`
+@@ -192,15 +192,16 @@ Stage0 因为是平地，所以地面由 ground plane 直接生成。
+ 
+ ### 5.3 控制关节
+ 
+-当前 RL policy 直接控制全部 `12` 个执行量：
++当前 RL policy 直接控制 `8` 个高层执行量：
+ 
+ - 6 个球铰姿态目标
+-- 6 个车轮速度目标
++- 2 个底盘平面命令
+ 
+ 所以：
+ 
+-- 动作维度 = `12`
+-- policy 直接输出轮速目标
++- 动作维度 = `8`
++- policy 不再直接输出 6 个轮速
++- 当前 6 个轮速由 wheel allocator 根据球铰状态和底盘平面命令生成
+ 
+ ### 5.4 驱动器参数
+ 
+@@ -364,10 +365,10 @@ $$
+ 
+ ### 7.3 命令重采样周期
+ 
+-- `episode_length_s = 16.0 s`
+-- `resampling_time = 5.3 s`
++- `episode_length_s = 24.0 s`
++- `resampling_time = 8.0 s`
+ 
+-也就是说当前每个环境会在 reset 时采样一次目标，并在回合中途继续重采样，单个 episode 通常会经历 `2 ~ 3` 个目标段。
++也就是说当前每个环境会在 reset 时采样一次目标，并在回合中途继续重采样，单个 episode 当前默认会经历 `3` 个目标段。
+ 
+ ### 7.4 命令时钟逻辑
+ 
+@@ -376,7 +377,10 @@ $$
+ - reset 时会调用一次目标采样。
+ - 预物理步内当 `resampling_time < episode_length_s` 时，会启用定时器倒计时与中途重采样。
+ - 当前实际行为是：
+-  - 一个 episode 内通常包含 `2 ~ 3` 个目标。
++  - 一个 episode 内默认包含 `3` 个目标段：
++    - `t = 0 s`
++    - `t = 8 s`
++    - `t = 16 s`
+ 
+ ### 7.5 观测中的相对命令表达
+ 
+@@ -547,19 +551,23 @@ $$
+ 当前 scale：
+ 
+ - `base_lin_vel = 1.0`
+-- `base_ang_vel = 0.35`
+-- `projected_gravity = 1.5`
++- `base_ang_vel = 1.0`
++- `projected_gravity = 1.0`
+ - `ball_joint_pos = 1.0`
+-- `wheel_longitudinal_slip = 2.0`
+-- `wheel_slip_angle = 1.5`
+-- `wheel_normal_contact_force = 1.25`
++- `ball_joint_vel = 1.0`
++- `ball_joint_target_error = 1.0`
++- `module_roll_pitch = 1.0`
++- `wheel_joint_vel = 1.0`
++- `wheel_longitudinal_slip = 1.0`
++- `wheel_slip_angle = 1.0`
++- `wheel_normal_contact_force = 1.0`
+ - `commands = 1.0`
+-- `last_action = 1.5`
++- `last_action = 1.0`
+ 
+ 当前 slip 相关观测参数：
+ 
+ - `wheel_slip_epsilon = 0.1`
+-- `wheel_longitudinal_slip_clip = 1.0`
++- `wheel_longitudinal_slip_clip = 3.0`
+ - `wheel_slip_angle_clip_rad = π / 2`
+ 
+ ### 8.5 观测噪声
+@@ -605,13 +613,13 @@ $$
+ 
+ ### 9.1 动作维度
+ 
+-动作维度为 `12`：
++动作维度为 `8`：
+ 
+ - 前 6 维：6 个球铰姿态目标
+-- 后 6 维：6 个车轮速度目标
++- 后 2 维：底盘平面命令 `a_base = [a_v, a_w]`
+ 
+ $$
+-\mathbf{a}_t \in \mathbb{R}^{12}
++\mathbf{a}_t \in \mathbb{R}^{8}
+ $$
+ 
+ ### 9.2 动作裁剪
+@@ -678,34 +686,52 @@ $$
+ - pitch：`[-1.30, 0.40]`
+ - roll：`[-0.35, 0.35]`
+ 
+-### 9.6 车轮速度目标映射
++### 9.6 底盘平面命令映射
+ 
+-当前 policy 直接输出 6 个车轮速度目标的标准化动作。
+-每个车轮动作仍先裁剪到 `[-1, 1]`，然后只按单一对称速度上限映射：
++当前 policy 的后 2 维动作不再直接表示 6 个车轮速度，而是：
+ 
+-- 速度上限参数：`wheel_joint_velocity_limit_sim = 12 rad/s`
++$$
++\mathbf a_{base} = [a_v, a_w], \quad a_v, a_w \in [-1,1]
++$$
+ 
+-映射公式为：
++当前 Stage0 默认采用“前进优先、不允许倒车”的映射：
+ 
+ $$
+-\omega_{target,i} = a_i \cdot \omega_{max}
++v_{x,cmd} = 0.5(a_v + 1.0) v_{x,max}
+ $$
+ 
+-其中：
++$$
++\omega_{z,cmd} = a_w \, \omega_{z,max}
++$$
++
++其中当前默认参数为：
+ 
+-- `a_i` 是第 `i` 个标准化车轮动作
+-- `\omega_{max}` 是统一车轮速度上限
++- `base_forward_velocity_max = 1.2 m/s`
++- `base_yaw_rate_max = 0.6 rad/s`
++- `base_allow_reverse = False`
+ 
+ 因此：
+ 
+-- `action = 1` -> `+12 rad/s`
+-- `action = -1` -> `-12 rad/s`
+-- `action = 0` -> `0`
++- `a_v = -1` -> `v_{x,cmd} = 0`
++- `a_v = 1` -> `v_{x,cmd} = 1.2 m/s`
++- `a_w = -1` -> `\omega_{z,cmd} = -0.6 rad/s`
++- `a_w = 1` -> `\omega_{z,cmd} = +0.6 rad/s`
+ 
+-因此现在的控制结构是：
++### 9.7 wheel allocator 轮速生成
+ 
+-- 高层 RL：同时输出球铰目标角和车轮速度目标
+-- wheel allocator：保留在仓库里，但当前执行链路不再参与 env 控制
++当前执行链路中，policy 不再直接输出 6 个轮速。
++环境会先把 `[v_{x,cmd}, \omega_{z,cmd}]` 经过 measured planar-command transform，
++然后调用 wheel allocator，根据：
++
++- 当前球铰位置
++- 当前球铰速度
++- 变换后的底盘平面命令
++
++生成 `6` 个车轮速度目标，并最终再按：
++
++- `wheel_joint_velocity_limit_sim = 12 rad/s`
++
++统一限幅。
+ 
+ ---
+ 
+@@ -939,7 +965,11 @@ $$
+ - `target_bonus_ratio = 0.03`
+ - `target_position_tolerance = 0.3`
+ - `target_yaw_tolerance_deg = 9.0`
+-- `heading_distance_scale = 5.0`
++- `heading_distance_scale = goal_distance / (2 sin(goal_direction_max_deg))`
++- 在当前 Stage0 下：
++  - `heading_distance_scale = 12.0 / (2 sin 30°) = 12.0`
++- `roll_gate_activation_roll_deg = 5.0`
++- `body_car_roll_gate = pi / 16`
+ 
+ ### 10.13 当前 TensorBoard 奖励日志
+ 
+@@ -948,6 +978,7 @@ $$
+ - `Reward/target_bonus`
+ - `Reward/progress`
+ - `Reward/heading_gate`
++- `Reward/roll_gate`
+ - `Reward/gated_progress`
+ - `Reward/total`
+ 
+@@ -982,26 +1013,36 @@ $$
+ 
+ ### 11.2 姿态终止
+ 
+-令 body-frame 重力投影为 $\mathbf{g}_b$，则倾角计算为：
++当前 active 版本不再用“总倾角”判断坏姿态，而是只看中车 `body_car_chassis` 的横滚角。
++
++令中车 roll 为 $\phi_{\mathrm{body}}$，则当前坏姿态判定为：
+ 
+ $$
+-\theta = \arccos(\mathrm{clip}(-g_z,-1,1))
++\left|\phi_{\mathrm{body}}\right|
+ $$
+ 
+ 若：
+ 
+ $$
+-\theta > 45^\circ
++\left|\phi_{\mathrm{body}}\right| > 30^\circ
+ $$
+ 
+ 则失败终止。
+ 
++对应地，当前 TensorBoard 中的：
++
++- `Observation/tilt_deg`
++
++也不再表示中车总倾角，而是表示：
++
++- 中车 `|roll|` 的角度值
++
+ ### 11.3 球铰越界终止
+ 
+-当前球铰上下界与动作上下界一致：
++当前球铰越界终止使用单独的终止范围。
+ 
+-- yaw：`[-0.7, 0.7]`
+-- pitch：`[-1.6, 0.5]`
++- yaw：`[-0.6, 0.6]`
++- pitch：`[-1.0, 0.4]`
+ - roll：`[-0.5, 0.5]`
+ 
+ 对任意关节 $q_i$，若：
+@@ -1204,16 +1245,17 @@ $$
+ 1. 如果命令计时器到期，重采样命令
+ 2. 当前默认仅在 reset 时根据当前位姿采样一个目标全局位姿
+ 3. env 把目标转成车体系下的 `[x_rel, y_rel, psi_rel]`
+-4. policy 读取 48 维 actor 观测
+-5. actor 输出 12 维标准化动作
++4. policy 读取 44 维 actor 观测
++5. actor 输出 8 维标准化动作
+ 6. 动作先裁剪到 `[-1, 1]`
+ 7. 前 6 维映射成 6 个球铰目标角
+-8. 后 6 维映射成 6 个车轮速度目标
+-9. Isaac Sim 执行球铰位置控制和轮速控制
+-10. 环境读取新状态，生成下一时刻观测
+-11. 按当前 reward 配置计算当前奖励
+-12. 判断是否终止或超时
+-13. PPO 存 rollout，周期性更新 actor/critic
++8. 后 2 维映射成 `[v_{x,cmd}, \omega_{z,cmd}]`
++9. env 调用 wheel allocator 生成 6 个车轮速度目标
++10. Isaac Sim 执行球铰位置控制和轮速控制
++11. 环境读取新状态，生成下一时刻观测
++12. 按当前 reward 配置计算当前奖励
++13. 判断是否终止或超时
++14. PPO 存 rollout，周期性更新 actor/critic
+ 
+ ---
+ 
+@@ -1224,51 +1266,140 @@ $$
+ ### 17.1 环境与仿真
+ 
+ - `num_envs = 64`
+-- `episode_length_s = 16`
++- `episode_length_s = 24`
+ - `sim_dt = 1/120`
+ - `control_dt = 1/60`
+ - 平地
+ 
+ ### 17.2 动作与观测
+ 
+-- 动作维度：`12`
+-- Actor 观测维度：`48`
+-- Critic 观测维度：`48`
+-- 动作范围：逐轴 `[-1, 1]` 标准化，球铰映射到各自角度上下界，车轮映射到对称速度上限
++- 动作维度：`8`
++- Actor 观测维度：`44`
++- Critic 观测维度：`44`
++- 动作范围：逐轴 `[-1, 1]` 标准化，球铰映射到各自角度上下界，底盘分支映射到 `[v_{x,cmd}, \omega_{z,cmd}]`
+ 
+ ### 17.3 命令
+ 
+ - 命令维度：`3`
+-- 每个 episode 只采样一次
++- 每个 episode 默认覆盖 `3` 个目标段
++- `resampling_time = 8.0 s`
+ - 目标距离固定 `12 m`
+-- 目标方向偏角范围 `[-18.43°, +18.43°]`
+-- 目标朝向附加偏置范围 `[-9.215°, +9.215°]`
++- 目标方向偏角范围 `[-30°, +30°]`
++- 目标朝向附加偏置范围 `[-12°, +12°]`
+ 
+ ### 17.4 奖励
+ 
+ - 总奖励：
+   - `target_bonus + gated_progress`
+ - 其中：
+-  - `gated_progress = progress * heading_gate`
++- `target_bonus` 只在同时满足“到点 + 朝向误差足够小”时触发
++  - `target_bonus = (goal_distance / control_dt) * target_bonus_ratio / (1 - target_bonus_ratio)`
++  - `progress = (previous_goal_distance - current_goal_distance) / control_dt`
++  - `heading_gate = exp[-1/2 * (goal_yaw_error / (current_goal_distance / heading_distance_scale))^2]`
++  - `longitudinal_slip_gate = 六个轮子分别按 exp[-1/2 * (longitudinal_slip / longitudinal_slip_gate_scale)^2] 计算后取乘积`
++    - 当前这里直接使用 observation 路径中已裁到：
++      - `[-3.0, +3.0]`
++      的纵向滑移率
++  - `lateral_slip_gate = 六个轮子分别按 0.5 * cos(lateral_slip_gate_scale * clipped_slip_angle) + 0.5 计算后取乘积`
++  - `clipped_slip_angle` 当前按：
++    - `[-pi / lateral_slip_gate_scale, +pi / lateral_slip_gate_scale]`
++    截断
++    - 当前只有 reward 内部保留这一步裁切
++  - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
++  - `gated_progress = progress * heading_gate * roll_gate`
++    - 当前 active 代码中已改为：
++      - `gated_progress = progress * composite_gate * roll_gate`
++  - 当 `|middle_roll| <= 5°` 时：
++    - `roll_gate = 1`
++  - 当 `|middle_roll| > 5°` 时：
++    - `roll_gate = exp[-1/2 * (goal_yaw_error / body_car_roll_gate)^2]`
++
++也就是说，当前 reward 的物理含义是：
++
++- 先奖励“目标距离是否在缩短”
++- 再分别用：
++  - `heading_gate`
++  - `longitudinal_slip_gate`
++  - `lateral_slip_gate`
++  约束“推进方向是否对、纵滑是否过大、侧滑是否过大”
++- 然后把三者平均成：
++  - `composite_gate`
++  作为统一推进乘子
++- 再用 `roll_gate` 抑制“中车已经明显侧倾时还继续激进推进”
++- 若已经到达目标点且朝向也进入容差，则额外给一次 `target_bonus`
+ 
+ 当前关键参数为：
+ 
+ - `target_bonus_ratio = 0.03`
+ - `target_position_tolerance = 0.3 m`
+ - `target_yaw_tolerance_deg = 9°`
+-- `heading_distance_scale = 5 m`
++- `heading_distance_scale = goal_distance / (2 sin(goal_direction_max_deg))`
++- 当前 Stage0 下等于：
++  - `12.0 m`
++- `roll_gate_activation_roll_deg = 5°`
++- `body_car_roll_gate = pi / 16`
++  - 约等于：
++    - `0.19635 rad`
++    - `11.25°`
++- `longitudinal_slip_gate_scale = 0.3`
++- `lateral_slip_gate_scale = 4.0`
++  - 当前侧滑角逐轮截断范围等于：
++    - `[-pi/4, +pi/4]`
++    - 约 `[-45°, +45°]`
++- `target_bonus`
++  - 当前计算为：
++    - `(12.0 / (1/60)) * 0.03 / (1 - 0.03)`
++  - 当前约等于：
++    - `22.27`
++
++### 17.5 终止
++
++- 中车 `|roll| > 30°`：
++  - `bad_orientation`
++- 前车或后车 absolute `|roll| > 35°`：
++  - `head_tail_roll_out_of_bounds`
++- 任一球铰关节越界：
++  - `ball_joint_out_of_bounds`
++- 当前球铰越界终止范围：
++  - yaw：`[-0.6, 0.6]`
++  - pitch：`[-1.0, 0.4]`
++  - roll：`[-0.5, 0.5]`
++
++### 17.6 观测口径
++
++- 当前 `wheel_longitudinal_slip`：
++  - 在 observation 路径按：
++    - `[-3.0, +3.0]`
++    裁切
++- 当前 `wheel_slip_angle`：
++  - 在 observation 路径不再裁切
++  - 只在 reward 的 `lateral_slip_gate` 内部按：
++    - `[-pi / lateral_slip_gate_scale, +pi / lateral_slip_gate_scale]`
++    裁切
++- 当前 Stage0 所有 observation scale 已统一为：
++  - `1.0`
++
++关于 `heading_distance_scale` 的解释：
++
++- 如果你的本意是让它代表“当前目标几何对应的常曲率弧线半径量级”，
++  - 那么 `goal_distance / (2 sin(goal_direction_max_deg))` 是合理的一阶近似
++- 但如果你的本意是让它代表“小车真实最小转弯半径”或“车辆机构学意义下的转弯半径”，
++  - 那这个公式并不严格正确
++- 当前代码里它更适合作为：
++  - `heading_gate` 的几何尺度参数
++  - 而不是车辆真实性能指标
+ 
+ ### 17.5 当前这一轮定向实验的保留/否决项
+ 
+-- 当前默认 reward 已按用户要求收口为最小主线：
+-  - `r_tar + r_prog * r_head`
++- 当前默认 reward 已按用户要求调整为：
++  - `r_tar + r_prog * r_head * r_roll`
+ - 当前 active reward 组件只有：
+   - `target_bonus`
+   - `progress`
+   - `heading_gate`
++  - `roll_gate`
+   - `gated_progress`
+ - 以下旧 gate 已退出 active reward 主线：
+-  - `roll_gate`
+   - `speed_gate`
+   - `force_gate`
+   - `vertical_speed_gate`
+@@ -1280,7 +1411,7 @@ $$
+ 
+ ### 17.5 终止
+ 
+-- 姿态倾角 > `45°`
++- 姿态倾角 > `30°`
+ - 球铰越界
+ - 或超时
+ 
+diff --git "a/docs/Stage0_reward\350\256\276\350\256\241\350\257\246\350\247\243.md" "b/docs/Stage0_reward\350\256\276\350\256\241\350\257\246\350\247\243.md"
+index d6a11cc..9733ea4 100644
+--- "a/docs/Stage0_reward\350\256\276\350\256\241\350\257\246\350\247\243.md"
++++ "b/docs/Stage0_reward\350\256\276\350\256\241\350\257\246\350\247\243.md"
+@@ -3,11 +3,15 @@
+ > 2026-04-17 更新：
+ > 当前 active Stage0 reward 已不再使用本文后续展开的多 gate 版本。
+ > 当前默认代码已收口为：
+-> `R = r_tar + r_prog * r_head`
++> `R = r_tar + r_prog * r_comp * r_roll`
+ > 其中：
+ > `r_tar = target_bonus`
+ > `r_prog = progress`
+ > `r_head = heading_gate`
++> `r_long = longitudinal_slip_gate`
++> `r_lat = lateral_slip_gate`
++> `r_comp = (r_head + r_long + r_lat) / 3`
++> `r_roll = roll_gate`
+ > 本文其余内容保留为 2026-04-16 的历史说明，仅用于回溯旧实验。
+ 
+ 本文档整理当前 active `Stage0` 的 reward 设计。  
+@@ -137,9 +141,7 @@ g_{\mathrm{lat}}
+ 
+ 最终总奖励是：
+ 
+-- \[
+-  R = B + G
+-  \]
++- `reward = target_bonus + gated_progress`
+ 
+ ---
+ 
+@@ -150,17 +152,11 @@ g_{\mathrm{lat}}
+ - `target_bonus_ratio = 0.03`
+ - `target_position_tolerance = 0.3`
+ - `target_yaw_tolerance_deg = 9.0`
+-- `heading_distance_scale = 5.0`
+-- `roll_free_deg = 3.0`
+-- `roll_gaussian_scale = pi / 24`
+-- `speed_limit = 1.6`
+-- `speed_gain = 3.0`
+-- `force_std_scale = 0.08`
+-- `longitudinal_slip_scale = 0.18`
+-- `lateral_slip_gain = 8.0`
+-- `vertical_speed_scale = 0.20`
+-- `ball_joint_speed_scale = 0.55`
+-- `wheel_action_rate_scale = 0.25`
++- `heading_distance_scale = 12.0`
++- `roll_gate_activation_roll_deg = 5.0`
++- `body_car_roll_gate = pi / 16`
++- `longitudinal_slip_gate_scale = 0.3`
++- `lateral_slip_gate_scale = 4.0`
+ 
+ 同时当前 Stage0 命令和控制相关值为：
+ 
+diff --git a/docs/conversation_history.md b/docs/conversation_history.md
+index d116a95..afcf5bc 100644
+--- a/docs/conversation_history.md
++++ b/docs/conversation_history.md
+@@ -4,6 +4,1101 @@ This file stores durable conclusions from past Codex sessions so that future ses
+ 
+ ## 2026-04-17
+ 
++### Per-axis ball-joint position and limit-usage metrics are now exported so future runs can identify exactly which articulation axis saturates first
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - the previous Stage0 logs only exposed:
++    - `ball_joint_pos_abs_mean_raw`
++    - `ball_joint_target_error_abs_mean_raw`
++    - `ball_joint_limit_rate`
++  - these are sufficient to diagnose articulation-margin consumption in aggregate
++  - but they are insufficient to identify which one of the six ball-joint coordinates reaches its bound first
++  - the env now exports, for each of the six ball-joint coordinates:
++    - signed mean joint position:
++      - `Observation/<joint_name>_pos_raw`
++    - mean active-side limit usage:
++      - `Observation/<joint_name>_limit_usage_mean_raw`
++    - max active-side limit usage across envs:
++      - `Observation/<joint_name>_limit_usage_max_raw`
++  - the joint order is:
++    - `spm1_platform_joint_z`
++    - `spm1_platform_joint_y`
++    - `spm1_platform_joint_x`
++    - `spm2_platform_joint_z`
++    - `spm2_platform_joint_y`
++    - `spm2_platform_joint_x`
++  - physically this maps to:
++    - front module `yaw / pitch / roll`
++    - rear module `yaw / pitch / roll`
++- Reason:
++  - aggregate mean position can hide single-axis saturation, while termination triggers on any single coordinate exceeding bounds
++- Impact:
++  - the next training run can directly answer:
++    - which articulation axis is saturating first
++  - future diagnosis no longer needs to infer the responsible axis indirectly from aggregate metrics
++- Status:
++  - implemented
++  - static compile check passed
++
++### In run `2026-04-17_17-33-20`, the late rise of `ball_joint_limit_rate` is best explained as articulation-margin consumption by a more goal-effective policy, not by posture instability
++- Updated:
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Targeted analysis based on:
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-33-20`
++  - especially the aligned time series of:
++    - `ball_joint_limit_rate`
++    - `goal_pos_error`
++    - `goal_yaw_error_abs`
++    - `progress`
++    - `heading_gate`
++    - `ball_joint_pos_abs_mean_raw`
++    - `ball_joint_target_error_abs_mean_raw`
++    - `ball_joint_vel_abs_mean_raw`
++    - `Action/policy_abs_mean`
++- Durable conclusion:
++  - the late-stage ball-joint-limit rise is not driven by body-roll instability:
++    - `tilt_deg` stays extremely low
++    - `roll_gate` stays exactly:
++      - `1.0`
++    - `head_tail_roll_limit_rate` stays:
++      - `0.0`
++  - it is also not a critic-collapse phenomenon:
++    - `Loss/00_value` stays low
++  - the more likely mechanism is:
++    - as the policy becomes better at aligning with the target, `heading_gate` rises close to:
++      - `0.96`
++    - `progress` rises to about:
++      - `1.14`
++    - action magnitude also increases:
++      - from roughly `0.43` in earlier spiking regions to about `0.57` near the end
++    - at the same time:
++      - `ball_joint_target_error_abs_mean_raw` creeps upward
++      - `ball_joint_pos_abs_mean_raw` trends upward
++    - because the reward has no soft penalty on approaching ball-joint limits, the policy is free to spend articulation margin to gain more progress and heading correction
++  - the current action semantics reinforce this mechanism:
++    - the policy now outputs:
++      - `6` ball-joint targets
++      - `2` planar commands
++    - the wheel allocator reconstructs wheel targets from:
++      - current articulation state
++      - current articulation velocity
++      - commanded planar motion
++    - therefore articulation is now a direct lever for producing useful turning behavior
++  - one more important interpretation detail:
++    - `ball_joint_pos_abs_mean_raw` remaining around `0.17 ~ 0.18 rad` does not mean the joints are globally safe
++    - termination is triggered by any one of the six ball-joint coordinates exceeding bounds
++    - so a single saturating axis can be hidden inside a moderate mean value
++- Impact:
++  - the late main problem should now be understood as:
++    - aggressive use of articulation margin for target-effective motion
++  - not as:
++    - posture collapse
++    - slip-gate collapse
++    - or general training instability
++- Status:
++  - diagnosed
++
++### Run `2026-04-17_17-33-20` confirms that the new `8`-dim action semantics remain healthy deeper into training, but ball-joint-limit pressure returns once the policy becomes more goal-effective
++- Updated:
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Diagnosed run:
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-33-20`
++- Validation scope:
++  - this run reached about:
++    - `162 / 600`
++  - it is long enough for a meaningful mid-stage diagnosis
++- Durable diagnosis:
++  - the core benefits of the new action chain persist:
++    - `longitudinal_slip_gate` stays at a real nonzero level:
++      - last about `0.0055`
++    - `lateral_slip_gate` also stays nonzero:
++      - last about `0.0028`
++    - `Loss/00_value` remains healthy:
++      - last about `2.07`
++    - middle-body and outer-body posture remain very stable:
++      - `tilt_deg` last about `0.081°`
++      - `head_tail_roll_limit_rate` last:
++        - `0.0`
++  - task effectiveness improves over the shorter run:
++    - `Train/mean_reward` last about:
++      - `501.59`
++    - `goal_pos_error` last about:
++      - `7.75 m`
++    - `goal_yaw_error_abs` last about:
++      - `0.136 rad`
++    - `heading_gate` last about:
++      - `0.965`
++  - the new dominant issue is no longer slip-gate collapse or critic instability
++  - instead, late-stage failure pressure shifts back toward:
++    - `ball_joint_limit_rate`
++      - last about:
++        - `0.50`
++    - while `time_out_rate` drops to about:
++      - `0.50`
++  - `target_bonus` still remains:
++    - `0.0`
++- Reason:
++  - the new action semantics reduce wheel-level coordination burden and keep the reward surface trainable
++  - once the policy becomes better at approaching and aligning with the target, it again starts consuming articulation margin more aggressively
++- Impact:
++  - the mainline question is no longer:
++    - “does the new action space help”
++  - that is now effectively validated as yes
++  - the next tuning focus should move to:
++    - how to contain late ball-joint-limit growth under the new action semantics
++    without destroying:
++      - recovered slip-gate values
++      - critic stability
++- Status:
++  - diagnosed
++
++### The new `8`-dim action semantics (`6` ball-joint targets + `2` base planar commands through the allocator) have now passed a real training validation and materially improve slip-gate health, critic stability, and ball-joint-limit behavior
++- Updated:
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Validated run:
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-28-36_action8_allocator_v1`
++- Validation scope:
++  - the run was intentionally stopped early after the trend became clear
++  - exported range is about:
++    - `66 / 600`
++- Durable diagnosis:
++  - the action-chain change is runtime-valid:
++    - actor observation dim:
++      - `44`
++    - critic observation dim:
++      - `44`
++    - action dim:
++      - `8`
++  - compared with the previous partial run
++    - `2026-04-17_17-02-10_slipclip3_latk4_v1`
++    the main improvements are structural rather than marginal:
++    - `Reward/03_longitudinal_slip_gate` no longer collapses to near-zero:
++      - current last:
++        - `0.0079`
++      - previous last:
++        - `5.27e-06`
++    - `Reward/04_lateral_slip_gate` also recovers from near-zero:
++      - current last:
++        - `0.0062`
++      - previous last:
++        - `7.74e-04`
++    - `Termination/04_ball_joint_limit_rate` no longer dominates at the current stage:
++      - current last:
++        - `0.0`
++      - previous last:
++        - `0.719`
++    - critic value learning becomes much healthier:
++      - current `Loss/00_value` last:
++        - `4.26`
++      - previous last:
++        - `312.94`
++    - middle and outer-body posture stay very stable:
++      - `Observation/03_tilt_deg` last:
++        - `0.094`
++      - `Observation/head_roll_pitch_abs_mean_raw` last:
++        - `0.0297`
++      - `Observation/tail_roll_pitch_abs_mean_raw` last:
++        - `0.0309`
++  - current task-level progress is still only mid-stage:
++    - `Train/mean_reward` last:
++      - `248.79`
++    - `goal_pos_error` last:
++      - `8.59 m`
++    - `goal_yaw_error_abs` last:
++      - `0.498 rad`
++    - `target_bonus` has not triggered yet
++- Reason:
++  - replacing six direct wheel-speed actions with two high-level planar-command actions lets the actor focus on:
++    - target-oriented command generation
++    instead of simultaneously solving:
++    - wheel-level allocation
++    - articulation coordination
++  - the wheel allocator then reconstructs physically more coherent wheel targets from:
++    - current articulation state
++    - commanded planar motion
++- Impact:
++  - future Stage0 tuning should treat the new action semantics as the current preferred mainline
++  - the main research question is no longer “is direct 6-wheel action output causing the slip-gate collapse”
++  - the next tuning focus should move to:
++    - convergence speed
++    - target-bonus activation
++    - whether longer training preserves the same critic stability
++- Status:
++  - partially validated on GPU
++
++### Stage0 action chain now uses `6` ball-joint actions plus `2` base planar-command actions, and wheel targets are reconstructed through the wheel allocator instead of being output directly by the policy
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - by user confirmation, active Stage0 no longer uses:
++    - direct `12`-dim action semantics with `6` wheel-speed outputs
++  - the current active action semantics are now:
++    - first `6` dims: ball-joint target actions
++    - last `2` dims: base planar-command actions
++  - Stage0 action dimension is now:
++    - `8`
++  - under the current Stage0 defaults, the base branch maps to:
++    - `v_x_cmd` with `base_forward_velocity_max = 1.2 m/s`
++    - `yaw_rate_cmd` with `base_yaw_rate_max = 0.6 rad/s`
++    - `base_allow_reverse = False`
++  - the env then applies the measured planar-command transform and calls:
++    - `TorchWheelSpeedAllocator.compute_wheel_speed_targets_from_planar_command(...)`
++    using:
++    - current ball-joint position
++    - current ball-joint velocity
++    - transformed planar command
++  - the allocator output is finally clamped by:
++    - `wheel_joint_velocity_limit_sim`
++- Reason:
++  - the previous direct wheel-speed branch forced the actor to solve:
++    - target tracking
++    - wheel-level coordination
++    at the same time
++  - this was judged too direct for the current goal-tracking Stage0 task and inconsistent with the user's confirmed use of a wheel-speed allocator
++- Impact:
++  - future Stage0 runs should interpret wheel-speed behavior as:
++    - a deterministic downstream reconstruction from high-level planar commands
++    - not as six independent wheel actions selected directly by the actor
++  - because `last_action` shrank from `12` to `8`, the current single-frame observation sizes are now:
++    - actor `44`
++    - critic `44`
++  - comparisons with older Stage0 runs that used direct 12-dim wheel actions must explicitly note the changed action semantics
++- Status:
++  - implemented
++  - static `py_compile` check passed
++  - full runtime validation pending a new training run
++
++### Stage0 now clips observation-path longitudinal slip to `[-3, 3]`, reduces lateral-slip cosine factor from `6` to `4`, and the partial validation run shows lower raw longitudinal slip but still near-zero slip gates due to the 6-wheel product
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/Stage0_reward设计详解.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - by user request, active Stage0 now:
++    - clips observation-path `wheel_longitudinal_slip` to:
++      - `[-3.0, +3.0]`
++    - keeps observation-path `wheel_slip_angle` unclipped
++    - changes:
++      - `lateral_slip_gate_scale = 4.0`
++    - therefore reward-side lateral-slip clip becomes:
++      - `[-pi/4, +pi/4]`
++  - a real GPU training run was launched:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-02-10_slipclip3_latk4_v1`
++  - the user explicitly stopped the run early once the failure mode was visible
++  - the exported partial run ends around:
++    - `527 / 600`
++- Durable diagnosis from the partial run:
++  - raw longitudinal slip improves significantly relative to the previous run:
++    - previous `2026-04-17_16-29-08` mean:
++      - about `2.79`
++    - current partial run mean:
++      - about `1.80`
++  - task-level metrics also improve versus the previous run:
++    - `Train/mean_reward` reaches about:
++      - `1019.56`
++    - `goal_pos_error` reaches about:
++      - `5.21 m`
++    - `goal_yaw_error_abs` reaches about:
++      - `0.150 rad`
++    - `target_bonus` becomes clearly nonzero
++  - but both slip gates still remain effectively collapsed:
++    - `Reward/03_longitudinal_slip_gate` last:
++      - `5.27e-06`
++    - `Reward/04_lateral_slip_gate` last:
++      - `7.74e-04`
++    - `Reward/05_composite_gate` last:
++      - `0.241`
++  - value learning is still unhealthy:
++    - `Loss/00_value` last:
++      - `312.94`
++    - max value loss exceeds:
++      - `3000`
++  - late in the partial run, the dominant termination pressure shifts back toward:
++    - `ball_joint_limit_rate`
++      - last about:
++        - `0.719`
++- Reason:
++  - clipping longitudinal slip to `±3` removes the worst raw outliers from the observation path and helps reduce the learned slip magnitude
++  - reducing lateral-slip cosine factor from `6` to `4` is a real relaxation
++  - however, with current slip levels and six-wheel multiplicative aggregation, both slip gates are still too small to behave like soft shaping terms
++- Impact:
++  - future tuning should treat the main remaining problem as:
++    - overly harsh slip-gate aggregation
++    - plus late ball-joint-limit pressure
++  - the next useful design question is no longer “should `k` be smaller than `6`”
++  - it is now “should the six-wheel product remain the aggregation rule”
++- Status:
++  - implemented and partially validated on GPU
++
++### After setting all active Stage0 observation scales to `1.0`, the dominant effect on the latest run comes mainly from unclipped slip observations rather than from the other observation terms
++- Updated:
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - in the active Stage0 actor trunk, the main observation groups are defined in:
++    - `mdp/observations.py`
++  - the current Stage0 config sets all observation scales to:
++    - `1.0`
++    in:
++    - `complete_car_stage0_cfg.py`
++  - the current runner still enables observation normalization:
++    - `actor.obs_normalization = true`
++    - `critic.obs_normalization = true`
++    in the run-time `agent.yaml`
++  - therefore, changing all scales to `1.0` is not neutral, but its effect is moderated by empirical observation normalization
++  - under the latest diagnosed run `2026-04-17_16-29-08`, most non-slip active observation terms still stay in roughly reasonable magnitude bands:
++    - projected gravity / body posture / last action:
++      - mostly `O(1)`
++    - ball-joint position:
++      - mostly `O(1)`
++    - relative goal commands:
++      - mainly `O(1) ~ O(10)`
++    - wheel normal-contact-force terms:
++      - mainly `O(0.1) ~ O(1)`
++  - the clearly oversized active observation term is still:
++    - `wheel_longitudinal_slip`
++      - observed aggregated magnitude around:
++        - mean `2.79`
++        - max `5.69`
++  - `wheel_slip_angle` also stays high:
++    - around:
++      - mean `0.75 rad`
++  - durable interpretation:
++    - the latest run is affected much more by the unclipped slip observations and the harsh slip-gate reward than by setting the other observation scales to `1.0`
++- Reason:
++  - most active observation groups remain within moderate ranges and are normalized by the model-side empirical normalizer
++  - raw slip observations, especially longitudinal slip, are the main source of large-magnitude outliers
++- Impact:
++  - future analysis should not over-attribute the latest degradation to “all scales = 1.0” in general
++  - the primary attention should stay on:
++    - raw slip magnitude
++    - slip clipping policy
++    - slip-gate shaping strength
++- Status:
++  - diagnosed
++
++### If longitudinal-slip clipping is restored for observation, the first reasonable symmetric trial range should be around `[-3.0, 3.0]`, not the old small clip
++- Updated:
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - based on the latest run `2026-04-17_16-29-08`:
++    - `wheel_longitudinal_slip_abs_mean_raw` is about:
++      - mean `2.79`
++      - last `2.68`
++      - max `5.69`
++  - if observation-path clipping is reintroduced, a first reasonable trial is:
++    - `wheel_longitudinal_slip_clip = 3.0`
++    - i.e. clip to:
++      - `[-3.0, +3.0]`
++  - durable interpretation:
++    - this clip is not meant to define “good slip”
++    - it is meant to suppress large outliers while keeping the current main operating band distinguishable to the policy
++- Reason:
++  - clipping back to a small range like `[-1, 1]` would collapse too much of the current operating distribution into saturation
++  - leaving the term fully unclipped exposes the normalizer and policy input to very large tail values that are not the main control signal
++- Impact:
++  - if the user chooses to re-enable longitudinal-slip clipping, the first test should be around `±3` rather than immediately returning to very small bounds
++- Status:
++  - recommended, not yet implemented
++
++### The lateral-slip reward clip should stay tied to the cosine parameter; with the current cosine factor `6`, the mathematically consistent clip is still `[-pi/6, +pi/6]`
++- Updated:
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - the active lateral-slip gate is:
++    - `0.5 * cos(k * slip_angle) + 0.5`
++  - to keep this gate monotonic from `1` down to `0` without reward “rebound”, the reward-side clip should match:
++    - `[-pi / k, +pi / k]`
++  - therefore, with the current:
++    - `k = 6`
++    the reward-side clip:
++    - `[-pi/6, +pi/6]`
++    is mathematically correct and should not be widened independently
++  - if the user wants a wider effective lateral-slip reward region, the correct change is:
++    - reduce `k`
++    rather than only widening the clip
++  - a practical next candidate would be:
++    - `k = 4`
++    - clip:
++      - `[-pi/4, +pi/4]`
++    because the latest run has slip-angle magnitude near:
++      - `0.75 rad`
++    and `pi/4 ≈ 0.785 rad`
++- Reason:
++  - widening the clip while keeping `k = 6` would move the cosine past its single descending half-wave and create non-monotonic reward behavior
++- Impact:
++  - future tuning must treat:
++    - `lateral_slip_gate_scale`
++    - reward-side lateral-slip clip
++    as a coupled design choice rather than separate knobs
++- Status:
++  - diagnosed
++
++### Run `2026-04-17_16-29-08` shows that the new slip-gated Stage0 reward preserves survival and target approach, but the slip gates are so harsh that they nearly shut off progress reward and destabilize the critic
++- Updated:
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Diagnosed run:
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_16-29-08`
++- Durable diagnosis:
++  - this run does learn a workable survival-and-approach policy:
++    - `Train/mean_episode_length` reaches about:
++      - `1335.64 / 1439`
++    - `Termination/time_out_rate` ends at:
++      - `1.0`
++    - `Tracking/goal_pos_error` falls to about:
++      - `4.88 m`
++    - `Tracking/goal_yaw_error_abs` falls to about:
++      - `0.259 rad`
++    - `Reward/target_bonus` is nonzero at the end
++  - posture and articulation safety are not the end-stage bottleneck in this run:
++    - `Observation/tilt_deg` stays around:
++      - `0.31°`
++    - `Observation/head_roll_pitch_abs_mean_raw` ends around:
++      - `0.083 rad`
++    - `Observation/tail_roll_pitch_abs_mean_raw` ends around:
++      - `0.084 rad`
++    - `Termination/head_tail_roll_limit_rate` ends at:
++      - `0.0`
++    - `Termination/ball_joint_limit_rate` ends at:
++      - `0.0`
++  - the dominant failure mode has moved into the reward surface itself:
++    - `Reward/01_progress` ends around:
++      - `1.123`
++    - `Reward/00_gated_progress` ends around:
++      - `0.364`
++    - `Reward/03_longitudinal_slip_gate` ends near:
++      - `2.58e-4`
++    - `Reward/04_lateral_slip_gate` ends near:
++      - `1.94e-4`
++    - `Reward/05_composite_gate` ends around:
++      - `0.215`
++    - `Reward/06_roll_gate` stays effectively:
++      - `1.0`
++  - the observation magnitudes explain why the gates collapse:
++    - `Observation/wheel_longitudinal_slip_abs_mean_raw` ends around:
++      - `2.68`
++    - `Observation/wheel_slip_angle_abs_mean_raw` ends around:
++      - `0.76 rad`
++    - with the current design:
++      - six-wheel multiplicative aggregation
++      - `longitudinal_slip_gate_scale = 0.3`
++      - `lateral_slip_gate_scale = 6.0`
++    - these slip magnitudes make both slip gates almost zero for most of training
++  - critic stability degrades severely under this reward shape:
++    - `Loss/value` ends around:
++      - `852`
++    - max value loss exceeds:
++      - `1000`
++- Reason:
++  - by user request, the observation path now exposes unclipped longitudinal slip and slip angle
++  - the active slip gates still use very strict scales and multiply all six wheel terms together
++  - this combination makes the slip-based reward terms function less like soft regularizers and more like near-binary shutdown factors
++  - as a result, the policy can survive and approach the goal, but the progress reward is heavily attenuated and the critic fits a badly compressed return distribution
++- Impact:
++  - future runs under the current slip-gate bundle should be interpreted as:
++    - survival and target approach are not the main blocker
++    - the main blocker is that the slip gates are too harsh for the current slip magnitude distribution
++  - further tuning should focus on the slip-gate strength and aggregation logic before adding more reward terms
++- Status:
++  - diagnosed
++
++### Stage0 wheel-slip observations are now unclipped in the observation path, reward keeps only the lateral-slip clip, and all active Stage0 observation scales are set to `1.0`
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - by user request, the observation path no longer clips:
++    - `wheel_longitudinal_slip`
++    - `wheel_slip_angle`
++  - raw wheel-slip values are now passed directly into the observation pipeline
++  - the reward path still clips lateral slip internally for the cosine gate:
++    - `[-pi / lateral_slip_gate_scale, +pi / lateral_slip_gate_scale]`
++  - the longitudinal-slip reward uses the now-unclipped slip values directly
++  - all active Stage0 observation scales are now set to:
++    - `1.0`
++- Reason:
++  - the user explicitly wanted the policy to see raw wheel-slip states, while keeping only the reward-specific lateral-slip clipping logic
++- Impact:
++  - new runs are no longer directly comparable to previous Stage0 runs on the magnitude distribution of:
++    - `wheel_longitudinal_slip`
++    - `wheel_slip_angle`
++    inside the policy observation input
++  - future interpretation should distinguish:
++    - observation-path slip values
++    - reward-path clipped lateral-slip values
++- Status:
++  - implemented
++  - static compile check passed
++
++### Stage0 reward now adds longitudinal-slip and lateral-slip wheel-product gates, and averages them with `heading_gate` into the active `composite_gate`
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - by user request, the active Stage0 reward trunk is now:
++    - `target_bonus + progress * composite_gate * roll_gate`
++  - where:
++    - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
++  - the new longitudinal-slip gate is defined as:
++    - for each wheel:
++      - `exp[-1/2 * (longitudinal_slip / scale)^2]`
++    - then multiply all six wheel terms together
++    - active parameter:
++      - `longitudinal_slip_gate_scale = 0.3`
++  - the new lateral-slip gate is defined as:
++    - first clip each wheel slip angle to:
++      - `[-pi / scale, +pi / scale]`
++    - then per wheel compute:
++      - `0.5 * cos(scale * slip_angle) + 0.5`
++    - then multiply all six wheel terms together
++    - active parameter:
++      - `lateral_slip_gate_scale = 6.0`
++  - the middle-body `roll_gate` remains unchanged
++- Reason:
++  - the user explicitly decided to add traction-quality shaping back into the reward, but now in the form of wheel-wise multiplicative gates rather than the older removed gate bundle
++- Impact:
++  - future Stage0 diagnosis should explicitly watch:
++    - `Reward/heading_gate`
++    - `Reward/longitudinal_slip_gate`
++    - `Reward/lateral_slip_gate`
++    - `Reward/composite_gate`
++    - `Reward/roll_gate`
++  - reward interpretation is no longer the previous:
++    - `heading_gate * roll_gate`
++    trunk
++- Status:
++  - implemented
++  - static compile check passed
++
++### Stage0 active design is now rolled back to the middle-body-only reward gate, while front/rear absolute roll is moved into termination with a `35°` limit
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/Stage0_reward设计详解.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - by user request, the active Stage0 reward trunk is rolled back to:
++    - `target_bonus + progress * heading_gate * roll_gate`
++  - the temporary:
++    - `head_roll_gate`
++    - `tail_roll_gate`
++    - `head_tail_roll_gate`
++    are removed from the active reward path
++  - front/rear absolute world-roll is now handled by termination instead:
++    - if either front or rear module has `|roll| > 35°`, the episode terminates immediately
++  - a new termination metric is now exported:
++    - `Termination/head_tail_roll_limit_rate`
++- Reason:
++  - the previous reward comparison showed that front/rear absolute-roll shaping pushed the policy into a low-roll but lower-task-quality local optimum
++  - the user therefore decided that front/rear absolute roll should be treated as a safety boundary, not as a continuous reward-shaping term
++- Impact:
++  - future Stage0 runs should be interpreted against the restored reward trunk, not against the short-lived front/rear roll-gated reward version
++  - front/rear absolute roll is now part of the active failure definition rather than the progress reward surface
++- Status:
++  - implemented
++  - static compile check passed
++
++### Comparing `2026-04-17_14-12-39` against `2026-04-17_15-30-13` shows that the newly added front/rear absolute-roll gate successfully suppresses posture excursions, but pushes Stage0 into a lower-roll yet lower-task-quality local optimum
++- Updated:
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Compared runs:
++  - previous:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_14-12-39`
++  - current:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_15-30-13`
++- Important comparability note:
++  - these runs are not strictly same-config:
++    - `14-12-39` still uses only the middle-body `roll_gate`
++    - `15-30-13` adds:
++      - `head_roll_gate`
++      - `tail_roll_gate`
++      - `head_tail_roll_gate`
++    - and its reward config now includes the new front/rear roll parameters
++- Durable diagnosis:
++  - the new front/rear roll shaping strongly reduced posture excursions:
++    - middle-body roll metric `tilt_deg` last-10 mean:
++      - `15.83° -> 0.21°`
++    - front-module roll/pitch magnitude last-10 mean:
++      - `0.709 -> 0.081 rad`
++    - ball-joint position magnitude last-10 mean:
++      - `0.406 -> 0.232`
++  - but task-level quality degraded:
++    - `Train/mean_reward` last-10 mean:
++      - `1582.62 -> 1351.16`
++    - `goal_pos_error` last-10 mean:
++      - `5.64 -> 5.94 m`
++    - `goal_yaw_error_abs` last-10 mean:
++      - `0.338 -> 0.664 rad`
++    - `target_bonus` last-10 mean:
++      - `0.0203 -> 0.0`
++  - control-quality gains are limited and mixed:
++    - longitudinal slip improves only slightly:
++      - `0.831 -> 0.810`
++    - slip angle stays high and roughly unchanged:
++      - `0.740 -> 0.742 rad`
++    - total normal-contact-force ratio gets worse:
++      - `0.948 -> 0.838`
++  - the new gates are not strongly active at the converged end regime:
++    - `episode_per_step/head_tail_roll_gate` last-10 mean is already:
++      - `1.0`
++    - `Reward/roll_gate` last-10 mean is also nearly:
++      - `1.0`
++  - therefore the main mechanism is:
++    - not “the gate keeps suppressing reward at the end”
++    - but “the gate reshapes exploration and training toward a more conservative low-roll strategy”
++- Reason:
++  - for this articulated vehicle, front/rear module posture excursions are partly coupled with turning and heading correction
++  - constraining front/rear absolute world-roll throughout the whole trajectory suppresses not only dangerous posture, but also useful articulation that helps reorientation and approach
++  - this is why the learned policy becomes:
++    - lower roll
++    - smaller articulation amplitude
++    - smaller action amplitude
++    - but worse heading correction and weaker target completion
++- Impact:
++  - future tuning should not interpret front/rear absolute-roll suppression as a free improvement
++  - the next design step should separate:
++    - dangerous posture to suppress
++    - versus turning-essential posture that should remain available
++- Status:
++  - diagnosed
++
++### Stage0 reward now keeps the existing middle-body `roll_gate`, does not enable `straighten_gate`, and adds a symmetric front/rear absolute-roll gate to the progress trunk
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/Stage0_reward设计详解.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - by user request, the active Stage0 reward trunk is now:
++    - `target_bonus + progress * heading_gate * roll_gate * head_tail_roll_gate`
++  - the existing middle-body `roll_gate` stays unchanged:
++    - when `|middle_roll| <= 5°`, `roll_gate = 1`
++    - when `|middle_roll| > 5°`, `roll_gate = exp[-1/2 * (goal_yaw_error / body_car_roll_gate)^2]`
++  - `straighten_gate` is intentionally not enabled in the active code path
++  - a new front/rear absolute-roll gate now suppresses progress when either outer module rolls too far in world frame:
++    - `head_roll_gate = 1` inside the free zone
++    - `head_roll_gate = exp[-1/2 * ((|head_roll| - head_roll_free_deg) / head_roll_sigma_deg)^2]` outside the free zone
++    - `tail_roll_gate` is defined the same way
++    - `head_tail_roll_gate = min(head_roll_gate, tail_roll_gate)`
++  - the user explicitly approved symmetric initial parameters:
++    - `head_roll_free_deg = 8.0`
++    - `tail_roll_free_deg = 8.0`
++    - `head_roll_sigma_deg = 6.0`
++    - `tail_roll_sigma_deg = 6.0`
++- Reason:
++  - the active task definition now requires the front and rear modules to stay within a stable absolute-roll envelope, but more softly than the middle body
++  - the user decided not to activate the near-goal straightening term yet
++- Impact:
++  - future Stage0 diagnoses should watch:
++    - `Reward/head_roll_gate`
++    - `Reward/tail_roll_gate`
++    - `Reward/head_tail_roll_gate`
++    alongside the existing middle-body `roll_gate`
++  - the new reward is no longer directly comparable to runs that only used:
++    - `target_bonus + progress * heading_gate * roll_gate`
++- Status:
++  - implemented
++  - static compile check passed
++
++### Stage0 logging and TensorBoard now expose the new front/rear roll-gate metrics explicitly
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - by user request, the active step-metric export now includes:
++    - `Reward/head_roll_gate`
++    - `Reward/tail_roll_gate`
++    - `Reward/head_tail_roll_gate`
++  - these metrics are now available both in:
++    - terminal training logs
++    - TensorBoard event files
++  - the TensorBoard alias ordering was expanded so the new reward cards appear in the intended reward block
++- Reason:
++  - once front/rear absolute-roll gates were added into the reward trunk, the user needed direct visibility into whether the front gate, rear gate, or their minimum was actually suppressing progress
++- Impact:
++  - future run diagnosis can now separate:
++    - middle-body roll suppression
++    - front-module roll suppression
++    - rear-module roll suppression
++    - combined head-tail suppression
++- Status:
++  - implemented
++  - static compile check passed
++
++### Stage0 ball-joint termination bounds are now tightened to `yaw[-0.6,0.6]`, `pitch[-1.0,0.4]`, `roll[-0.5,0.5]`, and any violation now directly ends the episode
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - by user request, the active Stage0 ball-joint termination limits are now:
++    - yaw: `[-0.6, 0.6]`
++    - pitch: `[-1.0, 0.4]`
++    - roll: `[-0.5, 0.5]`
++  - these limits are used directly by the termination path:
++    - once any controlled ball-joint position exceeds the configured range, the episode is terminated immediately
++  - this change only updates the termination bounds:
++    - it does not change the action target limits in the current Stage0 config
++- Reason:
++  - the user explicitly wanted the tighter ball-joint range to define the direct episode-ending condition
++- Impact:
++  - future Stage0 runs should expect earlier termination on aggressive pitch/yaw excursions than before
++  - documentation should no longer claim that the ball-joint termination bounds are identical to the action bounds
++- Status:
++  - implemented
++  - static compile check pending this session's final verification
++
++### Active `tilt` semantics and `bad_orientation` now use middle-body absolute roll only; middle-body pitch is no longer part of the posture-failure definition
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - by user request, the active posture semantics are now roll-only:
++    - `Observation/tilt_deg` now means:
++      - middle-body `|roll|` in degrees
++    - `bad_orientation` now triggers on:
++      - middle-body `|roll| > orientation_limit_deg`
++  - middle-body pitch is no longer counted by this active posture metric or termination path
++- Reason:
++  - the user explicitly decided that pitch should be allowed and the current active posture constraint should focus on roll only
++- Impact:
++  - old runs and new runs are no longer directly comparable on:
++    - `Observation/tilt_deg`
++    - `Termination/bad_orientation_rate`
++    unless you remember this semantics change
++  - future analysis of posture should now distinguish clearly between:
++    - middle-body roll
++    - middle-body pitch
++    - front/rear module roll-pitch behavior
++- Status:
++  - implemented
++  - static compile check pending this session's final verification
++
++### Run `2026-04-17_14-12-39` shows that adding `roll_gate` plus tightening `orientation_limit_deg` to `30°` materially improves survival and goal reaching, but does not drive the policy into a genuinely low-tilt regime
++- Updated:
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Compared runs:
++  - previous:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_13-21-54`
++  - current:
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_14-12-39`
++- Durable diagnosis:
++  - survival improved strongly:
++    - `mean_episode_length last: 845.94 -> 1400.44`
++    - `time_out_rate last: 0.57 -> 1.00`
++    - `ball_joint_limit_rate last: 0.43 -> 0.00`
++  - goal reaching also improved:
++    - `goal_pos_error last: 7.38 m -> 5.38 m`
++    - `target_bonus` became non-zero
++  - posture improved, but only from a high-tilt regime to a medium-tilt regime:
++    - `tilt_deg last: 21.21° -> 15.96°`
++  - other control-quality tradeoffs remain:
++    - longitudinal slip worsened:
++      - `0.79 -> 0.83`
++    - lateral slip improved only slightly:
++      - `0.77 rad -> 0.74 rad`
++    - front-module roll/pitch became even larger:
++      - `head_roll_pitch_abs_mean_raw last: 0.57 -> 0.73 rad`
++    - critic value loss deteriorated sharply:
++      - `47.8 -> 203.3`
++- Why tilt still does not come down enough:
++  - the active `roll_gate` is only a conditional indirect gate:
++    - it activates only when `|body_car_roll| > 5°`
++    - once activated, it depends on `goal_yaw_error`, not on the actual roll magnitude beyond the threshold
++  - in this run, the active gate stayed weak on average:
++    - `Reward/roll_gate last ≈ 0.955`
++    - meaning progress is still only mildly attenuated in the common late-stage regime
++  - the measured `tilt` is total middle-body inclination, while the gate only watches:
++    - `body_car_roll`
++    so pitch-driven tilt is not directly punished by this gate
++  - the tightened bad-orientation threshold:
++    - `30°`
++    is still well above the learned operating regime around:
++    - `15° ~ 16°`
++    so it almost never becomes an active constraint
++- Impact:
++  - future tuning should not assume that making `roll_gate` exist is sufficient to produce low-tilt behavior
++  - if the target is to reduce `tilt` much further, the next change must either:
++    - strengthen the roll gate itself
++    - start gating directly on `tilt`
++    - or penalize the posture/slip mechanism more directly
++- Status:
++  - diagnosed
++
++### Stage0 reward clarification: `roll_gate` angular scale is already parameterized, current `target_bonus` is about `22.27`, and `heading_distance_scale` should be read as a geometric scale rather than the vehicle's true minimum turning radius
++- Updated:
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - the `pi / 16` used by the active `roll_gate` is already a named reward parameter:
++    - `body_car_roll_gate`
++  - under the current Stage0 configuration:
++    - `goal_distance = 12.0`
++    - `control_dt = 1 / 60`
++    - `target_bonus_ratio = 0.03`
++  - the active target bonus magnitude is:
++    - `(goal_distance / control_dt) * ratio / (1 - ratio)`
++    - about `22.27`
++  - the current:
++    - `heading_distance_scale = goal_distance / (2 sin(goal_direction_max_deg))`
++    should be interpreted as:
++    - a geometric scale for the heading gate
++    - not the robot's true minimum turning radius in a strict vehicle-kinematics sense
++- Reason:
++  - the user asked to verify whether the reward-angle scale had a named parameter, how large the current target bonus is, and whether the heading scale formula is physically correct
++- Impact:
++  - future reward tuning can directly modify:
++    - `body_car_roll_gate`
++  - future thesis or diagnosis writing should avoid overstating:
++    - `heading_distance_scale`
++    as a measured vehicle turning-radius capability
++- Status:
++  - documented
++
++### Stage0 active reward is no longer pure `target_bonus + progress * heading_gate`; it now adds a conditional middle-roll gate, and the bad-orientation termination threshold is tightened to `30°`
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/Stage0_reward设计详解.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - by user request, the active Stage0 reward trunk is now:
++    - `target_bonus + progress * heading_gate * roll_gate`
++  - the new `roll_gate` activates only when the absolute middle-body roll exceeds:
++    - `5°`
++  - once activated, it is computed as:
++    - `exp[-1/2 * (goal_yaw_error / (pi/16))^2]`
++  - the middle-body roll is read from the articulation root orientation, i.e. the current middle body:
++    - `body_car_chassis`
++  - by user request, the bad-orientation termination threshold is now tightened from:
++    - `45°`
++    to:
++    - `30°`
++- Reason:
++  - the user wanted progress to be further gated once the middle body begins to roll noticeably, and wanted the environment to terminate earlier on aggressive whole-body tilt
++- Impact:
++  - future Stage0 runs should no longer be interpreted against the previous “minimal reward only” baseline without noting the new roll-dependent gate
++  - `Reward/roll_gate` is now part of the active TensorBoard / console reward surface
++  - future post-run diagnosis should watch the interaction among:
++    - `heading_gate`
++    - `roll_gate`
++    - `gated_progress`
++    - `Termination/bad_orientation_rate`
++- Status:
++  - implemented
++  - static compile check pending this session's final verification
++
++### Stage0 command timing has been updated to `episode_length_s = 24.0` and `resampling_time = 8.0` so one episode now spans three target segments while each 12 m target gets a longer reachable window
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - by user request, the active Stage0 command timing is now:
++    - `episode_length_s = 24.0`
++    - `resampling_time = 8.0`
++  - the current geometry remains:
++    - `goal_distance = 12.0`
++    - `goal_direction_max_deg = 30.0`
++    - `goal_heading_delta_max_deg = 12.0`
++  - under this timing, one episode now covers three target segments by default:
++    - reset sample at `t = 0 s`
++    - resample at `t = 8 s`
++    - resample at `t = 16 s`
++- Reason:
++  - the user explicitly required:
++    - increasing the single-episode duration
++    - increasing the target resampling interval
++    - ensuring the vehicle has enough time to reach each sampled target
++    - keeping at least three target samplings within one episode
++  - the latest minimal-reward run showed the learned distance-closing rate was about:
++    - `Reward/progress last ≈ 1.64 m/s`
++  - which implies roughly:
++    - `12 / 1.64 ≈ 7.3 s`
++    to close a full `12 m` target at that late-stage rate
++  - therefore `8.0 s` is a direct timing change aligned with the user's current objective
++- Impact:
++  - future Stage0 runs should no longer be interpreted using the old:
++    - `16.0 s / 5.3 s`
++    timing bundle
++  - `Train/mean_episode_length` and timeout-related readings will no longer be directly comparable in absolute scale to runs collected under the old bundle
++  - the next diagnosis should focus on whether the new timing actually converts already learned progress into:
++    - non-zero `target_bonus`
++    - lower terminal `goal_pos_error`
++    - fewer ball-joint-limit terminations before target arrival
++- Status:
++  - implemented
++  - static compile check pending this session's final verification
++
++### Stage0 heading reward `kd` is no longer a fixed constant and is now tied to the task-geometry turn-radius scale
++- Updated:
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Decision / conclusion:
++  - by user request, the heading reward scale:
++    - `heading_distance_scale`
++    should no longer stay at a hand-tuned constant
++  - it is now computed from the current Stage0 command geometry as:
++    - `heading_distance_scale = goal_distance / (2 sin(goal_direction_max_deg))`
++  - under the current Stage0 command bundle:
++    - `goal_distance = 12.0`
++    - `goal_direction_max_deg = 30.0`
++  - the resulting active value is:
++    - `heading_distance_scale = 12.0`
++- Reason:
++  - the user wanted the heading reward's `kd` to reflect the same turn-radius scale implied by the target geometry, instead of using the previous fixed value:
++    - `5.0`
++- Impact:
++  - future Stage0 command-geometry changes will now automatically propagate into the heading gate scale
++  - reward interpretation should now treat `heading_gate` as being normalized by the current geometric turn-radius scale, not by a stale manual constant
++- Status:
++  - implemented
++  - static compile check pending this session's final verification
++
++### Full minimal-reward Stage0 run `2026-04-17_13-21-54` confirms strong progress learning, but the active bottleneck has shifted back to ball-joint-limit terminations, aggressive posture, and high critic value loss
++- Updated:
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- Run:
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_13-21-54`
++- Durable diagnosis:
++  - under the current minimal reward trunk:
++    - `target_bonus + progress * heading_gate`
++  - and the current Stage0 command bundle:
++    - `goal_distance = 12.0`
++    - `goal_direction_max_deg = 30.0`
++    - `goal_heading_delta_max_deg = 12.0`
++  - the policy clearly learned sustained goal-directed motion:
++    - `Train/mean_reward last ≈ 1365.38`
++    - `Train/mean_episode_length last ≈ 845.94 / 959`
++    - `Reward/gated_progress last ≈ 1.60`
++    - `Tracking/goal_pos_error last ≈ 7.38 m`
++  - however the late-stage survival quality degraded again:
++    - `Termination/time_out_rate last ≈ 0.57`
++    - `Termination/terminated_rate last ≈ 0.43`
++    - `Termination/ball_joint_limit_rate last ≈ 0.43`
++    - `Termination/bad_orientation_rate` stayed zero and was not emitted
++  - this means the dominant reset cause in this run is:
++    - ball-joint-out-of-bounds
++    - not direct bad-orientation termination
++  - posture and traction quality remain poor:
++    - `tilt_deg last ≈ 21.21°`
++    - `wheel_slip_angle_abs_mean_raw last ≈ 0.766 rad`
++    - `wheel_longitudinal_slip_abs_mean_raw last ≈ 0.790`
++    - `wheel_normal_contact_force_sum_raw last ≈ 0.912`
++  - critic stability is still a live issue rather than a harmless transient:
++    - `Loss/value last ≈ 47.8`
++    - `Loss/value last10 ≈ 98.6`
++- Turn-radius interpretation:
++  - the active metric:
++    - `Observation/turn_radius_raw`
++    is currently a COM-based planar instantaneous curvature-radius diagnostic:
++    - `R = ||v_xy|| / |yaw_rate|`
++  - it is only averaged over envs that satisfy:
++    - `||v_xy|| > 0.2 m/s`
++    - `|yaw_rate| > 0.05 rad/s`
++  - therefore it should not be interpreted as:
++    - the robot's geometric minimum turning radius
++    - an Ackermann-style steering radius
++  - in this run:
++    - `turn_radius_raw last ≈ 10.05 m`
++    - `turn_radius_raw last10 ≈ 9.94 m`
++  - against the current task geometry, this value is physically plausible as a broad-arc turning regime:
++    - with `goal_distance = 12.0 m` and `goal_direction_max_deg = 30°`, a simple constant-curvature point-reaching arc has radius on the order of:
++      - `R = d / (2 sin alpha)`
++      - which gives about `12 m` at `alpha = 30°`
++  - practical interpretation:
++    - the policy is not currently demonstrating a tight-turn capability
++    - it is more consistent with wide-arc forward motion that trades yaw agility for speed
++    - across training iterations, rising `turn_radius_raw` coincides with rising `tilt_deg` and lateral slip, so this metric currently reads more like “wide, aggressive arcing motion” than “clean controlled steering”
++- Impact:
++  - future Stage0 analysis should stop reading this branch as “can progress and therefore is healthy”
++  - the active next question is now:
++    - how to keep the recovered progress signal without driving the ball joints into limit and without letting posture/side-slip deteriorate
++  - when using `turn_radius_raw`, always distinguish:
++    - curvature-radius diagnosis
++    - versus true minimum-turning-radius capability
++- Status:
++  - diagnosed
++  - should guide the next Stage0 task/control iteration
++
+ ### Stage0 TensorBoard step metrics now include the middle-module planar turn-radius diagnostic `Observation/turn_radius_raw`
+ - Updated:
+   - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+@@ -5366,3 +6461,93 @@ This file stores durable conclusions from past Codex sessions so that future ses
+   - code structure updated
+   - static syntax validation passed
+   - static syntax validation passed
++
++### Full 600-iteration probe run confirms the active 8D action-space mainline is stable, and front-module yaw is the dominant temporary ball-joint pressure axis
++- Date:
++  - 2026-04-17
++- Run:
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-02-38_axis_usage_probe_v1`
++- Decision / conclusion:
++  - with the active Stage0 stack:
++    - `6` ball-joint target actions
++    - `2` planar base commands
++    - allocator-generated wheel speeds
++  - a full `600 / 600` run now finishes with:
++    - `Train/mean_reward ≈ 616.77`
++    - `Train/mean_episode_length = 1439.0`
++    - `Termination/time_out_rate = 1.0`
++    - `Termination/ball_joint_limit_rate = 0.0`
++    - `Tracking/goal_pos_error ≈ 7.09 m`
++    - `Tracking/goal_yaw_error_abs ≈ 0.0629 rad`
++    - `Reward/target_bonus = 0.0`
++    - `Loss/value ≈ 0.315`
++  - therefore, the latest durable reading is:
++    - the active 8D action-space mainline is currently the healthiest Stage0 mainline
++    - late-stage `ball_joint_limit` resurgence is not a durable default conclusion under the current stack
++    - ball-joint-limit pressure can appear transiently in early/mid training, but it no longer persists to the end of training in this full run
++- Axis-level conclusion:
++  - the newly added per-axis limit-usage metrics show that the dominant temporary pressure axis is:
++    - `spm1_platform_joint_z`
++  - physical meaning:
++    - front-module `yaw`
++  - during nonzero `ball_joint_limit_rate` steps, this axis consistently had the highest `limit_usage_max_raw`
++  - its observed peak was approximately:
++    - `0.966`
++  - by the end of training, all six axes had fallen back into a safe region
++- Reason:
++  - the probe run was added because aggregate metrics could not tell which ball-joint coordinate was being consumed first
++  - the new axis-level logs were sufficient to identify the dominant pressure axis
++- Impact:
++  - future Stage0 tuning should no longer treat “late ball-joint resurgence” as the default main blocker
++  - the new main blocker is:
++    - the policy learns strong progress and yaw alignment, but still does not stably enter the terminal success region
++  - if future tuning needs ball-joint soft regularization, prioritize the front-module `yaw` axis first rather than treating all six axes as equally suspicious
++- Status:
++  - durable conclusion promoted from a full completed run
++
++### Directly converting Stage0 from tracking to terminal capture by command-side local edits failed across four short runs
++- Date:
++  - 2026-04-17
++- Runs:
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-35-19_capture_holdgoal_v1`
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-38-44_capture_holdgoal_goal6_v1`
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-41-26_capture_holdgoal_goal6_bonus10_v1`
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-44-04_capture_holdgoal_goal6_bonus10_reverse_v1`
++- Decision / conclusion:
++  - starting from the healthy active Stage0 mainline, the following capture-oriented edits were tested in sequence:
++    - hold one goal for the whole episode instead of resampling every `8 s`
++    - shorten `goal_distance` from `12 m` to `6 m`
++    - raise `target_bonus_ratio` from `0.03` to `0.10`
++    - allow reverse planar commands
++  - all four short runs degraded training instead of improving terminal capture
++- Key findings:
++  - `holdgoal12`:
++    - `mean_reward ≈ 89.68`
++    - `ball_joint_limit_rate ≈ 0.339`
++    - `target_bonus = 0`
++  - `holdgoal6`:
++    - `goal_pos_error ≈ 4.41 m`
++    - `target_bonus = 0`
++    - policy stalled far from the success zone
++  - `holdgoal6_bonus10`:
++    - `progress` already collapsed to around zero / negative
++    - `target_bonus = 0`
++  - `holdgoal6_bonus10_reverse`:
++    - `target_bonus` became only occasional and weak
++    - `goal_yaw_error_abs` worsened to about `0.71 rad`
++    - `value loss` exploded to about `214.7`
++- Durable interpretation:
++  - the current Stage0 stack is still fundamentally a tracking-style shaped task
++  - it cannot be turned into a stable terminal-capture task by command-side local edits alone
++  - simply holding a goal longer, shrinking the target distance, boosting terminal bonus, or enabling reverse does not solve the structural mismatch
++- Impact:
++  - keep the active default Stage0 config on the previously healthy mainline:
++    - `resampling_time = 8.0`
++    - `goal_distance = 12.0`
++    - `target_bonus_ratio = 0.03`
++    - `base_allow_reverse = False`
++  - future terminal-capture work should not start from more command-geometry tweaks alone
++  - the next research question has shifted to:
++    - whether Stage0 needs an explicit terminal phase / terminal objective design instead of only reshaping current command semantics
++- Status:
++  - active defaults restored after experiments
+diff --git a/docs/current_status.md b/docs/current_status.md
+index 26dc0b2..6471289 100644
+--- a/docs/current_status.md
++++ b/docs/current_status.md
+@@ -2,29 +2,488 @@
+ 
+ ## 当前总目标
+ - 将完整车 RL 主线收口到 `RL_Training/` 下的新 Isaac Lab direct workflow 架构。
+-- 固定 Stage0 当前默认配置，并先验证最小 reward 主线：
+-  - `target_bonus + progress * heading_gate`
++- 固定 Stage0 当前默认配置，并先验证当前 reward 主线：
++  - `target_bonus + progress * composite_gate * roll_gate`
+ 
+ ## 当前阶段
++- 已完成一轮新的分轴球铰限位利用率探针训练：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-02-38_axis_usage_probe_v1`
++  - 本轮完整跑满：
++    - `600 / 600`
++  - 当前最终结果：
++    - `Train/mean_reward ≈ 616.77`
++    - `Train/mean_episode_length = 1439.0`
++    - `Termination/time_out_rate = 1.0`
++    - `Termination/ball_joint_limit_rate = 0.0`
++    - `Tracking/goal_pos_error ≈ 7.09 m`
++    - `Tracking/goal_yaw_error_abs ≈ 0.0629 rad`
++    - `Reward/progress ≈ 1.226`
++    - `Reward/gated_progress ≈ 0.436`
++    - `Reward/heading_gate ≈ 0.988`
++    - `Reward/longitudinal_slip_gate ≈ 0.0565`
++    - `Reward/lateral_slip_gate ≈ 0.0230`
++    - `Reward/composite_gate ≈ 0.356`
++    - `Reward/target_bonus = 0.0`
++    - `Loss/value ≈ 0.315`
++  - 当前最新有效判断：
++    - 8 维动作空间 + allocator 主线目前是当前最健康的 Stage0 主线
++    - 相比前两轮中期 run，这轮完整训练后：
++      - `ball_joint_limit` 没有在后段持续抬升
++      - `critic` 继续保持稳定
++      - `slip gate` 在后段显著高于前两轮
++    - 当前 ball-joint 问题更准确的口径不再是“后段必然抬升”，而是：
++      - 只在早中期短暂出现
++      - 后段已自行退出主矛盾
++    - 分轴探针显示：
++      - 早中期逼近边界的主导责任轴是前模块 `yaw`
++      - 也就是：
++        - `spm1_platform_joint_z`
++      - 在有 `ball_joint_limit_rate` 的 step 上，这一轴的 `limit_usage_max_raw` 持续最高，峰值约：
++        - `0.966`
++      - 后段最终各轴都回落到安全区，末段最高的是：
++        - `spm1_platform_joint_x_limit_usage_max_raw ≈ 0.582`
++    - 当前新的主问题已经收口为：
++      - 虽然 rollout 生存、yaw 对准、progress、数值稳定性都明显更好
++      - 但 `target_bonus` 仍然全程没有触发
++      - 说明策略学会了高质量接近目标和对准目标，但还没稳定进入“到点成功区”
++- 已围绕“把 Stage0 从追踪任务改成终端捕获任务”做了 4 轮自动化短实验，当前结论是否定的：
++  - 实验 1：
++    - `2026-04-17_18-35-19_capture_holdgoal_v1`
++    - 只把命令机制改成单目标保持到 episode 结束，保留 `goal_distance = 12 m`
++    - 结果：
++      - `mean_reward ≈ 89.68`
++      - `ball_joint_limit_rate ≈ 0.339`
++      - `target_bonus = 0`
++    - 结论：
++      - 只改成单目标保持，会把当前 Stage0 直接推向更难的长距离终端任务，训练质量明显下降
++  - 实验 2：
++    - `2026-04-17_18-38-44_capture_holdgoal_goal6_v1`
++    - 在单目标保持基础上把 `goal_distance` 缩短到 `6 m`
++    - 结果：
++      - `goal_pos_error ≈ 4.41 m`
++      - `target_bonus = 0`
++    - 结论：
++      - 策略会停在离目标数米处，仍然没有学成终端捕获
++  - 实验 3：
++    - `2026-04-17_18-41-26_capture_holdgoal_goal6_bonus10_v1`
++    - 在实验 2 基础上把 `target_bonus_ratio` 提到 `0.10`
++    - 结果：
++      - `progress` 已经接近或跌到负值
++      - `target_bonus = 0`
++    - 结论：
++      - 仅增大 terminal bonus 仍不足以把当前策略从“接近”推成“捕获”
++  - 实验 4：
++    - `2026-04-17_18-44-04_capture_holdgoal_goal6_bonus10_reverse_v1`
++    - 在实验 3 基础上再放开倒车
++    - 结果：
++      - `target_bonus` 仅偶发非零
++      - `goal_yaw_error_abs` 恶化到约 `0.71 rad`
++      - `Loss/value` 爆到约 `214.7`
++    - 结论：
++      - 末端修正自由度不是当前第一瓶颈；在现有 reward 下直接放开倒车反而把训练打坏
++- 当前最新有效判断：
++  - 不能只靠命令保持、缩短目标距离、放大奖励、开放倒车这类局部改动，把当前 Stage0 直接改造成终端捕获任务
++  - 这几轮结果说明：
++    - 当前 active Stage0 的 reward / command / control 结构本质上仍然是“追踪式 shaping”
++    - 直接把 command 改成单目标终端捕获，会让训练质量显著下降
++  - 因此当前 active 默认配置已经恢复到：
++    - `resampling_time = 8.0`
++    - `goal_distance = 12.0`
++    - `target_bonus_ratio = 0.03`
++    - `base_allow_reverse = False`
++  - 当前如果还要继续推进“终端捕获”，下一步不应再盲目只改命令几何，而应重新讨论：
++    - 成功区定义
++    - terminal bonus 与 shaped progress 的相对权重
++    - 是否需要显式终端阶段机制
++- 已按用户要求修改当前 active `tilt` 语义：
++  - `Observation/tilt_deg`
++  - `bad_orientation`
++  当前都只看中车 `body_car_chassis` 的 `|roll|`
++  - 不再把中车 `pitch` 计入坏姿态
++  - 因此新 run 中的 `tilt_deg` 已不再等同于旧 run 的“总倾角”
++- 已按用户要求调整 Stage0 时间配置，当前默认改为：
++  - `episode_length_s = 24.0`
++  - `resampling_time = 8.0`
++  - 在 `goal_distance = 12.0` 下，当前默认目标是：
++    - 让单目标可用时间明显长于当前约 `7.3 s` 的距离收缩时间量级
++    - 同时保持一个 episode 内默认经历 `3` 个目标段
++- 已按用户确认将当前 Stage0 动作链切为：
++  - `6 维球铰目标 + 2 维底盘平面命令`
++  - 当前 policy 不再直接输出 `6` 个轮速
++  - 当前 env 会先把后 `2` 维动作映射成：
++    - `[v_x_cmd, yaw_rate_cmd]`
++  - 再通过 wheel allocator 结合：
++    - 当前球铰位置
++    - 当前球铰速度
++    生成 `6` 个轮速目标
++  - 当前 Stage0 默认底盘命令上限：
++    - `base_forward_velocity_max = 1.2 m/s`
++    - `base_yaw_rate_max = 0.6 rad/s`
++    - `base_allow_reverse = False`
++- 已完成当前 8 维动作空间的一轮真实训练验证：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-28-36_action8_allocator_v1`
++  - 本轮未跑满 `600` iteration，当前在约：
++    - `66 / 600`
++    停止并导出中期结果
++  - 当前确认：
++    - 动作空间切换后，训练启动链路与 actor/critic 维度自洽：
++      - actor obs dim = `44`
++      - critic obs dim = `44`
++      - action dim = `8`
++    - 相比上一轮 `slipclip3_latk4_v1`，当前最大的正变化是：
++      - `longitudinal_slip_gate` 不再近似为 `0`
++        - 当前约：
++          - `0.0079`
++        - 上一轮约：
++          - `5.27e-06`
++      - `lateral_slip_gate` 也不再近似为 `0`
++        - 当前约：
++          - `0.0062`
++        - 上一轮约：
++          - `7.74e-04`
++      - `ball_joint_limit_rate` 当前末段为：
++        - `0.0`
++        - 上一轮末段约：
++          - `0.719`
++      - `Loss/value` 当前约：
++        - `4.26`
++        - 上一轮末段约：
++          - `312.94`
++    - 当前中期任务质量仍不如上一轮后段：
++      - `Train/mean_reward ≈ 248.79`
++      - `Tracking/goal_pos_error ≈ 8.59 m`
++      - `Tracking/goal_yaw_error_abs ≈ 0.498 rad`
++      - `Reward/target_bonus = 0`
++    - 但当前这一轮更像是：
++      - reward 不再被 slip gate 从一开始压死
++      - critic 明显更稳
++      - 姿态和球铰也更稳
++  - 当前最新有效判断：
++    - 动作空间从“6 个独立轮速输出”切到“2 维底盘平面命令 + allocator 重建轮速”是有效方向
++    - 它明显缓解了：
++      - slip gate 长期塌缩
++      - critic value loss 爆高
++      - 后段 ball joint limit 抬升
++    - 当前新的主要问题已不再是训练结构本身失衡，而是：
++      - 任务推进速度仍偏慢
++      - 到点 bonus 还没有触发
++      - 需要继续看更长一点的收敛趋势，但已经不需要再把“动作空间本身是否合理”当成主要怀疑对象
++- 已完成动作空间主线下的另一轮更长中期验证：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-33-20`
++  - 当前约跑到：
++    - `162 / 600`
++  - 当前确认：
++    - rollout 生存质量总体较好，但末段出现球铰越界回升：
++      - `Train/mean_episode_length ≈ 1380.19 / 1439`
++      - `Termination/time_out_rate ≈ 0.50`
++      - `Termination/ball_joint_limit_rate ≈ 0.50`
++    - 任务推进相比上一轮中期更进一步：
++      - `Train/mean_reward ≈ 501.59`
++      - `Tracking/goal_pos_error ≈ 7.75 m`
++      - `Tracking/goal_yaw_error_abs ≈ 0.136 rad`
++    - slip gate 仍然不再塌到近零：
++      - `Reward/03_longitudinal_slip_gate ≈ 0.0055`
++      - `Reward/04_lateral_slip_gate ≈ 0.0028`
++      - `Reward/05_composite_gate ≈ 0.324`
++    - 姿态与 critic 依旧很稳：
++      - `Observation/03_tilt_deg ≈ 0.081°`
++      - `Loss/00_value ≈ 2.07`
++      - `head_tail_roll_limit_rate = 0.0`
++    - 但 `Reward/target_bonus = 0`
++  - 当前最新有效判断：
++    - 新动作空间方向是对的，当前主要优点仍然成立：
++      - slip gate 有效值恢复
++      - critic 稳定
++      - 中车姿态稳定
++    - 当前更真实的主要问题已经收口为：
++      - 末段 `ball_joint_limit` 重新抬升
++      - 说明随着策略继续学会推进和对准目标，它又开始更激进地吃球铰余量
++    - 因此当前主矛盾不再是“动作空间不合理”，而是：
++      - 在新的动作空间下，如何抑制后段球铰越界，同时不把已恢复的 slip gate 和 critic 稳定性重新打坏
++- 对“为什么更接近目标后球铰越界开始抬升”的当前针对性结论是：
++  - 当前更准确的表述不是“快到点最后几米必然越界”，而是：
++    - 随着策略更会推进和对准目标，它开始更主动地消耗球铰姿态余量
++  - 证据是：
++    - `heading_gate` 后段升到约 `0.96`
++    - `progress` 升到约 `1.14`
++    - `Action/policy_abs_mean` 升到约 `0.57`
++    - `ball_joint_target_error_abs_mean_raw` 与 `ball_joint_pos_abs_mean_raw` 也同步抬升
++  - 同时：
++    - `tilt_deg` 仍很低
++    - `roll_gate = 1.0`
++    - `head_tail_roll_limit_rate = 0.0`
++    - `Loss/value` 仍低
++  - 因此当前主因不是：
++    - 姿态失稳
++    - critic 发散
++  - 而是：
++    - reward 里没有“接近球铰限位”的软约束
++    - 新动作空间下球铰姿态又成为帮助 allocator 实现有效转向/推进的直接杠杆
++    - 策略于是会用更大的球铰动作去换更高的 `progress` 和 `heading_gate`
++  - 还要注意：
++    - 当前日志里 `ball_joint_pos_abs_mean_raw ≈ 0.17 ~ 0.18 rad`
++      并不代表关节整体安全
++    - 因为 termination 只要任一 6 维球铰坐标超界就会触发
++    - 单个轴接近极限会被均值掩盖
++- 已补充分轴球铰日志埋点到当前 env：
++  - 新增每个球铰轴的：
++    - 实际位置 `Observation/<joint_name>_pos_raw`
++    - 平均限位利用率 `Observation/<joint_name>_limit_usage_mean_raw`
++    - 最大限位利用率 `Observation/<joint_name>_limit_usage_max_raw`
++  - 当前 joint 顺序与物理含义是：
++    - `spm1_platform_joint_z / y / x`
++    - `spm2_platform_joint_z / y / x`
++    - 也就是前模块 `yaw / pitch / roll` 与后模块 `yaw / pitch / roll`
++  - 因此下一轮训练开始后，可以直接从 TensorBoard 判断：
++    - 到底是前/后模块的哪一轴先逼近边界
+ - 已完成 `RL_Training/` 原地重构。
+ - 已按用户要求把旧 `IK/FK`、本地 `rsl_rl` 本体、旧辅助脚本重新迁入新架构内部。
+ - 已完成一轮真实训练入口冒烟，已清除启动链路中的 `configclass` / Hydra 配置阻塞。
+ - 已完成 `Stage0` 在真实 GPU 环境下的最小训练启动验证。
+ - 已完成一次真实 `Stage0` run 的日志诊断，并补齐训练日志 / TensorBoard 指标埋点。
+ - 已完成一轮 Stage0 run 诊断，已确认当前主要问题是高纵向滑移、高侧滑、球铰动作偏激进与 critic value loss 偏大。
+-- 已按用户要求将当前 Stage0 reward 主线收口为：
+-  - `target_bonus + progress * heading_gate`
+-  - 已从 active reward 中移除：
++- 已按用户要求将当前 Stage0 reward 主线调整为：
++  - `target_bonus + progress * composite_gate * roll_gate`
++  - 其中：
++    - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
++    - 当 `|中车 roll| <= 5°` 时，`roll_gate = 1`
++    - 当 `|中车 roll| > 5°` 时，`roll_gate = exp[-1/2 * (航向误差 / (pi/16))^2]`
++  - 当前 active reward 中已保留：
++    - `heading_gate`
++    - `longitudinal_slip_gate`
++    - `lateral_slip_gate`
++    - `composite_gate`
+     - `roll_gate`
++  - 已从 active reward 中移除：
+     - `speed_gate`
+     - `force_gate`
+     - `vertical_speed_gate`
+     - `ball_joint_speed_gate`
+     - `wheel_action_rate_gate`
+-    - `longitudinal_slip_gate`
+-    - `lateral_slip_gate`
++- 已完成当前 slip-gate 主线下的一轮完整 `600` iteration 真实 run 诊断：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_16-29-08`
++  - 当前确认：
++    - rollout 生存与基本到点能力已建立：
++      - `Train/mean_episode_length ≈ 1335.64 / 1439`
++      - `Termination/time_out_rate = 1.0`
++      - `Tracking/goal_pos_error ≈ 4.88 m`
++      - `Tracking/goal_yaw_error_abs ≈ 0.259 rad`
++      - `Reward/target_bonus` 末段非零
++    - 中车与前后车姿态当前不是主问题：
++      - `Observation/tilt_deg ≈ 0.31°`
++      - `Observation/head_roll_pitch_abs_mean_raw ≈ 0.083 rad`
++      - `Observation/tail_roll_pitch_abs_mean_raw ≈ 0.084 rad`
++      - `Termination/head_tail_roll_limit_rate = 0.0`
++      - `Termination/ball_joint_limit_rate = 0.0`
++    - 当前主要问题已经转成：
++      - `longitudinal_slip_gate` 长期几乎为 `0`
++      - `lateral_slip_gate` 长期几乎为 `0`
++      - `composite_gate` 末段仅约 `0.215`
++      - `Reward/01_progress ≈ 1.123`
++      - `Reward/00_gated_progress ≈ 0.364`
++      - `Loss/value` 末段约 `852`
++    - 当前对应观测量级是：
++      - `wheel_longitudinal_slip_abs_mean_raw ≈ 2.68`
++      - `wheel_slip_angle_abs_mean_raw ≈ 0.76 rad`
++  - 当前最新有效判断：
++    - 这轮不是“不会走”，而是“能活、能靠近目标，但新的滑移门几乎把 progress 奖励长期关死”
++    - 当前主问题不是 `heading_gate` 或 `roll_gate`：
++      - `heading_gate` 末段约 `0.646`
++      - `roll_gate` 末段约 `1.0`
++    - 当前第一主因是：
++      - 纵滑与侧滑 gate 使用 6 轮乘积
++      - 同时观测侧已取消 slip 裁切
++      - 在当前 `0.3` 与 `6.0` 参数下，乘积项对当前滑移量级过于苛刻
++      - 导致 reward 面几乎退化为“姿态稳定但 progress 被重度衰减”
++    - 当前第二主因是：
++      - critic 需要在近零 slip gate 下拟合一个被强压缩的回报分布
++      - value loss 因此重新显著抬升
++- 已按用户要求把航向奖励中的 `kd` 改为由任务几何自动计算的转弯半径尺度：
++  - 当前对应配置项：
++    - `heading_distance_scale`
++  - 当前计算口径：
++    - `heading_distance_scale = goal_distance / (2 sin(goal_direction_max_deg))`
++  - 在当前 Stage0 参数下：
++    - `goal_distance = 12.0`
++    - `goal_direction_max_deg = 30.0`
++    - 因此 `heading_distance_scale = 12.0 m`
++- 已按用户要求进一步把终止条件中的：
++  - `orientation_limit_deg`
++  从 `45°` 收紧为：
++  - `30°`
++- 已按用户要求重新设定当前 Stage0 球铰越界终止范围：
++  - yaw：`[-0.6, 0.6]`
++  - pitch：`[-1.0, 0.4]`
++  - roll：`[-0.5, 0.5]`
++  - 只要任一球铰关节超出该范围就直接终止
++- 已按用户要求新增前后车 absolute `roll` 终止：
++  - 当前前车或后车 absolute `|roll| > 35°` 时直接终止
++  - 当前对应 termination 指标：
++    - `Termination/head_tail_roll_limit_rate`
++- 当前进入“固定新的 roll 约束 reward 主线，并观察 target/progress/heading/roll 耦合行为”的阶段。
++- 当前最新 reward 任务语义是：
++  - 中车继续只用现有 `roll_gate`
++  - 航向、纵向滑移率、侧滑角当前共同组成：
+     - `composite_gate`
+-- 当前进入“固定新的最小 reward 主线，并观察纯 target/progress/heading 学习行为”的阶段。
++  - 不启用 `straighten_gate`
++  - 前后车 absolute `roll` 不再进入 active reward
++  - 前后车 absolute `roll` 当前改为 termination 安全边界
++- 当前 active 新增 reward 参数：
++  - `longitudinal_slip_gate_scale = 0.3`
++  - `lateral_slip_gate_scale = 4.0`
++- 当前训练日志与 TensorBoard 已补齐新 reward 埋点：
++  - `Reward/longitudinal_slip_gate`
++  - `Reward/lateral_slip_gate`
++  - `Reward/composite_gate`
++- 已按用户要求调整当前观测口径：
++  - `wheel_longitudinal_slip`
++    - 当前已恢复在 observation 路径按：
++      - `[-3.0, +3.0]`
++      裁切
++  - `wheel_slip_angle`
++    - 当前不再在 observation 路径裁切
++    - 仅在 reward 的 `lateral_slip_gate` 内部保留裁切
++- 已完成一轮新的 Stage0 部分训练验证：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-02-10_slipclip3_latk4_v1`
++  - 本轮未跑满 `600` iteration，用户要求“跑过一段看出问题即可”，当前停在约：
++    - `527 / 600`
++  - 当前确认：
++    - 纵向滑移率 observation 裁切到 `±3.0` 后，纵滑均值显著低于上一轮：
++      - 上一轮 `2026-04-17_16-29-08`：
++        - `wheel_longitudinal_slip_abs_mean_raw ≈ 2.79`
++      - 当前轮：
++        - `wheel_longitudinal_slip_abs_mean_raw ≈ 1.80`
++    - 任务推进与到点质量明显改善：
++      - `Train/mean_reward ≈ 1019.56`
++      - `Tracking/goal_pos_error ≈ 5.21 m`
++      - `Tracking/goal_yaw_error_abs ≈ 0.150 rad`
++      - `Reward/target_bonus ≈ 0.130`
++    - 但当前主问题没有消失：
++      - `Reward/03_longitudinal_slip_gate ≈ 5.27e-06`
++      - `Reward/04_lateral_slip_gate ≈ 7.74e-04`
++      - 两个 slip gate 仍长期接近 `0`
++      - `Loss/value ≈ 312.94`
++      - 且末段出现：
++        - `Termination/ball_joint_limit_rate ≈ 0.719`
++  - 当前最新有效判断：
++    - `±3.0` 纵滑 observation 裁切是有效的，它确实把纵滑原始量级拉下来了
++    - `k = 4` 比 `k = 6` 更宽容，但在当前约 `0.72 rad` 的侧滑量级下，6 轮乘积后的 `lateral_slip_gate` 仍几乎为 `0`
++    - 当前 slip-gate 的核心问题已经不是 observation 输入太极端，而是：
++      - 6 轮连乘聚合仍然过严
++      - reward 面仍被 slip gate 长期强压
++    - 同时策略后段开始重新吃到：
++      - `ball_joint_limit`
++      说明当前改动把主要矛盾从“极端纵滑”推回到了“reward 过严 + 球铰后段越界”
++- 已按用户要求把当前 Stage0 观测 scale 全部收口到：
++  - `1.0`
++- 已完成新一轮 `head_tail_roll_gate` 真实 run 对比诊断：
++  - 上一轮：
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_14-12-39`
++  - 当前轮：
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_15-30-13`
++  - 当前确认：
++    - 新 reward 确实强力压低了姿态激进性：
++      - `tilt_deg` 末 10 轮均值：
++        - `15.83° -> 0.21°`
++      - `head_roll_pitch_abs_mean_raw` 末 10 轮均值：
++        - `0.709 -> 0.081 rad`
++      - `ball_joint_pos_abs_mean_raw` 末 10 轮均值：
++        - `0.406 -> 0.232`
++      - `Reward/roll_gate` 与 `episode_per_step/head_tail_roll_gate` 末 10 轮均接近：
++        - `1.0`
++    - 但任务完成质量反而下降：
++      - `Train/mean_reward` 末 10 轮均值：
++        - `1582.62 -> 1351.16`
++      - `Tracking/goal_pos_error` 末 10 轮均值：
++        - `5.64 -> 5.94 m`
++      - `Tracking/goal_yaw_error_abs` 末 10 轮均值：
++        - `0.338 -> 0.664 rad`
++      - `Reward/target_bonus` 末 10 轮均值：
++        - `0.0203 -> 0.0`
++    - 牵引质量没有根本改善：
++      - `wheel_longitudinal_slip_abs_mean_raw` 略降：
++        - `0.831 -> 0.810`
++      - `wheel_slip_angle_abs_mean_raw` 基本不变且仍高：
++        - `0.740 -> 0.742 rad`
++      - `wheel_normal_contact_force_sum_raw` 末 10 轮均值反而下降：
++        - `0.948 -> 0.838`
++  - 当前最新有效判断：
++    - `head_tail_roll_gate` 没有失败，它成功把策略从“姿态激进换推进”推到了“低 roll、低构型偏转”的新策略
++    - 但当前主要问题变成：
++      - 策略为了维持低前后车姿态，明显削弱了转向/构型使用
++      - 导致航向修正能力变差、到点 bonus 消失、总回报下降
++    - 更准确地说，当前不是 gate 在末段还在持续压奖励，而是：
++      - gate 在训练过程中改变了策略搜索方向
++      - 最后收敛到一个“姿态很好但任务完成度更差”的局部最优
++    - 下一轮如果继续沿当前主线调，不应再把“进一步压前后车 absolute roll”当成主方向
++    - 更应优先区分：
++      - 哪些前后车姿态变化是转向所必需的
++      - 哪些才是真正应被抑制的危险姿态
++- 已完成新一轮 `roll_gate + 30° orientation limit` 真实 run 诊断：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_14-12-39`
++  - 相比上一轮
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_13-21-54`
++    当前确认：
++    - rollout 生存显著改善：
++      - `Train/mean_episode_length ≈ 1400.44 / 1439`
++      - `Termination/time_out_rate ≈ 1.0`
++      - `Termination/ball_joint_limit_rate ≈ 0.0`
++    - 目标推进也进一步改善：
++      - `Train/mean_reward ≈ 1599.41`
++      - `Tracking/goal_pos_error ≈ 5.38 m`
++      - `Reward/target_bonus` 已非零
++    - 姿态与支撑相比上一轮有改善但仍不够低：
++      - `tilt_deg ≈ 15.96°`
++      - 上一轮约 `21.21°`
++      - `wheel_normal_contact_force_sum_raw ≈ 0.936`
++    - 但当前仍存在：
++      - `tilt_deg` 仍稳定在 `15°~16°` 量级
++      - `wheel_longitudinal_slip_abs_mean_raw ≈ 0.83`，比上一轮更差
++      - `wheel_slip_angle_abs_mean_raw ≈ 0.74 rad`，仍然偏高
++      - `head_roll_pitch_abs_mean_raw ≈ 0.73 rad`，前车姿态仍偏大
++      - `Loss/value` 末段约 `203`，明显高于上一轮
++  - 当前最新有效判断：
++    - `roll_gate` 没有失败，但它只把策略从“高倾斜+频繁越界”拉回到“中等倾斜但可长期存活”
++    - `tilt` 之所以没有继续明显下降，主因不是约束完全无效，而是：
++      - `roll_gate` 只在 `|body_car_roll| > 5°` 时启用
++      - 且只通过“航向误差”间接衰减推进，不直接随 `tilt` 大小继续加重惩罚
++      - 当前 `Reward/roll_gate ≈ 0.95`，说明平均抑制强度偏弱
++      - `tilt` 是总倾斜量，包含 pitch 贡献；当前 gate 只看 `body_car_roll`
++      - `orientation_limit_deg = 30°` 仍高于当前常见姿态区间，因此几乎不触发坏姿态终止
++- 已完成当前最小 reward 主线下的一轮完整 `300` iteration 真实 run 诊断：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_13-21-54`
++  - 当前确认：
++    - 该 run 已明显学会持续目标推进：
++      - `Train/mean_reward ≈ 1365.38`
++      - `Train/mean_episode_length ≈ 845.94 / 959`
++      - `Reward/gated_progress ≈ 1.60`
++      - `Tracking/goal_pos_error ≈ 7.38 m`
++    - 但末段生存质量反而恶化：
++      - `Termination/time_out_rate ≈ 0.57`
++      - `Termination/ball_joint_limit_rate ≈ 0.43`
++      - `bad_orientation_rate` 未出现
++    - 当前主要问题转为：
++      - 球铰限位终止重新成为主要 reset 来源
++      - `tilt_deg` 末段约 `21.2°`，姿态明显变激进
++      - `wheel_slip_angle_abs_mean_raw ≈ 0.77 rad`，侧滑偏高
++      - `wheel_longitudinal_slip_abs_mean_raw ≈ 0.80`，纵滑仍高
++      - `Loss/value` 末段约 `47.8`，近 `10` 轮均值约 `98.6`
++  - 当前最新有效判断：
++    - 在当前 `goal_distance = 12.0` 与最小 reward 主线下，策略会重新明显偏向“强 progress 优先”
++    - 当前第一主问题已经不是“不前进”，而是“为前进而牺牲姿态裕度、球铰余量与稳定性”
++    - `Observation/turn_radius_raw` 当前应解释为：
++      - 车体系平面瞬时运动曲率半径诊断
++      - 不是几何最小转弯半径
++    - 本轮 run 中：
++      - `turn_radius_raw` 末段约 `10.05 m`
++      - 近 `10` 轮均值约 `9.94 m`
++    - 结合当前任务几何：
++      - `goal_distance = 12.0`
++      - `goal_direction_max_deg = 30.0`
++      可知该量级更接近“大半径弧线转向/浅转弯”而不是“小半径急转”
++    - 从本轮训练趋势看：
++      - 随着 `turn_radius_raw` 上升，`tilt_deg` 与侧滑同步上升
++      - 说明策略更像在用较大的前进速度配合较小偏航率做宽弧推进，而不是形成高质量紧凑转向
+ - 已完成一轮完整 `300` iteration 真实 run 诊断：
+   - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-16_10-12-26`
+   - 当前确认：
+@@ -676,6 +1135,61 @@
+     - `critic = 45 + num_height_points`
+ 
+ ## 当前阻塞 / 风险
++- 当前动作空间主线的最新判断已更新为：
++  - `6 维球铰 + 2 维底盘命令 + allocator`
++    这一动作语义本身没有出现新的训练阻塞
++  - 真实 run `2026-04-17_17-28-36_action8_allocator_v1` 已显示：
++    - slip gate 不再长期塌缩到近零
++    - critic 明显更稳定
++    - ball joint limit 不再早早抬升
++  - 因此当前更值得继续观察的是：
++    - 收敛速度
++    - target bonus 何时开始触发
++    - 中后段 progress 是否继续上升
++- 当前对 active Stage0 观测与 slip 裁切的最新判断是：
++  - 当前 actor 观测 scale 虽全部设为 `1.0`，但由于:
++    - `agent.yaml` 中 actor / critic 仍启用 `obs_normalization = true`
++    大多数非 slip 观测项并没有成为新的主失衡源
++  - 当前真正超出常规量级的仍是：
++    - `wheel_longitudinal_slip`
++      - 最新 run 中约：
++        - mean `2.79`
++        - max `5.69`
++    - `wheel_slip_angle`
++      - 最新 run 中约：
++        - mean `0.75 rad`
++  - 因此如果下一轮要恢复 observation-path 裁切，当前最优先考虑的是：
++    - 纵向滑移率裁切
++      - 第一版建议先试：
++        - `[-3.0, +3.0]`
++    - 侧滑角 reward-side 裁切不要单独改宽
++      - 当前 `0.5 * cos(k * alpha) + 0.5` 形式下
++      - clip 应与 `k` 绑定为：
++        - `[-pi/k, +pi/k]`
++      - 也就是说当前若保持：
++        - `k = 6`
++        就应保持：
++        - `[-pi/6, +pi/6]`
++      - 如果希望放宽 reward 的有效侧滑区间，应优先改：
++        - `k`
++        而不是只改单独的 clip
++- 当前最新 Stage0 主阻塞已更新为：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_16-29-08`
++  - 当前 reward 主线虽然建立了：
++    - 存活
++    - 朝目标推进
++    - 末段 target bonus 触发
++  - 但新增的：
++    - `longitudinal_slip_gate`
++    - `lateral_slip_gate`
++    在当前量级下长期接近 `0`
++  - 直接结果是：
++    - `composite_gate` 长期偏低
++    - `gated_progress` 被显著压缩
++    - critic `value loss` 末段抬升到约 `852`
++  - 因此当前真正的风险不是姿态约束过弱，而是：
++    - 当前 slip-gate 结构和参数把 reward 面压得过狠
++    - 继续在这个设置上长跑，容易把训练推向“能存活但 reward 学不顺”的状态
+ - 已完成一轮 Google Scholar 分批粗检索（2026-04-14）：
+   - 按 3 组 query 各抓取 Scholar 第 1 页，共得到 30 篇候选
+   - 当前候选文献明显分成 3 类：
+@@ -790,6 +1304,17 @@
+ - 当前 `RL_Training/` 结构已切换为新架构，后续不要再把旧的历史路径当作默认入口。
+ 
+ ## 下一步优先级
++- 先围绕 `2026-04-17_16-29-08` 做下一轮单变量改动：
++  - 不再继续加新的姿态 gate
++  - 重点回到当前 slip-gate 的强度与聚合方式是否合理
++- 下一轮诊断重点：
++  - `Reward/03_longitudinal_slip_gate`
++  - `Reward/04_lateral_slip_gate`
++  - `Reward/05_composite_gate`
++  - `Reward/00_gated_progress / Reward/01_progress`
++  - `Observation/wheel_longitudinal_slip_abs_mean_raw`
++  - `Observation/wheel_slip_angle_abs_mean_raw`
++  - `Loss/value`
+ - 先围绕 `2026-04-15_22-29-47_stability_v1_iter300` 做下一轮单变量改动：
+   - 重点不再继续压球铰
+   - 重点转到车轮速度目标与真实车速的失配
+diff --git a/logs/daily_work_log.md b/logs/daily_work_log.md
+index 7e6af91..24e82a1 100644
+--- a/logs/daily_work_log.md
++++ b/logs/daily_work_log.md
+@@ -3,6 +3,417 @@
+ ## 2026-04-17
+ 
+ 已完成：
++- 按用户确认将当前 `Stage0` 动作链从：
++  - `6 维球铰 + 6 维轮速直驱`
++  改为：
++  - `6 维球铰 + 2 维底盘平面命令`
++- 修改：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++- 当前新动作语义为：
++  - 前 `6` 维：
++    - 球铰目标动作
++  - 后 `2` 维：
++    - `a_base = [a_v, a_w]`
++- 当前 env 内已新增：
++  - `a_base -> [v_x_cmd, yaw_rate_cmd]` 映射
++  - measured planar-command transform
++  - `TorchWheelSpeedAllocator` 调用链
++- 当前 Stage0 默认底盘命令参数：
++  - `base_forward_velocity_max = 1.2 m/s`
++  - `base_yaw_rate_max = 0.6 rad/s`
++  - `base_allow_reverse = False`
++- 当前 wheel target 生成流程已改为：
++  - policy 输出 `a_base`
++  - env 映射得到 `[v_x_cmd, yaw_rate_cmd]`
++  - 结合当前球铰位置与球铰速度
++  - 通过 allocator 生成 `6` 个轮速目标
++  - 再统一按 `wheel_joint_velocity_limit_sim` 做限幅
++- 结果影响：
++  - `Stage0` 当前动作维度由 `12` 改为 `8`
++  - 因 `last_action` 维度变化，当前 actor / critic 单帧观测维度由 `48` 改为 `44`
++- 验证：
++  - `python3 -m py_compile` 对以下文件的静态编译检查已通过：
++    - `utils/io_descriptors.py`
++    - `base/complete_car_cfg.py`
++    - `mdp/actions.py`
++    - `base/env.py`
++    - `baseline/complete_car_stage0_cfg.py`
++  - 尝试用普通 `python3` 做配置导入检查时，因当前环境缺少：
++    - `pxr`
++    导致动态导入未继续；这不是本轮代码语法错误
++- 已同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- 按用户要求修改当前观测口径：
++  - `wheel_longitudinal_slip`
++    - 当前不再在 observation 路径裁切
++  - `wheel_slip_angle`
++    - 当前不再在 observation 路径裁切
++    - reward 内部仍保留侧滑角裁切
++- 按用户要求把当前 Stage0 观测 scale 全部设为：
++  - `1.0`
++- 修改：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++- 已同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- 使用 `python3 -m py_compile` 对以下文件完成静态编译检查，检查通过：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++- 按用户要求给当前 Stage0 active reward 新增：
++  - `longitudinal_slip_gate`
++  - `lateral_slip_gate`
++  - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
++- 当前总奖励主干改为：
++  - `target_bonus + progress * composite_gate * roll_gate`
++- 当前新增参数：
++  - `longitudinal_slip_gate_scale = 0.3`
++  - `lateral_slip_gate_scale = 6.0`
++- 当前具体口径：
++  - `longitudinal_slip_gate`
++    - 六个轮子分别按
++      - `exp[-1/2 * (slip / 0.3)^2]`
++      计算后取乘积
++  - `lateral_slip_gate`
++    - 六个轮子的侧滑角先按
++      - `[-pi/6, +pi/6]`
++      截断
++    - 再逐轮按
++      - `0.5 * cos(6 * slip_angle) + 0.5`
++      计算后取乘积
++- 修改：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
++- 已同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- 使用 `python3 -m py_compile` 对以下文件完成静态编译检查，检查通过：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
++- 按用户要求把当前 Stage0 active reward 主线改回：
++  - `target_bonus + progress * heading_gate * roll_gate`
++- 当前前后车 absolute `roll` 不再进入 active reward。
++- 按用户要求新增前后车 absolute `roll` 终止：
++  - 当前前车或后车 absolute `|roll| > 35°` 时直接终止 episode
++- 当前新增 termination 指标：
++  - `Termination/head_tail_roll_limit_rate`
++- 修改：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
++- 已同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/Stage0_reward设计详解.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- 使用 `python3 -m py_compile` 对以下文件完成静态编译检查，检查通过：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
++- 对真实训练 run
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_15-30-13`
++  补齐一轮 TensorBoard 离线导出，并与
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_14-12-39`
++  做并排对比诊断。
++- 运行：
++  - `python RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py --run_dir RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_15-30-13`
++  成功补齐：
++  - `tensorboard_export/`
++- 当前对比结论：
++  - 新增前后车 absolute `roll` gate 后，姿态激进性显著下降：
++    - `tilt_deg` 末 10 轮均值：
++      - `15.83° -> 0.21°`
++    - `head_roll_pitch_abs_mean_raw` 末 10 轮均值：
++      - `0.709 -> 0.081 rad`
++    - `ball_joint_pos_abs_mean_raw` 末 10 轮均值：
++      - `0.406 -> 0.232`
++  - 但任务完成质量下降：
++    - `Train/mean_reward` 末 10 轮均值：
++      - `1582.62 -> 1351.16`
++    - `Tracking/goal_pos_error` 末 10 轮均值：
++      - `5.64 -> 5.94 m`
++    - `Tracking/goal_yaw_error_abs` 末 10 轮均值：
++      - `0.338 -> 0.664 rad`
++    - `Reward/target_bonus` 末 10 轮均值：
++      - `0.0203 -> 0.0`
++  - 牵引指标没有根本改善：
++    - `wheel_longitudinal_slip_abs_mean_raw` 略降：
++      - `0.831 -> 0.810`
++    - `wheel_slip_angle_abs_mean_raw` 仍高且基本不变：
++      - `0.740 -> 0.742 rad`
++    - `wheel_normal_contact_force_sum_raw` 末 10 轮均值反而下降：
++      - `0.948 -> 0.838`
++- 当前判断：
++  - `head_tail_roll_gate` 成功把策略推向了低 roll、低构型偏转的新解
++  - 但它同时削弱了转向和航向修正所需的构型使用
++  - 当前主要问题已从“姿态过激进”转为：
++    - “过度保守，姿态很好但任务完成度下降”
++- 已同步更新：
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- 按用户确认的 Stage0 任务定义修改当前 active reward：
++  - 保留中车现有 `roll_gate`
++  - 暂不启用 `straighten_gate`
++  - 新增前后车 absolute `roll` 的软门控：
++    - `head_roll_gate`
++    - `tail_roll_gate`
++    - `head_tail_roll_gate = min(head_roll_gate, tail_roll_gate)`
++- 当前总奖励主干改为：
++  - `target_bonus + progress * heading_gate * roll_gate * head_tail_roll_gate`
++- 当前新增参数并固定为对称默认值：
++  - `head_roll_free_deg = 8.0`
++  - `tail_roll_free_deg = 8.0`
++  - `head_roll_sigma_deg = 6.0`
++  - `tail_roll_sigma_deg = 6.0`
++- 当前前后车 gate 逻辑为：
++  - 在各自 free 区内，gate 为 `1`
++  - 超出 free 区后，按高斯形式连续衰减
++  - 合成时取前后车两者中的更严格值
++- 修改：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++- 已同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/Stage0_reward设计详解.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- 使用 `python3 -m py_compile` 对以下文件完成静态编译检查，检查通过：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++- 按用户要求补齐当前 reward 新项的日志与 TensorBoard 埋点：
++  - `Reward/head_roll_gate`
++  - `Reward/tail_roll_gate`
++  - `Reward/head_tail_roll_gate`
++- 修改：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
++- 当前效果：
++  - 终端训练日志可直接看到上述 3 个 reward 指标
++  - TensorBoard 中也会以 reward 主块顺序写入上述 3 个 scalar
++- 使用 `python3 -m py_compile` 对以下文件完成静态编译检查，检查通过：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
++- 按用户要求重新设定当前 Stage0 球铰越界终止范围：
++  - yaw：`[-0.6, 0.6]`
++  - pitch：`[-1.0, 0.4]`
++  - roll：`[-0.5, 0.5]`
++- 当前语义改为：
++  - 只要任一球铰关节超出该范围，就直接终止 episode
++- 本次仅修改：
++  - `termination` 用的球铰范围
++  - 未同步修改当前 action target 上下界
++- 修改：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++- 已同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- 按用户要求修改当前 active `tilt` 语义与坏姿态终止口径：
++  - `Observation/tilt_deg`
++  - `bad_orientation`
++  当前都只看中车 `body_car_chassis` 的 `|roll|`
++  - 不再把 `pitch` 计入当前坏姿态定义
++- 修改：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- 已同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- 对真实训练 run
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_14-12-39`
++  完成一轮完整离线诊断，并与上一轮
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_13-21-54`
++  做了并排对比。
++- 运行：
++  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py --run_dir RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_14-12-39`
++  成功补齐本次 run 的 TensorBoard 离线导出。
++- 当前对比结论：
++  - 生存显著改善：
++    - `mean_episode_length ≈ 1400.44 / 1439`
++    - `time_out_rate ≈ 1.0`
++    - `ball_joint_limit_rate ≈ 0.0`
++  - 目标推进更强：
++    - `goal_pos_error ≈ 5.38 m`
++    - `target_bonus` 已非零
++  - `tilt_deg` 确实下降：
++    - `21.21° -> 15.96°`
++    但仍未进入低倾斜区
++  - 仍存在：
++    - `wheel_longitudinal_slip_abs_mean_raw ≈ 0.83`
++    - `wheel_slip_angle_abs_mean_raw ≈ 0.74 rad`
++    - `head_roll_pitch_abs_mean_raw ≈ 0.73 rad`
++    - `Loss/value ≈ 203`
++- 当前判断：
++  - `roll_gate` 已经把策略从“高倾斜+频繁球铰越界”拉回到“中等倾斜但可长期存活”
++  - 但它没有把姿态压到更低，主因是：
++    - 只在 `|body_car_roll| > 5°` 时启用
++    - 且只通过航向误差间接衰减推进
++    - 当前 `roll_gate ≈ 0.95`，抑制力度偏弱
++    - `tilt` 包含 pitch，而当前 gate 只看 roll
++    - `30°` 的坏姿态阈值对当前 `15°~16°` 区间几乎不起作用
++- 已同步更新：
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- 补充核对当前 active reward 的三个解释点，并同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++- 已确认：
++  - `pi / 16` 当前已经不是写死常数，而是具名参数：
++    - `body_car_roll_gate`
++- 已确认当前 `target_bonus_ratio = 0.03`、`goal_distance = 12.0`、`control_dt = 1/60` 时：
++  - `target_bonus ≈ 22.27`
++- 已补充说明：
++  - `heading_distance_scale = goal_distance / (2 sin(goal_direction_max_deg))`
++  当前更适合解释为：
++  - `heading_gate` 的目标几何尺度
++  - 不是小车真实性能意义下的最小转弯半径
++- 按用户要求把当前 Stage0 reward 主线从：
++  - `target_bonus + progress * heading_gate`
++  调整为：
++  - `target_bonus + progress * heading_gate * roll_gate`
++- 当前新增 reward 组件：
++  - `roll_gate`
++- 当前生效逻辑改为：
++  - 当 `|中车 roll| <= 5°` 时：
++    - `roll_gate = 1`
++  - 当 `|中车 roll| > 5°` 时：
++    - `roll_gate = exp[-1/2 * (航向误差 / (pi/16))^2]`
++- 本次修改文件：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
++- 按用户要求把终止条件中的：
++  - `orientation_limit_deg`
++  从：
++  - `45°`
++  收紧为：
++  - `30°`
++- 已同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/Stage0_reward设计详解.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- 按用户要求调整当前 `Stage0` 时间配置，目标是：
++  - 延长单目标可用时间
++  - 保证每个重采样间隔内小车更有机会到达目标点
++  - 同时保持一个 episode 内至少经历 `3` 个目标段
++- 修改：
++  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++- 当前生效值改为：
++  - `episode_length_s = 24.0`
++  - `commands.resampling_time = 8.0`
++  - `commands.goal_distance = 12.0`
++- 当前默认 episode 目标时序改为：
++  - `t = 0 s` 首次采样
++  - `t = 8 s` 第一次重采样
++  - `t = 16 s` 第二次重采样
++  - 因而一个 `24 s` episode 默认覆盖 `3` 个目标段
++- 本次调整依据：
++  - 上一轮最小 reward run
++    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_13-21-54`
++    中末段 `Reward/progress ≈ 1.64`
++  - 按该量级估算，收缩 `12 m` 目标距离大约需要：
++    - `12 / 1.64 ≈ 7.3 s`
++  - 因此把单目标窗口从 `5.3 s` 拉到 `8.0 s`
++    更符合“先确保能到达目标点”的当前目标
++- 已同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- 按用户要求把航向奖励中的 `kd` 收口为由任务几何自动计算：
++  - 当前对应参数：
++    - `heading_distance_scale`
++  - 修改：
++    - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++  - 当前计算口径改为：
++    - `heading_distance_scale = goal_distance / (2 sin(goal_direction_max_deg))`
++  - 在当前 Stage0 参数下：
++    - `goal_distance = 12.0`
++    - `goal_direction_max_deg = 30.0`
++    - 因此 `heading_distance_scale = 12.0`
++- 已同步更新：
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++- 对真实训练 run
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_13-21-54`
++  完成一轮完整离线诊断，并补齐：
++  - `tensorboard_export/`
++- 已读取并核对：
++  - `/tmp/isaaclab/logs/isaaclab_2026-04-17_13-21-54.log`
++  - `RL_Training/outputs/2026-04-17/13-21-54/.hydra/overrides.yaml`
++  - `params/env.yaml`
++  - `params/agent.yaml`
++  - `tensorboard_export/latest_values.csv`
++  - `tensorboard_export/summary.json`
++- 运行：
++  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py --run_dir RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_13-21-54`
++  成功补齐本次 run 的 TensorBoard 离线导出。
++- 已确认本轮 run 的主要正信号：
++  - `Train/mean_reward ≈ 1365.38`
++  - `Train/mean_episode_length ≈ 845.94 / 959`
++  - `Reward/gated_progress ≈ 1.60`
++  - `Tracking/goal_pos_error ≈ 7.38 m`
++  - 当前最小 reward 主线下，策略已经明显学会持续推进目标。
++- 已确认本轮 run 的主要问题：
++  - `Termination/time_out_rate ≈ 0.57`
++  - `Termination/ball_joint_limit_rate ≈ 0.43`
++  - `Observation/tilt_deg ≈ 21.21°`
++  - `Observation/wheel_slip_angle_abs_mean_raw ≈ 0.766 rad`
++  - `Observation/wheel_longitudinal_slip_abs_mean_raw ≈ 0.790`
++  - `Loss/value` 末段约 `47.8`，近 `10` 轮均值约 `98.6`
++  - 当前 reset 主因不是翻车，而是球铰越界。
++- 已对 `Observation/turn_radius_raw` 做训练结果解释：
++  - 当前口径仍是：
++    - `R = ||v_xy|| / |yaw_rate|`
++  - 该指标表示车体系平面瞬时曲率半径，不是严格几何最小转弯半径。
++  - 本轮 run 中：
++    - `turn_radius_raw ≈ 10.05 m`
++    - 近 `10` 轮均值约 `9.94 m`
++  - 结合：
++    - `goal_distance = 12.0`
++    - `goal_direction_max_deg = 30.0`
++    当前更像“大半径弧线推进”，不是“小半径急转能力”。
++- 已同步更新：
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
+ - 按用户要求把小车平面转弯半径接入当前 TensorBoard step metrics：
+   - 修改：
+     - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+@@ -6571,3 +6982,470 @@
+ 下一步：
+ - 不再继续叠加同类 multiplicative gate。
+ - 下一轮应转向更结构性的侧滑来源，例如轮速映射或动作语义，而不是继续在同一 reward 结构上加门。
++
++## 2026-04-17
++
++已完成：
++- 对 `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_16-29-08` 做完整训练诊断。
++- 使用 `tensorboard_export.py` 导出该 run 的 TensorBoard 标量，补齐离线分析数据。
++- 同步更新项目记忆文件：
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++
++修改文件：
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 该 run 已建立：
++  - 存活
++  - 朝目标推进
++  - 末段 target bonus 触发
++- 末段关键量级：
++  - `Train/mean_episode_length ≈ 1335.64 / 1439`
++  - `Train/mean_reward ≈ 768.02`
++  - `Tracking/goal_pos_error ≈ 4.88 m`
++  - `Tracking/goal_yaw_error_abs ≈ 0.259 rad`
++  - `Reward/01_progress ≈ 1.123`
++  - `Reward/00_gated_progress ≈ 0.364`
++  - `Reward/03_longitudinal_slip_gate ≈ 2.58e-4`
++  - `Reward/04_lateral_slip_gate ≈ 1.94e-4`
++  - `Reward/05_composite_gate ≈ 0.215`
++  - `Loss/value ≈ 852`
++- 当前主问题已不是姿态或球铰越界，而是：
++  - 新增的纵滑 / 侧滑 gate 在当前量级下长期接近 `0`
++  - 导致 `progress` 奖励被大幅衰减
++  - critic value loss 明显恶化
++- 当前最主要原因是：
++  - 观测侧已取消 slip 裁切
++  - reward 侧仍使用较严参数：
++    - `longitudinal_slip_gate_scale = 0.3`
++    - `lateral_slip_gate_scale = 6.0`
++  - 且 6 个轮子的 gate 采用连乘，导致总 gate 对当前滑移量级过于敏感
++
++下一步：
++- 下一轮如果继续沿这条 reward 主线调，应优先检查：
++  - slip-gate 参数强度
++  - slip-gate 聚合方式
++  - `composite_gate` 对 `progress` 的实际压缩程度
++
++## 2026-04-17
++
++已完成：
++- 基于当前 active Stage0 配置与 `2026-04-17_16-29-08` 真实 run，分析“观测 scale 全设为 1.0 后的量级分布”和“纵滑/侧滑裁切范围应如何设定”。
++- 同步更新项目记忆文件：
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++
++修改文件：
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 actor/critic 仍开启：
++  - `obs_normalization = true`
++- 因此“全部 observation scale = 1.0”并非没有影响，但影响被经验归一化明显削弱。
++- 当前最新 run 里，大多数非 slip active 观测项仍主要落在：
++  - `O(1)` 或 `O(1) ~ O(10)` 量级
++- 当前真正偏大的 active 观测仍是：
++  - `wheel_longitudinal_slip`
++    - mean `2.79`
++    - max `5.69`
++  - `wheel_slip_angle`
++    - mean `0.75 rad`
++- 当前判断：
++  - 最新训练结果受影响更大的不是“其他 scale 全部设成 1.0”，而是：
++    - raw slip 观测取消裁切
++    - slip-gate 本身过严
++- 若恢复 observation-path 纵向滑移率裁切，第一版建议先试：
++  - `[-3.0, +3.0]`
++- 对当前侧滑角 reward：
++  - 若保持 `0.5 * cos(k * alpha) + 0.5`
++  - 且当前 `k = 6`
++  - 则 reward-side clip 应继续保持：
++    - `[-pi/6, +pi/6]`
++  - 如果希望放宽侧滑角 reward 有效区间，应优先改：
++    - `k`
++    而不是只改单独 clip
++
++下一步：
++- 如果下一轮继续调 slip 相关项，应把：
++  - observation-path clip
++  - reward-side clip
++  - cosine 参数 `k`
++  当成联动设计处理，而不是分别独立调。 
++
++## 2026-04-17
++
++已完成：
++- 按用户要求修改 Stage0：
++  - observation-path `wheel_longitudinal_slip` 恢复裁切到 `[-3.0, +3.0]`
++  - `lateral_slip_gate_scale` 从 `6.0` 改为 `4.0`
++- 对改动文件做 `python3 -m py_compile` 静态检查，通过。
++- 启动一轮真实 GPU 训练：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-02-10_slipclip3_latk4_v1`
++- 用户确认不需要跑满全部 iteration，因此在问题暴露后停止训练，并导出当前 TensorBoard 标量做中期判断。
++- 同步更新：
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `docs/RL阶段训练参数一览表.md`
++  - `docs/Stage0_reward设计详解.md`
++  - `logs/daily_work_log.md`
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `docs/RL阶段训练参数一览表.md`
++- `docs/Stage0_reward设计详解.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 本轮部分训练停在约：
++  - `527 / 600`
++- 相比上一轮 `2026-04-17_16-29-08`，当前改动的直接效果是：
++  - 纵向滑移率原始量级明显下降：
++    - `2.79 -> 1.80`
++  - 目标误差和朝向误差改善：
++    - `goal_pos_error ≈ 5.21 m`
++    - `goal_yaw_error_abs ≈ 0.150 rad`
++  - `target_bonus` 已明显非零
++- 但主问题仍存在：
++  - `Reward/03_longitudinal_slip_gate ≈ 5.27e-06`
++  - `Reward/04_lateral_slip_gate ≈ 7.74e-04`
++  - 两个 slip gate 仍长期接近 `0`
++  - `Loss/value ≈ 312.94`
++  - 末段 `ball_joint_limit_rate ≈ 0.719`
++- 当前结论：
++  - `±3.0` 纵滑 observation 裁切有效
++  - `k = 4` 确实比 `6` 更宽容
++  - 但在“6 个轮子 gate 连乘”的结构下，当前 slip-gate 依旧过严
++
++下一步：
++- 如果继续沿当前 reward 主线调，优先级应转到：
++  - slip-gate 聚合方式
++  - 与 ball-joint-limit 的后段耦合
++
++## 2026-04-17
++
++已完成：
++- 对用户修改后的动作空间启动一轮新的真实 GPU 训练：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-28-36_action8_allocator_v1`
++- 先做动作链与 env 接口静态检查：
++  - `actions.py`
++  - `env.py`
++  - `complete_car_stage0_cfg.py`
++  的 `python3 -m py_compile` 已通过
++- 训练跑到中期趋势清晰后停止，并导出 TensorBoard 标量做诊断。
++- 同步更新：
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++
++修改文件：
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前 run 停在约：
++  - `66 / 600`
++- 当前动作空间运行时自洽：
++  - actor obs dim = `44`
++  - critic obs dim = `44`
++  - action dim = `8`
++- 相比上一轮 `slipclip3_latk4_v1`，当前最重要的改善是：
++  - `Reward/03_longitudinal_slip_gate` 不再接近 `0`
++    - 当前约 `0.0079`
++  - `Reward/04_lateral_slip_gate` 也不再接近 `0`
++    - 当前约 `0.0062`
++  - `Termination/04_ball_joint_limit_rate` 当前为 `0.0`
++  - `Loss/00_value ≈ 4.26`
++    - 明显低于上一轮的 `312.94`
++- 当前中期任务指标为：
++  - `Train/mean_reward ≈ 248.79`
++  - `Tracking/goal_pos_error ≈ 8.59 m`
++  - `Tracking/goal_yaw_error_abs ≈ 0.498 rad`
++  - `Reward/target_bonus = 0`
++- 当前判断：
++  - 8 维动作空间方向是有效的
++  - 当前动作语义已经明显改善：
++    - slip gate 长期塌缩
++    - critic 爆高
++    - ball joint 后段越界
++  - 当前下一步更值得看的是：
++    - 收敛速度
++    - 更长训练下 target bonus 是否开始触发
++
++## 2026-04-17
++
++已完成：
++- 对 `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-33-20` 做中期训练诊断。
++- 导出并检查该 run 的 TensorBoard 标量：
++  - `summary.json`
++  - `latest_values.csv`
++- 同步更新：
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++
++修改文件：
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 该 run 实际已跑到约：
++  - `162 / 600`
++- 当前关键结果：
++  - `Train/mean_reward ≈ 501.59`
++  - `Train/mean_episode_length ≈ 1380.19`
++  - `Tracking/goal_pos_error ≈ 7.75 m`
++  - `Tracking/goal_yaw_error_abs ≈ 0.136 rad`
++  - `Reward/03_longitudinal_slip_gate ≈ 0.0055`
++  - `Reward/04_lateral_slip_gate ≈ 0.0028`
++  - `Loss/00_value ≈ 2.07`
++  - `Observation/03_tilt_deg ≈ 0.081°`
++- 当前主要问题：
++  - `Termination/04_ball_joint_limit_rate ≈ 0.50`
++  - `Termination/00_time_out_rate ≈ 0.50`
++  - `Reward/target_bonus = 0`
++- 当前结论：
++  - 新动作空间主线继续成立
++  - 当前更长一点训练后，主要矛盾开始集中到：
++    - 后段 ball joint 越界重新抬升
++  - 当前不再是：
++    - slip gate 长期塌缩
++    - critic 不稳定
++
++下一步：
++- 如果继续沿当前动作空间主线调，应优先围绕：
++  - 后段 ball joint limit
++  - 与 progress / heading 攻击性之间的耦合
++
++## 2026-04-17
++
++已完成：
++- 继续推进“到底是哪个球铰轴先顶边界”的分析支持。
++- 在 env step metrics 中新增分轴球铰日志：
++  - 每个球铰轴的实际位置
++  - 每个球铰轴的平均限位利用率
++  - 每个球铰轴的最大限位利用率
++- 对修改后的 `env.py` 做 `python3 -m py_compile` 静态检查，通过。
++- 同步更新：
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前已有 run 的 aggregate 日志只能说明：
++  - 球铰余量在被主动消耗
++- 但还不能精确定位：
++  - 是前模块还是后模块
++  - 是 `yaw / pitch / roll` 中的哪一轴先顶边界
++- 现在新的 step metrics 已经能直接输出：
++  - `Observation/spm1_platform_joint_z_pos_raw`
++  - `Observation/spm1_platform_joint_z_limit_usage_mean_raw`
++  - `Observation/spm1_platform_joint_z_limit_usage_max_raw`
++  - 以及其余 5 个球铰轴对应指标
++- 下一轮训练开始后，可以直接在 TensorBoard 判断：
++  - 哪个具体球铰轴最先逼近边界
++
++## 2026-04-17
++
++已完成：
++- 围绕“把 Stage0 从追踪任务改成终端捕获任务”做了 4 轮自动化短训练实验，并在每轮出现明显趋势后主动停止。
++- 实验 1：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-35-19_capture_holdgoal_v1`
++  - 修改：
++    - `resampling_time: 8.0 -> 24.0`
++  - 结果：
++    - `mean_reward ≈ 89.68`
++    - `mean_episode_length ≈ 1359.75`
++    - `ball_joint_limit_rate ≈ 0.339`
++    - `target_bonus = 0`
++- 实验 2：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-38-44_capture_holdgoal_goal6_v1`
++  - 修改：
++    - 保持单目标
++    - `goal_distance: 12.0 -> 6.0`
++  - 结果：
++    - `goal_pos_error ≈ 4.41 m`
++    - `target_bonus = 0`
++    - 策略停在离目标数米处
++- 实验 3：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-41-26_capture_holdgoal_goal6_bonus10_v1`
++  - 修改：
++    - 保持实验 2
++    - `target_bonus_ratio: 0.03 -> 0.10`
++  - 结果：
++    - `progress` 已掉到接近零 / 负值
++    - `target_bonus = 0`
++- 实验 4：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-44-04_capture_holdgoal_goal6_bonus10_reverse_v1`
++  - 修改：
++    - 保持实验 3
++    - `base_allow_reverse: False -> True`
++  - 结果：
++    - `target_bonus` 仅偶发非零
++    - `goal_yaw_error_abs ≈ 0.708 rad`
++    - `Loss/value ≈ 214.7`
++- 本轮统一结论：
++  - 当前 active Stage0 仍然是 tracking-style shaping 任务
++  - 不能仅靠：
++    - 单目标保持
++    - 缩短目标距离
++    - 增大 terminal bonus
++    - 放开倒车
++    这些局部修改，直接把它变成稳定的 terminal capture 任务
++- 已在实验结束后把 active 默认配置恢复为：
++  - `resampling_time = 8.0`
++  - `goal_distance = 12.0`
++  - `target_bonus_ratio = 0.03`
++  - `base_allow_reverse = False`
++- 同步更新：
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++
++修改文件：
++- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前“终端捕获”方向已经有了明确的反例证据。
++- 如果后续还要继续推进这个方向，下一步不应再只改命令几何，而应回到任务定义层重新处理 terminal phase 机制。
++
++已完成：
++- 完成 `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-02-38_axis_usage_probe_v1` 的整轮训练与最终诊断。
++- 本轮完整跑满：
++  - `600 / 600`
++- 导出并读取：
++  - `tensorboard_export/latest_values.csv`
++  - `tensorboard_export/summary.json`
++  - 分轴球铰 `limit_usage_max_raw / mean_raw / pos_raw` 标量
++- 当前最终结果：
++  - `Train/mean_reward ≈ 616.77`
++  - `Train/mean_episode_length = 1439.0`
++  - `Termination/time_out_rate = 1.0`
++  - `Termination/ball_joint_limit_rate = 0.0`
++  - `Tracking/goal_pos_error ≈ 7.09 m`
++  - `Tracking/goal_yaw_error_abs ≈ 0.0629 rad`
++  - `Reward/target_bonus = 0.0`
++  - `Loss/value ≈ 0.315`
++- 分轴诊断结论：
++  - 这轮里 `ball_joint_limit_rate` 非零只出现在较早阶段，共约 `15` 个 step
++  - 主导责任轴是：
++    - `spm1_platform_joint_z`
++  - 物理上对应：
++    - 前模块 `yaw`
++  - 在有 `ball_joint_limit_rate` 的 step 上，这一轴的 `limit_usage_max_raw` 始终最高，峰值约：
++    - `0.966`
++  - 到训练末段，六个球铰轴都回到了安全区
++- 当前更新后的判断：
++  - 当前 8 维动作空间 + allocator 主线已成为当前最健康的 Stage0 主线
++  - “后段球铰越界持续抬升”不再是当前默认结论
++  - 新的主要问题变成：
++    - 策略已经学会高质量推进和 yaw 对准
++    - 但 `target_bonus` 仍始终为 `0`
++    - 说明它还没有稳定进入最终成功区
++
++修改文件：
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前已经用完整 run 推翻了“后段 ball joint 必然重新抬升”的临时判断。
++- 当前后续若要处理球铰软约束，应优先怀疑前模块 `yaw`，而不是对六个轴一视同仁。
++
++已完成：
++- 按用户要求再次启动一轮 Stage0 真实训练：
++  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-02-38_axis_usage_probe_v1`
++- 本轮训练目的不是修改主线配置，而是利用刚补充的分轴球铰日志埋点，直接观察：
++  - 前/后模块哪一轴最先逼近球铰边界
++- 当前训练已稳定跑到约：
++  - `52 / 600`
++- 当前中期状态：
++  - `Termination/ball_joint_limit_rate = 0.0`
++  - `Termination/time_out_rate = 1.0`
++  - `Train/mean_episode_length = 1439.0`
++  - `Tracking/goal_pos_error ≈ 9.16 m`
++  - `Tracking/goal_yaw_error_abs ≈ 0.406 rad`
++  - `Reward/longitudinal_slip_gate ≈ 0.0065`
++  - `Reward/lateral_slip_gate ≈ 0.0088`
++  - `Reward/composite_gate ≈ 0.281`
++- 当前判断：
++  - 这轮训练结构与前一轮 `action8_allocator_v1` 中期表现基本一致
++  - 当前还没有出现球铰越界
++  - 下一步应继续盯分轴 `limit_usage_max_raw`，而不是只看 aggregate 的 `ball_joint_limit_rate`
++
++修改文件：
++- `docs/current_status.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前新的分轴探针 run 已经开始提供后续定位依据。
++- 只要后段出现球铰越界，就可以直接用每一轴的 `limit_usage_max_raw` 判断责任轴。
++
++已完成：
++- 围绕 `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_17-33-20` 做“为什么更接近目标后 ball joint limit 抬升”的针对性分析。
++- 额外对齐并检查了以下时序量：
++  - `ball_joint_limit_rate`
++  - `goal_pos_error`
++  - `goal_yaw_error_abs`
++  - `progress`
++  - `heading_gate`
++  - `ball_joint_pos_abs_mean_raw`
++  - `ball_joint_target_error_abs_mean_raw`
++  - `ball_joint_vel_abs_mean_raw`
++  - `Action/policy_abs_mean`
++- 同步更新：
++  - `docs/current_status.md`
++  - `docs/conversation_history.md`
++  - `logs/daily_work_log.md`
++
++修改文件：
++- `docs/current_status.md`
++- `docs/conversation_history.md`
++- `logs/daily_work_log.md`
++
++产出/结论：
++- 当前更准确的解释不是：
++  - “快到点所以自然越界”
++- 而是：
++  - 随着策略更会推进和对准目标，它开始更主动地消耗球铰姿态余量
++- 主要依据：
++  - 后段 `heading_gate ≈ 0.96`
++  - `progress ≈ 1.14`
++  - `Action/policy_abs_mean ≈ 0.57`
++  - `ball_joint_target_error_abs_mean_raw` 与 `ball_joint_pos_abs_mean_raw` 同步抬升
++- 同时排除了几类旧问题：
++  - `tilt_deg` 很低
++  - `roll_gate = 1.0`
++  - `head_tail_roll_limit_rate = 0.0`
++  - `Loss/value` 低
++- 当前判断：
++  - 主因不是姿态失稳，也不是 critic 发散
++  - 主因是：
++    - reward 没有对“逼近球铰限位”做软惩罚
++    - 新动作空间下球铰姿态成为帮助 allocator 完成有效推进/转向的直接杠杆
++    - 策略会主动用球铰余量换 `progress` 和 `heading_gate`
++- 另一个重要结论：
++  - `ball_joint_pos_abs_mean_raw ≈ 0.17 ~ 0.18 rad`
++    不代表整体安全
++  - 因为 termination 只要任一单轴超界就触发
++  - 单个球铰轴逼近极限会被均值掩盖

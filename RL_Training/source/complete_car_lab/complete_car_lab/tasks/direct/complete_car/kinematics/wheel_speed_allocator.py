@@ -652,6 +652,83 @@ class TorchWheelSpeedAllocator:
         generalized_velocity = self.build_generalized_velocity_from_spatial_twist(ball_joint_vel, spatial_twist_command)
         return self.compute_wheel_speed_targets_from_generalized_velocity(ball_joint_pos, generalized_velocity)
 
+    def compute_traction_scales(
+        self,
+        wheel_longitudinal_slip,
+        wheel_normal_contact_force,
+        *,
+        min_scale: float,
+        longitudinal_slip_start: float,
+        longitudinal_slip_full: float,
+        contact_force_low: float,
+        contact_force_high: float,
+    ):
+        wheel_longitudinal_slip, squeeze_slip = self._ensure_2d(
+            wheel_longitudinal_slip, len(OUTPUT_WHEEL_JOINT_NAMES), "wheel_longitudinal_slip"
+        )
+        wheel_normal_contact_force, squeeze_force = self._ensure_2d(
+            wheel_normal_contact_force, len(OUTPUT_WHEEL_JOINT_NAMES), "wheel_normal_contact_force"
+        )
+        (wheel_longitudinal_slip, wheel_normal_contact_force), _ = self._broadcast_batch(
+            wheel_longitudinal_slip, wheel_normal_contact_force
+        )
+
+        abs_longitudinal_slip = self.torch.abs(wheel_longitudinal_slip)
+        slip_span = max(longitudinal_slip_full - longitudinal_slip_start, 1.0e-6)
+        slip_ratio = self.torch.clamp((abs_longitudinal_slip - longitudinal_slip_start) / slip_span, min=0.0, max=1.0)
+        longitudinal_scale = 1.0 - slip_ratio * (1.0 - min_scale)
+
+        contact_span = max(contact_force_high - contact_force_low, 1.0e-6)
+        contact_ratio = self.torch.clamp(
+            (wheel_normal_contact_force - contact_force_low) / contact_span,
+            min=0.0,
+            max=1.0,
+        )
+        contact_scale = min_scale + contact_ratio * (1.0 - min_scale)
+
+        traction_scale = self.torch.minimum(longitudinal_scale, contact_scale)
+        if squeeze_slip and squeeze_force:
+            return (
+                traction_scale[0],
+                longitudinal_scale[0],
+                contact_scale[0],
+            )
+        return traction_scale, longitudinal_scale, contact_scale
+
+    def apply_traction_scaling(
+        self,
+        wheel_targets,
+        wheel_longitudinal_slip,
+        wheel_normal_contact_force,
+        *,
+        min_scale: float,
+        longitudinal_slip_start: float,
+        longitudinal_slip_full: float,
+        contact_force_low: float,
+        contact_force_high: float,
+    ):
+        wheel_targets, squeeze_targets = self._ensure_2d(wheel_targets, len(OUTPUT_WHEEL_JOINT_NAMES), "wheel_targets")
+        traction_scale, longitudinal_scale, contact_scale = self.compute_traction_scales(
+            wheel_longitudinal_slip,
+            wheel_normal_contact_force,
+            min_scale=min_scale,
+            longitudinal_slip_start=longitudinal_slip_start,
+            longitudinal_slip_full=longitudinal_slip_full,
+            contact_force_low=contact_force_low,
+            contact_force_high=contact_force_high,
+        )
+        traction_scale, squeeze_scale = self._ensure_2d(traction_scale, len(OUTPUT_WHEEL_JOINT_NAMES), "traction_scale")
+        (wheel_targets, traction_scale, longitudinal_scale, contact_scale), _ = self._broadcast_batch(
+            wheel_targets,
+            traction_scale,
+            self._ensure_2d(longitudinal_scale, len(OUTPUT_WHEEL_JOINT_NAMES), "longitudinal_scale")[0],
+            self._ensure_2d(contact_scale, len(OUTPUT_WHEEL_JOINT_NAMES), "contact_scale")[0],
+        )
+        scaled_targets = wheel_targets * traction_scale
+        if squeeze_targets and squeeze_scale:
+            return scaled_targets[0], traction_scale[0], longitudinal_scale[0], contact_scale[0]
+        return scaled_targets, traction_scale, longitudinal_scale, contact_scale
+
 
 __all__ = [
     "BALL_JOINT_NAMES",

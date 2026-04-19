@@ -18,7 +18,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         # Stage0 keeps a full local copy of the active tunables so future tuning can
         # stay inside this file without bouncing back to the base template.
         self.stage_name = "stage0"
-        self.episode_length_s = 24.0
+        self.episode_length_s = 16.0
         self.decimation = 2
 
         self.scene.num_envs = 64
@@ -27,8 +27,8 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.scene.clone_in_fabric = True
 
         self.commands.num_commands = 3
-        self.commands.resampling_time = 8.0
-        self.commands.goal_distance = 12.0
+        self.commands.resampling_time = 16.0
+        self.commands.goal_distance = 8.0
         self.commands.goal_direction_max_deg = 30.0
         self.commands.goal_heading_delta_max_deg = 12.0
         self.commands.zero_command = False
@@ -37,8 +37,9 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.control.sim_dt = 1.0 / 120.0
         self.control.decimation = 2
         self.control.control_dt = 1.0 / 60.0
-        self.control.ball_joint_action_lower_limits = (-0.56, -1.30, -0.35, -0.56, -1.30, -0.35)
-        self.control.ball_joint_action_upper_limits = (0.56, 0.40, 0.35, 0.56, 0.40, 0.35)
+        # Freeze the ball joints at their default reset posture for this stage.
+        self.control.ball_joint_action_lower_limits = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        self.control.ball_joint_action_upper_limits = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         self.control.ball_joint_stiffness = 100.0
         self.control.ball_joint_damping = 20.0
         self.control.ball_joint_effort_limit_sim = 120.0
@@ -46,23 +47,12 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.control.wheel_joint_stiffness = 0.0
         self.control.wheel_joint_damping = 1.0e3
         self.control.wheel_joint_effort_limit_sim = 80.0
-        self.control.wheel_joint_velocity_limit_sim = 12.0
-        self.control.traction_aware_wheel_limit_enabled = True
-        self.control.traction_limit_min_scale = 0.35
-        self.control.traction_limit_longitudinal_slip_start = 0.6
-        self.control.traction_limit_longitudinal_slip_full = 1.5
-        self.control.traction_limit_slip_angle_start_deg = 12.0
-        self.control.traction_limit_slip_angle_full_deg = 28.0
-        self.control.traction_limit_contact_force_low = 0.05
-        self.control.traction_limit_contact_force_high = 0.12
-        self.control.base_forward_velocity_max = 1.2
-        self.control.base_yaw_rate_max = 0.6
-        self.control.base_allow_reverse = False
+        self.control.wheel_joint_velocity_limit_sim = 20.0
+        self.control.wheel_action_scale = 1.0
 
         self.observations.use_history = False
         self.observations.history_length = 1
         self.observations.clip_observations = 100.0
-        self.observations.clip_actions = 1.0
         self.observations.wheel_slip_epsilon = 0.1
         self.observations.wheel_longitudinal_slip_clip = 3.0
         self.observations.scales.base_lin_vel = 1.0
@@ -94,29 +84,22 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.observations.noise.commands = 0.0
 
         self.rewards.only_positive_rewards = False
-        self.rewards.params.target_bonus_ratio = 0.03
-        self.rewards.params.target_position_tolerance = 0.3
-        self.rewards.params.target_yaw_tolerance_deg = 9.0
-        self.rewards.params.heading_distance_scale = 12.0
-        self.rewards.params.roll_gate_activation_roll_deg = 5.0
-        self.rewards.params.body_car_roll_gate = math.pi / 16.0
-        self.rewards.params.longitudinal_slip_gate_scale = 0.3
-        self.rewards.params.lateral_slip_gate_scale = 4.0
-        self.rewards.params.capture_reward_scale = 1.0
-        self.rewards.params.capture_distance_sigma = 0.6
-        self.rewards.params.capture_yaw_sigma_deg = 6.0
-        self.rewards.params.capture_planar_speed_sigma = 0.20
-        self.rewards.params.capture_yaw_rate_sigma = 0.20
+        self.rewards.params.target_position_tolerance = 0.5
+        self.rewards.params.target_yaw_tolerance_deg = 15.0
+        self.rewards.params.goal_direction_reward_weight = 0.012
+        self.rewards.params.goal_direction_error_scale = 1.2
+        self.rewards.params.goal_heading_reward_weight = 0.06
+        self.rewards.params.goal_heading_error_scale = 0.8
+        self.rewards.params.near_goal_gate_distance = 2.1
+        self.rewards.params.near_goal_gate_sharpness = 4.0
+        self.rewards.params.stop_gate_distance = 0.8
+        self.rewards.params.stop_reward_weight = 0.004
+        self.rewards.params.stop_speed_squared_scale = 1.2
+        self.rewards.params.success_bonus = 45.0
+        self.rewards.params.time_penalty = 0.02
 
         self.terminations.orientation_limit_deg = 30.0
         self.terminations.head_tail_roll_limit_deg = 35.0
-        self.terminations.capture_switch_distance = 2.0
-        self.terminations.capture_base_forward_velocity_max = 0.40
-        self.terminations.capture_base_yaw_rate_max = 0.25
-        self.terminations.capture_allow_reverse = True
-        self.terminations.success_planar_speed_tolerance = 0.12
-        self.terminations.success_yaw_rate_tolerance = 0.12
-        self.terminations.success_dwell_steps = 12
         self.terminations.ball_joint_pos_lower_limits = (-0.6, -1.0, -0.5, -0.6, -1.0, -0.5)
         self.terminations.ball_joint_pos_upper_limits = (0.6, 0.4, 0.5, 0.6, 0.4, 0.5)
 
@@ -185,7 +168,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.sim.physics_material.restitution = self.terrain.restitution
         self.sim.physx.solver_type = 1
         self.sim.physx.max_position_iteration_count = 8
-        self.sim.physx.max_velocity_iteration_count = 1
+        self.sim.physx.max_velocity_iteration_count = 4
         self.sim.physx.bounce_threshold_velocity = 0.2
         self.sim.physx.friction_offset_threshold = 0.04
         self.sim.physx.friction_correlation_distance = 0.025

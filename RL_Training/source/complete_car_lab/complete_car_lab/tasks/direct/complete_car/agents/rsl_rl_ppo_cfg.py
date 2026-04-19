@@ -9,10 +9,11 @@ from isaaclab.utils import configclass
 
 
 @configclass
-class LocalGaussianDistributionCfg:
-    class_name: str = "GaussianDistribution"
+class LocalSquashedGaussianDistributionCfg:
+    class_name: str = "SquashedGaussianDistribution"
     init_std: float = MISSING
-    std_type: Literal["scalar", "log"] = "scalar"
+    log_std_min: float = -5.0
+    log_std_max: float = 2.0
 
 
 @configclass
@@ -21,7 +22,7 @@ class LocalMlpModelCfg:
     hidden_dims: list[int] = MISSING
     activation: str = MISSING
     obs_normalization: bool = True
-    distribution_cfg: LocalGaussianDistributionCfg | None = None
+    distribution_cfg: LocalSquashedGaussianDistributionCfg | None = None
 
 
 @configclass
@@ -30,6 +31,7 @@ class LocalPpoAlgorithmCfg:
     num_learning_epochs: int = MISSING
     num_mini_batches: int = MISSING
     learning_rate: float = MISSING
+    adam_eps: float = MISSING
     schedule: str = MISSING
     gamma: float = MISSING
     lam: float = MISSING
@@ -68,42 +70,43 @@ class LocalOnPolicyRunnerCfg:
 @configclass
 class CompleteCarBasePPORunnerCfg(LocalOnPolicyRunnerCfg):
     seed = 1
-    num_steps_per_env = 96
-    max_iterations = 600
-    save_interval = 200
+    num_steps_per_env = 512
+    max_iterations = 700
+    save_interval = 100
     experiment_name = "complete_car_direct"
     run_name = ""
     obs_groups = {"actor": ["actor"], "critic": ["critic"]}
     resume = False
     load_run = ".*"
     load_checkpoint = "model_.*.pt"
-    clip_actions = 1.0
+    clip_actions = None
 
     actor = LocalMlpModelCfg(
-        hidden_dims=[256, 128, 64],
-        activation="elu",
+        hidden_dims=[256, 256],
+        activation="relu",
         obs_normalization=True,
-        distribution_cfg=LocalGaussianDistributionCfg(init_std=0.35, std_type="scalar"),
+        distribution_cfg=LocalSquashedGaussianDistributionCfg(init_std=0.20, log_std_min=-4.0, log_std_max=0.0),
     )
     critic = LocalMlpModelCfg(
-        hidden_dims=[256, 128, 64],
-        activation="elu",
+        hidden_dims=[256, 256],
+        activation="relu",
         obs_normalization=True,
         distribution_cfg=None,
     )
     algorithm = LocalPpoAlgorithmCfg(
-        value_loss_coef=0.7,
+        value_loss_coef=0.5,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.002,
-        num_learning_epochs=4,
-        num_mini_batches=4,
-        learning_rate=2.0e-4,
+        entropy_coef=5.0e-4,
+        num_learning_epochs=5,
+        num_mini_batches=16,
+        learning_rate=1.0e-4,
+        adam_eps=1.0e-5,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,
         desired_kl=0.008,
-        max_grad_norm=0.7,
+        max_grad_norm=0.5,
     )
 
 

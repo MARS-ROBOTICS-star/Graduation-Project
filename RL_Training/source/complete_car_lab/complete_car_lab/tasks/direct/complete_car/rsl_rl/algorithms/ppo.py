@@ -45,6 +45,7 @@ class PPO:
         value_loss_coef: float = 1.0,
         entropy_coef: float = 0.01,
         learning_rate: float = 0.001,
+        adam_eps: float = 1e-8,
         max_grad_norm: float = 1.0,
         optimizer: str = "adam",
         use_clipped_value_loss: bool = True,
@@ -113,8 +114,11 @@ class PPO:
         self.critic = critic.to(self.device)
 
         # Create the optimizer
+        optimizer_kwargs = {"lr": learning_rate}
+        if optimizer.lower() in {"adam", "adamw"}:
+            optimizer_kwargs["eps"] = adam_eps
         self.optimizer = resolve_optimizer(optimizer)(
-            chain(self.actor.parameters(), self.critic.parameters()), lr=learning_rate
+            chain(self.actor.parameters(), self.critic.parameters()), **optimizer_kwargs
         )  # type: ignore
 
         # Add storage
@@ -129,6 +133,7 @@ class PPO:
         self.entropy_coef = entropy_coef
         self.gamma = gamma
         self.lam = lam
+        self.adam_eps = adam_eps
         self.max_grad_norm = max_grad_norm
         self.use_clipped_value_loss = use_clipped_value_loss
         self.desired_kl = desired_kl

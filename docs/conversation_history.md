@@ -2,7 +2,814 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-19
+
+### GitHub 同步策略已固定为“代码与文档入库，训练产物不入库”；后续只有在用户明确要求或出现较理想模型时才提醒上传训练结果
+- Updated:
+  - `.gitignore`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - GitHub 默认同步范围应包含：
+    - 源码
+    - 文档
+    - 配置
+  - GitHub 默认不同步：
+    - `RL_Training/logs/`
+    - `RL_Training/outputs/`
+    - 其中包含的 TensorBoard 事件、checkpoint、导出标量、运行参数快照等训练产物
+  - 如果用户之后明确说“上传训练结果”或当前 run / 模型已经达到较理想状态，后续会提醒用户再决定是否单独上传或归档训练产物
+- Reason:
+  - 用户明确要求先完成项目代码同步，但不把训练后日志文件和模型结果上传到 GitHub
+- Impact:
+  - 后续常规 `git add -A` / `git push` 不应再把训练产物纳入版本控制
+  - 训练结果共享应作为显式动作处理，而不是默认随代码一起上传
+- Status:
+  - active workflow rule
+
+### Run `2026-04-19_16-16-01` is the first real Stage0 validation of the bounded-policy action path; it proves the old action-mismatch problem is fixed, but exposes dead action dimensions, persistent wheel-slip dependence, and one broken success metric
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-19_16-16-01`
+- Effective branch characteristics captured by this run:
+  - PPO / actor path:
+    - `tanh squashed Gaussian`
+    - `num_steps_per_env = 512`
+    - `init_std = 0.20`
+    - `log_std ∈ [-4.0, 0.0]`
+  - environment:
+    - `goal_distance = 8.0 m`
+    - `episode_length_s = 16.0`
+    - `action_space = 12`
+  - but Stage0-specific control semantics are currently:
+    - ball-joint action lower limits = upper limits = `0`
+    - therefore the first `6` action dimensions are effectively dead in this stage
+    - the only effective control branch is the `6` direct wheel-speed commands
+- Durable diagnosis:
+  - the action-execution mismatch has been removed in this branch:
+    - `Action/policy_abs_mean == Action/processed_abs_mean`
+    - `Action/policy_std == Action/processed_std`
+    - no downstream preprocessing is changing the sampled actor actions anymore
+  - training is numerically stable and startup is healthy:
+    - no startup error in Isaac log
+    - articulation / actuator binding resolves correctly
+    - `Termination/terminated_rate == Termination/success_rate`
+    - `Termination/time_out_rate + Termination/success_rate ≈ 1`
+    - this implies the late-stage run is no longer failing by orientation or joint-limit hard terminations
+  - the run is no longer stuck in the old zero-success direct-drive failure mode:
+    - `Termination/success_rate` peaks at about `0.877` around iteration `438`
+    - last value is about `0.432`
+    - `Tracking/goal_pos_error` improves from about `8.36 m` to about `1.81 m`
+    - last-50 mean `goal_pos_error` is about `1.63 m`
+    - last-50 mean `goal_completion_pct` is about `79.6%`
+  - but the learned behavior is still not clean:
+    - last-50 mean `|longitudinal slip|` stays around `2.38`
+    - last-50 mean `|slip angle|` stays around `0.568 rad`
+    - last-50 mean `wheel_velocity_target_abs_mean` stays around `8.03 rad/s`
+    - the policy is still buying progress with aggressive wheel spin rather than healthy traction
+  - orientation quality remains structurally weak:
+    - `goal_yaw_error_abs` rises from about `0.34 rad` to about `1.04 rad`
+    - last-50 mean `goal_yaw_error_abs` is about `1.17 rad`
+    - this means the branch is learning to close distance much better than it learns to satisfy final heading across the rollout distribution
+  - one success metric is currently not trustworthy:
+    - `Termination/success_rate` is clearly non-zero throughout the later run
+    - but `Tracking/goal_success_rate` stays identically `0`
+    - future analysis should treat `Tracking/goal_success_rate` as broken until its logging timing/path is fixed
+- Interpretation:
+  - this run successfully validates the bounded-policy action-path cleanup itself
+  - but it also shows the current Stage0 task is still behaviorally misaligned:
+    - dead action dimensions remain in the policy interface
+    - reward still allows high-slip progress to dominate
+    - heading quality is not improving in step with distance progress
+- Impact:
+  - future Stage0 comparisons after `2026-04-19` should no longer frame the main problem as "sampled action vs executed action mismatch"
+  - the main blocker has shifted upward to:
+    - effective action semantics
+    - slip-sensitive behavior quality
+    - trustworthy success metrics
+- Status:
+  - active mainline diagnosis promoted
+
+### Stage0 PPO hyperparameters have been explicitly retuned after the bounded-policy migration, including longer rollouts, smaller exploration, shallower MLP depth, and non-default Adam epsilon
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/algorithms/ppo.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the active Stage0 PPO runner defaults are now:
+    - `seed = 1`
+    - `num_steps_per_env = 512`
+    - `max_iterations = 700`
+    - `save_interval = 100`
+  - the active actor / critic network defaults are now:
+    - hidden dims:
+      - actor `[256, 256]`
+      - critic `[256, 256]`
+    - activation:
+      - `relu`
+    - observation normalization:
+      - enabled for both actor and critic
+  - the active bounded action-distribution defaults are now:
+    - `SquashedGaussianDistribution`
+    - `init_std = 0.20`
+    - `log_std_min = -4.0`
+    - `log_std_max = 0.0`
+  - the active PPO algorithm defaults are now:
+    - `value_loss_coef = 0.5`
+    - `clip_param = 0.2`
+    - `entropy_coef = 5e-4`
+    - `num_learning_epochs = 5`
+    - `num_mini_batches = 16`
+    - `learning_rate = 1e-4`
+    - `adam_eps = 1e-5`
+    - `schedule = adaptive`
+    - `gamma = 0.99`
+    - `lam = 0.95`
+    - `desired_kl = 0.008`
+    - `max_grad_norm = 0.5`
+- Reason:
+  - the user explicitly replaced the previous post-migration PPO defaults with a new fixed hyperparameter set
+- Impact:
+  - future training comparisons after this point should not be interpreted using the older:
+    - `240`-step rollout
+    - `[256, 128, 64]`
+    - `elu`
+    - `init_std = 0.35`
+    - `entropy_coef = 0.002`
+    - `learning_rate = 2e-4`
+    - `gamma = 0.995`
+    - `max_grad_norm = 0.7`
+  - future optimizer-side stability analysis must use:
+    - explicit `Adam eps = 1e-5`
+- Status:
+  - active mainline behavior changed
+- Verification:
+  - `python3 -m py_compile` passed for the modified PPO config and PPO algorithm files
+
+### Stage0 PPO action distribution has been changed from unbounded Gaussian plus downstream clipping to tanh-squashed Gaussian with clamped log-std, and pre-execution action clipping has been removed from the wrapper/env path
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/modules/__init__.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/modules/distribution.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the active actor distribution is now:
+    - `SquashedGaussianDistribution`
+    - action sample path:
+      - base Gaussian sample
+      - `tanh` squash into `(-1, 1)`
+    - log-prob path:
+      - exact tanh change-of-variables correction is included
+  - the actor exploration parameterization is now:
+    - state-independent `log_std`
+    - `std = exp(log_std)`
+    - runtime clamp:
+      - `log_std_min = -4.0`
+      - `log_std_max = 0.5`
+  - the old action clipping chain has been shortened:
+    - PPO wrapper `clip_actions` is now `None`
+    - env preprocess no longer clips incoming actions
+    - final safeguard clipping remains only in the environment mapping path:
+      - ball-joint target mapping
+      - wheel target physical limit protection
+- Reason:
+  - the user explicitly decided that Stage0 should stop relying on:
+    - unbounded Gaussian sampling
+    - multiple downstream clips that make rollout actions differ from executed actions
+  - the user also explicitly required `log_std` parameterization with a bounded interval for stability
+- Impact:
+  - future PPO diagnosis should treat any training after this point as using bounded action semantics rather than the old unbounded-plus-clip pipeline
+  - future action-distribution changes should start from the local `SquashedGaussianDistribution` implementation instead of reintroducing wrapper/env pre-clips
+- Status:
+  - active mainline behavior changed
+- Verification:
+  - `python3 -m py_compile` passed for the modified PPO/distribution/env/action files
+
+## 2026-04-18
+
+### Partial run `2026-04-18_16-05-54_stage0_direct12_longslipcost_v1` shows that the new `12`-action direct wheel-drive branch does not blow up, but it very quickly settles into a high-slip, weak-progress, always-time-out failure mode
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-18_16-05-54_stage0_direct12_longslipcost_v1`
+- Runtime status:
+  - launched on `cuda:0`
+  - stopped intentionally at:
+    - `iteration 16 / 300`
+- Effective branch characteristics captured by this run:
+  - action semantics:
+    - `6` ball-joint targets
+    - `6` direct wheel-speed commands
+  - observation dim:
+    - `70 / 70`
+  - reward path:
+    - `target_bonus + gated_progress - longitudinal_slip_cost_penalty`
+    - `composite_gate = (heading_gate + lateral_slip_gate) / 2`
+    - `longitudinal_slip_cost_penalty = 0.25 * relu(mean_abs_long_slip - 0.3)^2`
+- Durable diagnosis:
+  - training is numerically stable:
+    - `time_out_rate = 1.0`
+    - no orientation / head-tail-roll / ball-joint termination events fire
+    - value loss decreases from about `434.5` to about `227.1`
+  - the branch does learn some forward progress:
+    - `goal_pos_error` improves from about `8.05 m` to about `6.72 m`
+    - `goal_completion_pct` improves from about `0.13%` to about `16.02%`
+    - `progress` improves from about `-0.03` to about `0.195`
+  - but that progress is purchased through persistently extreme slip:
+    - `|longitudinal slip|` stays around `2.26`
+    - `|slip angle|` rises from about `0.44 rad` to about `0.52 rad`
+    - `lateral_slip_gate` collapses to about `0.010`
+  - and the task never becomes successful:
+    - `goal_success_rate = 0`
+    - `target_bonus = 0`
+    - `mean_episode_length = 959`
+  - the reward remains structurally bad:
+    - `gated_progress` rises only to about `0.080`
+    - `longitudinal_slip_cost_penalty` still stays around `1.01`
+    - `Reward/total` remains negative, about `-0.93`
+    - `Train/mean_reward` becomes more negative, from about `-162` to about `-995`
+- Interpretation:
+  - this is not a crash or posture-instability branch
+  - it is a stable bad equilibrium:
+    - high longitudinal slip
+    - very weak useful transport
+    - no successful arrivals
+    - always timing out
+- Most likely causes:
+  - action semantics have been pushed too low-level:
+    - the policy now has to learn six-wheel coordination and ball-joint coordination simultaneously
+    - there is no allocator or other structure enforcing a vehicle-level motion prior
+  - the explicit longitudinal-slip penalty does not actually pull the policy into a low-slip regime:
+    - it only makes the return strongly negative while the policy still finds high-slip motion to be the easiest way to get any progress
+- Impact:
+  - future sessions should not assume that removing the allocator and directly driving all six wheel speeds is automatically an improvement
+  - this branch should currently be treated as a failed mainline candidate unless later evidence overturns it
+- Status:
+  - durable failed-branch conclusion promoted
+
+### Stage0 default mainline has been changed from `6 ball joints + 2 planar commands + allocator` to `6 ball joints + 6 direct wheel-speed commands`, and longitudinal slip is now an explicit thresholded quadratic penalty instead of a gate term
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the active Stage0 action semantics are now:
+    - `6` ball-joint targets
+    - `6` direct wheel-speed commands
+  - allocator is no longer part of the active execution path
+  - wheel actions are mapped directly by:
+    - `wheel_speed_target = action * wheel_action_scale * wheel_joint_velocity_limit_sim`
+  - current default wheel settings are:
+    - `wheel_joint_velocity_limit_sim = 12.0`
+    - `wheel_action_scale = 1.0`
+  - because `last_action` is part of observation, actor / critic observation dims now become:
+    - `70 / 70`
+  - longitudinal slip is no longer part of `composite_gate`
+  - current reward structure is now:
+    - `total_reward = target_bonus + gated_progress - longitudinal_slip_cost_penalty`
+    - `gated_progress = progress * composite_gate * roll_gate`
+    - `composite_gate = (heading_gate + lateral_slip_gate) / 2`
+    - `longitudinal_slip_cost_penalty = weight * relu(mean_abs_long_slip - deadzone)^2`
+  - current default penalty parameters are:
+    - `longitudinal_slip_cost_deadzone = 0.3`
+    - `longitudinal_slip_cost_weight = 0.25`
+- Reason:
+  - the user explicitly decided to remove the speed-allocation model from the active Stage0 branch and to make longitudinal slip a visible negative cost with thresholded quadratic growth
+- Impact:
+  - all new training after this point is no longer directly comparable to the earlier `8-action allocator` branch
+  - future analysis should treat this as a new Stage0 mainline with changed action semantics, changed observation dimension, and changed reward decomposition
+- Status:
+  - active mainline
+
+### Stage0 default mainline has been rolled back from the same-day `2 m` reconstruction branch to the earlier `8 m`, `16 s`, `66`-dim stable branch because the user explicitly chose the previously healthiest `8 m` environment as the active baseline
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/Stage0问题演化与当前瓶颈分析.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the active Stage0 environment should now again match the archived branch represented by:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-18_10-33-52_gpu_stage0_obs66_goal8_v1`
+  - the effective default settings are:
+    - `episode_length_s = 16.0`
+    - `resampling_time = 16.0`
+    - `goal_distance = 8.0`
+    - `goal_direction_max_deg = 30.0`
+    - `goal_heading_delta_max_deg = 12.0`
+    - `base_forward_velocity_max = 1.2`
+    - `base_yaw_rate_max = 0.6`
+    - `base_allow_reverse = False`
+    - `traction_aware_allocator_enabled = False`
+  - reward structure is rolled back to the older single-stage tracking form:
+    - `total_reward = target_bonus + gated_progress`
+    - `gated_progress = progress * composite_gate * roll_gate`
+    - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
+  - the active termination set is rolled back to:
+    - `bad_orientation`
+    - `head_tail_roll_out_of_bounds`
+    - `ball_joint_out_of_bounds`
+    - `time_out`
+  - same-day `2 m` pose/capture/traction-scaling reconstruction remains useful experiment memory, but it is no longer the current default baseline
+- Reason:
+  - the user explicitly requested that the RL environment be restored to the previously healthiest `8 m` version
+  - that request changes the active operating baseline, so project memory must follow the rollback rather than the earlier same-day default shift
+- Impact:
+  - future sessions should treat the older `8 m` branch as the active Stage0 source-of-truth unless the user later changes it again
+  - the `2 m` branch should now be interpreted as a same-day experimental side branch, not the inherited default
+- Status:
+  - active mainline
+
+### Stage0 current default mainline is now a `2 m`, straight-ahead, `32 s` flat-ground baseline with traction-aware scaling and dense pose-convergence reward
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/Stage0问题演化与当前瓶颈分析.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - after multiple same-day GPU runs, the prior `8 m` Stage0 geometry was judged too hard for the current execution layer and quality constraints to serve as the default baseline
+  - simply extending episode length did not remove the late-stage approach plateau
+  - simply relaxing traction-aware scaling increased slip and heading error and made the policy worse
+  - the best current baseline is now:
+    - `episode_length_s = 32.0`
+    - `goal_distance = 2.0`
+    - `goal_direction_max_deg = 0.0`
+    - `goal_heading_delta_max_deg = 0.0`
+    - `base_forward_velocity_max = 0.9`
+    - `base_allow_reverse = True`
+    - traction-aware allocator enabled with:
+      - `traction_min_scale = 0.45`
+      - `traction_longitudinal_slip_start = 0.8`
+      - `traction_longitudinal_slip_full = 1.8`
+      - `traction_contact_force_low = 0.05`
+      - `traction_contact_force_high = 0.12`
+  - reward structure now explicitly includes:
+    - `pose_reward`
+    - `capture_reward`
+    - `target_bonus`
+    - explicit longitudinal-slip penalty
+    - module-pitch penalty
+  - the new dense pose term was added because the earlier progress-only structure allowed the policy to settle into a near-goal plateau with almost no remaining convergence gradient
+- Representative run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-18_15-02-04_stage0_goal2_straight_v1`
+- Durable metrics from that run after TensorBoard export:
+  - `goal_pos_error ≈ 0.767 m`
+  - `goal_success_rate ≈ 0.193`
+  - `goal_yaw_error_abs ≈ 0.068 rad`
+  - `|longitudinal slip| ≈ 1.465`
+  - `|slip angle| ≈ 0.394 rad`
+  - `tilt_deg ≈ 0.310`
+  - `traction_limit_scale_mean ≈ 0.629`
+  - no orientation / head-tail-roll / head-tail-pitch / ball-joint hard termination events were active; `time_out` remained dominant
+- Comparison that justifies the baseline shift:
+  - `4 m` straight baseline late metrics were only:
+    - `goal_pos_error ≈ 1.821 m`
+    - `goal_success_rate ≈ 0.055`
+  - therefore the `2 m` straight baseline is not arbitrary; it is the closest current task geometry to the robot's empirically demonstrated stable flat-ground capability envelope
+- Impact:
+  - future sessions should treat `2 m` straight Stage0 as the active default baseline, not the older `8 m` branch
+  - future complexity increases should be reintroduced from this baseline in the order:
+    - first improve final success rate
+    - then reintroduce small direction perturbations
+    - then extend target distance
+- Status:
+  - active mainline
+
+### Stage0 now has one long-form environment-spec document and one long-form problem-evolution document aligned to the current source tree and recent training history
+- Updated:
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/Stage0问题演化与当前瓶颈分析.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable documentation status:
+  - `docs/RL阶段训练参数一览表.md`
+    now records the current Stage0 environment in source-aligned detail, including:
+    - command sampling
+    - action semantics
+    - observation composition and formulas
+    - reward formulas
+    - termination formulas
+    - reset / terrain / sensor settings
+    - measured-geometry wheel allocator inputs, outputs, constants, and Jacobian structure
+    - PPO hyperparameters
+  - `docs/Stage0问题演化与当前瓶颈分析.md`
+    now consolidates the experiment timeline and the currently recognized failure modes, including:
+    - high-slip / partial-goal tradeoff
+    - low-slip / low-progress collapse
+    - ball-joint margin consumption as a progress lever
+    - why reward-only edits have been insufficient
+    - why the current allocator / task-definition mismatch matters
+- Impact:
+  - future sessions should use these two documents as the primary long-form references before re-deriving the current Stage0 environment state or repeating the recent problem-history reconstruction
+- Status:
+  - documentation baseline synchronized
+
+### The recurring Stage0 tradeoff between high slip and partial goal approach is not just a reward-weight issue; it reflects a structural mismatch between task definition and execution-layer responsibility
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the current Stage0 task asks the policy to solve something close to:
+    - stable goal-reaching on flat ground
+  - but the implemented control stack does not provide a subsystem that is actually responsible for stable realized planar motion
+  - the policy outputs:
+    - `6` ball-joint targets
+    - `2` high-level planar commands
+  - those planar commands are then mapped to wheel speeds by open-loop kinematics only:
+    - no base-twist tracking feedback
+    - no slip feedback correction
+    - no adhesion- or traction-closure layer
+- Code path evidence:
+  - `map_base_actions_to_planar_command()` only maps normalized actions to `vx / yaw_rate`
+  - `compute_wheel_speed_targets_from_planar_command()` builds generalized velocity from:
+    - commanded planar twist
+    - measured ball-joint velocity
+  - it does not use actual base-velocity tracking error or measured slip error for correction
+  - reward then evaluates achieved motion afterward, rather than closing the loop inside execution
+- Physical interpretation:
+  - because actual wheel-ground interaction is not regulated by the execution layer, the easiest way for PPO to reduce goal distance is to exploit morphology as a compensation lever
+  - in practice this appears as:
+    - front-body lift
+    - body roll
+    - load redistribution
+    - large skid / drag motion
+  - therefore the repeated “high slip for some approach” versus “low slip but poor reach” pattern is a symptom of this mismatch, not the core cause itself
+- Additional important constraint:
+  - current Stage0 is not yet a frequent retargeting task
+  - `resampling_time = episode_length = 16 s`
+  - so the present environment cannot yet validate the stronger thesis-level question:
+    - whether ball-joint coordination enables rapid steering under frequently changing targets
+- Impact:
+  - future diagnosis should not treat repeated high-slip runs as evidence that only reward shaping is missing
+  - the deeper issue is that the task currently expects stable goal-reaching from a stack whose execution layer is still open-loop with respect to realized locomotion
+  - if Stage0 is kept as a stable goal-reaching task, later work must either:
+    - redefine what the policy is truly responsible for
+    - or add an execution layer that is actually responsible for realized motion quality
+- Status:
+  - durable root-cause conclusion promoted
+
+### Partial run `2026-04-18_11-08-59_66obs_longslip_cost_v1` shows that the current explicit longitudinal-slip penalty branch collapses into a low-slip, low-progress local optimum instead of learning effective target approach
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-18_11-08-59_66obs_longslip_cost_v1`
+- Runtime status:
+  - launched on `cuda:0`
+  - stopped intentionally for diagnosis at:
+    - `iteration 230 / 1000`
+- Effective branch characteristics captured by this run:
+  - actor / critic observation dim:
+    - `66 / 66`
+  - action structure:
+    - `6` ball-joint targets
+    - `2` high-level planar base commands
+  - reward path:
+    - `target_bonus + progress * composite_gate * roll_gate - longitudinal_slip_cost_penalty`
+    - `composite_gate = (heading_gate + lateral_slip_gate) / 2`
+    - `lateral_slip_gate` uses mean absolute value of the six wheel slip angles
+    - `longitudinal_slip_cost_penalty = 0.25 * relu(mean_abs_long_slip - 0.3)^2`
+- Durable diagnosis from this partial run:
+  - the training loop itself is healthy:
+    - `Train/mean_episode_length` rises to about `823`
+    - `Termination/time_out_rate` remains dominant
+    - there is no NaN or articulation-startup failure
+  - the reward branch does achieve the intended traction-side suppression:
+    - `|longitudinal slip|` drops from about `1.876`
+      to about `0.385`
+    - `|slip angle|` drops from about `0.708 rad`
+      to about `0.179 rad`
+    - `tilt_deg` drops from about `0.727`
+      to about `0.123`
+    - `composite_gate` rises from about `0.532`
+      to about `0.814`
+  - but the policy does not turn that into useful transport:
+    - `progress` falls from about `0.441`
+      to about `0.028`
+    - `gated_progress` falls from about `0.238`
+      to about `0.023`
+    - `goal_completion_pct` falls from about `9.48%`
+      to about `3.01%`
+    - `goal_pos_error` drifts back up to about `7.76 m`
+  - inference:
+    - the policy learns to reduce wheel-ground mismatch by becoming conservative rather than by discovering cleaner sustained motion
+    - this is a reward-induced low-slip, low-progress local optimum
+- Comparison against the archived explicit-slip-cost run:
+  - archived run:
+    - `2026-04-17_22-34-48_exp3_goal8_explicit_slip_cost_v1`
+  - archived late metrics:
+    - `goal_completion_pct ≈ 57.11%`
+    - `goal_pos_error ≈ 3.43 m`
+    - `|longitudinal slip| ≈ 1.546`
+    - `|slip angle| ≈ 0.590 rad`
+  - current branch therefore improves traction-side metrics far more aggressively, but at the cost of collapsing task completion
+- Impact:
+  - do not promote the current explicit longitudinal-slip penalty branch to the Stage0 default mainline
+  - future reward discussion must treat this branch as evidence that:
+    - making `long slip` a visible negative cost can dominate the task objective
+    - mean-abs lateral-slip gating by itself does not prevent the conservative-collapse failure mode
+- Status:
+  - durable failed-branch conclusion promoted
+  - current branch should be reconsidered before any further long training
+
+### Partial run `2026-04-18_10-33-52_gpu_stage0_obs66_goal8_v1` confirms that the earlier `66`-dim, `8 m`, `16 s`, `240-step` Stage0 branch is numerically stable but falls into a posture-heavy, high-slip performance plateau instead of converging to a cleaner locomotion strategy
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-18_10-33-52_gpu_stage0_obs66_goal8_v1`
+- Runtime status:
+  - launched on `cuda:0`
+  - stopped intentionally for analysis at:
+    - `iteration 464 / 1000`
+- Effective branch characteristics captured by this run:
+  - actor / critic observation dim:
+    - `66 / 66`
+  - command geometry:
+    - `goal_distance = 8.0 m`
+    - `resampling_time = 16.0 s`
+  - episode length:
+    - `16.0 s`
+  - PPO rollout length:
+    - `240 steps / env`
+  - reward path:
+    - `target_bonus + gated_progress`
+    - `gated_progress = progress * composite_gate * roll_gate`
+    - `composite_gate = (heading_gate + longitudinal_slip_gate + lateral_slip_gate) / 3`
+- Durable diagnosis from this partial run:
+  - the training loop itself is healthy:
+    - `Train/mean_episode_length` saturates to about `959`
+    - `Termination/time_out_rate` stays at `1.0`
+    - late `Termination/ball_joint_limit_rate` stays at `0.0`
+  - therefore the main issue is not startup failure, NaNs, or articulation instability
+  - the policy does improve target approach compared with the earliest phase:
+    - `goal_completion_pct` rises from first-20 mean about `36.5%`
+      to last-50 mean about `51.0%`
+    - `goal_pos_error` drops from first-20 mean about `5.08 m`
+      to last-50 mean about `3.92 m`
+    - `goal_yaw_error_abs` drops from first-20 mean about `0.459 rad`
+      to last-50 mean about `0.289 rad`
+  - however, the run enters a clear plateau rather than continuing to become healthier:
+    - last-50 `goal_completion_pct ≈ 51.0%`
+    - last-50 `goal_pos_error ≈ 3.92 m`
+    - last-50 `|longitudinal slip| ≈ 1.63`
+    - last-50 `|slip angle| ≈ 0.723 rad`
+    - last-50 `tilt_deg ≈ 5.29°`
+  - reward growth is not being driven by cleaner average transport efficiency:
+    - first-20 `progress ≈ 0.293`
+      but last-50 `progress ≈ 0.0866`
+    - first-20 `gated_progress ≈ 0.0814`
+      but last-50 `gated_progress ≈ 0.1168`
+    - last-50 `target_bonus ≈ 0.247`
+  - inference:
+    - the policy is learning to occasionally satisfy the loose target tolerance often enough to collect bonus
+    - while still operating with high slip and elevated body tilt
+    - in other words, reward can continue rising even though the motion quality itself is not becoming cleaner
+- Cause interpretation:
+  - the current reward only attenuates progress under bad slip / posture; it does not strongly punish spending large portions of the episode in a high-slip regime
+  - because timeout dominates and hard-failure rates are near zero, PPO is free to keep a strategy that is dynamically stable but inefficient
+  - the present target tolerance:
+    - `0.5 m`
+    - `15°`
+    allows `target_bonus` to contribute meaningfully before the policy has reduced slip and posture consumption enough
+  - the newly added proprioceptive observation terms did not create instability, but they also did not by themselves resolve the execution-level traction mismatch
+- Impact:
+  - this run should be used as evidence that the current branch is trainable
+  - it should not be used as evidence that the current Stage0 reward already yields a healthy baseline policy
+  - future comparisons against older runs must be treated carefully because this branch differs simultaneously in:
+    - observation dimension
+    - goal distance
+    - episode length
+    - PPO rollout length
+- Status:
+  - durable partial-run conclusion promoted
+
+### A transient Stage0 branch briefly used a thresholded quadratic longitudinal-slip penalty while keeping lateral-slip as a mean-absolute-value gate inside `composite_gate`
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - `longitudinal_slip_gate` remains neutralized in the multiplier path
+  - Stage0 now adds an explicit longitudinal-slip penalty of the form:
+    - `weight * relu(mean_abs_long_slip - deadzone)^2`
+  - current default parameters are:
+    - `longitudinal_slip_cost_deadzone = 0.3`
+    - `longitudinal_slip_cost_weight = 0.25`
+  - `lateral_slip_gate` continues to stay in the gate path, but is computed from:
+    - mean absolute value of the six wheel slip angles
+    - not a six-wheel product
+  - active tracking reward is therefore now interpreted as:
+    - `target_bonus + progress * composite_gate * roll_gate - longitudinal_slip_cost_penalty`
+- Reason:
+  - the user approved the deadzone-plus-quadratic form for longitudinal slip
+  - this preserves tolerance for small physically normal longitudinal slip while explicitly penalizing persistent excessive mismatch
+- Impact:
+  - new Stage0 runs after this change are no longer directly comparable to the immediately previous reward branch that had no active longitudinal-slip penalty
+  - TensorBoard now logs both:
+    - `Reward/longitudinal_slip_cost`
+    - `Reward/longitudinal_slip_cost_penalty`
+- Status:
+  - superseded later the same day
+  - not the reward path used by run:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-18_10-33-52_gpu_stage0_obs66_goal8_v1`
+
+### A transient Stage0 reward branch removed longitudinal-slip from the gate path, kept only heading plus lateral-slip in `composite_gate`, and changed lateral-slip aggregation from six-wheel product to mean absolute slip angle
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - `longitudinal_slip_gate` is now neutralized and no longer affects the reward multiplier path
+  - the active `composite_gate` is now:
+    - `(heading_gate + lateral_slip_gate) / 2`
+  - `lateral_slip_gate` no longer uses six-wheel multiplicative aggregation
+  - instead it is computed from:
+    - mean absolute value of the six wheel slip angles
+    - then passed through the existing cosine gate shape
+  - the explicit negative-cost formula for longitudinal slip is still intentionally undecided and was not guessed in this session
+- Reason:
+  - the user explicitly judged that the current reward has little practical effect on high-slip behavior
+  - the user asked to first adjust the lateral-slip gate path and composite structure, while postponing the exact longitudinal-slip penalty function discussion
+- Impact:
+  - any new run after this change should be interpreted as a new reward-design branch
+  - current `longitudinal_slip_gate_scale` remains in config but is no longer active in the reward formula
+- Status:
+  - superseded later the same day
+  - not the reward path used by run:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-18_10-33-52_gpu_stage0_obs66_goal8_v1`
+
+### Stage0 policy observation trunk now explicitly includes joint-velocity, target-error, module roll-pitch, and wheel-speed state instead of only exporting them as raw metrics
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - the following terms are now part of the actual actor observation vector rather than only raw observation logging:
+    - `ball_joint_vel`
+    - `ball_joint_target_error`
+    - `head_roll_pitch`
+    - `tail_roll_pitch`
+    - `wheel_joint_vel`
+  - observation descriptor order, actor concatenation order, and observation-noise magnitude order were updated together in the same session
+  - Stage0 actor / critic observation dimension therefore changes from:
+    - `44 / 44`
+    to:
+    - `66 / 66`
+- Reason:
+  - these proprioceptive and module-posture signals were already computed and logged, but they had been explicitly excluded from the policy observation trunk
+  - leaving them excluded creates a mismatch between what is observable for diagnosis and what the policy can actually condition on
+- Impact:
+  - any new Stage0 run after this change is not directly architecture-comparable to the previous `44`-dim observation baseline
+  - future comparisons should treat this as an observation-design change, not a pure reward or execution-layer change
+- Status:
+  - implemented
+
+### Stage0 mainline is rolled back to the healthiest `8-action + allocator` baseline; traction-aware v2, terminal/capture reward, success dwell, and explicit slip-cost branches are removed from the default environment design
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - the default Stage0 environment design is no longer the experimental branch stack
+  - the canonical default is restored to the healthiest verified baseline represented by:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_18-02-38_axis_usage_probe_v1`
+  - removed from the default mainline:
+    - traction-aware dynamic wheel-speed limiting
+    - capture-phase command switching
+    - capture reward
+    - success dwell termination
+    - explicit slip-cost penalties and related reward/logging branches
+  - kept in the mainline:
+    - `8`-dim action space
+    - allocator-driven wheel targets
+    - single-phase tracking reward
+    - original Stage0 termination structure
+- Reason:
+  - the user explicitly asked to return the RL environment design to the healthiest known version rather than continue carrying experimental mechanisms on the main branch
+- Impact:
+  - future Stage0 experiments should start from this restored baseline and add only one new mechanism at a time
+  - prior `8 m`, traction-aware, and explicit slip-cost runs remain useful as experiment memory, but they are no longer the environment default
+- Status:
+  - implemented in source
+
 ## 2026-04-17
+
+### A three-run `goal_distance = 8 m` comparison shows that task-geometry relief matters immediately, the current traction-aware v2 governor engages but does not materially improve outcomes, and explicit slip cost improves traction metrics only by shifting pressure into articulation/posture
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Runs:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_21-55-30_exp1_goal8_baseline_no_traction_v1`
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_22-15-03_exp2_goal8_traction_v2_v1`
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_22-34-48_exp3_goal8_explicit_slip_cost_v1`
+- Decision / conclusion:
+  - merely shrinking the Stage0 target segment from `12 m` to `8 m` already changes the mainline materially:
+    - late `goal_completion_pct` improves from about `40.5%` to about `47.9%`
+    - late `goal_pos_error` drops from about `7.14 m` to about `4.17 m`
+    - late mean slip angle drops from about `0.737 rad` to about `0.639 rad`
+  - the current traction-aware v2 governor is not inactive:
+    - late `Action/traction_limit_scale_mean ≈ 0.654`
+    - equivalent late dynamic wheel-speed cap ≈ `7.85 rad/s`
+  - however, under this v2 setting the governor does not produce a meaningful improvement over the `8 m` baseline:
+    - late `goal_completion_pct ≈ 47.06%`
+    - late `long slip ≈ 1.669`
+    - late `slip angle ≈ 0.641 rad`
+    - late `ball_joint_limit_rate ≈ 0.141`
+  - therefore the current v2 execution-layer limit is judged ineffective as a mainline fix
+  - the explicit slip-cost branch does produce the first clear traction-side improvement:
+    - late `long slip ≈ 1.596`
+    - late `slip angle ≈ 0.610 rad`
+    - late `goal_completion_pct ≈ 49.45%`
+    - late `goal_pos_error ≈ 4.04 m`
+    - late `capture_rate ≈ 0.321`
+  - but this is not a free gain:
+    - late `tilt_deg ≈ 0.255`
+      versus `8 m` baseline ≈ `0.088`
+    - late `ball_joint_limit_rate ≈ 0.047`
+      versus `8 m` baseline ≈ `0`
+  - inference:
+    - explicit slip cost can push the policy toward lower wheel-ground mismatch
+    - but without simultaneous articulation / posture regularization, the policy pays for that improvement by consuming more body/joint margin
+- Impact:
+  - future traction diagnosis should use:
+    - `goal_distance = 8 m`
+    as the more informative working point
+  - do not promote the current traction-aware v2 governor to the default mainline
+  - if explicit slip cost is continued, pair it with a single new counter-term that constrains:
+    - ball-joint margin usage
+    - or body tilt
+  - reward totals from the explicit-cost run are not directly comparable to previous runs because the reward definition changed; compare behavior metrics first
+- Status:
+  - durable conclusion promoted from three completed full runs
 
 ### Stage0 traction-aware wheel-limit parameters now have a dedicated plotting script and generated reference figure for direct visual explanation
 - Updated:

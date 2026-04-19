@@ -225,6 +225,93 @@ class GaussianDistribution(Distribution):
         return torch.distributions.kl_divergence(old_dist, new_dist).sum(dim=-1)
 
 
+class SquashedGaussianDistribution(Distribution):
+    """Tanh-squashed diagonal Gaussian with state-independent log standard deviation."""
+
+    def __init__(
+        self,
+        output_dim: int,
+        init_std: float = 1.0,
+        log_std_min: float = -5.0,
+        log_std_max: float = 2.0,
+        squash_epsilon: float = 1e-6,
+    ) -> None:
+        super().__init__(output_dim)
+        self.log_std_min = log_std_min
+        self.log_std_max = log_std_max
+        self.squash_epsilon = squash_epsilon
+
+        init_std_tensor = torch.full((output_dim,), init_std, dtype=torch.float32)
+        init_log_std = torch.log(torch.clamp(init_std_tensor, min=squash_epsilon))
+        self.log_std_param = nn.Parameter(init_log_std)
+
+        self._distribution: Normal | None = None
+        self._base_mean: torch.Tensor | None = None
+        self._base_std: torch.Tensor | None = None
+
+        Normal.set_default_validate_args(False)
+
+    def update(self, mlp_output: torch.Tensor) -> None:
+        """Update the base Gaussian before tanh squashing."""
+        self._base_mean = mlp_output
+        clamped_log_std = torch.clamp(self.log_std_param, min=self.log_std_min, max=self.log_std_max)
+        self._base_std = torch.exp(clamped_log_std).expand_as(self._base_mean)
+        self._distribution = Normal(self._base_mean, self._base_std)
+
+    def sample(self) -> torch.Tensor:
+        """Sample from the base Gaussian and squash into (-1, 1)."""
+        return torch.tanh(self._distribution.sample())  # type: ignore[arg-type]
+
+    def deterministic_output(self, mlp_output: torch.Tensor) -> torch.Tensor:
+        """Return the squashed mean action for deterministic inference."""
+        return torch.tanh(mlp_output)
+
+    def as_deterministic_output_module(self) -> nn.Module:
+        """Return export-friendly module that applies tanh to the mean."""
+        return _TanhDeterministicOutput()
+
+    @property
+    def input_dim(self) -> int:
+        """Return the input dimension required by the distribution."""
+        return self.output_dim
+
+    @property
+    def mean(self) -> torch.Tensor:
+        """Return the squashed mean action."""
+        return torch.tanh(self._base_mean)  # type: ignore[arg-type]
+
+    @property
+    def std(self) -> torch.Tensor:
+        """Return the base Gaussian standard deviation."""
+        return self._base_std  # type: ignore[return-value]
+
+    @property
+    def entropy(self) -> torch.Tensor:
+        """Return the base Gaussian entropy as the exploration proxy."""
+        return self._distribution.entropy().sum(dim=-1)  # type: ignore[union-attr]
+
+    @property
+    def params(self) -> tuple[torch.Tensor, ...]:
+        """Return the base Gaussian parameters for KL computation."""
+        return (self._base_mean, self._base_std)  # type: ignore[return-value]
+
+    def log_prob(self, outputs: torch.Tensor) -> torch.Tensor:
+        """Compute exact log-probability with tanh change-of-variables correction."""
+        clipped_outputs = torch.clamp(outputs, -1.0 + self.squash_epsilon, 1.0 - self.squash_epsilon)
+        unsquashed_outputs = torch.atanh(clipped_outputs)
+        log_prob = self._distribution.log_prob(unsquashed_outputs).sum(dim=-1)  # type: ignore[union-attr]
+        log_det_jacobian = torch.log(1.0 - clipped_outputs.pow(2) + self.squash_epsilon).sum(dim=-1)
+        return log_prob - log_det_jacobian
+
+    def kl_divergence(self, old_params: tuple[torch.Tensor, ...], new_params: tuple[torch.Tensor, ...]) -> torch.Tensor:
+        """KL is computed in the pre-squash Gaussian space."""
+        old_mean, old_std = old_params
+        new_mean, new_std = new_params
+        old_dist = Normal(old_mean, old_std)
+        new_dist = Normal(new_mean, new_std)
+        return torch.distributions.kl_divergence(old_dist, new_dist).sum(dim=-1)
+
+
 class HeteroscedasticGaussianDistribution(GaussianDistribution):
     """Gaussian (Normal) distribution module with state-dependent standard deviation.
 
@@ -309,3 +396,10 @@ class _MeanSliceDeterministicOutput(nn.Module):
 
     def forward(self, mlp_output: torch.Tensor) -> torch.Tensor:
         return mlp_output[..., 0, :]
+
+
+class _TanhDeterministicOutput(nn.Module):
+    """Exportable module that applies tanh to bounded action means."""
+
+    def forward(self, mlp_output: torch.Tensor) -> torch.Tensor:
+        return torch.tanh(mlp_output)

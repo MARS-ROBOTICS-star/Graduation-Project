@@ -2,6 +2,8 @@
 *.SAT
 .cache/
 outputs/
+RL_Training/logs/
+RL_Training/outputs/
 __pycache__/
 *.py[cod]
 *.bak

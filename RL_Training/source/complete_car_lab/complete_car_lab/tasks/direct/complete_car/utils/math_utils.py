@@ -107,6 +107,11 @@ def compute_policy_obs_noise_magnitudes(cfg) -> list[float]:
     magnitudes.extend([noise_level * noise_cfg.base_ang_vel] * 3)
     magnitudes.extend([noise_level * noise_cfg.projected_gravity] * 3)
     magnitudes.extend([noise_level * noise_cfg.ball_joint_pos] * len(BALL_JOINT_NAMES))
+    magnitudes.extend([noise_level * noise_cfg.ball_joint_vel] * len(BALL_JOINT_NAMES))
+    magnitudes.extend([noise_level * noise_cfg.ball_joint_target_error] * len(BALL_JOINT_NAMES))
+    magnitudes.extend([noise_level * noise_cfg.module_roll_pitch] * 2)
+    magnitudes.extend([noise_level * noise_cfg.module_roll_pitch] * 2)
+    magnitudes.extend([noise_level * noise_cfg.wheel_joint_vel] * len(WHEEL_JOINT_NAMES))
     magnitudes.extend([noise_level * noise_cfg.wheel_longitudinal_slip] * len(WHEEL_JOINT_NAMES))
     magnitudes.extend([noise_level * noise_cfg.wheel_slip_angle] * len(WHEEL_JOINT_NAMES))
     magnitudes.extend([noise_level * noise_cfg.wheel_normal_contact_force] * len(WHEEL_JOINT_NAMES))
@@ -120,6 +125,11 @@ def compute_policy_obs_dim(cfg) -> int:
     proprio_dim = (
         3+ 3+ 3
         + len(BALL_JOINT_NAMES)
+        + len(BALL_JOINT_NAMES)
+        + len(BALL_JOINT_NAMES)
+        + 2
+        + 2
+        + len(WHEEL_JOINT_NAMES)
         + len(WHEEL_JOINT_NAMES)
         + len(WHEEL_JOINT_NAMES)
         + len(WHEEL_JOINT_NAMES)

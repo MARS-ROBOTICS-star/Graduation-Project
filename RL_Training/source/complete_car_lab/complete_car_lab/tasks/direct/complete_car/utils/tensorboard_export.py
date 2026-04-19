@@ -22,9 +22,11 @@ from tensorboard.summary.writer.event_file_writer import EventFileWriter
 SPARSE_ZERO_SCALARS = frozenset(
     {
         "Termination/terminated_rate",
+        "Termination/success_rate",
         "Termination/bad_orientation_rate",
         "Termination/ball_joint_limit_rate",
         "Termination/01_terminated_rate",
+        "Termination/05_success_rate",
         "Termination/02_bad_orientation_rate",
         "Termination/03_ball_joint_limit_rate",
     }

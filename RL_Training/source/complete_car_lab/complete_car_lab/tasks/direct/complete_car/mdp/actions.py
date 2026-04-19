@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import math
-
 import torch
 
 from ..kinematics.wheel_speed_allocator import PLANAR_COMMAND_TRANSFORM
 
 
-def preprocess_policy_actions(actions: torch.Tensor, clip_actions: float) -> tuple[torch.Tensor, torch.Tensor]:
-    """返回限幅后的标准化动作与实际执行动作。"""
+def preprocess_policy_actions(actions: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """返回策略输出动作与环境内部待映射动作。"""
 
-    policy_actions = actions.clone().clamp(-clip_actions, clip_actions)
+    policy_actions = actions.clone()
     processed_actions = policy_actions.clone()
     return policy_actions, processed_actions
 
@@ -115,87 +113,6 @@ def apply_ball_joint_targets(
     return joint_pos_targets
 
 
-def _decreasing_limit_scale(
-    values_abs: torch.Tensor,
-    start: float,
-    full: float,
-    min_scale: float,
-) -> torch.Tensor:
-    start_value = max(start, 0.0)
-    full_value = max(full, start_value + 1.0e-6)
-    ratio = (values_abs - start_value) / (full_value - start_value)
-    ratio = torch.clamp(ratio, min=0.0, max=1.0)
-    return 1.0 - ratio * (1.0 - min_scale)
-
-
-def _increasing_limit_scale(
-    values: torch.Tensor,
-    low: float,
-    high: float,
-    min_scale: float,
-) -> torch.Tensor:
-    low_value = max(low, 0.0)
-    high_value = max(high, low_value + 1.0e-6)
-    ratio = (values - low_value) / (high_value - low_value)
-    ratio = torch.clamp(ratio, min=0.0, max=1.0)
-    return min_scale + ratio * (1.0 - min_scale)
-
-
-def compute_traction_aware_wheel_velocity_limit(
-    wheel_longitudinal_slip: torch.Tensor,
-    wheel_slip_angle: torch.Tensor,
-    wheel_normal_contact_force: torch.Tensor,
-    nominal_wheel_velocity_limit: float,
-    *,
-    enabled: bool,
-    min_scale: float,
-    longitudinal_slip_start: float,
-    longitudinal_slip_full: float,
-    slip_angle_start_deg: float,
-    slip_angle_full_deg: float,
-    contact_force_low: float,
-    contact_force_high: float,
-) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    nominal_limit = torch.full_like(wheel_longitudinal_slip, nominal_wheel_velocity_limit)
-
-    if not enabled:
-        unity = torch.ones_like(wheel_longitudinal_slip)
-        return nominal_limit, {
-            "combined_scale": unity,
-            "longitudinal_scale": unity,
-            "lateral_scale": unity,
-            "contact_scale": unity,
-        }
-
-    bounded_min_scale = min(max(min_scale, 0.0), 1.0)
-    longitudinal_scale = _decreasing_limit_scale(
-        torch.abs(wheel_longitudinal_slip),
-        start=longitudinal_slip_start,
-        full=longitudinal_slip_full,
-        min_scale=bounded_min_scale,
-    )
-    lateral_scale = _decreasing_limit_scale(
-        torch.abs(wheel_slip_angle),
-        start=math.radians(slip_angle_start_deg),
-        full=math.radians(slip_angle_full_deg),
-        min_scale=bounded_min_scale,
-    )
-    contact_scale = _increasing_limit_scale(
-        wheel_normal_contact_force,
-        low=contact_force_low,
-        high=contact_force_high,
-        min_scale=bounded_min_scale,
-    )
-    combined_scale = torch.minimum(torch.minimum(longitudinal_scale, lateral_scale), contact_scale)
-    traction_aware_limit = nominal_limit * combined_scale
-    return traction_aware_limit, {
-        "combined_scale": combined_scale,
-        "longitudinal_scale": longitudinal_scale,
-        "lateral_scale": lateral_scale,
-        "contact_scale": contact_scale,
-    }
-
-
 def apply_wheel_velocity_targets(
     wheel_ang_vel_targets: torch.Tensor,
     wheel_joint_ids,
@@ -205,3 +122,25 @@ def apply_wheel_velocity_targets(
     clamped_targets = torch.clamp(wheel_targets, min=-wheel_velocity_limit, max=wheel_velocity_limit)
     wheel_ang_vel_targets[:, wheel_joint_ids] = clamped_targets
     return wheel_ang_vel_targets
+
+
+def map_wheel_actions_to_velocity_targets(
+    processed_wheel_actions: torch.Tensor,
+    wheel_velocity_limit: float | torch.Tensor,
+    *,
+    action_scale: float | torch.Tensor = 1.0,
+) -> torch.Tensor:
+    """Map normalized wheel actions directly to wheel velocity targets."""
+
+    wheel_velocity_limit_tensor = torch.as_tensor(
+        wheel_velocity_limit,
+        device=processed_wheel_actions.device,
+        dtype=processed_wheel_actions.dtype,
+    )
+    action_scale_tensor = torch.as_tensor(
+        action_scale,
+        device=processed_wheel_actions.device,
+        dtype=processed_wheel_actions.dtype,
+    )
+
+    return processed_wheel_actions * action_scale_tensor * wheel_velocity_limit_tensor

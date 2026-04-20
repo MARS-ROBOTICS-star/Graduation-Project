@@ -4,6 +4,253 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-20
 
+### TensorBoard output now suppresses blank scalar tags by default, and the existing Stage0 run history has been batch-pruned to remove blank cards from the UI while preserving backups of the original event files
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - logger-side TensorBoard writing now ignores non-finite scalar values instead of creating blank curves
+  - the export utility now treats the following as prunable blank tags:
+    - all-zero scalar series
+    - scalar series with no finite values
+  - exported CSV / JSON summaries now exclude those blank tags by default
+  - a batch cleanup has already been applied to:
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/`
+  - total rewritten Stage0 runs:
+    - `57`
+  - every rewritten run keeps its original event file under:
+    - `tensorboard_export/original_events/`
+- Reason:
+  - the user explicitly required deleting the blank TensorBoard output items shown in the current project history
+- Impact:
+  - future TensorBoard sessions should no longer show blank scalar cards from this logger/export path
+  - historical Stage0 runs already cleaned in-place should present a smaller and more readable scalar set without losing the original event files
+- Status:
+  - active logging / export behavior changed
+- Verification:
+  - `python3 -m py_compile` passed for:
+    - `rsl_rl/utils/logger.py`
+    - `utils/tensorboard_export.py`
+
+### Full run `2026-04-20_11-44-13` completed all `700` iterations under the old `12D` action / `22D` observation Stage0 branch and still converged to a pure timeout-survival equilibrium; this run is evidence that increasing iterations alone is not a credible fix for that branch
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-20_11-44-13`
+- Matched files:
+  - `/tmp/isaaclab/logs/isaaclab_2026-04-20_11-44-13.log`
+  - `RL_Training/outputs/2026-04-20/11-44-13/.hydra/overrides.yaml`
+  - `params/env.yaml`
+  - `params/agent.yaml`
+  - `tensorboard_export/latest_values.csv`
+  - `tensorboard_export/summary.json`
+- Effective branch characteristics:
+  - `episode_length_s = 20.0`
+  - `commands.resampling_time = 20.0`
+  - `action_space = 12`
+  - `observation_space = 22 / 22`
+  - `num_steps_per_env = 512`
+  - `max_iterations = 700`
+- Durable diagnosis:
+  - startup and actuator wiring are healthy:
+    - Isaac log shows articulation initialization and both actuator collections resolving normally
+  - this run finished all `700` iterations and wrote checkpoints through:
+    - `model_699.pt`
+  - the run converged to a stable timeout plateau rather than continuing to improve late in training:
+    - last-20 mean `Train/mean_episode_length = 1199`
+    - last-20 mean `Termination/time_out_rate = 1.0`
+    - last-5 mean `Tracking/goal_pos_error ≈ 5.35 m`
+    - last-5 mean `Tracking/goal_completion_pct ≈ 33.1%`
+    - last-5 mean `Tracking/goal_heading_error_abs ≈ 0.359 rad`
+  - reward improved, but arrival never happened:
+    - `Train/mean_reward` rose from about `0.243` to about `2.072`
+    - `Tracking/goal_pos_error` only fell from about `7.70 m` to about `5.07 m`
+    - success-related tags are absent from the export because this branch suppresses all-zero scalar series, which implies no success activation throughout the run
+  - control quality remained poor at the plateau:
+    - last-5 mean `|longitudinal slip| ≈ 2.17`
+    - last-5 mean `|slip angle| ≈ 0.610 rad`
+    - last-5 mean `wheel_velocity_target_abs_mean ≈ 3.92 rad/s`
+  - PPO remained numerically stable:
+    - `Loss/value` fell to about `5.8e-05`
+    - `Loss/surrogate` stayed bounded
+    - `Policy/mean_std` stayed near `0.194`
+  - the reward is dominated by partial-approach terms rather than true arrival:
+    - `distance_to_target` and `angle_diff` grow strongly
+    - `angle_to_target` remains near zero
+    - no reached-target activation is visible
+- Interpretation:
+  - this run is strong evidence that the old Stage0 branch was not merely under-trained
+  - its core failure mode is behavioral misalignment:
+    - dead ball-joint action dimensions dilute exploration
+    - dense reward encourages partial approach plus survival
+    - precise arrival remains too weak and too sparse
+- Impact:
+  - future diagnosis should stop proposing "just increase iterations" as the main fix for the old `12D / 22D` Stage0 branch
+  - the meaningful next comparisons are on the new `6D / 16D` mainline or after reward redesign, not on the old branch with a larger training budget
+- Status:
+  - durable run conclusion promoted
+
+### Active RL action semantics have been tightened from a 12D mixed interface to a 6D pure wheel-speed interface; ball joints are no longer policy-controlled and are held at the default reset posture every step
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the active action descriptor now contains only:
+    - `wheel_velocity_targets`:
+      - `6`
+  - the old `ball_joint_targets` policy output has been removed from the live RL interface
+  - the environment now forces all ball-joint position targets back to `default_joint_pos` every control step
+  - active policy observation dims therefore shrink again because `last_action` follows the action space:
+    - actor `16`
+    - critic `16`
+  - the active minimal policy observation is now:
+    - `wheel_joint_vel`:
+      - `6`
+    - `goal_relative_command`:
+      - `4`
+    - `last_action`:
+      - `6`
+- Reason:
+  - the user explicitly required removing the dead ball-joint outputs and keeping the articulated chain fixed in the current RL mainline
+- Impact:
+  - future Stage0 comparisons after this change should no longer interpret the policy as exploring any hidden or frozen ball-joint action dimensions
+  - any runs produced before this change using the old `12`-dimensional interface are no longer same-action-space comparisons
+- Status:
+  - active mainline behavior changed
+- Verification:
+  - `python3 -m py_compile` passed for:
+    - `base/env.py`
+    - `utils/io_descriptors.py`
+
+### Terminal training footer now includes an ASCII time progress bar plus elapsed time, ETA, and estimated total runtime
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the active training console footer now prints:
+    - `Time progress`
+    - `Time elapsed`
+    - `ETA`
+    - `Est. total time`
+  - progress is rendered as an ASCII bar derived from:
+    - accumulated elapsed training time
+    - current ETA estimate
+  - the existing per-iteration scalar summary remains unchanged
+- Reason:
+  - the user explicitly requested a terminal-side time progress bar during training
+- Impact:
+  - future Stage0 and other RL runs in this workspace will expose runtime progress more directly from the console without needing separate wall-time estimation
+- Status:
+  - active logging behavior changed
+- Verification:
+  - `python3 -m py_compile` passed for:
+    - `rsl_rl/utils/logger.py`
+
+### Partial run `2026-04-20_11-26-59_stage0_sync_pull_postpull_2026-04-20` is the first real validation of the new 22D Stage0 observation, six-term target-shaped reward, and four-way termination set; it proves the success metric is now honest, but the policy rapidly collapses into a pure timeout-survival equilibrium instead of learning to reach the target
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-20_11-26-59_stage0_sync_pull_postpull_2026-04-20`
+- Matched files:
+  - `/tmp/isaaclab/logs/isaaclab_2026-04-20_11-26-59.log`
+  - `RL_Training/outputs/2026-04-20/11-26-59/.hydra/config.yaml`
+  - `RL_Training/outputs/2026-04-20/11-26-59/.hydra/overrides.yaml`
+  - `params/env.yaml`
+  - `params/agent.yaml`
+  - `tensorboard_export/`
+- Runtime status:
+  - launched on `cuda:0`
+  - stopped intentionally at:
+    - `iteration 18 / 700`
+- Effective branch characteristics captured by this run:
+  - episode / command geometry:
+    - `episode_length_s = 40.0`
+    - `commands.resampling_time = 16.0`
+    - `goal_distance = 8.0`
+    - `goal_direction_max_deg = 30.0`
+    - `goal_heading_delta_max_deg = 12.0`
+  - observation / action:
+    - actor / critic observation:
+      - `22 / 22`
+    - action interface:
+      - `12`
+    - but Stage0 still freezes:
+      - first `6` ball-joint action dimensions
+  - active done set:
+    - `time_out`
+    - `is_success`
+    - `far_from_target`
+    - `ball_joint_out_of_bounds`
+- Durable diagnosis:
+  - startup and wiring are healthy:
+    - Isaac log shows no startup-level crash
+    - articulation / actuator binding resolves correctly
+    - actor / critic shapes match the new `22 / 22` minimal observation design
+  - the old broken success-metric problem is resolved in this branch:
+    - `Tracking/goal_success_rate` and `Termination/success_rate` now agree
+    - both remain `0` throughout this run
+    - this means the branch is not hiding success behind a bad logging path; it is genuinely not reaching the success condition
+  - the run very quickly settles into a stable timeout equilibrium:
+    - `Train/mean_episode_length` rises from about `277.6` to `2399.0`
+    - from about `iteration 11` onward, `mean_episode_length` stays pinned at `2399`
+    - `Termination/time_out_rate` rises from about `0.961` to `1.0`
+    - last-5 mean `time_out_rate` is exactly `1.0`
+  - reward improves, but task completion barely improves:
+    - `Train/mean_reward` rises from about `0.128` to about `1.559`
+    - `Tracking/goal_pos_error` only improves from about `7.67 m` to about `6.15 m`
+    - last-5 mean `goal_pos_error` is about `6.26 m`
+    - `Tracking/goal_completion_pct` rises from about `4.11%` to about `23.14%`
+    - last-5 mean `goal_completion_pct` is only about `21.8%`
+    - `Tracking/goal_heading_error_abs` stays around:
+      - last-5 mean about `0.362 rad`
+  - the branch is still traction-poor rather than cleanly goal-directed:
+    - last-5 mean `|longitudinal slip|` is about `2.479`
+    - last-5 mean `|slip angle|` is about `0.387 rad`
+    - last-5 mean `wheel_velocity_target_abs_mean` is about `3.466 rad/s`
+  - the branch is numerically stable:
+    - `Loss/value` drops from about `2.09e-3` to about `3.54e-5`
+    - `Loss/surrogate` stays bounded
+    - `Policy/mean_std` stays near:
+      - about `0.199`
+    - `Action/policy_abs_mean == Action/processed_abs_mean`
+    - `Action/policy_std == Action/processed_std`
+  - the branch is not failing through posture or joint-limit collapse:
+    - `Termination/far_from_target_rate = 0`
+    - `Termination/ball_joint_limit_rate = 0`
+    - last-5 mean `tilt_deg` is only about `0.0626`
+- Interpretation:
+  - this run successfully validates the new logging and done-condition path itself:
+    - the success metric is now trustworthy
+    - the environment no longer looks blocked by startup, articulation, or numeric instability
+  - but it also shows the current Stage0 task design is behaviorally misaligned:
+    - the policy learns to survive until timeout
+    - it does not learn to actually arrive at the target
+    - dead ball-joint action dimensions remain in the interface while only wheel-speed control is effective
+    - the multi-goal episode structure (`40 s` episode with `16 s` resampling) is now a plausible confounder for a reach-the-target baseline
+- Impact:
+  - future Stage0 comparisons after `2026-04-20_11-26-59` should stop framing the main problem as:
+    - broken success logging
+    - broken termination wiring
+  - the main blocker has shifted to:
+    - action semantics mismatch
+    - reward emphasis on survival over arrival
+    - whether multi-goal resampling is appropriate for the current Stage0 baseline
+- Status:
+  - active mainline diagnosis promoted
+
 ### Stage0 policy observation has been reduced to a 22D minimal input consisting only of wheel joint velocity, relative goal command, and last action; richer state terms remain available only in diagnostics and TensorBoard
 - Updated:
   - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`

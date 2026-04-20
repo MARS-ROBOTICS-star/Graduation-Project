@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import git
+import math
 import os
 import pathlib
 import statistics
@@ -101,6 +102,21 @@ CONSOLE_TAG_ORDER = {tag: idx for idx, tag in enumerate(CONSOLE_PRIORITY_TAGS)}
 
 class Logger:
     """Logger to save the learning metrics to different logging services."""
+
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        seconds = max(0, int(round(seconds)))
+        hours, remainder = divmod(seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+    @staticmethod
+    def _build_time_progress_bar(elapsed_seconds: float, eta_seconds: float, width: int = 28) -> tuple[str, float]:
+        total_estimated = max(elapsed_seconds + max(eta_seconds, 0.0), 1e-9)
+        progress = min(max(elapsed_seconds / total_estimated, 0.0), 1.0)
+        filled = int(round(progress * width))
+        bar = "#" * filled + "-" * max(width - filled, 0)
+        return bar, progress
 
     def __init__(
         self,
@@ -331,11 +347,15 @@ class Logger:
             done_it = it + 1 - start_it
             remaining_it = total_it - start_it - done_it
             eta = self.tot_time / done_it * remaining_it
+            progress_bar, progress_ratio = self._build_time_progress_bar(self.tot_time, eta)
+            total_estimated_time = self.tot_time + eta
             log_string += (
                 f"""{"-" * width}\n"""
                 f"""{"Iteration time:":>{pad}} {iteration_time:.2f}s\n"""
-                f"""{"Time elapsed:":>{pad}} {time.strftime("%H:%M:%S", time.gmtime(self.tot_time))}\n"""
-                f"""{"ETA:":>{pad}} {time.strftime("%H:%M:%S", time.gmtime(eta))}\n"""
+                f"""{"Time progress:":>{pad}} [{progress_bar}] {progress_ratio * 100:5.1f}%\n"""
+                f"""{"Time elapsed:":>{pad}} {self._format_duration(self.tot_time)}\n"""
+                f"""{"ETA:":>{pad}} {self._format_duration(eta)}\n"""
+                f"""{"Est. total time:":>{pad}} {self._format_duration(total_estimated_time)}\n"""
             )
             print(log_string)
 
@@ -418,8 +438,10 @@ class Logger:
         return TENSORBOARD_TAG_ALIASES.get(tag, tag)
 
     def _write_tensorboard_scalar(self, tag: str, value: float, step: int) -> None:
-        """Write scalars to TensorBoard while suppressing all-zero series until they activate."""
+        """Write scalars to TensorBoard while suppressing blank series until they activate."""
         if self.writer is None:
+            return
+        if not math.isfinite(float(value)):
             return
 
         tensorboard_tag = self._tensorboard_tag(tag)

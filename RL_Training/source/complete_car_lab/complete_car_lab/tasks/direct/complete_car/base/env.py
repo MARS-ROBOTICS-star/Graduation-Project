@@ -157,19 +157,11 @@ class CompleteCarDirectEnv(DirectRLEnv):
                     dim=1,
                 )
 
-        processed_ball_actions = self._processed_actions[:, : len(self._ball_joint_ids)]
-        processed_wheel_actions = self._processed_actions[:, len(self._ball_joint_ids) :]
-
-        self._joint_pos_targets = mdp_actions.apply_ball_joint_targets(
-            self.robot,
-            self._joint_pos_targets,
-            self._ball_joint_ids,
-            processed_ball_actions,
-            self.cfg.control.ball_joint_action_lower_limits,
-            self.cfg.control.ball_joint_action_upper_limits,
-        )
+        # The active RL policy only controls the wheel speeds. Ball joints stay at the
+        # default reset posture so the articulated chain remains fixed.
+        self._joint_pos_targets[:, self._ball_joint_ids] = self.robot.data.default_joint_pos[:, self._ball_joint_ids]
         wheel_targets = mdp_actions.map_wheel_actions_to_velocity_targets(
-            processed_wheel_actions,
+            self._processed_actions,
             self.cfg.control.wheel_joint_velocity_limit_sim,
             action_scale=self.cfg.control.wheel_action_scale,
         )

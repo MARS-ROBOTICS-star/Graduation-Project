@@ -3,6 +3,162 @@
 ## 2026-04-20
 
 已完成：
+- 按用户要求清理当前 TensorBoard 空白项：
+  - `logger` 端新增非有限值过滤，不再把空白曲线写入事件文件
+  - `tensorboard_export.py` 默认过滤：
+    - 全零标量序列
+    - 无任何有限值的空白标量序列
+  - 新增命令行别名：
+    - `--prune-blank-tags`
+- 已对历史 Stage0 run 批量执行空白 tag 清理：
+  - 目标目录：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/`
+  - 共重写：
+    - `57` 个 run 的事件文件
+  - 原始事件文件已备份到各自：
+    - `tensorboard_export/original_events/`
+- 本轮修改文件：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 已完成验证：
+  - `python3 -m py_compile` 通过
+  - 扫描确认历史 Stage0 run 中存在空白 tag 的目录已完成重写
+
+已完成：
+- 对完整训练 run `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-20_11-44-13` 做离线诊断：
+  - 对应 Isaac 日志：
+    - `/tmp/isaaclab/logs/isaaclab_2026-04-20_11-44-13.log`
+  - 对应 Hydra 输出：
+    - `RL_Training/outputs/2026-04-20/11-44-13/`
+  - 本轮真实配置：
+    - `episode_length_s = 20.0`
+    - `commands.resampling_time = 20.0`
+    - `action_space = 12`
+    - `observation_space = 22 / 22`
+    - `num_steps_per_env = 512`
+    - `max_iterations = 700`
+- 本轮关键结果：
+  - 已完整跑满 `700` 轮，并保存到 `model_699.pt`
+  - 后 `20` 轮：
+    - `mean_episode_length = 1199`
+    - `time_out_rate = 1.0`
+  - 末 `5` 轮：
+    - `goal_pos_error ≈ 5.35 m`
+    - `goal_completion_pct ≈ 33.1%`
+    - `goal_heading_error_abs ≈ 0.359 rad`
+    - `|longitudinal slip| ≈ 2.17`
+    - `|slip angle| ≈ 0.610 rad`
+    - `wheel_velocity_target_abs_mean ≈ 3.92 rad/s`
+- 当前结论：
+  - 这条旧 `12` 维动作接口 run 已完整证明：
+    - 训练不是“还没跑够”
+    - 它已经稳定收敛到超时坏平衡
+    - 单纯继续增加 iteration 没有证据能让它自动学会到达目标
+- 同步更新：
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+已完成：
+- 按用户要求修改当前 RL 主线动作空间：
+  - 去掉球铰动作输出
+  - 当前 policy 动作从 `12` 维收缩为 `6` 维纯轮速命令
+  - 环境每步都将球铰目标固定回默认复位位姿，保持球铰链固定
+- 同步影响：
+  - `last_action` 观测由 `12` 维变为 `6` 维
+  - actor / critic 观测维度由 `22 / 22` 变为 `16 / 16`
+- 本轮修改文件：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- 已完成验证：
+  - `python3 -m py_compile` 通过
+  - 当前文档口径已同步修正为：
+    - `episode_length_s = 20.0`
+    - `commands.resampling_time = 20.0`
+    - 动作维度 `6`
+    - 观测维度 `16 / 16`
+
+已完成：
+- 按用户要求增强终端训练输出：
+  - 在训练控制台 footer 新增 ASCII 时间进度条
+  - 新增显示：
+    - `Time progress`
+    - `Time elapsed`
+    - `ETA`
+    - `Est. total time`
+- 本轮修改文件：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 已完成验证：
+  - `python3 -m py_compile` 通过
+
+已完成：
+- 按当前同步后的 Stage0 主线启动一轮真实训练，并在形成稳定趋势后停止做分析：
+  - 训练命令：
+    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --run_name stage0_sync_pull_postpull_2026-04-20`
+  - 运行目录：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-20_11-26-59_stage0_sync_pull_postpull_2026-04-20`
+  - 对应 Isaac 日志：
+    - `/tmp/isaaclab/logs/isaaclab_2026-04-20_11-26-59.log`
+  - 对应 Hydra 输出：
+    - `RL_Training/outputs/2026-04-20/11-26-59/`
+  - 实际停止位置：
+    - `iteration 18 / 700`
+- 已完成：
+  - 导出本轮 TensorBoard 标量：
+    - `tensorboard_export/`
+  - 读取并核对：
+    - `params/env.yaml`
+    - `params/agent.yaml`
+    - `.hydra/config.yaml`
+    - `.hydra/overrides.yaml`
+    - `summary.json`
+    - `latest_values.csv`
+- 本轮关键结果：
+  - 训练启动与数值稳定性正常：
+    - `cuda:0` 正常
+    - articulation / actuator 绑定正常
+    - `Loss/value` 从约 `2.09e-3` 下降到约 `3.54e-5`
+    - `Policy/mean_std` 保持在约 `0.199`
+  - 当前同步后的 Stage0 真实网络输入已是：
+    - `22 / 22` 观测
+    - 不是旧记忆里的 `70 / 70`
+  - 新 success / termination 口径已通过真实 run 验证：
+    - `Tracking/goal_success_rate` 与 `Termination/success_rate` 对齐
+    - 且本轮二者全程都为 `0`
+  - 这轮 run 很快进入稳定的超时坏平衡：
+    - 约从 `iteration 11` 起：
+      - `mean_episode_length = 2399`
+      - `time_out_rate = 1.0`
+    - 末 `5` 轮：
+      - `goal_pos_error ≈ 6.26 m`
+      - `goal_completion_pct ≈ 21.8%`
+      - `goal_heading_error_abs ≈ 0.362 rad`
+  - 当前 reward 在上涨，但没有转化为真实到达：
+    - `mean_reward` 从约 `0.128` 升到约 `1.559`
+    - 但成功率仍为 `0`
+  - 策略仍表现出高滑移推进特征：
+    - 末 `5` 轮 `|longitudinal slip| ≈ 2.48`
+    - 末 `5` 轮 `|slip angle| ≈ 0.387 rad`
+    - 末 `5` 轮 `wheel_velocity_target_abs_mean ≈ 3.47 rad/s`
+- 当前结论：
+  - 当前 Stage0 主问题已不再是日志口径或 done 条件没接通
+  - 而是：
+    - 成功率真实为 `0`
+    - 策略学成“活到超时”而不是“到达目标”
+    - `12` 维接口下前 `6` 维球铰动作仍是死维度
+    - `40 s` episode + `16 s` 重采样是否适合当前 Stage0 baseline 需要重新判断
+
+已完成：
 - 按用户要求收缩当前 Stage0 policy 观测输入：
   - 送入网络的观测只保留：
     - `wheel_joint_vel`

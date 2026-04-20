@@ -31,30 +31,29 @@
 当前 Stage0 是一个平地上的目标跟踪 baseline：
 
 - 地形：平面
-- episode 时长：`40.0 s`
-- 目标重采样周期：`16.0 s`
+- episode 时长：`20.0 s`
+- 目标重采样周期：`20.0 s`
 - 默认目标距离：`8.0 m`
 - 目标方位相对当前车体偏航在 `[-30°, 30°]` 采样
 - 目标朝向相对 LOS 再叠加 `[-12°, 12°]` 的 heading offset
-- policy 输出仍是 `12` 维：
-  - 前 `6` 维：球铰目标
-  - 后 `6` 维：轮速直驱命令
+- policy 输出是 `6` 维：
+  - `6` 个轮速直驱命令
 
 注意：
 
-- 当前 `Stage0` 不是“单回合单目标静态任务”。
-- 因为 `episode_length_s = 40.0` 而 `commands.resampling_time = 16.0`，所以一个 episode 内会经历多次目标重采样。
+- 当前 `Stage0` 是“单回合单目标静态任务”。
+- 因为 `episode_length_s = 20.0` 且 `commands.resampling_time = 20.0`，所以一个 episode 内不会中途重采样目标。
 
 ### 1.3 关键维度
 
 - 并行环境数：`64`
-- 动作维度：`12`
-- Actor 观测维度：`22`
-- Critic 观测维度：`22`
+- 动作维度：`6`
+- Actor 观测维度：`16`
+- Critic 观测维度：`16`
 - 仿真频率：`120 Hz`
 - 控制频率：`60 Hz`
-- 回合时长：`40.0 s`
-- 最大控制步数：`2400`
+- 回合时长：`20.0 s`
+- 最大控制步数：`1200`
 - PPO rollout：`512 steps / env`
 
 ---
@@ -73,7 +72,7 @@
 - `sim_dt = 1 / 120 s`
 - `decimation = 2`
 - `control_dt = 1 / 60 s`
-- `episode_length_s = 40.0`
+- `episode_length_s = 20.0`
 
 物理与材质：
 
@@ -103,19 +102,13 @@
 - `effort_limit_sim = 20.0`
 - `velocity_limit_sim = 20.0 rad/s`
 
-### 2.3 当前 Stage0 动作冻结状态
+### 2.3 当前球铰固定策略
 
-虽然 policy 仍输出 `12` 维动作，但当前 Stage0 明确冻结球铰动作：
+当前主线不再把球铰作为 policy 输出：
 
-```text
-ball_joint_action_lower_limits = (0, 0, 0, 0, 0, 0)
-ball_joint_action_upper_limits = (0, 0, 0, 0, 0, 0)
-```
-
-这意味着：
-
-- 前 `6` 维球铰动作在当前 Stage0 中实际是死维度
-- 真正有效的控制主要是后 `6` 维轮速命令
+- 动作空间里已经去掉球铰目标维度
+- 环境每步都把球铰目标写回默认复位位姿
+- 球铰链在当前主线中保持固定，仅车轮速度由 policy 控制
 
 ---
 
@@ -124,7 +117,7 @@ ball_joint_action_upper_limits = (0, 0, 0, 0, 0, 0)
 ### 3.1 当前命令参数
 
 - `num_commands = 4`
-- `resampling_time = 16.0`
+- `resampling_time = 20.0`
 - `goal_distance = 8.0`
 - `goal_direction_max_deg = 30.0`
 - `goal_heading_delta_max_deg = 12.0`
@@ -170,23 +163,17 @@ relative_heading = wrap_to_pi(target_heading_w - base_yaw_w)
 
 ```text
 [
-  ("ball_joint_targets", 6),
   ("wheel_velocity_targets", 6),
 ]
 ```
 
-### 4.2 球铰动作映射
+### 4.2 球铰固定逻辑
 
-球铰动作采用围绕默认位姿的分段余量映射：
+当前主线的球铰不再经过动作映射，而是直接固定：
 
 ```text
-joint_target =
-    default_target
-  + clamp(a, 0, 1)  * (upper - default_target)
-  + clamp(a, -1, 0) * (default_target - lower)
+ball_joint_target = default_joint_pos
 ```
-
-但当前 `Stage0` 中由于上下限都为 `0`，最终球铰目标固定在默认位姿。
 
 ### 4.3 轮速直驱映射
 
@@ -213,7 +200,6 @@ wheel_speed_target = action * wheel_action_scale * wheel_joint_velocity_limit_si
 policy mean/std
 -> Gaussian sample
 -> tanh squash
--> ball joint target mapping
 -> wheel velocity target mapping
 -> final safeguard clip in env mapping
 -> joint servo
@@ -238,12 +224,12 @@ policy mean/std
 ```text
 wheel_joint_vel               6
 goal_relative_command         4
-last_action                  12
+last_action                   6
 --------------------------------
-total                        22
+total                        16
 ```
 
-因为 `terrain.measure_heights = False`，当前 critic 不额外追加地形 patch，所以也是 `22` 维。
+因为 `terrain.measure_heights = False`，当前 critic 不额外追加地形 patch，所以也是 `16` 维。
 
 当前送入 actor / critic 的观测只保留三类：
 

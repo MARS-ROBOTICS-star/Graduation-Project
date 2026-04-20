@@ -41,8 +41,18 @@ def _series_is_all_zero(events: list) -> bool:
     return all(isfinite(value) and abs(value) <= 1.0e-12 for value in values)
 
 
-def find_sparse_zero_scalar_tags(run_dir: str | Path) -> list[str]:
-    """Return TensorBoard scalar tags that stayed zero for the whole run and should be hidden."""
+def _series_is_blank(events: list) -> bool:
+    if not events:
+        return True
+    return not any(isfinite(float(event.value)) for event in events)
+
+
+def _series_should_be_pruned(events: list) -> bool:
+    return _series_is_all_zero(events) or _series_is_blank(events)
+
+
+def find_prunable_scalar_tags(run_dir: str | Path) -> list[str]:
+    """Return TensorBoard scalar tags that should be hidden from default output."""
     run_dir = Path(run_dir).resolve()
     accumulator = event_accumulator.EventAccumulator(str(_find_event_file(run_dir)))
     accumulator.Reload()
@@ -50,19 +60,24 @@ def find_sparse_zero_scalar_tags(run_dir: str | Path) -> list[str]:
     pruned_tags: list[str] = []
     for tag in accumulator.Tags().get("scalars", []):
         events = accumulator.Scalars(tag)
-        if _series_is_all_zero(events):
+        if _series_should_be_pruned(events):
             pruned_tags.append(tag)
     return sorted(pruned_tags)
 
 
-def prune_sparse_zero_scalar_tags(run_dir: str | Path) -> tuple[Path, list[str]]:
-    """Rewrite the run event file after removing selected all-zero scalar series."""
+def find_sparse_zero_scalar_tags(run_dir: str | Path) -> list[str]:
+    """Backward-compatible alias for finding prunable scalar tags."""
+    return find_prunable_scalar_tags(run_dir)
+
+
+def prune_blank_scalar_tags(run_dir: str | Path) -> tuple[Path, list[str]]:
+    """Rewrite the run event file after removing blank or all-zero scalar series."""
     run_dir = Path(run_dir).resolve()
     event_file = _find_event_file(run_dir)
     accumulator = event_accumulator.EventAccumulator(str(event_file))
     accumulator.Reload()
 
-    pruned_tags = find_sparse_zero_scalar_tags(run_dir)
+    pruned_tags = find_prunable_scalar_tags(run_dir)
     if not pruned_tags:
         return event_file, []
 
@@ -95,6 +110,11 @@ def prune_sparse_zero_scalar_tags(run_dir: str | Path) -> tuple[Path, list[str]]
     return _find_event_file(run_dir), pruned_tags
 
 
+def prune_sparse_zero_scalar_tags(run_dir: str | Path) -> tuple[Path, list[str]]:
+    """Backward-compatible alias for pruning blank scalar tags."""
+    return prune_blank_scalar_tags(run_dir)
+
+
 def export_run_scalars(run_dir: str | Path) -> Path:
     """Export all scalar tags for one run directory.
 
@@ -111,7 +131,11 @@ def export_run_scalars(run_dir: str | Path) -> Path:
     export_dir.mkdir(parents=True, exist_ok=True)
     scalars_dir.mkdir(parents=True, exist_ok=True)
 
-    scalar_tags = accumulator.Tags().get("scalars", [])
+    scalar_tags = [
+        tag
+        for tag in accumulator.Tags().get("scalars", [])
+        if not _series_should_be_pruned(accumulator.Scalars(tag))
+    ]
     summary: dict[str, object] = {
         "run_dir": str(run_dir),
         "event_file": str(event_file),
@@ -227,18 +251,23 @@ def main() -> None:
     parser.add_argument(
         "--prune-sparse-zero-tags",
         action="store_true",
-        help="Rewrite the run event file after removing selected all-zero scalar series.",
+        help="Rewrite the run event file after removing blank or all-zero scalar series.",
+    )
+    parser.add_argument(
+        "--prune-blank-tags",
+        action="store_true",
+        help="Alias of --prune-sparse-zero-tags for removing blank TensorBoard scalar tags.",
     )
     args = parser.parse_args()
 
-    if args.prune_sparse_zero_tags:
-        _, pruned_tags = prune_sparse_zero_scalar_tags(args.run_dir)
+    if args.prune_sparse_zero_tags or args.prune_blank_tags:
+        _, pruned_tags = prune_blank_scalar_tags(args.run_dir)
         if pruned_tags:
-            print("Pruned sparse-zero TensorBoard tags:")
+            print("Pruned blank TensorBoard tags:")
             for tag in pruned_tags:
                 print(f"  - {tag}")
         else:
-            print("No sparse-zero TensorBoard tags found.")
+            print("No blank TensorBoard tags found.")
 
     export_dir = export_run_scalars(args.run_dir)
     print(f"Exported TensorBoard scalars to: {export_dir}")

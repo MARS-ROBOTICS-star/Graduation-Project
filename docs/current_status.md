@@ -2,14 +2,14 @@
 
 ## 当前总目标
 - 将 `RL_Training/` 下的 Stage0 固化为一条可复现、可解释、训练链稳定的平地主线 baseline。
-- 当前优先级不是继续盲目长训，而是先把 Stage0 的有效动作语义、奖励导向和日志判读口径收敛到一致。
+- 当前优先级不是继续盲目长训，而是先把 Stage0 的动作语义、奖励导向和日志判读口径收敛到一致。
 
 ## 当前阶段
 - 当前处于：
-  - Stage0 bounded policy 首轮 run 验证完成后的行为质量诊断阶段
+  - Stage0 去除球铰动作输出、收口为纯轮速控制后的主线整改阶段
 - 当前工作重点是：
-  - 区分“动作链问题已解决”与“任务行为质量仍然不好”这两层问题
-  - 识别当前 Stage0 是否存在无效动作维度、滑移驱动和指标口径失真
+  - 继续围绕“超时生存替代到达”的坏平衡做行为质量诊断
+  - 在动作接口已经与真实可控自由度一致后，继续判断 reward / termination / command 几何是否仍在把策略推向高滑移超时解
 
 ## 当前默认设计
 - Git 同步策略：
@@ -17,8 +17,8 @@
   - `RL_Training/logs/` 与 `RL_Training/outputs/` 下的训练日志、checkpoint、导出结果不上传 GitHub
   - 只有当用户明确要求上传训练产物，或跑出较理想模型后，才提醒用户单独上传或归档
 - 环境几何：
-  - `episode_length_s = 40.0`
-  - `commands.resampling_time = 16.0`
+  - `episode_length_s = 20.0`
+  - `commands.resampling_time = 20.0`
   - `commands.goal_distance = 8.0`
   - `commands.goal_direction_max_deg = 30.0`
   - `commands.goal_heading_delta_max_deg = 12.0`
@@ -26,18 +26,18 @@
   - `num_commands = 4`
   - `commands = [goal_rel_x, goal_rel_y, goal_rel_z, goal_rel_heading]`
   - 世界系目标先采样 `xy`，再用地图高度图查询目标点地形高度作为 `z`
-  - 因为 `resampling_time < episode_length_s`，当前 Stage0 单个 episode 内会经历多次目标重采样
+  - 因为 `resampling_time = episode_length_s`，当前 Stage0 是单回合单目标，不在 episode 中途重采样
 - 动作与观测：
-  - 动作维度 `12`
-  - Actor / Critic 观测维度 `22 / 22`
+  - 动作维度 `6`
+  - Actor / Critic 观测维度 `16 / 16`
   - 当前送入网络的观测只保留：
     - `wheel_joint_vel`
     - `goal_relative_command`
     - `last_action`
   - 其余状态量不再送入 actor / critic，但仍保留在 TensorBoard 中作为行为诊断指标
-  - 当前 Stage0 的接口口径仍是 `6` 个球铰目标 + `6` 个轮速直驱命令
-  - 但在 `stage0_cfg` 中，`6` 个球铰动作上下限当前都被固定为 `0`
-  - 因此当前 run 的实际有效控制主要只有 `6` 个轮速直驱维度，前 `6` 个动作维度等价于死维度
+  - 当前主线 policy 只输出 `6` 个轮速直驱命令
+  - `last_action` 因动作空间收缩同步变为 `6` 维
+  - 球铰链不再由 policy 输出控制，环境每步都将球铰目标固定在默认复位位姿
 - PPO 当前默认口径：
   - actor 使用 `tanh squashed Gaussian`
   - `init_std = 0.20`
@@ -85,6 +85,21 @@
 ## 已完成里程碑
 - 已完成 Stage0 PPO 审计：
   - 观测、动作、优化器、GAE / bootstrap、timeout 分流都已按源码核对
+- 已完成终端训练日志增强：
+  - 当前训练控制台 footer 已新增时间进度条
+  - 现在会额外显示：
+    - `Time progress`
+    - `Time elapsed`
+    - `ETA`
+    - `Est. total time`
+- 已完成 TensorBoard 空白项清理：
+  - logger 端现在会直接跳过非有限值标量，避免写出空白曲线
+  - `tensorboard_export.py` 现在默认过滤：
+    - 全零标量序列
+    - 全非有限值的空白标量序列
+  - 已对 `RL_Training/logs/rsl_rl/complete_car_stage0/` 下历史 run 批量重写事件文件并删除空白 tag
+  - 原始事件文件已备份到各 run 的：
+    - `tensorboard_export/original_events/`
 - 已完成 bounded policy 首轮代码落地：
   - 本地 actor 分布切换为 squashed Gaussian
   - `std` 改为 `log_std` 参数化并加 clamp
@@ -107,24 +122,57 @@
 - 已恢复本地文档整理记录：
   - `docs/MGDP_stage1_reward.md` 已恢复到工作区
   - 当前内容为中文说明 + Obsidian 可编译数学公式语法
+- 已完成新 termination 口径下的首轮真实 run 验证：
+  - run：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-20_11-26-59_stage0_sync_pull_postpull_2026-04-20`
+  - 已导出：
+    - `tensorboard_export/`
+  - 本轮已确认：
+    - `Tracking/goal_success_rate` 与 `Termination/success_rate` 现已对齐，且这轮都为 `0`
+    - 当前 Stage0 在约第 `11` 轮后就进入：
+      - `mean_episode_length = 2399`
+      - `time_out_rate = 1.0`
+    - 这轮不是启动失败，也不是姿态/球铰炸掉，而是稳定进入“满时长超时”坏平衡
+- 已完成旧动作口径完整 run 诊断：
+  - run：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-20_11-44-13`
+  - 本轮实际配置：
+    - `episode_length_s = 20.0`
+    - `commands.resampling_time = 20.0`
+    - `action_space = 12`
+    - `observation_space = 22 / 22`
+  - 本轮完整跑满 `700` 轮后已确认：
+    - 后 `20` 轮 `mean_episode_length = 1199`
+    - 后 `20` 轮 `time_out_rate = 1.0`
+    - 末 `5` 轮 `goal_pos_error ≈ 5.35 m`
+    - 末 `5` 轮 `goal_completion_pct ≈ 33.1%`
+    - 末 `5` 轮 `goal_heading_error_abs ≈ 0.359 rad`
+  - 当前结论：
+    - 这条旧 `12` 维动作接口 run 在完整训练后仍稳定收敛到超时坏平衡
+    - 单纯把 iteration 从 `700` 继续往上加，没有证据表明就能自动学会到达目标
 
 ## 当前阻塞
 - 新动作链已经有 run 证据，但当前主要问题不再是“动作被谁改写”，而是“策略学出来的行为是否健康”。
-- 当前 Stage0 暴露出三个新阻塞：
-  - 有效动作语义与动作接口不一致：
-    - 对外仍是 `12` 维动作
-    - 其中前 `6` 维球铰动作在 Stage0 当前实际上不生效
+- 当前 Stage0 暴露出三个主阻塞：
+  - 旧 `12` 维动作接口完整 run 已证明：
+    - 死球铰动作维度会稀释探索，但即使训练跑满，主要问题仍是 reward / 成功信号没有把策略推到真实到达
+  - 新 termination 口径虽然已经通过真实 run 验证，但当前成功率真实为 `0`：
+    - `Tracking/goal_success_rate = 0`
+    - `Termination/success_rate = 0`
+    - 因此旧的“success 指标坏掉”问题已切换为“当前任务确实没有学会到达”
+  - 当前 reward + command 组合会把策略推入“满时长生存替代到达”的坏平衡：
+    - 末 `5` 轮 `mean_episode_length = 2399`
+    - 末 `5` 轮 `time_out_rate = 1.0`
+    - 末 `5` 轮 `goal_pos_error ≈ 6.26 m`
+    - 末 `5` 轮 `goal_completion_pct ≈ 21.8%`
   - 策略仍明显依赖高滑移轮速推进：
-    - 末 `50` 轮 `|longitudinal slip| ≈ 2.38`
-    - 末 `50` 轮 `|slip angle| ≈ 0.568 rad`
-    - 末 `50` 轮 `wheel_velocity_target_abs_mean ≈ 8.03 rad/s`
-  - 新 termination 口径尚未经过真实 run 验证：
-    - `Tracking/goal_success_rate` 已改为和 `Termination/success_rate` 共用 `0.2 m + 0.1 rad` 判据
-    - 但目前还没有基于这套 done 条件的新训练结果
+    - 末 `5` 轮 `|longitudinal slip| ≈ 2.48`
+    - 末 `5` 轮 `|slip angle| ≈ 0.387 rad`
+    - 末 `5` 轮 `wheel_velocity_target_abs_mean ≈ 3.47 rad/s`
 
 ## 下一步优先级
-- 先用新 termination 口径做一轮真实 run 验证，再继续研究判断：
-  - 当前 Stage0 是否应保持 `12` 维接口，还是改成与真实可控自由度一致的动作语义
-  - 当前 reward 是否过度鼓励“高轮速换距离进展”，而没有足够约束滑移与末端朝向质量
-  - 新 `is_success / far_from_target / time_out / ball_joint_out_of_bounds` 组合是否能给出更可信的 episode 结束口径
+- 先围绕这次新 run 做研究判断，而不是继续盲目长训：
+  - 新的 `6` 维纯轮速动作口径下，超时坏平衡是否仍然存在
+  - 当前 reward 是否主要在奖励“活到超时 + 维持部分接近目标”，而不是奖励真正到达
+  - `episode_length_s = 20.0` 且 `resampling_time = 20.0` 的单目标 episode 设计下，goal distance / success 阈值 / reward 权重是否仍不足以推动真正到达
 - 在用户确认判断后，再落地对应实现整改与下一轮验证。

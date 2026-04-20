@@ -18,7 +18,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         # Stage0 keeps a full local copy of the active tunables so future tuning can
         # stay inside this file without bouncing back to the base template.
         self.stage_name = "stage0"
-        self.episode_length_s = 40.0
+        self.episode_length_s = 20.0
         self.decimation = 2
 
         self.scene.num_envs = 64
@@ -27,7 +27,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.scene.clone_in_fabric = True
 
         self.commands.num_commands = 4
-        self.commands.resampling_time = 40.0
+        self.commands.resampling_time = 20.0
         self.commands.goal_distance = 8.0
         self.commands.goal_direction_max_deg = 30.0
         self.commands.goal_heading_delta_max_deg = 12.0

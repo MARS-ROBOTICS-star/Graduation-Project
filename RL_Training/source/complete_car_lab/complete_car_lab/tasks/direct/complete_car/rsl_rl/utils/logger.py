@@ -18,6 +18,26 @@ import rsl_rl
 
 
 TENSORBOARD_TAG_ALIASES = {
+    "Tracking/goal_success_rate": "00_Behavior/00_goal_success_rate",
+    "Termination/success_rate": "00_Behavior/01_termination_success_rate",
+    "Tracking/goal_pos_error": "00_Behavior/02_goal_pos_error",
+    "Tracking/goal_heading_error_abs": "00_Behavior/03_goal_heading_error_abs",
+    "Tracking/goal_completion_pct": "00_Behavior/04_goal_completion_pct",
+    "Observation/wheel_longitudinal_slip_abs_mean_raw": "00_Behavior/05_wheel_longitudinal_slip_abs_mean_raw",
+    "Observation/wheel_slip_angle_abs_mean_raw": "00_Behavior/06_wheel_slip_angle_abs_mean_raw",
+    "Action/wheel_velocity_target_abs_mean_raw": "00_Behavior/07_wheel_velocity_target_abs_mean_raw",
+    "Reward/total": "00_Behavior/08_reward_total",
+    "Reward/reached_target": "00_Behavior/09_reached_target",
+    "Reward/distance_to_target": "00_Behavior/10_distance_to_target",
+    "Reward/angle_diff": "00_Behavior/11_angle_diff",
+    "Reward/angle_to_target": "00_Behavior/12_angle_to_target",
+    "Reward/oscillation": "00_Behavior/13_oscillation",
+    "Reward/far_from_target": "00_Behavior/14_far_from_target",
+    "Termination/time_out_rate": "00_Behavior/15_time_out_rate",
+    "Termination/far_from_target_rate": "00_Behavior/16_far_from_target_rate",
+    "Termination/ball_joint_limit_rate": "00_Behavior/17_ball_joint_limit_rate",
+    "Observation/wheel_normal_contact_force_sum_raw": "00_Behavior/18_wheel_normal_contact_force_sum_raw",
+    "Observation/tilt_deg": "00_Behavior/19_tilt_deg",
     "Train/mean_episode_length": "Train/00_mean_episode_length",
     "Train/mean_reward": "Train/01_mean_reward",
     "Train/mean_episode_length/time": "Train/00_mean_episode_length/time",
@@ -30,89 +50,54 @@ TENSORBOARD_TAG_ALIASES = {
     "Perf/total_fps": "Perf/00_total_fps",
     "Perf/collection_time": "Perf/01_collection_time",
     "Perf/learning_time": "Perf/02_learning_time",
-    "Observation/wheel_longitudinal_slip_abs_mean_raw": "Observation/00_wheel_longitudinal_slip_abs_mean_raw",
-    "Observation/wheel_slip_angle_abs_mean_raw": "Observation/01_wheel_slip_angle_abs_mean_raw",
-    "Observation/wheel_normal_contact_force_sum_raw": "Observation/02_wheel_normal_contact_force_sum_raw",
-    "Observation/tilt_deg": "Observation/03_tilt_deg",
-    "Observation/turn_radius_raw": "Observation/04_turn_radius_raw",
-    "Observation/ball_joint_vel_abs_mean_raw": "Observation/05_ball_joint_vel_abs_mean_raw",
-    "Reward/distance_progress": "Reward/00_distance_progress",
-    "Reward/goal_direction_reward": "Reward/01_goal_direction_reward",
-    "Reward/goal_heading_reward": "Reward/02_goal_heading_reward",
-    "Reward/stop_reward": "Reward/03_stop_reward",
-    "Reward/near_goal_gate": "Reward/04_near_goal_gate",
-    "Reward/success_bonus": "Reward/05_success_bonus",
-    "Reward/time_penalty": "Reward/06_time_penalty",
-    "Reward/total": "Reward/09_total",
-    "Tracking/goal_pos_error": "Tracking/00_goal_pos_error",
-    "Tracking/goal_progress": "Tracking/01_goal_progress",
-    "Tracking/goal_yaw_error_abs": "Tracking/02_goal_yaw_error_abs",
-    "Tracking/goal_completion_pct": "Tracking/03_goal_completion_pct",
-    "Tracking/goal_success_rate": "Tracking/04_goal_success_rate",
+    "Observation/ball_joint_vel_abs_mean_raw": "Observation/00_ball_joint_vel_abs_mean_raw",
+    "Observation/turn_radius_raw": "Observation/01_turn_radius_raw",
     "Action/policy_abs_mean": "Action/00_policy_abs_mean",
     "Action/policy_std": "Action/01_policy_std",
     "Action/processed_abs_mean": "Action/02_processed_abs_mean",
     "Action/processed_std": "Action/03_processed_std",
-    "Action/wheel_velocity_target_abs_mean_raw": "Action/04_wheel_velocity_target_abs_mean_raw",
     "Command/goal_rel_x": "Command/00_goal_rel_x",
     "Command/goal_rel_y": "Command/01_goal_rel_y",
-    "Command/goal_rel_psi": "Command/02_goal_rel_psi",
-    "Command/goal_target_x_world": "Command/03_goal_target_x_world",
-    "Command/goal_target_y_world": "Command/04_goal_target_y_world",
-    "Command/goal_target_yaw_world": "Command/05_goal_target_yaw_world",
-    "Command/goal_direction_offset_deg": "Command/06_goal_direction_offset_deg",
-    "Command/goal_heading_offset_deg": "Command/07_goal_heading_offset_deg",
-    "Termination/time_out_rate": "Termination/00_time_out_rate",
-    "Termination/terminated_rate": "Termination/01_terminated_rate",
-    "Termination/bad_orientation_rate": "Termination/02_bad_orientation_rate",
-    "Termination/head_tail_roll_limit_rate": "Termination/03_head_tail_roll_limit_rate",
-    "Termination/ball_joint_limit_rate": "Termination/04_ball_joint_limit_rate",
-    "Termination/success_rate": "Termination/05_success_rate",
+    "Command/goal_rel_z": "Command/02_goal_rel_z",
+    "Command/goal_rel_heading": "Command/03_goal_rel_heading",
+    "Command/goal_target_x_world": "Command/04_goal_target_x_world",
+    "Command/goal_target_y_world": "Command/05_goal_target_y_world",
+    "Command/goal_target_z_world": "Command/06_goal_target_z_world",
+    "Command/goal_target_heading_world": "Command/07_goal_target_heading_world",
+    "Command/goal_direction_offset_deg": "Command/08_goal_direction_offset_deg",
+    "Command/goal_heading_offset_deg": "Command/09_goal_heading_offset_deg",
+    "Termination/terminated_rate": "Termination/00_terminated_rate",
 }
 
 CONSOLE_PRIORITY_TAGS = (
-    "Reward/distance_progress",
-    "Reward/goal_direction_reward",
-    "Reward/goal_heading_reward",
-    "Reward/stop_reward",
-    "Reward/near_goal_gate",
-    "Reward/success_bonus",
-    "Reward/time_penalty",
-    "Tracking/goal_pos_error",
-    "Tracking/goal_completion_pct",
     "Tracking/goal_success_rate",
-    "Tracking/goal_yaw_error_abs",
+    "Termination/success_rate",
+    "Tracking/goal_pos_error",
+    "Tracking/goal_heading_error_abs",
+    "Tracking/goal_completion_pct",
     "Observation/wheel_longitudinal_slip_abs_mean_raw",
     "Observation/wheel_slip_angle_abs_mean_raw",
+    "Action/wheel_velocity_target_abs_mean_raw",
+    "Reward/total",
+    "Reward/reached_target",
+    "Reward/distance_to_target",
+    "Reward/angle_diff",
+    "Reward/angle_to_target",
+    "Reward/oscillation",
+    "Reward/far_from_target",
+    "Termination/time_out_rate",
+    "Termination/far_from_target_rate",
+    "Termination/ball_joint_limit_rate",
+    "Termination/terminated_rate",
     "Observation/wheel_normal_contact_force_sum_raw",
     "Observation/tilt_deg",
     "Observation/ball_joint_vel_abs_mean_raw",
     "Action/policy_abs_mean",
     "Action/policy_std",
-    "Action/wheel_velocity_target_abs_mean_raw",
-    "Termination/time_out_rate",
-    "Termination/success_rate",
-    "Termination/terminated_rate",
-    "Termination/bad_orientation_rate",
-    "Termination/head_tail_roll_limit_rate",
-    "Termination/ball_joint_limit_rate",
 )
 
 CONSOLE_VISIBLE_TAGS = set(CONSOLE_PRIORITY_TAGS)
 CONSOLE_TAG_ORDER = {tag: idx for idx, tag in enumerate(CONSOLE_PRIORITY_TAGS)}
-
-# These reset-reason rates are only useful once they deviate from zero.
-# Keeping an all-zero history creates blank TensorBoard cards without adding signal.
-SPARSE_ZERO_SCALARS = frozenset(
-    {
-        "Termination/terminated_rate",
-        "Termination/success_rate",
-        "Termination/bad_orientation_rate",
-        "Termination/head_tail_roll_limit_rate",
-        "Termination/ball_joint_limit_rate",
-    }
-)
-
 
 class Logger:
     """Logger to save the learning metrics to different logging services."""
@@ -433,15 +418,11 @@ class Logger:
         return TENSORBOARD_TAG_ALIASES.get(tag, tag)
 
     def _write_tensorboard_scalar(self, tag: str, value: float, step: int) -> None:
-        """Write scalars to TensorBoard while suppressing selected all-zero series."""
+        """Write scalars to TensorBoard while suppressing all-zero series until they activate."""
         if self.writer is None:
             return
 
         tensorboard_tag = self._tensorboard_tag(tag)
-        if tag not in SPARSE_ZERO_SCALARS:
-            self.writer.add_scalar(tensorboard_tag, value, step)  # type: ignore
-            return
-
         if tag not in self._activated_sparse_zero_scalars:
             if abs(float(value)) <= 1.0e-12:
                 self._pending_sparse_zero_scalars.setdefault(tag, []).append((step, float(value)))

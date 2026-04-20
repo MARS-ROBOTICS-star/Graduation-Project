@@ -19,20 +19,6 @@ from tensorboard.backend.event_processing import event_accumulator
 from tensorboard.summary.writer.event_file_writer import EventFileWriter
 
 
-SPARSE_ZERO_SCALARS = frozenset(
-    {
-        "Termination/terminated_rate",
-        "Termination/success_rate",
-        "Termination/bad_orientation_rate",
-        "Termination/ball_joint_limit_rate",
-        "Termination/01_terminated_rate",
-        "Termination/05_success_rate",
-        "Termination/02_bad_orientation_rate",
-        "Termination/03_ball_joint_limit_rate",
-    }
-)
-
-
 def _sanitize_tag(tag: str) -> str:
     return tag.replace("/", "__")
 
@@ -63,8 +49,6 @@ def find_sparse_zero_scalar_tags(run_dir: str | Path) -> list[str]:
 
     pruned_tags: list[str] = []
     for tag in accumulator.Tags().get("scalars", []):
-        if tag not in SPARSE_ZERO_SCALARS:
-            continue
         events = accumulator.Scalars(tag)
         if _series_is_all_zero(events):
             pruned_tags.append(tag)

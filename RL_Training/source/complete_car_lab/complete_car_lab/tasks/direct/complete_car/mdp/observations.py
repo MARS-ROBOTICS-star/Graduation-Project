@@ -134,18 +134,7 @@ def compute_actor_observation(
 
     return torch.cat(
         [
-            raw_terms["base_lin_vel"] * scales.base_lin_vel,
-            raw_terms["base_ang_vel"] * scales.base_ang_vel,
-            raw_terms["projected_gravity"] * scales.projected_gravity,
-            raw_terms["ball_joint_pos"] * scales.ball_joint_pos,
-            raw_terms["ball_joint_vel"] * scales.ball_joint_vel,
-            raw_terms["ball_joint_target_error"] * scales.ball_joint_target_error,
-            raw_terms["head_roll_pitch"] * scales.module_roll_pitch,
-            raw_terms["tail_roll_pitch"] * scales.module_roll_pitch,
             raw_terms["wheel_joint_vel"] * scales.wheel_joint_vel,
-            raw_terms["wheel_longitudinal_slip"] * scales.wheel_longitudinal_slip,
-            raw_terms["wheel_slip_angle"] * scales.wheel_slip_angle,
-            raw_terms["wheel_normal_contact_force"] * scales.wheel_normal_contact_force,
             raw_terms["relative_goal_commands"] * scales.commands,
             raw_terms["last_actions"] * scales.last_action,
         ],

@@ -24,7 +24,7 @@ from ..utils.math_utils import compute_policy_obs_noise_magnitudes
 class CommandCfg:
     """目标位姿命令采样器配置。"""
 
-    num_commands: int = 3
+    num_commands: int = 4
     resampling_time: float = 5.0  # 目标重采样周期，单位：s。
     goal_distance: float = 20
     goal_direction_max_deg: float = 18.43
@@ -45,14 +45,14 @@ class ControlCfg:
     wheel_joint_names: tuple[str, ...] = tuple(WHEEL_JOINT_NAMES)
     ball_joint_action_lower_limits: tuple[float, ...] = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)
     ball_joint_action_upper_limits: tuple[float, ...] = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
-    ball_joint_stiffness: float = 100.0  # 球铰位置控制刚度，单位：N*m/rad。
-    ball_joint_damping: float = 10.0  # 球铰位置控制阻尼，单位：N*m*s/rad。
-    ball_joint_effort_limit_sim: float = 120.0  # 球铰驱动器力矩上限，单位：N*m。
+    ball_joint_stiffness: float = 8000.0  # 球铰位置控制刚度，单位：N*m/rad。
+    ball_joint_damping: float = 1000.0  # 球铰位置控制阻尼，单位：N*m*s/rad。
+    ball_joint_effort_limit_sim: float = 20.0  # 球铰驱动器力矩上限，单位：N*m。
     ball_joint_velocity_limit_sim: float = 1.0  # 球铰驱动器速度上限，单位：rad/s。
 
     wheel_joint_stiffness: float = 0.0  # 车轮位置刚度，单位：N*m/rad。
-    wheel_joint_damping: float = 1.0e3  # 车轮速度控制阻尼，单位：N*m*s/rad。
-    wheel_joint_effort_limit_sim: float = 80.0  # 车轮驱动器力矩上限，单位：N*m。
+    wheel_joint_damping: float = 4.0e3  # 车轮速度控制阻尼，单位：N*m*s/rad。
+    wheel_joint_effort_limit_sim: float = 20.0  # 车轮驱动器力矩上限，单位：N*m。
     wheel_joint_velocity_limit_sim: float = 20.0  # 车轮驱动器速度上限，单位：rad/s。
     wheel_radius: float = WHEEL_RADIUS
     wheel_action_scale: float = 1.0  # 直驱模式下，归一化轮速动作按 wheel_joint_velocity_limit_sim 的比例缩放。
@@ -115,45 +115,18 @@ class ObservationCfg:
 class RewardParamsCfg:
     """目标导向奖励参数。"""
 
-    target_bonus_ratio: float = 0.05
-    target_position_tolerance: float = 0.3
-    target_yaw_tolerance_deg: float = 9.0
-    goal_direction_reward_weight: float = 0.02
-    goal_direction_error_scale: float = 2.0
-    goal_heading_reward_weight: float = 0.04
-    goal_heading_error_scale: float = 3.0
-    near_goal_gate_distance: float = 1.5
-    near_goal_gate_sharpness: float = 6.0
-    stop_gate_distance: float = 0.8
-    stop_reward_weight: float = 0.02
-    stop_speed_squared_scale: float = 2.0
-    success_bonus: float = 8.0
-    time_penalty: float = 0.005
-    heading_distance_scale: float = 5.0
-    energy_weight: float = -1.0
-    roll_gate_activation_roll_deg: float = 5.0
-    body_car_roll_gate: float = math.pi / 16.0
-    longitudinal_slip_cost_deadzone: float = 0.3
-    longitudinal_slip_cost_weight: float = 0.25
-    lateral_slip_gate_scale: float = 6.0
-    module_pitch_cost_deadzone_deg: float = 6.0
-    module_pitch_cost_weight: float = 1.0
-    arrival_speed_scale: float = 0.20
-    arrival_yaw_rate_scale: float = 0.25
-    arrival_longitudinal_slip_scale: float = 1.2
-    arrival_module_pitch_scale: float = 0.18
-    capture_position_tolerance: float = 1.2
-    capture_yaw_tolerance_deg: float = 30.0
-    capture_position_scale: float = 0.45
-    capture_yaw_scale: float = 0.35
-    capture_speed_scale: float = 0.30
-    capture_yaw_rate_scale: float = 0.35
-    capture_longitudinal_slip_scale: float = 1.8
-    capture_module_pitch_scale: float = 0.22
-    capture_reward_weight: float = 1.0
-    pose_reward_distance_scale: float = 1.8
-    pose_reward_yaw_scale: float = 0.45
-    pose_reward_weight: float = 0.6
+    target_position_tolerance: float = 0.2
+    target_yaw_tolerance_deg: float = math.degrees(0.1)
+    distance_to_target_denominator_scale: float = 0.11
+    distance_to_target_weight: float = 5.0
+    reached_target_base_reward: float = 2.0
+    reached_target_weight: float = 5.0
+    oscillation_weight: float = -0.05
+    angle_to_target_threshold_rad: float = 2.0
+    angle_to_target_weight: float = -1.5
+    far_from_target_margin: float = 3.0
+    far_from_target_weight: float = -2.0
+    angle_diff_weight: float = 5.0
 
 
 @configclass

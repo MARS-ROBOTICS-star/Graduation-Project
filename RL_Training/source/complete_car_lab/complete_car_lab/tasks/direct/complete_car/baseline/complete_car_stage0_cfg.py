@@ -18,7 +18,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         # Stage0 keeps a full local copy of the active tunables so future tuning can
         # stay inside this file without bouncing back to the base template.
         self.stage_name = "stage0"
-        self.episode_length_s = 16.0
+        self.episode_length_s = 40.0
         self.decimation = 2
 
         self.scene.num_envs = 64
@@ -26,8 +26,8 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.scene.replicate_physics = True
         self.scene.clone_in_fabric = True
 
-        self.commands.num_commands = 3
-        self.commands.resampling_time = 16.0
+        self.commands.num_commands = 4
+        self.commands.resampling_time = 40.0
         self.commands.goal_distance = 8.0
         self.commands.goal_direction_max_deg = 30.0
         self.commands.goal_heading_delta_max_deg = 12.0
@@ -40,13 +40,13 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         # Freeze the ball joints at their default reset posture for this stage.
         self.control.ball_joint_action_lower_limits = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         self.control.ball_joint_action_upper_limits = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-        self.control.ball_joint_stiffness = 100.0
-        self.control.ball_joint_damping = 20.0
-        self.control.ball_joint_effort_limit_sim = 120.0
+        self.control.ball_joint_stiffness = 8000.0
+        self.control.ball_joint_damping = 1000.0
+        self.control.ball_joint_effort_limit_sim = 20.0
         self.control.ball_joint_velocity_limit_sim = 0.8
         self.control.wheel_joint_stiffness = 0.0
-        self.control.wheel_joint_damping = 1.0e3
-        self.control.wheel_joint_effort_limit_sim = 80.0
+        self.control.wheel_joint_damping = 4.0e3
+        self.control.wheel_joint_effort_limit_sim = 20.0
         self.control.wheel_joint_velocity_limit_sim = 20.0
         self.control.wheel_action_scale = 1.0
 
@@ -84,19 +84,18 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.observations.noise.commands = 0.0
 
         self.rewards.only_positive_rewards = False
-        self.rewards.params.target_position_tolerance = 0.5
-        self.rewards.params.target_yaw_tolerance_deg = 15.0
-        self.rewards.params.goal_direction_reward_weight = 0.012
-        self.rewards.params.goal_direction_error_scale = 1.2
-        self.rewards.params.goal_heading_reward_weight = 0.06
-        self.rewards.params.goal_heading_error_scale = 0.8
-        self.rewards.params.near_goal_gate_distance = 2.1
-        self.rewards.params.near_goal_gate_sharpness = 4.0
-        self.rewards.params.stop_gate_distance = 0.8
-        self.rewards.params.stop_reward_weight = 0.004
-        self.rewards.params.stop_speed_squared_scale = 1.2
-        self.rewards.params.success_bonus = 45.0
-        self.rewards.params.time_penalty = 0.02
+        self.rewards.params.target_position_tolerance = 0.2
+        self.rewards.params.target_yaw_tolerance_deg = math.degrees(0.1)
+        self.rewards.params.distance_to_target_denominator_scale = 0.11
+        self.rewards.params.distance_to_target_weight = 5.0
+        self.rewards.params.reached_target_base_reward = 2.0
+        self.rewards.params.reached_target_weight = 5.0
+        self.rewards.params.oscillation_weight = -0.05
+        self.rewards.params.angle_to_target_threshold_rad = 2.0
+        self.rewards.params.angle_to_target_weight = -1.5
+        self.rewards.params.far_from_target_margin = 3.0
+        self.rewards.params.far_from_target_weight = -2.0
+        self.rewards.params.angle_diff_weight = 5.0
 
         self.terminations.orientation_limit_deg = 30.0
         self.terminations.head_tail_roll_limit_deg = 35.0

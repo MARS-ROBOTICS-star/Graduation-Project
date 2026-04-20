@@ -2,6 +2,202 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-20
+
+### Stage0 policy observation has been reduced to a 22D minimal input consisting only of wheel joint velocity, relative goal command, and last action; richer state terms remain available only in diagnostics and TensorBoard
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the active Stage0 actor / critic observation is now:
+    - `wheel_joint_vel`:
+      - `6`
+    - `goal_relative_command`:
+      - `4`
+    - `last_action`:
+      - `12`
+  - active policy observation dims are now:
+    - actor `22`
+    - critic `22`
+  - the following terms are no longer fed into the policy network in the active mainline:
+    - `base_lin_vel`
+    - `base_ang_vel`
+    - `projected_gravity`
+    - `ball_joint_pos`
+    - `ball_joint_vel`
+    - `ball_joint_target_error`
+    - `head_roll_pitch`
+    - `tail_roll_pitch`
+    - `wheel_longitudinal_slip`
+    - `wheel_slip_angle`
+    - `wheel_normal_contact_force`
+  - those removed terms are still computed in the environment and kept in step diagnostics / TensorBoard for behavior analysis
+  - TensorBoard ordering was also changed so the highest-signal behavior-quality panels are grouped first under:
+    - `00_Behavior/...`
+  - all-zero scalar series are now suppressed generically during logging, not only for termination-related tags
+- Reason:
+  - the user explicitly required shrinking policy input to the minimal wheel-speed and goal-tracking state while preserving richer diagnostics only for monitoring
+- Impact:
+  - future Stage0 run interpretation should no longer assume the policy is directly observing slip, body attitude, gravity projection, or ball-joint state
+  - comparisons against older runs using `71 / 71` observations are no longer same-input comparisons
+- Status:
+  - active mainline behavior changed
+- Verification:
+  - `python3 -m py_compile` passed for:
+    - `utils/io_descriptors.py`
+    - `mdp/observations.py`
+    - `utils/math_utils.py`
+    - `rsl_rl/utils/logger.py`
+    - `utils/tensorboard_export.py`
+
+### Stage0 termination has been narrowed to four episode-end reasons: `time_out`, `is_success`, `far_from_target`, and `ball_joint_out_of_bounds`; the old orientation-based hard terminations are no longer active in the mainline
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the active Stage0 done logic is now:
+    - `time_out`:
+      - `episode_length_buf >= max_episode_length - 1`
+    - `is_success`:
+      - `distance_to_goal < 0.2 m`
+      - `|goal_heading_error| < 0.1 rad`
+    - `far_from_target`:
+      - `distance_to_goal > cfg.commands.goal_distance + 3.0`
+    - `ball_joint_out_of_bounds`:
+      - any controlled ball joint leaves the configured lower/upper limits
+  - the old orientation-based hard terminations have been removed from the active Stage0 episode-end path:
+    - `bad_orientation`
+    - `head_tail_roll_out_of_bounds`
+  - `Tracking/goal_success_rate` is now explicitly aligned with `Termination/success_rate` using the same `0.2 m + 0.1 rad` condition
+  - episode logging / TensorBoard aliases were updated to track:
+    - `Termination/far_from_target_rate`
+    - `Termination/ball_joint_limit_rate`
+    - `Termination/success_rate`
+- Reason:
+  - the user explicitly redefined the Stage0 termination set and asked to keep the original ball-joint limit termination while removing the old orientation-based ones
+- Impact:
+  - future Stage0 run interpretation should treat early episode ends as coming only from:
+    - success
+    - far-from-target divergence
+    - ball-joint limit violation
+    - timeout
+  - any older runs that reported orientation-based termination rates are no longer directly comparable to the new mainline termination statistics
+- Status:
+  - active mainline behavior changed
+- Verification:
+  - `python3 -m py_compile` passed for the modified termination/env/logger/export files
+
+### Stage0 reward has been replaced with the new six-term target-shaped formulation specified by the user; the old progress / heading / stop / success-bonus / time-penalty structure is no longer the active mainline
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the active Stage0 reward terms are now:
+    - `distance_to_target`
+    - `reached_target`
+    - `oscillation`
+    - `angle_to_target`
+    - `far_from_target`
+    - `angle_diff`
+  - their active semantics are:
+    - `distance_to_target = 5.0 * (1 / (1 + 0.11 * distance^2)) / max_episode_length`
+    - `reached_target = 5.0 * (2.0 * reward_scale)` with `reward_scale = (max_episode_length - episode_length_buf) / max_episode_length`
+    - `oscillation = -0.05 * mean(|action_t - action_t-1|^4) / max_episode_length`
+    - `angle_to_target = -1.5 * where(|atan2(y_b, x_b)| > 2.0, |angle| / max_episode_length, 0)`
+    - `far_from_target = -2.0` when `distance > cfg.commands.goal_distance + 3.0`
+    - `angle_diff = 5.0 * (1 / (1 + distance)) * (1 / (1 + |goal_heading_error|)) / max_episode_length`
+  - `heading_soft_constraint` was explicitly not included in this round
+  - the reached-target tolerance has been tightened to:
+    - distance `< 0.2 m`
+    - heading error `< 0.1 rad`
+  - termination success continues to share these tolerance values through `cfg.rewards.params`
+- Reason:
+  - the user explicitly replaced the old reward design and explicitly removed the soft reverse-driving constraint from this round
+- Impact:
+  - future run analysis should no longer interpret Stage0 reward curves using:
+    - `distance_progress`
+    - `goal_direction_reward`
+    - `goal_heading_reward`
+    - `stop_reward`
+    - `success_bonus`
+    - `time_penalty`
+  - the new primary reward diagnostics are the six terms above plus:
+    - `Tracking/goal_pos_error`
+    - `Tracking/goal_heading_error_abs`
+    - `Tracking/goal_success_rate`
+- Status:
+  - active mainline behavior changed
+- Verification:
+  - `python3 -m py_compile` passed for the modified reward/env/logger/config files
+
+### Goal command semantics have been expanded from 3D `[goal_rel_x, goal_rel_y, goal_rel_psi]` to 4D `[goal_rel_x, goal_rel_y, goal_rel_z, goal_rel_heading]`, with target `z` sampled from the terrain height field at the goal `xy`
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the active command vector now has `4` dimensions:
+    - `goal_rel_x`
+    - `goal_rel_y`
+    - `goal_rel_z`
+    - `goal_rel_heading`
+  - world-frame command targets now store:
+    - `goal_target_x_world`
+    - `goal_target_y_world`
+    - `goal_target_z_world`
+    - `goal_target_heading_world`
+  - target `z` is no longer implicit:
+    - after sampling target `xy`, the environment queries `terrain_runtime.sample_heights_world_xy(...)`
+    - flat ground returns `0`
+    - generated terrain returns the bilinearly interpolated terrain height at the target point
+  - reward, termination, and step metrics now treat heading as command index `3`, not index `2`
+  - Stage0 actor / critic observation dims increase from `70 / 70` to `71 / 71`
+- Reason:
+  - the user explicitly required adding terrain-consistent vertical goal information to the command and renaming `goal_rel_psi` to `goal_rel_heading`
+- Impact:
+  - future training / logging analysis must stop using:
+    - `goal_rel_psi`
+    - `goal_target_yaw_world`
+    - `Tracking/goal_yaw_error_abs`
+  - the correct active names are now:
+    - `goal_rel_heading`
+    - `goal_target_heading_world`
+    - `Tracking/goal_heading_error_abs`
+- Status:
+  - active mainline behavior changed
+- Verification:
+  - `python3 -m py_compile` passed for the modified command/env/reward/termination/logger files
+  - direct runtime instantiation of `CompleteCarStage0EnvCfg` was not executed in this session because the local shell environment is missing `gymnasium`
+
 ## 2026-04-19
 
 ### GitHub 同步策略已固定为“代码与文档入库，训练产物不入库”；后续只有在用户明确要求或出现较理想模型时才提醒上传训练结果
@@ -7630,3 +7826,145 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - if more early-phase tolerance is needed, the mechanism must separate early and late behavior instead of globally relaxing the same denominator
 - Status:
   - active default restored after the run
+
+## 2026-04-18
+
+### The manually screened background-review references are now separated into a new top-level Zotero collection instead of being merged into the existing core `RL + Sim-to-Real` collection
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Decision / conclusion:
+  - by explicit user instruction, the newly screened background-review references were not added into the existing collection:
+    - `核心参考-RL、Sim-to-Real`
+  - a new top-level Zotero collection was created instead:
+    - `综述背景候选-复杂地形_铰接_RL_球并联-2026-04-17`
+    - `collection_key = CREC6ZEZ`
+  - the new collection contains:
+    - `27` items total
+    - category split:
+      - `A = 14`
+      - `B = 8`
+      - `C = 5`
+  - import result:
+    - `19` items were created as new Zotero entries
+    - `8` already-existing Zotero items were linked into the new collection
+  - the collection is a true top-level collection:
+    - `parentCollection = false`
+- Reason:
+  - the user wanted the new background-review bibliography line to remain separate from the previously seeded core thesis collection
+- Impact:
+  - future background-writing, review-note extraction, and literature expansion for:
+    - terrain traversability
+    - articulated/agile ground vehicles
+    - RL for rough-terrain vehicles
+    - spherical-parallel-joint inspiration
+    should continue from this new collection rather than overloading the old `核心参考-RL、Sim-to-Real` collection
+- Status:
+  - completed
+
+### A new cross-database literature retrieval on “reinforcement-learning-based articulated ground wheeled mobile robots” shows that the usable evidence is still split between an English RL rough-terrain control line and a Chinese background/survey line rather than one dense Chinese exact-match cluster
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Date:
+  - 2026-04-18
+- Retrieval scope:
+  - Google Scholar
+  - CNKI-related official portals / mirror indexes
+- Query lines:
+  - Scholar:
+    - `"rough terrain" vehicle "deep reinforcement learning"`
+    - `"actively articulated suspension" rough terrain robot`
+  - CNKI:
+    - attempted direct `kns.cnki.net` / `www.cnki.net` search first
+    - browser-side CNKI access hit certificate errors
+    - fallback used CNKI-affiliated journal portals and CNKI mirror-style index pages for conservative retrieval
+- Durable conclusion:
+  - the strongest directly relevant English papers remain concentrated around:
+    - rough-terrain vehicle control with DRL
+    - actively articulated suspension / articulated wheeled ground-vehicle morphology
+  - representative papers confirmed again in this round include:
+    - `Control of rough terrain vehicles using deep reinforcement learning`
+    - `Deep reinforcement learning for safe local planning of a ground vehicle in unknown rough terrain`
+    - `A sim-to-real pipeline for deep reinforcement learning for autonomous robot navigation in cluttered rough terrain`
+    - `Actively articulated wheeled architectures for autonomous ground vehicles-opportunities and challenges`
+    - `Design and field testing of a rover with an actively articulated suspension system in a Mars analog terrain`
+    - `Actively articulated suspension for a wheel-on-leg rover operating on a martian analog surface`
+  - the current Chinese-side retrieval is much sparser on the exact intersection:
+    - articulated wheeled ground robot
+    - rough terrain
+    - reinforcement learning
+  - instead, Chinese literature is currently more reusable through two adjacent lines:
+    - RL/mobile-robot navigation, path-planning, and motion-control surveys or methods
+    - articulated / wheel-leg / obstacle-crossing mobile-robot mechanism and simulation papers
+- Impact:
+  - for thesis related work, the direct technical backbone for this exact topic should still rely primarily on English literature
+  - Chinese literature is currently better used to support:
+    - RL method overview
+    - path-planning / motion-control overview
+    - articulated or terrain-adaptive robot structure background
+- Status:
+  - first-pass cross-database retrieval completed
+
+### Google Scholar exact-match retrieval for “reinforcement-learning-based articulated wheeled robots” remains sparse, so future English searches should keep a dual-track strategy instead of insisting on one narrow phrase
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Date:
+  - 2026-04-18
+- Retrieval scope:
+  - Google Scholar only
+- Query lines:
+  - `"articulated vehicle" "reinforcement learning"`
+  - `"articulated wheeled robot" "reinforcement learning"`
+  - `"center-articulated vehicle" "reinforcement learning"`
+  - compared against the broader already-validated lines:
+    - `"rough terrain" vehicle "deep reinforcement learning"`
+    - `"actively articulated suspension" rough terrain robot`
+- Durable conclusion:
+  - the exact phrase line:
+    - `articulated wheeled robot + reinforcement learning`
+    returns very few directly useful hits
+  - more usable results are still obtained by combining two parallel search tracks:
+    - RL / rough-terrain / vehicle-control track
+    - articulated / actively articulated suspension / center-articulated vehicle track
+  - representative exact or near-exact Scholar results confirmed in this round include:
+    - `Reinforcement learning for autonomous navigation of articulated vehicles`
+    - `Advanced Kinematic Control and Reinforcement Learning Optimization for Center-Articulated Agricultural Rovers`
+    - `Control of rough terrain vehicles using deep reinforcement learning`
+  - this means the thesis literature search should not rely on one single narrow keyword intersection as the default retrieval strategy
+- Impact:
+  - future English literature retrieval should keep the default dual-track pattern:
+    - one query line for RL-based rough-terrain control
+    - one query line for articulated morphology / suspension / vehicle structure
+  - then merge the two lines manually by topic relevance
+- Status:
+  - validated for current topic retrieval
+
+### Eight Google Scholar papers from the “articulated small vehicle / articulated vehicle + RL” screening round have now been added into Zotero collection `核心参考-RL、Sim-to-Real`
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Date:
+  - 2026-04-18
+- Target collection:
+  - `核心参考-RL、Sim-to-Real`
+  - `collection_key = P3ZIJTVJ`
+- Import scope:
+  - the eight papers selected from the Google Scholar articulated-vehicle / articulated-wheeled-robot / center-articulated-vehicle RL search round
+- Result:
+  - `5` items already existed in the Zotero library and were linked into the collection
+  - `3` items were created as new Zotero entries:
+    - `Actively articulated wheeled architectures for autonomous ground vehicles-opportunities and challenges`
+    - `Reinforcement learning for autonomous navigation of articulated vehicles`
+    - `Advanced Kinematic Control and Reinforcement Learning Optimization for Center-Articulated Agricultural Rovers: A Comparative Study of Tracking Accuracy and Energy Efficiency`
+- Reason:
+  - the user explicitly asked to place the currently selected articulated-vehicle RL references into the existing core collection
+- Impact:
+  - future reading, citation expansion, and note taking for the articulated-vehicle RL line can continue directly from the core Zotero collection instead of re-searching Scholar
+- Status:
+  - completed

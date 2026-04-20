@@ -1,5 +1,180 @@
 # 每日工作日志
 
+## 2026-04-20
+
+已完成：
+- 按用户要求收缩当前 Stage0 policy 观测输入：
+  - 送入网络的观测只保留：
+    - `wheel_joint_vel`
+    - `goal_relative_command`
+    - `last_action`
+  - actor / critic 观测维度由 `71 / 71` 改为 `22 / 22`
+  - 其余状态量不再进入网络，但仍保留在 TensorBoard / step metrics 中用于查看行为质量
+- 同步修改：
+  - `observation descriptor`
+  - `compute_actor_observation`
+  - `policy obs noise magnitudes`
+  - `policy obs dim`
+- 按用户要求调整 TensorBoard 与终端日志口径：
+  - 关键行为质量指标改为优先排序
+  - 新增前置总览分组：
+    - `00_Behavior/...`
+  - 全程为 `0` 的标量改为默认不写入 TensorBoard
+  - `tensorboard_export.py` 也改为可清理任意全零标量序列
+- 本轮修改文件：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- 验证：
+  - `python3 -m py_compile` 已通过：
+    - `utils/io_descriptors.py`
+    - `mdp/observations.py`
+    - `utils/math_utils.py`
+    - `rsl_rl/utils/logger.py`
+    - `utils/tensorboard_export.py`
+
+已完成：
+- 重新按当前 Stage0 源码核对并重写 `docs/RL阶段训练参数一览表.md`：
+  - 修正回合时长为 `40.0 s`
+  - 修正最大控制步数为 `2400`
+  - 修正 PPO rollout 为 `512 steps / env`
+  - 修正执行器参数为当前 `stage0_cfg` 实际数值
+  - 明确当前 episode 内会因 `resampling_time = 16.0 s` 发生多次目标重采样
+  - 明确当前 `12` 维动作接口下球铰动作被冻结，实际有效控制主要是 `6` 维轮速直驱
+- 同步修正 `docs/current_status.md` 中过期的 `episode_length_s` 口径
+
+已完成：
+- 按用户要求重构当前 Stage0 termination 逻辑：
+  - 保留：
+    - `time_out`
+    - `ball_joint_out_of_bounds`
+  - 新增并接入 episode 结束：
+    - `is_success`
+    - `far_from_target`
+  - 移除旧的姿态类硬终止参与：
+    - `bad_orientation`
+    - `head_tail_roll_out_of_bounds`
+- 当前实际终止条件：
+  - `time_out`：
+    - `episode_length_buf >= max_episode_length - 1`
+  - `is_success`：
+    - 距离目标 `< 0.2 m`
+    - 朝向误差 `< 0.1 rad`
+  - `far_from_target`：
+    - `distance > cfg.commands.goal_distance + 3.0`
+  - `ball_joint_out_of_bounds`：
+    - 任一球铰超出当前上下限
+- 同步修正：
+  - `Tracking/goal_success_rate` 与 `Termination/success_rate` 改为同一判据
+  - episode / TensorBoard 日志不再输出旧的姿态终止率
+  - 新增 `Termination/far_from_target_rate`
+- 本轮修改文件：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/tensorboard_export.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- 当前说明：
+  - 这轮没有启动真实训练，只完成了代码与文档口径整改
+  - 还需要下一轮 run 验证新 termination 对训练行为和统计曲线的影响
+- 已完成验证：
+  - `python3 -m py_compile` 通过
+
+已完成：
+- 按用户要求替换当前 Stage0 reward 主式，不再使用旧的：
+  - `distance_progress`
+  - `goal_direction_reward`
+  - `goal_heading_reward`
+  - `stop_reward`
+  - `success_bonus`
+  - `time_penalty`
+- 当前已落地的新 reward 项：
+  - `distance_to_target`
+  - `reached_target`
+  - `oscillation`
+  - `angle_to_target`
+  - `far_from_target`
+  - `angle_diff`
+- 本轮按用户口径实现细节：
+  - `distance_to_target = 5.0 * (1 / (1 + 0.11 * distance^2)) / max_episode_length`
+  - `reached_target = 5.0 * (2.0 * reward_scale)`
+  - `reward_scale = (max_episode_length - episode_length_buf) / max_episode_length`
+  - `reached_target` 触发条件：
+    - 距离目标 `< 0.2 m`
+    - `|goal_heading_error| < 0.1 rad`
+  - `oscillation = -0.05 * mean(|action_t - action_t-1|^4) / max_episode_length`
+  - `angle_to_target = -1.5 * where(|atan2(y_b, x_b)| > 2.0, |angle| / max_episode_length, 0)`
+  - `far_from_target` 阈值按用户要求实现为：
+    - `cfg.commands.goal_distance + 3.0`
+  - `angle_diff = 5.0 * (1 / (1 + distance)) * (1 / (1 + |goal_heading_error|)) / max_episode_length`
+  - `heading_soft_constraint` 本轮未接入
+- 已同步修改：
+  - reward 参数默认值
+  - Stage0 默认容差：
+    - `target_position_tolerance = 0.2`
+    - `target_yaw_tolerance_deg = degrees(0.1)`
+  - step 指标与 TensorBoard reward tag
+- 本轮修改文件：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- 已完成验证：
+  - `python3 -m py_compile` 通过
+
+已完成：
+- 按用户要求修改当前 RL 环境 command 语义：
+  - 将命令维度从 `3` 改为 `4`
+  - 原 `commands = [goal_rel_x, goal_rel_y, goal_rel_psi]`
+  - 现改为 `commands = [goal_rel_x, goal_rel_y, goal_rel_z, goal_rel_heading]`
+- 已在目标采样链中接入目标点高度查询：
+  - 世界系先采样目标 `xy`
+  - 再通过 `terrain_runtime.sample_heights_world_xy(...)` 查询该目标点高度作为 `goal_target_z_world`
+  - 平地模式下高度返回 `0`
+  - 生成地形模式下高度由高度图双线性插值给出
+- 已完成 reward / termination / logger / 观测链同步整改：
+  - heading 误差索引从旧的 `commands[:, 2]` 改为新的 `commands[:, 3]`
+  - step 指标与 episode 指标中的命令日志改为：
+    - `goal_target_z_world`
+    - `goal_target_heading_world`
+    - `goal_rel_z`
+    - `goal_rel_heading`
+  - 原 `goal_rel_psi`、`goal_target_yaw_world`、`goal_yaw_error_abs` 不再是当前主线口径
+- 当前维度变化：
+  - `num_commands = 4`
+  - Stage0 actor / critic 观测维度由 `70 / 70` 变为 `71 / 71`
+- 本轮修改文件：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- 已完成验证：
+  - `python3 -m py_compile` 通过
+- 当前说明：
+  - 本轮未直接启动环境实例验证 `observation_space`，因为当前 shell 环境缺少 `gymnasium`
+
 ## 2026-04-19
 
 已完成：
@@ -68,6 +243,12 @@
     - 有效动作语义不一致
     - 高滑移推进
     - success 指标口径失真
+- 按用户要求整理 `docs/MGDP_stage1_reward.md` 中的公式文档：
+  - 将正文中的英文说明改为中文
+  - 将文档中的公式统一改为 Obsidian 可编译数学语法
+  - 保留 `mermaid` reward 结构图
+  - 将历史失效的 `legged_gym/random_dog` 仓库内链接改为“历史源码映射说明”
+  - 当前该文档仍是历史 `MGDP` 口径整理，并不对应当前 `RL_Training/` 主线实现
 
 ## 2026-04-18
 
@@ -291,6 +472,22 @@
   - `docs/conversation_history.md`
   - `docs/RL阶段训练参数一览表.md`
   - `logs/daily_work_log.md`
+=======
+- 按用户要求整理 `docs/MGDP_stage1_reward.md` 中的公式文档，当前内容已改为中文表述：
+  - 已将原有公式统一改为 Obsidian 可编译数学语法
+  - 保留 `mermaid` reward 结构图
+  - 将正文中的英文说明统一改为中文
+- 同时清理该文档中的历史失效引用：
+  - 原文引用的 `legged_gym/random_dog` 相关源码路径在当前仓库中均不存在
+  - 已改为“历史源码映射说明”的文字口径，不再保留失效链接
+- 修改文件：
+  - `docs/MGDP_stage1_reward.md`
+  - `docs/current_status.md`
+  - `logs/daily_work_log.md`
+- 当前结论：
+  - `MGDP Stage 1 reward` 公式说明已经可以直接作为中文阅读稿或论文笔记底稿使用
+  - 当前文档仍是历史 `MGDP` 口径整理，并不对应当前 `RL_Training/` 主线实现
+>>>>>>> Stashed changes
 
 ## 2026-04-17
 
@@ -8023,12 +8220,18 @@
 - 另一个重要结论：
   - `ball_joint_pos_abs_mean_raw ≈ 0.17 ~ 0.18 rad`
     不代表整体安全
+<<<<<<< Updated upstream
 - 因为 termination 只要任一单轴超界就触发
 - 单个球铰轴逼近极限会被均值掩盖
+=======
+  - 因为 termination 只要任一单轴超界就触发
+  - 单个球铰轴逼近极限会被均值掩盖
+>>>>>>> Stashed changes
 
 ## 2026-04-18
 
 已完成：
+<<<<<<< Updated upstream
 - 按用户要求启动一轮当前 reward 分支的真实 GPU 训练：
   - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-18_11-08-59_66obs_longslip_cost_v1`
 - 本轮训练使用当前代码主线：
@@ -8044,6 +8247,28 @@
   - `tensorboard_export/latest_values.csv`
 - 同时重新导出了历史对照 run：
   - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_22-34-48_exp3_goal8_explicit_slip_cost_v1`
+=======
+- 按用户要求，不再把本轮综述背景候选文献放入已有 Zotero 集合，而是新建独立顶层集合：
+  - `综述背景候选-复杂地形_铰接_RL_球并联-2026-04-17`
+  - `collection_key = CREC6ZEZ`
+- 本轮共处理 `27` 篇文献：
+  - A 类 `14` 篇
+  - B 类 `8` 篇
+  - C 类 `5` 篇
+- 写入结果：
+  - `19` 篇为新建条目
+  - `8` 篇为 Zotero 库中已有条目归入新集合
+- 当前新集合已核对为顶层集合：
+  - `parentCollection = false`
+  - `numItems = 27`
+- 本轮对已有 collection 的处理口径：
+  - 不把新筛文献导入旧 `核心参考-RL、Sim-to-Real` 作为目标集合
+  - 旧集合结构未被当作本轮导入目标继续使用
+- 本轮同时给条目补充了分类标签，便于后续按：
+  - `A/B/C`
+  - 综述背景用途
+ 继续筛读和写作
+>>>>>>> Stashed changes
 
 修改文件：
 - `docs/current_status.md`
@@ -8051,6 +8276,7 @@
 - `logs/daily_work_log.md`
 
 产出/结论：
+<<<<<<< Updated upstream
 - 当前 reward 分支不是训练炸掉，而是掉进了明显的保守局部最优。
 - 到停止时，当前 run 主要指标为：
   - `Train/mean_reward ≈ 10.44`
@@ -8241,6 +8467,41 @@
 - 已导出 TensorBoard：
   - `tensorboard_export/latest_values.csv`
   - `tensorboard_export/summary.json`
+=======
+- 当前“综述背景主线/补充/球并联灵感来源”这批文献，已经与旧的 `RL + Sim-to-Real` 核心集合分离。
+- 后续写背景综述、补 related work、继续加读书笔记时，应优先从新集合：
+  - `综述背景候选-复杂地形_铰接_RL_球并联-2026-04-17`
+ 继续展开。
+
+已完成：
+- 按用户要求对“基于强化学习的关节式地面移动轮式机器人”做一轮 Scholar + CNKI 联合检索。
+- Google Scholar 当前使用的两条主检索式为：
+  - `"rough terrain" vehicle "deep reinforcement learning"`
+  - `"actively articulated suspension" rough terrain robot`
+- 当前在 Scholar 侧再次确认的高相关主线文献包括：
+  - `Control of rough terrain vehicles using deep reinforcement learning`
+  - `Deep reinforcement learning for safe local planning of a ground vehicle in unknown rough terrain`
+  - `A sim-to-real pipeline for deep reinforcement learning for autonomous robot navigation in cluttered rough terrain`
+  - `Actively articulated wheeled architectures for autonomous ground vehicles-opportunities and challenges`
+  - `Design and field testing of a rover with an actively articulated suspension system in a Mars analog terrain`
+  - `Actively articulated suspension for a wheel-on-leg rover operating on a martian analog surface`
+- CNKI 当前原计划使用 `kns.cnki.net` / `www.cnki.net` 直接检索：
+  - 但浏览器访问时遇到证书错误
+  - 因此本轮改为通过：
+    - CNKI 关联官方期刊门户
+    - CNKI 镜像索引页
+    做保守抓取
+- CNKI 侧当前抓到的更可复用文献主要集中在两类：
+  - 强化学习/深度强化学习与移动机器人路径规划、运动控制综述或方法
+  - 关节式/轮腿式/越障移动机器人结构设计与仿真
+- 当前可复用的中文侧代表文献包括：
+  - `基于深度强化学习的机器人运动控制研究进展`
+  - `基于强化学习的移动机器人路径规划研究综述`
+  - `基于深度强化学习的移动机器人三维路径规划方法`
+  - `轮腿式移动机器人的设计与研究`
+  - `基于ADAMS的六轮自适应越障机器人的设计与研究`
+  - `一种小型移动机器人行走机构的设计与分析`
+>>>>>>> Stashed changes
 
 修改文件：
 - `docs/current_status.md`
@@ -8248,6 +8509,7 @@
 - `logs/daily_work_log.md`
 
 产出/结论：
+<<<<<<< Updated upstream
 - 这轮训练没有数值炸掉，也没有姿态终止：
   - `time_out_rate = 1.0`
   - `terminated_rate = 0`
@@ -8361,3 +8623,68 @@
 - 下一步应做短程训练验证：
   - rollout / KL / entropy / policy std 是否正常
   - `tanh` squashed log-prob 与真实执行动作是否保持一致
+=======
+- 当前精确交集“关节式轮式地面机器人 + 强化学习 + 粗糙地形”在中文侧文献密度明显低于英文侧。
+- 后续 related work 写作时，应以英文文献承担主技术主线，中文文献主要补：
+  - RL 方法综述
+  - 移动机器人路径规划综述
+  - 关节式/轮腿式越障机构背景
+
+已完成：
+- 按用户要求，继续在 Google Scholar 上仅用英文检索词收缩“基于强化学习的关节式小车/关节式地面车辆”文献。
+- 本轮新增检索式：
+  - `"articulated vehicle" "reinforcement learning"`
+  - `"articulated wheeled robot" "reinforcement learning"`
+  - `"center-articulated vehicle" "reinforcement learning"`
+- 当前直接命中的代表结果包括：
+  - `Reinforcement learning for autonomous navigation of articulated vehicles`
+  - `Advanced Kinematic Control and Reinforcement Learning Optimization for Center-Articulated Agricultural Rovers`
+  - `DDPG-based controller of enhanced adaptive cruise control with lane-change assistance for an articulated vehicle`
+- 当前更重要的检索判断：
+  - 如果把英文检索词过度收紧到：
+    - `articulated wheeled robot + reinforcement learning`
+  - Google Scholar 召回会明显变少
+  - 当前最有效的英文检索策略仍然是双线并行：
+    - `rough terrain + vehicle + deep reinforcement learning`
+    - `actively articulated suspension / articulated vehicle`
+  - 再从两条线中人工筛出真正贴近“关节式小车”的文献
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 后续如果继续做英文检索，不应只盯着单一精确短语。
+- 默认应保留：
+  - 一条 RL 控制主线
+  - 一条 articulated 结构主线
+共同筛文献。
+
+已完成：
+- 按用户要求，将本轮 Google Scholar 精筛出的 8 篇“基于强化学习的关节式小车 / articulated vehicle”英文文献导入 Zotero 集合：
+  - `核心参考-RL、Sim-to-Real`
+  - `collection_key = P3ZIJTVJ`
+- 本轮导入结果：
+  - `3` 篇为新建条目
+  - `5` 篇为 Zotero 库中已有条目归入该集合
+- 新建条目包括：
+  - `Actively articulated wheeled architectures for autonomous ground vehicles-opportunities and challenges`
+  - `Reinforcement learning for autonomous navigation of articulated vehicles`
+  - `Advanced Kinematic Control and Reinforcement Learning Optimization for Center-Articulated Agricultural Rovers: A Comparative Study of Tracking Accuracy and Energy Efficiency`
+- 已归入现有条目的文献包括：
+  - `Control of rough terrain vehicles using deep reinforcement learning`
+  - `Deep reinforcement learning for safe local planning of a ground vehicle in unknown rough terrain`
+  - `A sim-to-real pipeline for deep reinforcement learning for autonomous robot navigation in cluttered rough terrain`
+  - `Design and field testing of a rover with an actively articulated suspension system in a Mars analog terrain`
+  - `Actively articulated suspension for a wheel-on-leg rover operating on a martian analog surface`
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前“关节式小车 / articulated vehicle + RL”这条英文文献线已经正式并入核心 Zotero 集合。
+- 后续如果要继续做 cited-by 扩展或读书笔记，可以直接从 `核心参考-RL、Sim-to-Real` 接着做。
+>>>>>>> Stashed changes

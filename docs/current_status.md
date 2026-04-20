@@ -17,14 +17,24 @@
   - `RL_Training/logs/` 与 `RL_Training/outputs/` 下的训练日志、checkpoint、导出结果不上传 GitHub
   - 只有当用户明确要求上传训练产物，或跑出较理想模型后，才提醒用户单独上传或归档
 - 环境几何：
-  - `episode_length_s = 16.0`
+  - `episode_length_s = 40.0`
   - `commands.resampling_time = 16.0`
   - `commands.goal_distance = 8.0`
   - `commands.goal_direction_max_deg = 30.0`
   - `commands.goal_heading_delta_max_deg = 12.0`
+- 当前 command 语义：
+  - `num_commands = 4`
+  - `commands = [goal_rel_x, goal_rel_y, goal_rel_z, goal_rel_heading]`
+  - 世界系目标先采样 `xy`，再用地图高度图查询目标点地形高度作为 `z`
+  - 因为 `resampling_time < episode_length_s`，当前 Stage0 单个 episode 内会经历多次目标重采样
 - 动作与观测：
   - 动作维度 `12`
-  - Actor / Critic 观测维度 `70 / 70`
+  - Actor / Critic 观测维度 `22 / 22`
+  - 当前送入网络的观测只保留：
+    - `wheel_joint_vel`
+    - `goal_relative_command`
+    - `last_action`
+  - 其余状态量不再送入 actor / critic，但仍保留在 TensorBoard 中作为行为诊断指标
   - 当前 Stage0 的接口口径仍是 `6` 个球铰目标 + `6` 个轮速直驱命令
   - 但在 `stage0_cfg` 中，`6` 个球铰动作上下限当前都被固定为 `0`
   - 因此当前 run 的实际有效控制主要只有 `6` 个轮速直驱维度，前 `6` 个动作维度等价于死维度
@@ -59,13 +69,18 @@
     - `desired_kl = 0.008`
     - `max_grad_norm = 0.5`
 - 当前 reward 主形式：
-  - `total_reward = distance_progress + goal_direction_reward + goal_heading_reward + stop_reward + success_bonus - time_penalty`
+  - `total_reward = distance_to_target + reached_target + oscillation + angle_to_target + far_from_target + angle_diff`
+  - 当前默认到达阈值：
+    - `target_position_tolerance = 0.2`
+    - `target_yaw_tolerance_deg ≈ 5.73`
 - 当前 termination：
-  - `goal_reached`
-  - `bad_orientation`
-  - `head_tail_roll_out_of_bounds`
+  - `is_success`
+  - `far_from_target`
   - `ball_joint_out_of_bounds`
   - `time_out`
+  - 其中：
+    - `is_success`：`distance < 0.2 m` 且 `heading_error < 0.1 rad`
+    - `far_from_target`：`distance > commands.goal_distance + 3.0`
 
 ## 已完成里程碑
 - 已完成 Stage0 PPO 审计：
@@ -89,6 +104,9 @@
     - `policy_std == processed_std`
   - 说明：
     - 这轮 run 中 PPO 采样动作与环境执行动作不再存在中途 clip / 改写不一致
+- 已恢复本地文档整理记录：
+  - `docs/MGDP_stage1_reward.md` 已恢复到工作区
+  - 当前内容为中文说明 + Obsidian 可编译数学公式语法
 
 ## 当前阻塞
 - 新动作链已经有 run 证据，但当前主要问题不再是“动作被谁改写”，而是“策略学出来的行为是否健康”。
@@ -100,14 +118,13 @@
     - 末 `50` 轮 `|longitudinal slip| ≈ 2.38`
     - 末 `50` 轮 `|slip angle| ≈ 0.568 rad`
     - 末 `50` 轮 `wheel_velocity_target_abs_mean ≈ 8.03 rad/s`
-  - 日志口径存在失真：
-    - `Termination/success_rate` 明显非零
-    - 但 `Tracking/goal_success_rate` 全程为 `0`
-    - 当前不能再把 `Tracking/goal_success_rate` 当成可信主指标
+  - 新 termination 口径尚未经过真实 run 验证：
+    - `Tracking/goal_success_rate` 已改为和 `Termination/success_rate` 共用 `0.2 m + 0.1 rad` 判据
+    - 但目前还没有基于这套 done 条件的新训练结果
 
 ## 下一步优先级
-- 先围绕这次 run 做研究判断，而不是继续盲目长训：
+- 先用新 termination 口径做一轮真实 run 验证，再继续研究判断：
   - 当前 Stage0 是否应保持 `12` 维接口，还是改成与真实可控自由度一致的动作语义
   - 当前 reward 是否过度鼓励“高轮速换距离进展”，而没有足够约束滑移与末端朝向质量
-  - 当前 success 相关日志应以哪一个指标作为后续主判据
+  - 新 `is_success / far_from_target / time_out / ball_joint_out_of_bounds` 组合是否能给出更可信的 episode 结束口径
 - 在用户确认判断后，再落地对应实现整改与下一轮验证。

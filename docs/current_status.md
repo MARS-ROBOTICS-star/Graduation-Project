@@ -2,14 +2,14 @@
 
 ## 当前总目标
 - 将 `RL_Training/` 下的 Stage0 固化为一条可复现、可解释、训练链稳定的平地主线 baseline。
-- 当前优先级不是继续盲目长训，而是先把 Stage0 的动作语义、奖励导向和日志判读口径收敛到一致。
+- 当前优先级是先让 RL 环境的底层动作链与论文第 3 章保持一致，再在统一动作语义下继续做训练诊断。
 
 ## 当前阶段
 - 当前处于：
-  - Stage0 去除球铰动作输出、收口为纯轮速控制后的主线整改阶段
+  - Stage0 按论文第 3 章底层模型回接动作空间与轮速分配器后的主线整改阶段
 - 当前工作重点是：
-  - 继续围绕“超时生存替代到达”的坏平衡做行为质量诊断
-  - 在动作接口已经与真实可控自由度一致后，继续判断 reward / termination / command 几何是否仍在把策略推向高滑移超时解
+  - 先验证新的 `u = [u_v, q^d]` 动作链在仿真中是否稳定
+  - 再在统一后的动作口径下继续判断 reward / termination / command 几何是否仍在把策略推向高滑移超时解
 
 ## 当前默认设计
 - Git 同步策略：
@@ -28,16 +28,23 @@
   - 世界系目标先采样 `xy`，再用地图高度图查询目标点地形高度作为 `z`
   - 因为 `resampling_time = episode_length_s`，当前 Stage0 是单回合单目标，不在 episode 中途重采样
 - 动作与观测：
-  - 动作维度 `6`
-  - Actor / Critic 观测维度 `16 / 16`
+  - 动作维度 `8`
+  - Actor / Critic 观测维度 `18 / 18`
   - 当前送入网络的观测只保留：
     - `wheel_joint_vel`
     - `goal_relative_command`
     - `last_action`
   - 其余状态量不再送入 actor / critic，但仍保留在 TensorBoard 中作为行为诊断指标
-  - 当前主线 policy 只输出 `6` 个轮速直驱命令
-  - `last_action` 因动作空间收缩同步变为 `6` 维
-  - 球铰链不再由 policy 输出控制，环境每步都将球铰目标固定在默认复位位姿
+  - 当前主线 policy 输出统一高层动作：
+    - `u = [V_x^d, \Omega_z^d, \psi_f^d, \theta_f^d, \phi_f^d, \psi_r^d, \theta_r^d, \phi_r^d]`
+  - 前 `2` 维先映射为中模块期望平面运动命令：
+    - `u_v = [V_x^d, \Omega_z^d]^T`
+    - `base_forward_velocity_max = 1.2 m/s`
+    - `base_yaw_rate_max = 0.6 rad/s`
+    - `base_allow_reverse = False`
+  - 后 `6` 维映射为球铰期望构型 `q^d`
+  - 环境内部使用当前实际构型 `q` 与 `u_v` 调用 `wheel_speed_allocator.py` 解析得到 `\boldsymbol\Omega^d`
+  - `last_action` 已随动作空间同步变为 `8` 维
 - PPO 当前默认口径：
   - actor 使用 `tanh squashed Gaussian`
   - `init_std = 0.20`
@@ -85,6 +92,15 @@
 ## 已完成里程碑
 - 已完成 Stage0 PPO 审计：
   - 观测、动作、优化器、GAE / bootstrap、timeout 分流都已按源码核对
+- 已完成 Isaac Sim 键盘控制脚本状态回显增强：
+  - `scripts/isaac_sim/control_keyboard.py` 现在会按固定周期回读实际球铰关节位置
+  - 终端会同时输出：
+    - 前球铰 / 后球铰当前关节角 `z/y/x`
+    - 前车 / 后车相对中车姿态角 `yaw/pitch/roll`
+  - 当前等效串联模型下：
+    - `z/y/x` 关节坐标与 `yaw/pitch/roll` 相对姿态一一对应
+  - 已通过：
+    - `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`
 - 已完成终端训练日志增强：
   - 当前训练控制台 footer 已新增时间进度条
   - 现在会额外显示：
@@ -122,6 +138,40 @@
 - 已恢复本地文档整理记录：
   - `docs/MGDP_stage1_reward.md` 已恢复到工作区
   - 当前内容为中文说明 + Obsidian 可编译数学公式语法
+- 已完成 RL 环境底层动作链与论文第 3 章模型对齐：
+  - 当前动作描述符已改为：
+    - `("base_planar_command", 2)`
+    - `("ball_joint_targets", 6)`
+  - `wheel_speed_allocator.py` 已重写为论文当前口径的 `\mathbf J_w(\mathbf q) \in \mathbb{R}^{6\times 2}` 解析分配器
+  - wheel allocator 当前只使用：
+    - 实际球铰构型 `q`
+    - 平面运动命令 `u_v`
+  - 不再使用：
+    - `\dot{\mathbf q}`
+    - 旧的 `12×Jacobian`
+    - `transform_planar_command`
+  - allocator 输出顺序已对齐当前环境轮关节顺序：
+    - `body L/R -> head L/R -> tail L/R`
+  - 已通过：
+    - `python3 -m py_compile`
+    - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+- 已完成论文第 3 章底层运动学模型文字与公式口径统一：
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex` 已统一：
+    - 实际构型 `\mathbf q`
+    - 期望构型 `\mathbf q^d`
+    - 轮速输出 `\boldsymbol\Omega^d`
+    - 球铰命令 `\mathbf q^{cmd}`
+  - 六轮轮速分配当前采用“轮心相对中模块坐标系直接推导”形式：
+    - 轮心位置与滚动方向
+    - 轮心速度直接传播
+    - 滚动方向投影
+    - 单轮角速度表达
+    - 六轮分配矩阵
+  - 已新增“代入具体结构参数向量后的最终解析结果”小节：
+    - 显式写出结构参数向量代入后的 `\mathbf J_w(\mathbf q)` 行向量
+    - 显式给出六个车轮角速度目标最终表达式
+    - 单独总结了轮速分配子模型与整套底层模型的输入输出
+  - 论文主文件已通过 LaTeX 编译验证
 - 已完成新 termination 口径下的首轮真实 run 验证：
   - run：
     - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-20_11-26-59_stage0_sync_pull_postpull_2026-04-20`
@@ -152,27 +202,28 @@
     - 单纯把 iteration 从 `700` 继续往上加，没有证据表明就能自动学会到达目标
 
 ## 当前阻塞
-- 新动作链已经有 run 证据，但当前主要问题不再是“动作被谁改写”，而是“策略学出来的行为是否健康”。
+- 新动作链已经完成静态接线和独立数值校验，但还没有在当前主线下做新的真实训练验证。
 - 当前 Stage0 暴露出三个主阻塞：
-  - 旧 `12` 维动作接口完整 run 已证明：
-    - 死球铰动作维度会稀释探索，但即使训练跑满，主要问题仍是 reward / 成功信号没有把策略推到真实到达
-  - 新 termination 口径虽然已经通过真实 run 验证，但当前成功率真实为 `0`：
-    - `Tracking/goal_success_rate = 0`
-    - `Termination/success_rate = 0`
-    - 因此旧的“success 指标坏掉”问题已切换为“当前任务确实没有学会到达”
-  - 当前 reward + command 组合会把策略推入“满时长生存替代到达”的坏平衡：
+  - 当前 `8` 维论文一致动作链还缺少与旧 run 可比的真实训练结果：
+    - 还不能直接判断当前坏平衡是否会延续到新动作语义下
+  - 旧 `12` 维动作接口与后来的 `6` 维纯轮速接口都已证明：
+    - 单纯更改动作接线并不能自动保证学会到达
+    - reward / 成功信号仍是核心风险点
+  - 当前 reward + command 组合在已有 run 中会把策略推入“满时长生存替代到达”的坏平衡：
     - 末 `5` 轮 `mean_episode_length = 2399`
     - 末 `5` 轮 `time_out_rate = 1.0`
     - 末 `5` 轮 `goal_pos_error ≈ 6.26 m`
     - 末 `5` 轮 `goal_completion_pct ≈ 21.8%`
-  - 策略仍明显依赖高滑移轮速推进：
+  - 旧 run 中策略仍明显依赖高滑移轮速推进：
     - 末 `5` 轮 `|longitudinal slip| ≈ 2.48`
     - 末 `5` 轮 `|slip angle| ≈ 0.387 rad`
     - 末 `5` 轮 `wheel_velocity_target_abs_mean ≈ 3.47 rad/s`
 
 ## 下一步优先级
-- 先围绕这次新 run 做研究判断，而不是继续盲目长训：
-  - 新的 `6` 维纯轮速动作口径下，超时坏平衡是否仍然存在
+- 先用新的 `8` 维论文一致动作链做一轮 smoke test 或短训练，确认：
+  - allocator 接线后的球铰目标、轮速目标、done 条件和日志都正常
+  - `last_action`、动作维度和 observation 维度已全部同步到新口径
+- 再基于可比 run 继续做研究判断：
+  - 新动作口径下是否仍然收敛到超时坏平衡
   - 当前 reward 是否主要在奖励“活到超时 + 维持部分接近目标”，而不是奖励真正到达
   - `episode_length_s = 20.0` 且 `resampling_time = 20.0` 的单目标 episode 设计下，goal distance / success 阈值 / reward 权重是否仍不足以推动真正到达
-- 在用户确认判断后，再落地对应实现整改与下一轮验证。

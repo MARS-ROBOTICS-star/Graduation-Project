@@ -57,10 +57,6 @@
     - 训练不是“还没跑够”
     - 它已经稳定收敛到超时坏平衡
     - 单纯继续增加 iteration 没有证据能让它自动学会到达目标
-- 同步更新：
-  - `docs/current_status.md`
-  - `docs/conversation_history.md`
-  - `logs/daily_work_log.md`
 
 已完成：
 - 按用户要求修改当前 RL 主线动作空间：
@@ -157,6 +153,125 @@
     - 策略学成“活到超时”而不是“到达目标”
     - `12` 维接口下前 `6` 维球铰动作仍是死维度
     - `40 s` episode + `16 s` 重采样是否适合当前 Stage0 baseline 需要重新判断
+
+已完成：
+- 按用户要求重写并润色论文第 3 章 `chapter03.tex`：
+  - 统一了底层运动学模型中的核心符号：
+    - 实际构型 `\mathbf q`
+    - 期望构型 `\mathbf q^d`
+    - 六轮角速度目标 `\boldsymbol\Omega^d`
+    - 球铰姿态角命令 `\mathbf q^{cmd}`
+  - 将章节推导顺序重构为：
+    - 坐标系与几何参数
+    - 构型变量
+    - 高层输入与底层输出
+    - 模块参考点位置
+    - 轮心位置与滚动方向
+    - 轮心速度传播
+    - 滚动约束投影
+    - 六轮轮速分配矩阵
+    - 球铰姿态角命令输出
+  - 清理并修正了原稿中的问题：
+    - 旧标签引用残留
+    - `eq:qcmd_output` 重复定义
+    - 实际构型/期望构型记号混用
+    - 若干公式衔接不够严密、物理意义说明不足
+- 本轮修改文件：
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 验证：
+  - 在 `毕业论文/毕业论文模板/LaTeX/` 下执行：
+    - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex`
+  - 论文主文件编译通过
+  - 当前仍存在与本轮无关的既有告警：
+    - `chapter01` 中 2 个未定义参考文献
+- 当前结论：
+  - 第 3 章的模型参数定义、物理意义、符号口径和公式推导链已经收敛到一致
+  - 后续如果继续写第 4 章或摘要中的模型说明，应直接沿用本轮统一后的符号体系
+
+已完成：
+- 按用户进一步澄清的要求，再次调整论文第 3 章中“车轮速度分配”部分的推导路线：
+  - 不改当前模型输入输出口径
+  - 只把推导方法改回原稿中的“局部坐标 / 模块刚体速度”链条
+- 当前轮速分配部分已改为：
+  - 先定义各模块局部坐标系中的轮心安装向量
+  - 再由中模块期望平面运动与当前实际构型得到各模块局部刚体速度
+  - 再用刚体速度传播得到轮心速度
+  - 再取轮心速度在局部 `x_i` 滚动方向上的分量
+  - 最后通过无滑移条件得到左右轮角速度，并写成 `H_i` 与 `J_w(q)` 矩阵形式
+- 当前保持不变的模型输入输出：
+  - 输入仍为：
+    - `u_v = [V_x^d, \Omega_z^d]^T`
+    - `q^d`
+  - 输出仍为：
+    - `\boldsymbol\Omega^d`
+    - `q^{cmd} = q^d`
+- 本轮修改文件：
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 当前结论：
+  - 第 3 章轮速分配部分已恢复为更接近原稿的方法链
+  - 但没有把 `\dot{\mathbf q}` 重新引入为模型输入，现有控制接口保持不变
+
+已完成：
+- 按用户最新要求，将论文第 3 章“车轮速度分配”部分从“模块刚体速度中间层”写法恢复为“轮心相对中模块坐标系直接推导”形式：
+  - 先在各模块局部坐标系定义轮心安装向量
+  - 再统一写出六个轮心在主坐标系下的位置与滚动方向
+  - 再由中模块期望平面运动直接传播到各轮心速度
+  - 再通过滚动方向投影与无滑移条件得到单轮角速度
+  - 最后按六个单轮行向量堆叠成 `J_w(q)`
+- 当前保持不变的模型输入输出：
+  - 输入仍为：
+    - `u_v = [V_x^d, \Omega_z^d]^T`
+    - `q^d`
+  - 输出仍为：
+    - `\boldsymbol\Omega^d`
+    - `q^{cmd} = q^d`
+- 本轮修改文件：
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 验证：
+  - 在 `毕业论文/毕业论文模板/LaTeX/` 下执行：
+    - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex`
+  - 主文件编译通过
+  - 当前仍保留与本轮无关的既有问题：
+    - `chapter01` 中 2 个未定义参考文献
+- 当前结论：
+  - 第 3 章轮速分配部分现已恢复为更紧凑的直接推导形式
+  - 当前构型 `q` 仍只通过轮心位置、滚动方向和 `J_w(q)` 进入轮速分配，未重新引入 `\dot{\mathbf q}`
+
+已完成：
+- 按用户要求，在论文第 3 章正文后新增“代入具体结构参数向量后的最终解析结果”小节：
+  - 代入了：
+    - `{}^{2}\mathbf a`
+    - `{}^{1}\mathbf b`
+    - `{}^{3}\mathbf b`
+    - 左右轮安装向量
+  - 显式给出了：
+    - 前后模块参考点位置的展开形式
+    - 前、中、后模块滚动方向单位向量
+    - 六个单轮分配行向量 `j_w(q)`
+    - 六个车轮角速度目标最终显式表达式
+  - 单独总结了：
+    - 轮速分配子模型输入输出
+    - 整套底层运动学模型输入输出
+- 本轮修改文件：
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 验证：
+  - 在 `毕业论文/毕业论文模板/LaTeX/` 下执行：
+    - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex`
+  - 主文件编译通过
+  - 当前仍保留与本轮无关的既有问题：
+    - `chapter01` 中 2 个未定义参考文献
 
 已完成：
 - 按用户要求收缩当前 Stage0 policy 观测输入：
@@ -628,7 +743,6 @@
   - `docs/conversation_history.md`
   - `docs/RL阶段训练参数一览表.md`
   - `logs/daily_work_log.md`
-=======
 - 按用户要求整理 `docs/MGDP_stage1_reward.md` 中的公式文档，当前内容已改为中文表述：
   - 已将原有公式统一改为 Obsidian 可编译数学语法
   - 保留 `mermaid` reward 结构图
@@ -643,7 +757,6 @@
 - 当前结论：
   - `MGDP Stage 1 reward` 公式说明已经可以直接作为中文阅读稿或论文笔记底稿使用
   - 当前文档仍是历史 `MGDP` 口径整理，并不对应当前 `RL_Training/` 主线实现
->>>>>>> Stashed changes
 
 ## 2026-04-17
 
@@ -8376,18 +8489,12 @@
 - 另一个重要结论：
   - `ball_joint_pos_abs_mean_raw ≈ 0.17 ~ 0.18 rad`
     不代表整体安全
-<<<<<<< Updated upstream
-- 因为 termination 只要任一单轴超界就触发
-- 单个球铰轴逼近极限会被均值掩盖
-=======
   - 因为 termination 只要任一单轴超界就触发
   - 单个球铰轴逼近极限会被均值掩盖
->>>>>>> Stashed changes
 
 ## 2026-04-18
 
 已完成：
-<<<<<<< Updated upstream
 - 按用户要求启动一轮当前 reward 分支的真实 GPU 训练：
   - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-18_11-08-59_66obs_longslip_cost_v1`
 - 本轮训练使用当前代码主线：
@@ -8403,7 +8510,6 @@
   - `tensorboard_export/latest_values.csv`
 - 同时重新导出了历史对照 run：
   - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-17_22-34-48_exp3_goal8_explicit_slip_cost_v1`
-=======
 - 按用户要求，不再把本轮综述背景候选文献放入已有 Zotero 集合，而是新建独立顶层集合：
   - `综述背景候选-复杂地形_铰接_RL_球并联-2026-04-17`
   - `collection_key = CREC6ZEZ`
@@ -8424,7 +8530,6 @@
   - `A/B/C`
   - 综述背景用途
  继续筛读和写作
->>>>>>> Stashed changes
 
 修改文件：
 - `docs/current_status.md`
@@ -8432,7 +8537,6 @@
 - `logs/daily_work_log.md`
 
 产出/结论：
-<<<<<<< Updated upstream
 - 当前 reward 分支不是训练炸掉，而是掉进了明显的保守局部最优。
 - 到停止时，当前 run 主要指标为：
   - `Train/mean_reward ≈ 10.44`
@@ -8623,7 +8727,6 @@
 - 已导出 TensorBoard：
   - `tensorboard_export/latest_values.csv`
   - `tensorboard_export/summary.json`
-=======
 - 当前“综述背景主线/补充/球并联灵感来源”这批文献，已经与旧的 `RL + Sim-to-Real` 核心集合分离。
 - 后续写背景综述、补 related work、继续加读书笔记时，应优先从新集合：
   - `综述背景候选-复杂地形_铰接_RL_球并联-2026-04-17`
@@ -8657,7 +8760,6 @@
   - `轮腿式移动机器人的设计与研究`
   - `基于ADAMS的六轮自适应越障机器人的设计与研究`
   - `一种小型移动机器人行走机构的设计与分析`
->>>>>>> Stashed changes
 
 修改文件：
 - `docs/current_status.md`
@@ -8665,7 +8767,6 @@
 - `logs/daily_work_log.md`
 
 产出/结论：
-<<<<<<< Updated upstream
 - 这轮训练没有数值炸掉，也没有姿态终止：
   - `time_out_rate = 1.0`
   - `terminated_rate = 0`
@@ -8779,7 +8880,6 @@
 - 下一步应做短程训练验证：
   - rollout / KL / entropy / policy std 是否正常
   - `tanh` squashed log-prob 与真实执行动作是否保持一致
-=======
 - 当前精确交集“关节式轮式地面机器人 + 强化学习 + 粗糙地形”在中文侧文献密度明显低于英文侧。
 - 后续 related work 写作时，应以英文文献承担主技术主线，中文文献主要补：
   - RL 方法综述
@@ -8843,4 +8943,67 @@
 产出/结论：
 - 当前“关节式小车 / articulated vehicle + RL”这条英文文献线已经正式并入核心 Zotero 集合。
 - 后续如果要继续做 cited-by 扩展或读书笔记，可以直接从 `核心参考-RL、Sim-to-Real` 接着做。
->>>>>>> Stashed changes
+
+已完成：
+- 按用户要求，将当前 RL 环境动作空间与论文第 3 章底层模型重新对齐：
+  - 当前 policy 动作改为 `8` 维统一高层动作：
+    - 前 `2` 维为中模块期望平面运动命令分支
+    - 后 `6` 维为球铰期望构型分支
+  - 环境内部不再让 policy 直接输出六轮轮速
+  - 当前轮速由 `wheel_speed_allocator.py` 根据：
+    - 当前实际构型 `q`
+    - 平面运动命令 `u_v`
+    - 固定结构参数
+    解析得到
+- 已按论文当前推导重写 `wheel_speed_allocator.py`：
+  - 当前实现为 `J_w(q) ∈ R^{6×2}`
+  - 不再使用旧的 `qdot` 输入与 `12` 列广义速度 Jacobian
+  - 不再使用 `transform_planar_command`
+  - 输出顺序已对齐环境轮关节顺序：
+    - `body L/R`
+    - `head L/R`
+    - `tail L/R`
+- 已同步修改：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- 已完成验证：
+  - `python3 -m py_compile` 通过
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py` 通过
+- 当前结论：
+  - RL 主线动作语义已经切换到与论文一致的：
+    - `u = [u_v, q^d]`
+  - 当前单帧观测维度随 `last_action` 同步变为：
+    - actor / critic = `18 / 18`
+  - 这次改动已经完成源码接线与数值校验，但还没有做新的真实训练 run
+
+已完成：
+- 按用户要求增强 Isaac Sim 键盘控制脚本的终端状态输出：
+  - 修改 `scripts/isaac_sim/control_keyboard.py`
+  - 当前脚本会按固定周期回读仿真中的实际球铰关节位置，而不是只打印启动信息
+  - 终端新增输出：
+    - 前球铰 / 后球铰当前关节角 `z/y/x`
+    - 前车 / 后车相对中车姿态角 `yaw/pitch/roll`
+  - 当前打印周期：
+    - `0.5 s`
+- 本轮实现口径：
+  - 当前等效串联模型下：
+    - `spm*_platform_joint_z -> yaw`
+    - `spm*_platform_joint_y -> pitch`
+    - `spm*_platform_joint_x -> roll`
+  - 因此终端里的两组输出是同一实际状态的两种命名方式，不是两套独立状态量
+- 已完成验证：
+  - `python3 -m py_compile scripts/isaac_sim/control_keyboard.py` 通过
+- 修改文件：
+  - `scripts/isaac_sim/control_keyboard.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`

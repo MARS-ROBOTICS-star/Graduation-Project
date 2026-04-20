@@ -37,9 +37,11 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.control.sim_dt = 1.0 / 120.0
         self.control.decimation = 2
         self.control.control_dt = 1.0 / 60.0
-        # Freeze the ball joints at their default reset posture for this stage.
-        self.control.ball_joint_action_lower_limits = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-        self.control.ball_joint_action_upper_limits = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        self.control.ball_joint_action_lower_limits = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)
+        self.control.ball_joint_action_upper_limits = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
+        self.control.base_forward_velocity_max = 2.0
+        self.control.base_yaw_rate_max = 2.0
+        self.control.base_allow_reverse = True
         self.control.ball_joint_stiffness = 8000.0
         self.control.ball_joint_damping = 1000.0
         self.control.ball_joint_effort_limit_sim = 20.0
@@ -48,7 +50,6 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.control.wheel_joint_damping = 4.0e3
         self.control.wheel_joint_effort_limit_sim = 20.0
         self.control.wheel_joint_velocity_limit_sim = 20.0
-        self.control.wheel_action_scale = 1.0
 
         self.observations.use_history = False
         self.observations.history_length = 1

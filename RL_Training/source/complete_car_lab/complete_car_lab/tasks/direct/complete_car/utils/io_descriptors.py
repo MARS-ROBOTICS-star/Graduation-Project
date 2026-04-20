@@ -7,7 +7,8 @@ from ..assets.robot_cfg import WHEEL_JOINT_NAMES
 
 def build_action_descriptor(cfg) -> list[tuple[str, int]]:
     return [
-        ("wheel_velocity_targets", len(cfg.control.wheel_joint_names)),
+        ("base_planar_command", 2),
+        ("ball_joint_targets", len(cfg.control.ball_joint_names)),
     ]
 
 

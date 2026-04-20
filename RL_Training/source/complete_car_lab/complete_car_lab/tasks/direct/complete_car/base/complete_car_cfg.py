@@ -45,6 +45,9 @@ class ControlCfg:
     wheel_joint_names: tuple[str, ...] = tuple(WHEEL_JOINT_NAMES)
     ball_joint_action_lower_limits: tuple[float, ...] = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)
     ball_joint_action_upper_limits: tuple[float, ...] = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
+    base_forward_velocity_max: float = 1.2  # 中模块期望纵向速度上限，单位：m/s。
+    base_yaw_rate_max: float = 0.6  # 中模块期望偏航角速度上限，单位：rad/s。
+    base_allow_reverse: bool = False  # 为 False 时，高层只输出前进命令，不输出倒车命令。
     ball_joint_stiffness: float = 8000.0  # 球铰位置控制刚度，单位：N*m/rad。
     ball_joint_damping: float = 1000.0  # 球铰位置控制阻尼，单位：N*m*s/rad。
     ball_joint_effort_limit_sim: float = 20.0  # 球铰驱动器力矩上限，单位：N*m。
@@ -55,7 +58,6 @@ class ControlCfg:
     wheel_joint_effort_limit_sim: float = 20.0  # 车轮驱动器力矩上限，单位：N*m。
     wheel_joint_velocity_limit_sim: float = 20.0  # 车轮驱动器速度上限，单位：rad/s。
     wheel_radius: float = WHEEL_RADIUS
-    wheel_action_scale: float = 1.0  # 直驱模式下，归一化轮速动作按 wheel_joint_velocity_limit_sim 的比例缩放。
 
 
 @configclass
@@ -225,7 +227,7 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
 
     stage_name: str = "stage0"
     episode_length_s: float = 16.0 #control_dt = 1/60 s 理论最大控制步数：16 × 60 = 960 步
-    action_space: int = len(BALL_JOINT_NAMES) + len(WHEEL_JOINT_NAMES)
+    action_space: int = 2 + len(BALL_JOINT_NAMES)
     observation_space: dict[str, int] | int = 0
     state_space: int = 0 #critic state 或 privileged state 的维度
     decimation: int = 2

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import torch
 
-from ..kinematics.wheel_speed_allocator import PLANAR_COMMAND_TRANSFORM
-
 
 def preprocess_policy_actions(actions: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """返回策略输出动作与环境内部待映射动作。"""
@@ -61,28 +59,6 @@ def map_base_actions_to_planar_command(
     return torch.stack((vx_cmd, yaw_rate_cmd), dim=-1)
 
 
-def transform_planar_command(planar_command: torch.Tensor) -> torch.Tensor:
-    """Apply the measured planar-command transform expected by the wheel allocator."""
-
-    if planar_command.shape[1] != 2:
-        raise ValueError("Planar command tensor must have shape (N, 2).")
-
-    planar_command_xyz = torch.zeros(
-        (planar_command.shape[0], 3),
-        device=planar_command.device,
-        dtype=planar_command.dtype,
-    )
-    planar_command_xyz[:, 0] = planar_command[:, 0]
-    planar_command_xyz[:, 2] = planar_command[:, 1]
-    transform = torch.as_tensor(
-        PLANAR_COMMAND_TRANSFORM,
-        device=planar_command.device,
-        dtype=planar_command.dtype,
-    )
-    transformed_xyz = planar_command_xyz @ transform.T
-    return torch.stack((transformed_xyz[:, 0], transformed_xyz[:, 2]), dim=1)
-
-
 def apply_ball_joint_targets(
     robot,
     joint_pos_targets: torch.Tensor,
@@ -122,25 +98,3 @@ def apply_wheel_velocity_targets(
     clamped_targets = torch.clamp(wheel_targets, min=-wheel_velocity_limit, max=wheel_velocity_limit)
     wheel_ang_vel_targets[:, wheel_joint_ids] = clamped_targets
     return wheel_ang_vel_targets
-
-
-def map_wheel_actions_to_velocity_targets(
-    processed_wheel_actions: torch.Tensor,
-    wheel_velocity_limit: float | torch.Tensor,
-    *,
-    action_scale: float | torch.Tensor = 1.0,
-) -> torch.Tensor:
-    """Map normalized wheel actions directly to wheel velocity targets."""
-
-    wheel_velocity_limit_tensor = torch.as_tensor(
-        wheel_velocity_limit,
-        device=processed_wheel_actions.device,
-        dtype=processed_wheel_actions.dtype,
-    )
-    action_scale_tensor = torch.as_tensor(
-        action_scale,
-        device=processed_wheel_actions.device,
-        dtype=processed_wheel_actions.dtype,
-    )
-
-    return processed_wheel_actions * action_scale_tensor * wheel_velocity_limit_tensor

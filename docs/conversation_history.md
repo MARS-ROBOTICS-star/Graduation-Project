@@ -4,6 +4,151 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-20
 
+### `scripts/isaac_sim/control_keyboard.py` now prints the actual front/rear ball-joint angles and the equivalent front/rear relative poses in the terminal during teleoperation; in the current equivalent serial model these two views are the same state expressed as `z/y/x` vs `yaw/pitch/roll`
+- Updated:
+  - `scripts/isaac_sim/control_keyboard.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the keyboard teleop script now reads back the actual ball-joint positions from simulation instead of only printing static startup info
+  - terminal status output now includes, for both front and rear modules:
+    - ball-joint angles in joint order:
+      - `z / y / x`
+    - relative pose angles in semantic order:
+      - `yaw / pitch / roll`
+  - under the active equivalent serial model, these two triplets are numerically identical and differ only by naming/interpretation:
+    - `z -> yaw`
+    - `y -> pitch`
+    - `x -> roll`
+  - current status print interval in the teleop script is:
+    - `0.5 s`
+- Reason:
+  - the user explicitly required seeing both the raw equivalent-serial joint coordinates and the semantically interpreted relative module poses during keyboard teleoperation
+- Impact:
+  - future manual teleop checks can directly verify whether the live simulation state matches the thesis/current-model interpretation without adding ad-hoc print statements again
+- Status:
+  - active Isaac Sim debugging workflow improved
+- Verification:
+  - `python3 -m py_compile scripts/isaac_sim/control_keyboard.py` passed
+
+### RL mainline action semantics are now aligned with thesis Chapter03: the policy outputs `u = [u_v, q^d]`, the allocator uses the current actual configuration `q`, and wheel targets are reconstructed by the thesis `J_w(q)` model instead of direct wheel-speed actions or the older `qdot`-based allocator
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the active RL action descriptor is now:
+    - `("base_planar_command", 2)`
+    - `("ball_joint_targets", 6)`
+  - the live policy action is now:
+    - `u = [V_x^d, \Omega_z^d, \psi_f^d, \theta_f^d, \phi_f^d, \psi_r^d, \theta_r^d, \phi_r^d]`
+  - the first `2` action dims map to the planar command branch:
+    - `base_forward_velocity_max = 1.2 m/s`
+    - `base_yaw_rate_max = 0.6 rad/s`
+    - `base_allow_reverse = False`
+  - the last `6` action dims map to ball-joint targets:
+    - `q^{cmd} = q^d`
+  - wheel-speed reconstruction in the env now uses:
+    - current actual ball-joint configuration `q`
+    - planar command `u_v`
+    - thesis wheel-speed model `\boldsymbol\Omega^d = \mathbf J_w(\mathbf q)\mathbf u_v`
+  - the active allocator is now the thesis-consistent direct wheel-center version:
+    - `\mathbf J_w(\mathbf q) \in \mathbb R^{6\times 2}`
+    - output wheel order is the env wheel-joint order:
+      - `body L/R`
+      - `head L/R`
+      - `tail L/R`
+  - the active allocator no longer uses:
+    - `\dot{\mathbf q}`
+    - the older `6x12` / `12`-column generalized-velocity Jacobian route
+    - `transform_planar_command`
+    - direct policy wheel-speed outputs
+  - because `last_action` follows the live action space, the current single-frame observation sizes are now:
+    - actor `18`
+    - critic `18`
+- Reason:
+  - the user explicitly required changing the RL environment to follow the thesis low-level model instead of the temporary `6`-dim direct wheel-speed branch or the older `qdot`-based allocator
+- Impact:
+  - future Stage0 runs must be interpreted under the thesis-consistent `8D` action semantics, not the previous `6D / 16D` pure-wheel branch
+  - previous runs from the pure-wheel branch remain useful historical evidence, but they are no longer same-action-space comparisons with the active mainline
+- Status:
+  - active RL mainline behavior changed
+- Verification:
+  - `python3 -m py_compile` passed for all modified RL files
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py` passed
+
+### Thesis chapter03 now uses a unified notation split between actual configuration `\mathbf q`, desired configuration `\mathbf q^d`, wheel-speed allocation `\boldsymbol\Omega^d`, and ball-joint command `\mathbf q^{cmd}`; the wheel-speed section now uses direct wheel-center propagation in the middle-module frame while keeping the current model I/O unchanged
+- Updated:
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the thesis chapter on low-level whole-vehicle kinematics should now consistently use:
+    - actual relative configuration:
+      - `\mathbf q`
+    - desired relative configuration:
+      - `\mathbf q^d`
+    - wheel-speed output:
+      - `\boldsymbol\Omega^d`
+    - ball-joint command:
+      - `\mathbf q^{cmd} = \mathbf q^d`
+  - the wheel-speed allocation derivation should now be organized in the following order:
+    - coordinate systems and geometric parameters
+    - actual/desired configuration definition
+    - module reference-point positions
+    - wheel-center positions and rolling directions in the middle-module frame
+    - direct wheel-center velocity propagation from middle-module planar motion
+    - rolling-direction projection for each wheel
+    - single-wheel speed mapping `\Omega_w^d = \mathbf j_w(\mathbf q)\mathbf u_v`
+    - six-wheel allocation matrix `\mathbf J_w(\mathbf q)`
+  - the current chapter03 model I/O remains:
+    - input:
+      - `\mathbf u_v = [V_x^d, \Omega_z^d]^T`
+      - `\mathbf q^d`
+    - output:
+      - `\boldsymbol\Omega^d`
+      - `\mathbf q^{cmd} = \mathbf q^d`
+  - chapter03 now also contains an explicit summary subsection that substitutes the concrete structure vectors into the final formulas:
+    - `{}^{2}\mathbf a`
+    - `{}^{1}\mathbf b`
+    - `{}^{3}\mathbf b`
+    - wheel installation vectors
+  - that summary subsection explicitly records:
+    - the row-wise closed forms of `\mathbf j_{1L}(\mathbf q)` to `\mathbf j_{3R}(\mathbf q)`
+    - the final six wheel-speed formulas after substitution
+    - the wheel-allocation submodel I/O:
+      - `(\mathbf u_v,\mathbf q,\mathcal P) \mapsto \boldsymbol\Omega^d`
+    - the full low-level model I/O:
+      - `(\mathbf u,\mathbf q,\mathcal P) \mapsto (\boldsymbol\Omega^d,\mathbf q^{cmd})`
+  - `\dot{\mathbf q}` is not reintroduced as a wheel-speed allocation input in this thesis chapter revision:
+    - the wheel-speed section keeps the current semantics
+    - current actual configuration `\mathbf q` only enters through wheel-center positions and rolling directions, and therefore through `\mathbf j_w(\mathbf q)` and `\mathbf J_w(\mathbf q)`
+  - the chapter no longer uses:
+    - mixed `hat`/non-`hat` configuration notation
+    - the temporary local-frame / module-rigid-velocity rewrite
+    - stale references such as old `eq:p1` / `eq:p3`
+    - duplicated `eq:qcmd_output` labels
+- Reason:
+  - the user explicitly required clearer parameter definitions, explicit physical meaning, unified symbols, and correct step-by-step derivation for the thesis chapter
+- Impact:
+  - future thesis writing or formula reuse should inherit this notation split and the direct wheel-center derivation route instead of the older mixed-notation draft or the temporary local-frame rewrite
+- Status:
+  - thesis-writing mainline updated
+- Verification:
+  - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex` passed
+  - remaining compile warnings are outside this chapter:
+    - two pre-existing undefined citations in `chapter01`
+
 ### TensorBoard output now suppresses blank scalar tags by default, and the existing Stage0 run history has been batch-pruned to remove blank cards from the UI while preserving backups of the original event files
 - Updated:
   - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`

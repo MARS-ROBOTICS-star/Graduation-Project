@@ -12,6 +12,7 @@ from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 
 from ..assets.robot_cfg import BALL_JOINT_NAMES, WHEEL_BODY_NAMES, WHEEL_JOINT_NAMES
+from ..kinematics.wheel_speed_allocator import TorchWheelSpeedAllocator
 from ..mdp import actions as mdp_actions
 from ..mdp import commands as mdp_commands
 from ..mdp import curriculum as mdp_curriculum
@@ -47,6 +48,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
         gravity_magnitude = abs(float(self.cfg.sim.gravity[2]))
         self._total_vehicle_weight = (
             self.robot.data.default_mass.sum(dim=1, keepdim=True).to(device=self.device) * gravity_magnitude
+        )
+        self._wheel_speed_allocator = TorchWheelSpeedAllocator(
+            device=self.device,
+            dtype=self.robot.data.joint_pos.dtype,
         )
 
         self.actions = torch.zeros((self.num_envs, self.cfg.action_space), device=self.device)
@@ -157,13 +162,27 @@ class CompleteCarDirectEnv(DirectRLEnv):
                     dim=1,
                 )
 
-        # The active RL policy only controls the wheel speeds. Ball joints stay at the
-        # default reset posture so the articulated chain remains fixed.
-        self._joint_pos_targets[:, self._ball_joint_ids] = self.robot.data.default_joint_pos[:, self._ball_joint_ids]
-        wheel_targets = mdp_actions.map_wheel_actions_to_velocity_targets(
-            self._processed_actions,
-            self.cfg.control.wheel_joint_velocity_limit_sim,
-            action_scale=self.cfg.control.wheel_action_scale,
+        processed_planar_actions = self._processed_actions[:, :2]
+        processed_ball_joint_actions = self._processed_actions[:, 2:]
+
+        self._joint_pos_targets = mdp_actions.apply_ball_joint_targets(
+            self.robot,
+            self._joint_pos_targets,
+            self._ball_joint_ids,
+            processed_ball_joint_actions,
+            self.cfg.control.ball_joint_action_lower_limits,
+            self.cfg.control.ball_joint_action_upper_limits,
+        )
+
+        planar_command = mdp_actions.map_base_actions_to_planar_command(
+            processed_planar_actions,
+            self.cfg.control.base_forward_velocity_max,
+            self.cfg.control.base_yaw_rate_max,
+            allow_reverse=self.cfg.control.base_allow_reverse,
+        )
+        wheel_targets = self._wheel_speed_allocator.compute_wheel_speed_targets_from_planar_command(
+            self.robot.data.joint_pos[:, self._ball_joint_ids],
+            planar_command,
         )
         self._last_wheel_velocity_targets.copy_(wheel_targets)
         self._joint_vel_targets = mdp_actions.apply_wheel_velocity_targets(

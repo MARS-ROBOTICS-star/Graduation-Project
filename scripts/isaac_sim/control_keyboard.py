@@ -231,6 +231,8 @@ TRAINING_WHEEL_VELOCITY_LIMIT = 20.0  # 轮子关节物理速度上限，单位 
 
 BALL_JOINT_ACTION_DELTA = 0.08  # 每次按键对球铰 raw action 的增量步长
 WHEEL_ACTION_LIMIT = 1.0  # 轮子 raw action 的限幅范围，最终会映射到 [-8, 8] rad/s
+STATUS_PRINT_INTERVAL_SEC = 0.5  # 终端状态打印周期，单位 s。
+STATUS_PRINT_INTERVAL_STEPS = max(1, int(round(STATUS_PRINT_INTERVAL_SEC / TRAINING_PHYSICS_DT)))
 STATIC_FRICTION = 0.5  # 共享物理材质的静摩擦系数
 DYNAMIC_FRICTION = 0.5  # 共享物理材质的动摩擦系数
 GROUND_SIZE = 50.0  # 无地形模式下默认 ground plane 的尺寸，单位 m
@@ -655,6 +657,34 @@ def compute_wheel_velocity_targets():
     return wheel_default_velocities + wheel_action_raw * TRAINING_WHEEL_ACTION_SCALE
 
 
+def get_current_ball_joint_positions() -> np.ndarray:
+    joint_positions = np.asarray(robot.get_joint_positions(), dtype=np.float64).reshape(-1)
+    return joint_positions[np.asarray(ball_indices, dtype=np.int64)]
+
+
+def format_angle_triplet_deg(values_rad: np.ndarray) -> str:
+    values_deg = np.rad2deg(np.asarray(values_rad, dtype=np.float64))
+    return f"[{values_deg[0]:+7.2f}, {values_deg[1]:+7.2f}, {values_deg[2]:+7.2f}]"
+
+
+def print_current_ball_joint_and_relative_pose(step_counter: int) -> None:
+    ball_joint_positions = get_current_ball_joint_positions()
+    front_ball_zyx = ball_joint_positions[:3]
+    rear_ball_zyx = ball_joint_positions[3:]
+
+    # In the current equivalent serial model, z/y/x joint coordinates map directly to yaw/pitch/roll.
+    front_relative_ypr = front_ball_zyx
+    rear_relative_ypr = rear_ball_zyx
+    sim_time = step_counter * TRAINING_PHYSICS_DT
+
+    print(f"[STATE] sim_t={sim_time:7.3f} s  physics_step={step_counter}")
+    print(f"  front ball joint z/y/x (deg)        : {format_angle_triplet_deg(front_ball_zyx)}")
+    print(f"  front relative yaw/pitch/roll (deg) : {format_angle_triplet_deg(front_relative_ypr)}")
+    print(f"  rear  ball joint z/y/x (deg)        : {format_angle_triplet_deg(rear_ball_zyx)}")
+    print(f"  rear  relative yaw/pitch/roll (deg) : {format_angle_triplet_deg(rear_relative_ypr)}")
+    print("", flush=True)
+
+
 print("\n==== Control Keys ====")
 print("W / S                       : forward / backward")
 print("A / D                       : differential left / right turn")
@@ -675,6 +705,8 @@ print(f"Action update dt            : {TRAINING_POLICY_DT:.6f} s")
 print(f"Ball raw action range       : unbounded -> target offset = raw_action * {TRAINING_BALL_ACTION_SCALE:.2f} rad")
 print(f"Wheel raw action range      : [-{WHEEL_ACTION_LIMIT:.1f}, {WHEEL_ACTION_LIMIT:.1f}] -> target velocity [-{TRAINING_WHEEL_ACTION_SCALE:.1f}, {TRAINING_WHEEL_ACTION_SCALE:.1f}] rad/s")
 print(f"Wheel physx velocity limit  : {TRAINING_WHEEL_VELOCITY_LIMIT:.1f} rad/s")
+print(f"State print interval        : {STATUS_PRINT_INTERVAL_SEC:.2f} s")
+print("State print content         : actual ball joint z/y/x and equivalent relative yaw/pitch/roll")
 if RUN_HEADLESS:
     effective_frames = ARGS.frames if ARGS.frames > 0 else DEFAULT_HEADLESS_FRAMES
     print(f"Smoke frames                : {effective_frames}")
@@ -704,6 +736,7 @@ try:
         smoke_frames = ARGS.frames if ARGS.frames > 0 else DEFAULT_HEADLESS_FRAMES
         print(f"[INFO] Running headless smoke validation for {smoke_frames} frames.")
         physics_step_counter = 0
+        last_status_print_step = -STATUS_PRINT_INTERVAL_STEPS
         for _ in range(smoke_frames):
             if physics_step_counter % TRAINING_ACTION_DECIMATION == 0:
                 update_ball_joint_actions()
@@ -712,11 +745,15 @@ try:
             apply_current_command()
             world.step(render=False)
             physics_step_counter += 1
+            if physics_step_counter - last_status_print_step >= STATUS_PRINT_INTERVAL_STEPS:
+                print_current_ball_joint_and_relative_pose(physics_step_counter)
+                last_status_print_step = physics_step_counter
         print("[INFO] Headless smoke validation finished successfully.")
     else:
         needs_reinitialize_after_stop = False
         last_playing_state = world.is_playing()
         physics_step_counter = 0
+        last_status_print_step = -STATUS_PRINT_INTERVAL_STEPS
         while simulation_app.is_running():
             if is_pressed(carb.input.KeyboardInput.ESCAPE):
                 break
@@ -740,6 +777,7 @@ try:
                 initialize_robot_handles(reset_targets=True, reason="timeline play/resume")
                 needs_reinitialize_after_stop = False
                 physics_step_counter = 0
+                last_status_print_step = -STATUS_PRINT_INTERVAL_STEPS
 
             last_playing_state = True
 
@@ -751,6 +789,9 @@ try:
             apply_current_command()
             world.step(render=True)
             physics_step_counter += 1
+            if physics_step_counter - last_status_print_step >= STATUS_PRINT_INTERVAL_STEPS:
+                print_current_ball_joint_and_relative_pose(physics_step_counter)
+                last_status_print_step = physics_step_counter
 
 finally:
     if input_iface is not None and keyboard is not None and keyboard_sub is not None:

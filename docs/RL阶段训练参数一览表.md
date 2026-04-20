@@ -36,8 +36,9 @@
 - 默认目标距离：`8.0 m`
 - 目标方位相对当前车体偏航在 `[-30°, 30°]` 采样
 - 目标朝向相对 LOS 再叠加 `[-12°, 12°]` 的 heading offset
-- policy 输出是 `6` 维：
-  - `6` 个轮速直驱命令
+- policy 输出是 `8` 维统一高层动作：
+  - `2` 维中模块期望平面运动命令分支
+  - `6` 维球铰期望构型分支
 
 注意：
 
@@ -47,9 +48,9 @@
 ### 1.3 关键维度
 
 - 并行环境数：`64`
-- 动作维度：`6`
-- Actor 观测维度：`16`
-- Critic 观测维度：`16`
+- 动作维度：`8`
+- Actor 观测维度：`18`
+- Critic 观测维度：`18`
 - 仿真频率：`120 Hz`
 - 控制频率：`60 Hz`
 - 回合时长：`20.0 s`
@@ -102,13 +103,16 @@
 - `effort_limit_sim = 20.0`
 - `velocity_limit_sim = 20.0 rad/s`
 
-### 2.3 当前球铰固定策略
+### 2.3 当前球铰控制策略
 
-当前主线不再把球铰作为 policy 输出：
+当前主线已恢复球铰期望构型输出：
 
-- 动作空间里已经去掉球铰目标维度
-- 环境每步都把球铰目标写回默认复位位姿
-- 球铰链在当前主线中保持固定，仅车轮速度由 policy 控制
+- policy 后 `6` 维输出对应：
+  - `q^d = [\psi_f^d, \theta_f^d, \phi_f^d, \psi_r^d, \theta_r^d, \phi_r^d]`
+- 环境内部将归一化动作按球铰上下限映射为物理关节位置目标
+- 写入执行器的是：
+  - `q^{cmd} = q^d`
+- 轮速分配器使用的是当前实际构型 `q`，不是 `q^d`
 
 ---
 
@@ -163,55 +167,84 @@ relative_heading = wrap_to_pi(target_heading_w - base_yaw_w)
 
 ```text
 [
-  ("wheel_velocity_targets", 6),
+  ("base_planar_command", 2),
+  ("ball_joint_targets", 6),
 ]
 ```
 
-### 4.2 球铰固定逻辑
+### 4.2 平面运动命令分支
 
-当前主线的球铰不再经过动作映射，而是直接固定：
-
-```text
-ball_joint_target = default_joint_pos
-```
-
-### 4.3 轮速直驱映射
-
-后六维轮动作直接映射为轮速目标：
+前 `2` 维动作先映射为中模块期望平面运动命令：
 
 ```text
-wheel_speed_target = action * wheel_action_scale * wheel_joint_velocity_limit_sim
+u_v = [V_x^d, Ω_z^d]
 ```
 
 当前参数：
 
-- `wheel_action_scale = 1.0`
-- `wheel_joint_velocity_limit_sim = 20.0 rad/s`
+- `base_forward_velocity_max = 2.0 m/s`
+- `base_yaw_rate_max = 2.0 rad/s`
+- `base_allow_reverse = True
 
-因此每个轮子的目标角速度范围为：
+因此：
+
+- 第 `1` 维动作映射到 `[-2.0, 2.0] m/s` 的前向速度命令
+- 第 `2` 维动作映射到 `[-2.0, 2.0] rad/s` 的偏航角速度命令
+
+### 4.3 球铰目标映射
+
+后 `6` 维动作映射为球铰期望构型：
 
 ```text
-[-20.0, 20.0] rad/s
+q^{cmd} = q^d
 ```
 
-### 4.4 当前执行链路
+映射方式是：
+
+- 以默认复位姿态为中心
+- 正半轴动作沿上限方向张开
+- 负半轴动作沿下限方向张开
+
+### 4.4 轮速解析分配
+
+环境内部不再让 policy 直接输出六轮轮速，而是调用：
+
+```text
+wheel_speed_allocator.py
+```
+
+按照论文第 3 章当前模型执行：
+
+```text
+(u_v, q, P) -> Ω^d
+```
+
+其中：
+
+- `u_v = [V_x^d, Ω_z^d]^T`
+- `q` 是当前实际球铰构型
+- `P` 是固定结构参数集合
+
+allocator 当前实现为论文一致的：
+
+- `J_w(q) ∈ R^{6×2}`
+- `Ω^d = J_w(q) u_v`
+
+### 4.5 当前执行链路
 
 ```text
 policy mean/std
 -> Gaussian sample
 -> tanh squash
--> wheel velocity target mapping
+-> split into [base_planar_command, ball_joint_targets]
+-> base command mapping to [V_x^d, Ω_z^d]
+-> ball-joint target mapping to q^d
+-> wheel allocator computes Ω^d = J_w(q) u_v
 -> final safeguard clip in env mapping
 -> joint servo
 ```
 
-当前主线不再经过：
-
-- PPO wrapper action clip
-- env preprocess action clip
-- `base_planar_command`
-- `transform_planar_command`
-- `wheel allocator`
+球铰执行器跟踪的是 `q^{cmd}`，车轮执行器跟踪的是 `Ω^d`。
 
 ---
 
@@ -224,12 +257,12 @@ policy mean/std
 ```text
 wheel_joint_vel               6
 goal_relative_command         4
-last_action                   6
+last_action                   8
 --------------------------------
-total                        16
+total                        18
 ```
 
-因为 `terrain.measure_heights = False`，当前 critic 不额外追加地形 patch，所以也是 `16` 维。
+因为 `terrain.measure_heights = False`，当前 critic 不额外追加地形 patch，所以也是 `18` 维。
 
 当前送入 actor / critic 的观测只保留三类：
 

@@ -2,20 +2,46 @@
 
 ## 当前总目标
 - 将 `RL_Training/` 下的 Stage0 固化为一条可复现、可解释、训练链稳定的平地主线 baseline。
-- 当前优先级是先让 RL 环境的底层动作链与论文第 3 章保持一致，再在统一动作语义下继续做训练诊断。
+- 当前优先级是先基于已回接的“球铰姿态规划器 + 低滑移接触感知 allocator”做新的真实训练诊断，再判断 reward / observation / termination 是否仍在把策略推向高滑移或超时坏平衡。
 
 ## 当前阶段
 - 当前处于：
-  - Stage0 按论文第 3 章底层模型回接动作空间与轮速分配器后的主线整改阶段
+  - RL 主线已从“纯轮速解析分配”升级为“6 自由度球铰姿态规划器 + 低滑移平面命令整形 + 轮级牵引力矩分配”后的训练前验证阶段
 - 当前工作重点是：
-  - 先验证新的 `u = [u_v, q^d]` 动作链在仿真中是否稳定
-  - 再在统一后的动作口径下继续判断 reward / termination / command 几何是否仍在把策略推向高滑移超时解
+  - 先用新的 `q, q^d, u_v^d, F_n, \Omega, v_\parallel^{act} -> \dot{\mathbf q}^{cmd}, \mathbf q^{cmd}, \mathbf u_v^\ast, \boldsymbol\Omega_{ref}, \boldsymbol\tau^{cmd}` 执行链做真实训练
+  - 再判断 reward / observation 是否仍不足以约束策略学出高滑移解
+  - 当前诊断量里的纵滑率已改为直接复用 allocator 的共享实现，控制与诊断都不再额外裁剪
 
 ## 当前默认设计
 - Git 同步策略：
   - 默认只同步源码、文档与配置
   - `RL_Training/logs/` 与 `RL_Training/outputs/` 下的训练日志、checkpoint、导出结果不上传 GitHub
   - 只有当用户明确要求上传训练产物，或跑出较理想模型后，才提醒用户单独上传或归档
+- 文档输出规则：
+  - 仓库内 Markdown 文档中的数学公式统一使用 Obsidian 可编译语法
+  - 行内公式使用 `$...$`
+  - 独立公式使用 `$$...$$`
+  - 不再在 Markdown 文档中使用 `\(...\)` 或 `\[...\]`
+  - 终端 / 对话输出默认使用可直接阅读的数学符号，不直接输出原始 LaTeX 记法
+  - 仅当用户明确要求 LaTeX 源码形式，或任务本身就在处理 LaTeX / Markdown 数学源码时，才直接展示原始 LaTeX
+- 论文第 3 章当前默认口径：
+  - 保留球铰完整 `6` 自由度：
+    - `\mathbf q`
+    - `\mathbf q^d`
+    - `\mathbf q^{cmd}`
+  - 已引入球铰姿态规划器：
+    - `\dot{\mathbf q}^{cmd} = \operatorname{sat}(\mathbf K_q(\mathbf q^d - \mathbf q))`
+    - `\mathbf q^{cmd} = \operatorname{sat}(\mathbf q + \Delta t\,\dot{\mathbf q}^{cmd})`
+  - 名义轮速解析分配当前论文口径为：
+    - `\boldsymbol\Omega^d = \mathbf J_w(\mathbf q)\mathbf u_v^d + \mathbf J_q(\mathbf q)\dot{\mathbf q}^{cmd}`
+  - 在该名义模型之后，当前正文已新增低滑移执行层：
+    - 接触权重 `c_w`
+    - 平面命令整形 `\mathbf u_v^\ast`
+    - 轮级参考角速度 `\boldsymbol\Omega_{ref} = \mathbf J_w(\mathbf q)\mathbf u_v^\ast + \mathbf J_q(\mathbf q)\dot{\mathbf q}^{cmd}`
+    - 轮级驱动扭矩 `\boldsymbol\tau^{cmd}`
+  - 当前论文口径已经明确区分：
+    - 名义纯滚动参考层
+    - 接触感知低滑移执行层
 - 环境几何：
   - `episode_length_s = 20.0`
   - `commands.resampling_time = 20.0`
@@ -29,22 +55,58 @@
   - 因为 `resampling_time = episode_length_s`，当前 Stage0 是单回合单目标，不在 episode 中途重采样
 - 动作与观测：
   - 动作维度 `8`
-  - Actor / Critic 观测维度 `18 / 18`
-  - 当前送入网络的观测只保留：
+  - Actor / Critic 观测维度 `48 / 48`
+  - 当前送入网络的 actor / critic 观测为：
+    - `ball_joint_pos`
+    - `ball_joint_vel`
+    - `base_lin_vel`
+    - `base_ang_vel`
     - `wheel_joint_vel`
+    - `wheel_longitudinal_slip`
+    - `wheel_normal_contact_force`
     - `goal_relative_command`
     - `last_action`
-  - 其余状态量不再送入 actor / critic，但仍保留在 TensorBoard 中作为行为诊断指标
+  - 当前仍未送入 actor / critic、但保留用于诊断的量主要包括：
+    - `projected_gravity`
+    - `ball_joint_target_error`
+    - `head_roll_pitch`
+    - `tail_roll_pitch`
+    - `wheel_slip_angle`
   - 当前主线 policy 输出统一高层动作：
     - `u = [V_x^d, \Omega_z^d, \psi_f^d, \theta_f^d, \phi_f^d, \psi_r^d, \theta_r^d, \phi_r^d]`
   - 前 `2` 维先映射为中模块期望平面运动命令：
     - `u_v = [V_x^d, \Omega_z^d]^T`
-    - `base_forward_velocity_max = 1.2 m/s`
-    - `base_yaw_rate_max = 0.6 rad/s`
-    - `base_allow_reverse = False`
+    - `base_forward_velocity_max = 2.0 m/s`
+    - `base_yaw_rate_max = 2.0 rad/s`
+    - `base_allow_reverse = True`
   - 后 `6` 维映射为球铰期望构型 `q^d`
-  - 环境内部使用当前实际构型 `q` 与 `u_v` 调用 `wheel_speed_allocator.py` 解析得到 `\boldsymbol\Omega^d`
+    - 当前映射边界直接使用 termination 的球铰位置边界：
+      - `(-0.6, -1.0, -0.5, -0.6, -1.0, -0.5)` 到 `(0.6, 0.4, 0.5, 0.6, 0.4, 0.5)`
+  - 当前 RL 环境内部已回接球铰姿态规划器：
+    - `\dot{\mathbf q}^{cmd} = \operatorname{sat}(\mathbf K_q(\mathbf q^d - \mathbf q))`
+    - `\mathbf q^{cmd} = \operatorname{sat}(\mathbf q + \Delta t\,\dot{\mathbf q}^{cmd})`
+  - 当前 low-slip allocator 先按论文名义模型计算轮心速度，再做：
+    - 接触权重整形
+    - 平面命令低滑移整形 `\mathbf u_v^\ast`
+    - 名义轮速参考 `\boldsymbol\Omega_{ref}`
+    - 轮级驱动扭矩 `\boldsymbol\tau^{cmd}`
+  - 当前环境不再保留独立 `preprocess_policy_actions(...)` 阶段：
+    - policy 输出动作会直接进入动作映射
+  - 当前车轮不再使用最终速度目标控制，已切换为 effort / torque 目标链
   - `last_action` 已随动作空间同步变为 `8` 维
+  - 当前 Stage0 的 step metrics 中：
+    - 终端输出顺序已固定为用户指定的 24 项高信号子集
+    - TensorBoard 只保留用户指定的诊断与 episode 汇总项
+    - `Termination/terminated_rate` 当前只保留终端输出，不再写 TensorBoard
+    - 已从日志主链删除：
+      - `Critic/height_patch_mean`
+      - `Critic/height_patch_max`
+      - `Observation/turn_radius_raw`
+      - step 级 `Command/goal_target_*_world`
+      - `Observation/head_roll_pitch_abs_mean_raw`
+      - `Observation/tail_roll_pitch_abs_mean_raw`
+      - `Observation/goal_rel_*_raw`
+      - `Observation/last_action_abs_mean_raw`
 - PPO 当前默认口径：
   - actor 使用 `tanh squashed Gaussian`
   - `init_std = 0.20`
@@ -55,10 +117,10 @@
   - activation：
     - `relu`
   - PPO wrapper 的 `clip_actions = None`
-  - env 预处理不再做前置动作 clip
+  - env 不再保留独立动作预处理 / 动作改写阶段
   - 环境内部只保留末端 safeguard：
-    - 球铰目标映射时的归一化范围保护
-    - 轮速目标写入前的物理速度上限保护
+    - 球铰目标映射与规划器位置饱和统一使用 termination 边界
+    - 轮级扭矩目标写入前的物理 effort 上限保护
   - rollout / update：
     - `num_steps_per_env = 512`
     - `max_iterations = 700`
@@ -76,7 +138,7 @@
     - `desired_kl = 0.008`
     - `max_grad_norm = 0.5`
 - 当前 reward 主形式：
-  - `total_reward = distance_to_target + reached_target + oscillation + angle_to_target + far_from_target + angle_diff`
+  - `total_reward = distance_to_target + reached_target + angle_to_target + far_from_target + angle_diff`
   - 当前默认到达阈值：
     - `target_position_tolerance = 0.2`
     - `target_yaw_tolerance_deg ≈ 5.73`
@@ -92,6 +154,17 @@
 ## 已完成里程碑
 - 已完成 Stage0 PPO 审计：
   - 观测、动作、优化器、GAE / bootstrap、timeout 分流都已按源码核对
+- 已完成论文第 3 章公式（3.31）（3.32）详细推导补写：
+  - `chapter03.tex` 中已补清：
+    - 位置雅可比 `{}^{2}\mathbf G_w(\mathbf q)` 的列定义
+    - 前/后/中模块轮心位置对构型变量的链式求导来源
+    - 基于惯性系绝对位置微分的速度传播公式
+    - 叉乘项 `{}^{2}\boldsymbol\omega_c^d \times {}^{2}\mathbf p_w` 的矩阵形式与分量展开
+  - 公式编号保持不变：
+    - `eq:wheel_position_jacobian = (3.31)`
+    - `eq:wheel_center_velocity_direct_current = (3.32)`
+  - 已通过：
+    - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex`
 - 已完成 Isaac Sim 键盘控制脚本状态回显增强：
   - `scripts/isaac_sim/control_keyboard.py` 现在会按固定周期回读实际球铰关节位置
   - 终端会同时输出：
@@ -131,44 +204,125 @@
   - run：
     - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-19_16-16-01`
   - 已确认：
-    - `policy_abs_mean == processed_abs_mean`
-    - `policy_std == processed_std`
+    - PPO 采样动作与环境执行动作当时没有中途 clip / 改写不一致
   - 说明：
     - 这轮 run 中 PPO 采样动作与环境执行动作不再存在中途 clip / 改写不一致
+- 已完成动作链与执行链死代码清理：
+  - 已删除 no-op 的 `preprocess_policy_actions(...)`
+  - 已删除旧的 `apply_wheel_velocity_targets(...)`
+  - 已删除环境内未使用的：
+    - `_policy_actions`
+    - `_processed_actions`
+    - `_joint_vel_targets`
+  - 当前环境只保留：
+    - `self.actions`
+    - `self.last_actions`
+    - `self._joint_pos_targets`
+    - `self._joint_effort_targets`
+- 已完成球铰边界口径收敛：
+  - 后 `6` 维动作到 `q^d` 的映射边界已与 `ball_joint_out_of_bounds` 完全统一
+  - allocator 内部 `q_cmd` 饱和边界也已改为直接使用 termination 边界
 - 已恢复本地文档整理记录：
   - `docs/MGDP_stage1_reward.md` 已恢复到工作区
   - 当前内容为中文说明 + Obsidian 可编译数学公式语法
+- 已完成 `docs/RL阶段训练参数一览表.md` 与当前 Stage0 主线重新对齐：
+  - 已按当前实际生效源码重写：
+    - env / actions / allocator / commands / observations / rewards / terminations / resets / terrain / sensors / PPO
+  - 已明确区分：
+    - 当前真正参与训练闭环的量
+    - 只用于低层执行与日志诊断的量
+    - 虽然配置存在但当前未进入 active path 的字段
+  - 当前该文档可直接作为 Stage0 逐环节审查入口
 - 已完成 RL 环境底层动作链与论文第 3 章模型对齐：
   - 当前动作描述符已改为：
     - `("base_planar_command", 2)`
-    - `("ball_joint_targets", 6)`
-  - `wheel_speed_allocator.py` 已重写为论文当前口径的 `\mathbf J_w(\mathbf q) \in \mathbb{R}^{6\times 2}` 解析分配器
-  - wheel allocator 当前只使用：
+    - `("ball_joint_posture_reference", 6)`
+  - `wheel_speed_allocator.py` 已重写为低滑移底层模型：
+    - 球铰姿态规划器
+    - `\mathbf J_w(\mathbf q) \in \mathbb{R}^{6\times 2}`
+    - `\mathbf J_q(\mathbf q) \in \mathbb{R}^{6\times 6}`
+    - 接触权重计算
+    - 平面命令整形
+    - 轮级参考角速度
+    - 轮级驱动扭矩目标
+  - 当前 allocator 联合使用：
     - 实际球铰构型 `q`
-    - 平面运动命令 `u_v`
-  - 不再使用：
-    - `\dot{\mathbf q}`
-    - 旧的 `12×Jacobian`
-    - `transform_planar_command`
-  - allocator 输出顺序已对齐当前环境轮关节顺序：
-    - `body L/R -> head L/R -> tail L/R`
+    - 球铰期望构型 `q^d`
+    - 原始平面命令 `u_v^d`
+    - 规划器输出 `\dot{\mathbf q}^{cmd}`
+    - 六轮法向接触力
+    - 六轮实际角速度与实际滚动速度
+  - 当前环境输出链已改为：
+    - 球铰位置目标 `q^{cmd}`
+    - 车轮驱动扭矩目标 `\boldsymbol\tau^{cmd}`
+  - `validate_wheel_speed_allocator.py` 当前已支持直接验证：
+    - `q`
+    - `q^d`
+    - `u_v^d`
+    - `q^{cmd}`
+    - `\dot{\mathbf q}^{cmd}`
+    - `\mathbf u_v^\ast`
+    - `\boldsymbol\Omega_{ref}`
+    - `\boldsymbol\tau^{cmd}`
+    - `J_w(q)`
+    - `J_q(q)`
   - 已通过：
     - `python3 -m py_compile`
-    - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
-- 已完成论文第 3 章底层运动学模型文字与公式口径统一：
+    - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --run-smoke-cases`
+- 已完成轮速分配手动验证脚本升级：
+  - `validate_wheel_speed_allocator.py` 现已支持命令行手动输入：
+    - `--ball-joint-pos`
+    - `--ball-joint-pos-deg`
+    - `--planar-command`
+    - `--show-jacobian`
+  - 当前可直接对任意给定的：
+    - 实际球铰构型 `q`
+    - 平面运动命令 `u_v = [V_x^d, \Omega_z^d]`
+    做离线验证
+  - 当前会直接输出：
+    - 输入关节顺序
+    - 输出轮关节顺序
+    - `q` 的弧度/角度值
+    - `J_w(q)`（按需显示）
+    - 六轮角速度目标 `\boldsymbol\Omega^d`
+    - 对应轮缘线速度
+  - 已通过：
+    - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+    - 内置 smoke cases
+    - 手动输入示例：
+      - `q = 0, u_v = [1, 0]`
+      - `q = 0, u_v = [1, 1]`
+      - `\theta_f = 10^\circ, u_v = [1, 0]`
+- 已明确 `Stage0` 候选推导稿与论文主文口径的边界：
+  - `docs/Stage0球铰姿态规划器与底层运动学模型推导.md` 仍保留为：
+    - 平地 `Stage0` 偏航约化候选稿
+  - 该文档不再代表论文 `chapter03.tex` 当前最终默认口径
+- 已完成 `chapter03.tex` 全章逻辑与语言重写：
+  - 已统一：
+    - `\mathbf u_v^d`、`\mathbf q`、`\mathbf q^d`、`\mathbf q^{cmd}`、`\dot{\mathbf q}^{cmd}`、`\boldsymbol\Omega^d`、`\boldsymbol\Omega_{ref}`、`\boldsymbol\tau^{cmd}`
+  - 已明确区分：
+    - 名义运动学参考层
+    - 接触感知低滑移执行层
+  - 已在低滑移小节中显式写清：
+    - `\mathbf J_w(\mathbf q)` 与 `\mathbf J_q(\mathbf q)` 仍然通过 `\boldsymbol\Omega_{ref}` 和侧向速度整形系数进入执行层
+  - 已将章节收敛为更统一的期刊风格表述：
+    - 过渡段更完整
+    - 推导链不断裂
+    - 结尾输入输出总结与正文口径一致
+- 已完成论文第 3 章底层运动学模型回写与编译验证：
   - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex` 已统一：
     - 实际构型 `\mathbf q`
     - 期望构型 `\mathbf q^d`
     - 轮速输出 `\boldsymbol\Omega^d`
     - 球铰命令 `\mathbf q^{cmd}`
-  - 六轮轮速分配当前采用“轮心相对中模块坐标系直接推导”形式：
-    - 轮心位置与滚动方向
-    - 轮心速度直接传播
-    - 滚动方向投影
-    - 单轮角速度表达
-    - 六轮分配矩阵
+  - 当前已在论文中显式写入：
+    - 6 自由度球铰姿态规划器
+    - `\dot{\mathbf q}^{cmd}` 内部辅助量
+    - 六轮轮速解析分配：
+      - `\boldsymbol\Omega^d = \mathbf J_w(\mathbf q)\mathbf u_v + \mathbf J_q(\mathbf q)\dot{\mathbf q}^{cmd}`
   - 已新增“代入具体结构参数向量后的最终解析结果”小节：
-    - 显式写出结构参数向量代入后的 `\mathbf J_w(\mathbf q)` 行向量
+    - 显式写出静态分配矩阵 `\mathbf J_w(\mathbf q)`
+    - 显式写出构型变化率修正矩阵 `\mathbf J_q(\mathbf q)`
     - 显式给出六个车轮角速度目标最终表达式
     - 单独总结了轮速分配子模型与整套底层模型的输入输出
   - 论文主文件已通过 LaTeX 编译验证
@@ -202,7 +356,7 @@
     - 单纯把 iteration 从 `700` 继续往上加，没有证据表明就能自动学会到达目标
 
 ## 当前阻塞
-- 新动作链已经完成静态接线和独立数值校验，但还没有在当前主线下做新的真实训练验证。
+- 新动作链已经完成静态接线和独立数值校验，但还没有在当前完整第 3 章口径下做新的真实训练验证。
 - 当前 Stage0 暴露出三个主阻塞：
   - 当前 `8` 维论文一致动作链还缺少与旧 run 可比的真实训练结果：
     - 还不能直接判断当前坏平衡是否会延续到新动作语义下
@@ -214,10 +368,25 @@
     - 末 `5` 轮 `time_out_rate = 1.0`
     - 末 `5` 轮 `goal_pos_error ≈ 6.26 m`
     - 末 `5` 轮 `goal_completion_pct ≈ 21.8%`
+- 当前 `Stage0` 新方案虽已完成符号一致的建模推导，但仍有一个待确认研究判断：
+  - 是否正式接受 `Stage0` 只保留前后偏航自由度，并将球铰姿态规划器内生化到第 3 章通用模型之前
   - 旧 run 中策略仍明显依赖高滑移轮速推进：
     - 末 `5` 轮 `|longitudinal slip| ≈ 2.48`
     - 末 `5` 轮 `|slip angle| ≈ 0.387 rad`
-    - 末 `5` 轮 `wheel_velocity_target_abs_mean ≈ 3.47 rad/s`
+    - 末 `5` 轮 `wheel_speed_reference_abs_mean_raw ≈ 3.47 rad/s`
+- 当前论文一致 `J_w(q)` 分配器还存在一个已确认的建模口径风险：
+  - 它当前只使用：
+    - 实际球铰构型 `q`
+    - 平面命令 `u_v = [V_x^d, \Omega_z^d]`
+  - 它当前不使用：
+    - 车轮接地法向力
+    - 轮地接触状态
+    - 滑移 / 侧偏
+    - 实际车体速度反馈
+  - 因此在仿真中当前会表现为：
+    - `q = 0` 时退化为三轴统一差速转向
+    - 前车抬起但前轮失去接地时，前轮仍会收到非零速度目标；仿真里会表现为“空转但几乎不提供牵引”
+    - `\psi_f \neq 0` 且 `\Omega_z^d = 0` 时，前轮只按 `V_x^d \cos\psi_f` 分配滚动速度，剩余横向分量会落到侧向滑移 / 刮擦上
 
 ## 下一步优先级
 - 先用新的 `8` 维论文一致动作链做一轮 smoke test 或短训练，确认：
@@ -227,3 +396,15 @@
   - 新动作口径下是否仍然收敛到超时坏平衡
   - 当前 reward 是否主要在奖励“活到超时 + 维持部分接近目标”，而不是奖励真正到达
   - `episode_length_s = 20.0` 且 `resampling_time = 20.0` 的单目标 episode 设计下，goal distance / success 阈值 / reward 权重是否仍不足以推动真正到达
+- 在进入新的训练比较前，需要补一轮定向仿真核验：
+  - 固定 `u_v` 与单个球铰姿态，记录六轮：
+    - 目标轮速
+    - 实际轮速
+    - 法向接触力
+    - 纵向滑移
+    - 侧偏角
+  - 先确认当前 allocator 的几何目标在仿真里具体是表现为：
+    - 空转
+    - 被动拖拽
+    - 侧滑
+    - 还是关节强推导致的整体偏航

@@ -6,7 +6,8 @@ import torch
 from isaaclab.utils import configclass
 from isaaclab.utils.noise import NoiseCfg
 
-from ..utils.math_utils import quat_rotate, quaternion_to_rpy, wrap_to_pi_tensor
+from ..kinematics import compute_longitudinal_slip_torch
+from ..utils.math_utils import quat_rotate, wrap_to_pi_tensor
 
 
 def _compute_wheel_contact_observations(
@@ -16,7 +17,6 @@ def _compute_wheel_contact_observations(
     wheel_contact_forces_w: torch.Tensor,
     wheel_radius: float,
     slip_velocity_epsilon: float,
-    wheel_longitudinal_slip_clip: float,
     total_vehicle_weight: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     x_axis_local = torch.zeros_like(wheel_body_lin_vel_w)
@@ -29,16 +29,13 @@ def _compute_wheel_contact_observations(
 
     v_x = torch.sum(wheel_body_lin_vel_w * wheel_forward_axis_w, dim=-1)
     v_y = torch.sum(wheel_body_lin_vel_w * wheel_lateral_axis_w, dim=-1)
-    v_surface = wheel_radius * wheel_joint_vel
-
-    safe_longitudinal_speed = torch.maximum(torch.abs(v_x), torch.full_like(v_x, slip_velocity_epsilon))
 
     # Reflect wheel-ground traction state, including tire spin, braking slip, and obstacle-climb adhesion loss.
-    wheel_longitudinal_slip = (v_x - v_surface) / safe_longitudinal_speed
-    wheel_longitudinal_slip = torch.clamp(
-        wheel_longitudinal_slip,
-        min=-wheel_longitudinal_slip_clip,
-        max=wheel_longitudinal_slip_clip,
+    wheel_longitudinal_slip = compute_longitudinal_slip_torch(
+        v_x,
+        wheel_joint_vel,
+        wheel_radius,
+        slip_velocity_epsilon,
     )
 
     # Describe the mismatch angle between wheel heading and actual travel direction.
@@ -57,8 +54,6 @@ def collect_raw_observation_terms(
     ball_joint_ids,
     wheel_joint_ids,
     wheel_body_ids,
-    head_car_body_id: int,
-    tail_car_body_id: int,
     wheel_contact_forces_w: torch.Tensor,
     total_vehicle_weight: torch.Tensor,
     ball_joint_targets: torch.Tensor,
@@ -78,7 +73,6 @@ def collect_raw_observation_terms(
         wheel_contact_forces_w=wheel_contact_forces_w,
         wheel_radius=cfg.control.wheel_radius,
         slip_velocity_epsilon=cfg.observations.wheel_slip_epsilon,
-        wheel_longitudinal_slip_clip=cfg.observations.wheel_longitudinal_slip_clip,
         total_vehicle_weight=total_vehicle_weight,
     )
 
@@ -89,8 +83,6 @@ def collect_raw_observation_terms(
         "ball_joint_pos": ball_joint_pos,
         "ball_joint_vel": robot.data.joint_vel[:, ball_joint_ids],
         "ball_joint_target_error": wrap_to_pi_tensor(ball_joint_targets - ball_joint_pos),
-        "head_roll_pitch": quaternion_to_rpy(robot.data.body_quat_w[:, head_car_body_id])[:, :2],
-        "tail_roll_pitch": quaternion_to_rpy(robot.data.body_quat_w[:, tail_car_body_id])[:, :2],
         "wheel_joint_vel": wheel_joint_vel,
         "wheel_longitudinal_slip": wheel_longitudinal_slip,
         "wheel_slip_angle": wheel_slip_angle,
@@ -106,8 +98,6 @@ def compute_actor_observation(
     ball_joint_ids,
     wheel_joint_ids,
     wheel_body_ids,
-    head_car_body_id: int,
-    tail_car_body_id: int,
     wheel_contact_forces_w: torch.Tensor,
     total_vehicle_weight: torch.Tensor,
     ball_joint_targets: torch.Tensor,
@@ -123,8 +113,6 @@ def compute_actor_observation(
         ball_joint_ids,
         wheel_joint_ids,
         wheel_body_ids,
-        head_car_body_id,
-        tail_car_body_id,
         wheel_contact_forces_w,
         total_vehicle_weight,
         ball_joint_targets,
@@ -134,7 +122,13 @@ def compute_actor_observation(
 
     return torch.cat(
         [
+            raw_terms["ball_joint_pos"] * scales.ball_joint_pos,
+            raw_terms["ball_joint_vel"] * scales.ball_joint_vel,
+            raw_terms["base_lin_vel"] * scales.base_lin_vel,
+            raw_terms["base_ang_vel"] * scales.base_ang_vel,
             raw_terms["wheel_joint_vel"] * scales.wheel_joint_vel,
+            raw_terms["wheel_longitudinal_slip"] * scales.wheel_longitudinal_slip,
+            raw_terms["wheel_normal_contact_force"] * scales.wheel_normal_contact_force,
             raw_terms["relative_goal_commands"] * scales.commands,
             raw_terms["last_actions"] * scales.last_action,
         ],

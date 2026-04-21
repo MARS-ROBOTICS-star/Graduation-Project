@@ -26,13 +26,13 @@ TENSORBOARD_TAG_ALIASES = {
     "Tracking/goal_completion_pct": "00_Behavior/04_goal_completion_pct",
     "Observation/wheel_longitudinal_slip_abs_mean_raw": "00_Behavior/05_wheel_longitudinal_slip_abs_mean_raw",
     "Observation/wheel_slip_angle_abs_mean_raw": "00_Behavior/06_wheel_slip_angle_abs_mean_raw",
-    "Action/wheel_velocity_target_abs_mean_raw": "00_Behavior/07_wheel_velocity_target_abs_mean_raw",
+    "Action/wheel_speed_reference_abs_mean_raw": "00_Behavior/07_wheel_speed_reference_abs_mean_raw",
+    "Action/wheel_torque_target_abs_mean_raw": "00_Behavior/20_wheel_torque_target_abs_mean_raw",
     "Reward/total": "00_Behavior/08_reward_total",
     "Reward/reached_target": "00_Behavior/09_reached_target",
     "Reward/distance_to_target": "00_Behavior/10_distance_to_target",
     "Reward/angle_diff": "00_Behavior/11_angle_diff",
     "Reward/angle_to_target": "00_Behavior/12_angle_to_target",
-    "Reward/oscillation": "00_Behavior/13_oscillation",
     "Reward/far_from_target": "00_Behavior/14_far_from_target",
     "Termination/time_out_rate": "00_Behavior/15_time_out_rate",
     "Termination/far_from_target_rate": "00_Behavior/16_far_from_target_rate",
@@ -52,25 +52,44 @@ TENSORBOARD_TAG_ALIASES = {
     "Perf/collection_time": "Perf/01_collection_time",
     "Perf/learning_time": "Perf/02_learning_time",
     "Observation/ball_joint_vel_abs_mean_raw": "Observation/00_ball_joint_vel_abs_mean_raw",
-    "Observation/turn_radius_raw": "Observation/01_turn_radius_raw",
     "Action/policy_abs_mean": "Action/00_policy_abs_mean",
     "Action/policy_std": "Action/01_policy_std",
-    "Action/processed_abs_mean": "Action/02_processed_abs_mean",
-    "Action/processed_std": "Action/03_processed_std",
     "Command/goal_rel_x": "Command/00_goal_rel_x",
     "Command/goal_rel_y": "Command/01_goal_rel_y",
     "Command/goal_rel_z": "Command/02_goal_rel_z",
     "Command/goal_rel_heading": "Command/03_goal_rel_heading",
-    "Command/goal_target_x_world": "Command/04_goal_target_x_world",
-    "Command/goal_target_y_world": "Command/05_goal_target_y_world",
-    "Command/goal_target_z_world": "Command/06_goal_target_z_world",
-    "Command/goal_target_heading_world": "Command/07_goal_target_heading_world",
     "Command/goal_direction_offset_deg": "Command/08_goal_direction_offset_deg",
     "Command/goal_heading_offset_deg": "Command/09_goal_heading_offset_deg",
-    "Termination/terminated_rate": "Termination/00_terminated_rate",
 }
 
 CONSOLE_PRIORITY_TAGS = (
+    "Action/policy_abs_mean",
+    "Action/policy_std",
+    "Action/wheel_speed_reference_abs_mean_raw",
+    "Action/wheel_torque_target_abs_mean_raw",
+    "Reward/total",
+    "Reward/reached_target",
+    "Reward/distance_to_target",
+    "Reward/angle_diff",
+    "Reward/angle_to_target",
+    "Reward/far_from_target",
+    "Observation/wheel_longitudinal_slip_abs_mean_raw",
+    "Observation/wheel_slip_angle_abs_mean_raw",
+    "Observation/wheel_normal_contact_force_sum_raw",
+    "Observation/tilt_deg",
+    "Observation/ball_joint_vel_abs_mean_raw",
+    "Termination/success_rate",
+    "Termination/time_out_rate",
+    "Termination/far_from_target_rate",
+    "Termination/ball_joint_limit_rate",
+    "Termination/terminated_rate",
+    "Tracking/goal_success_rate",
+    "Tracking/goal_pos_error",
+    "Tracking/goal_heading_error_abs",
+    "Tracking/goal_completion_pct",
+)
+
+TENSORBOARD_EXTRA_TAGS = {
     "Tracking/goal_success_rate",
     "Termination/success_rate",
     "Tracking/goal_pos_error",
@@ -78,24 +97,72 @@ CONSOLE_PRIORITY_TAGS = (
     "Tracking/goal_completion_pct",
     "Observation/wheel_longitudinal_slip_abs_mean_raw",
     "Observation/wheel_slip_angle_abs_mean_raw",
-    "Action/wheel_velocity_target_abs_mean_raw",
+    "Action/wheel_speed_reference_abs_mean_raw",
+    "Action/wheel_torque_target_abs_mean_raw",
     "Reward/total",
     "Reward/reached_target",
     "Reward/distance_to_target",
     "Reward/angle_diff",
     "Reward/angle_to_target",
-    "Reward/oscillation",
     "Reward/far_from_target",
     "Termination/time_out_rate",
     "Termination/far_from_target_rate",
     "Termination/ball_joint_limit_rate",
-    "Termination/terminated_rate",
     "Observation/wheel_normal_contact_force_sum_raw",
     "Observation/tilt_deg",
-    "Observation/ball_joint_vel_abs_mean_raw",
     "Action/policy_abs_mean",
     "Action/policy_std",
-)
+    "Action/contact_weight_mean_raw",
+    "Action/shaped_planar_command_abs_mean_raw",
+    "Command/goal_rel_x",
+    "Command/goal_rel_y",
+    "Command/goal_rel_z",
+    "Command/goal_rel_heading",
+    "Command/goal_direction_offset_deg",
+    "Command/goal_heading_offset_deg",
+    "Observation/ball_joint_vel_abs_mean_raw",
+    "Observation/ball_joint_pos_abs_mean_raw",
+    "Observation/ball_joint_target_error_abs_mean_raw",
+    "Observation/base_lin_vel_y_raw",
+    "Observation/projected_gravity_xy_norm_raw",
+    "Observation/wheel_joint_vel_abs_mean_raw",
+    "Observation/spm1_platform_joint_x_limit_usage_max_raw",
+    "Observation/spm1_platform_joint_x_limit_usage_mean_raw",
+    "Observation/spm1_platform_joint_x_pos_raw",
+    "Observation/spm1_platform_joint_y_limit_usage_max_raw",
+    "Observation/spm1_platform_joint_y_limit_usage_mean_raw",
+    "Observation/spm1_platform_joint_y_pos_raw",
+    "Observation/spm1_platform_joint_z_limit_usage_max_raw",
+    "Observation/spm1_platform_joint_z_limit_usage_mean_raw",
+    "Observation/spm1_platform_joint_z_pos_raw",
+    "Observation/spm2_platform_joint_x_limit_usage_max_raw",
+    "Observation/spm2_platform_joint_x_limit_usage_mean_raw",
+    "Observation/spm2_platform_joint_x_pos_raw",
+    "Observation/spm2_platform_joint_y_limit_usage_max_raw",
+    "Observation/spm2_platform_joint_y_limit_usage_mean_raw",
+    "Observation/spm2_platform_joint_y_pos_raw",
+    "Observation/spm2_platform_joint_z_limit_usage_max_raw",
+    "Observation/spm2_platform_joint_z_limit_usage_mean_raw",
+    "Observation/spm2_platform_joint_z_pos_raw",
+    "episode/angle_diff",
+    "episode/angle_to_target",
+    "episode/distance_to_target",
+    "episode/far_from_target",
+    "episode/goal_direction_offset_deg",
+    "episode/goal_heading_offset_deg",
+    "episode/goal_target_heading_world",
+    "episode/goal_target_x_world",
+    "episode/goal_target_y_world",
+    "episode/goal_target_z_world",
+    "episode/reached_target",
+    "episode/return",
+    "episode/return_per_step",
+    "episode_per_step/angle_diff",
+    "episode_per_step/angle_to_target",
+    "episode_per_step/distance_to_target",
+    "episode_per_step/far_from_target",
+    "episode_per_step/reached_target",
+}
 
 CONSOLE_VISIBLE_TAGS = set(CONSOLE_PRIORITY_TAGS)
 CONSOLE_TAG_ORDER = {tag: idx for idx, tag in enumerate(CONSOLE_PRIORITY_TAGS)}
@@ -257,26 +324,26 @@ class Logger:
             self.tot_timesteps += collection_size
             self.tot_time += iteration_time
 
-            # Log episode extras
             extras_string = ""
+            episode_scalars: dict[str, float] = {}
+            step_scalars: dict[str, float] = {}
             if self.ep_extras:
                 episode_scalars = self._aggregate_scalar_dicts(self.ep_extras)
-                for key, value in self._ordered_scalar_items(episode_scalars):
-                    if "/" in key:
+                for key, value in episode_scalars.items():
+                    if self._should_write_tensorboard_extra(key):
                         self._write_tensorboard_scalar(key, value, it)
-                        if self._should_print_scalar(key):
-                            extras_string += f"""{f"{key}:":>{pad}} {value:.4f}\n"""
-                    else:
-                        self._write_tensorboard_scalar("Episode/" + key, value, it)
-                        if self._should_print_scalar("Episode/" + key):
-                            extras_string += f"""{f"Mean episode {key}:":>{pad}} {value:.4f}\n"""
 
             if self.step_extras:
                 step_scalars = self._aggregate_scalar_dicts(self.step_extras)
-                for key, value in self._ordered_scalar_items(step_scalars):
-                    self._write_tensorboard_scalar(key, value, it)
-                    if not print_minimal and self._should_print_scalar(key):
-                        extras_string += f"""{f"{key}:":>{pad}} {value:.4f}\n"""
+                for key, value in step_scalars.items():
+                    if self._should_write_tensorboard_extra(key):
+                        self._write_tensorboard_scalar(key, value, it)
+
+            console_scalars = dict(episode_scalars)
+            console_scalars.update(step_scalars)
+            for key, value in self._ordered_scalar_items(console_scalars):
+                if not print_minimal and self._should_print_scalar(key):
+                    extras_string += f"""{f"{key}:":>{pad}} {value:.4f}\n"""
 
             # Log losses
             for key, value in loss_dict.items():
@@ -458,6 +525,10 @@ class Logger:
     def _should_print_scalar(self, tag: str) -> bool:
         """Only print the highest-signal scalar subset to the training console."""
         return tag in CONSOLE_VISIBLE_TAGS
+
+    def _should_write_tensorboard_extra(self, tag: str) -> bool:
+        """Only keep the curated extra-scalar subset in TensorBoard."""
+        return tag in TENSORBOARD_EXTRA_TAGS
 
     def _ordered_scalar_items(self, scalar_dict: dict[str, float]) -> list[tuple[str, float]]:
         """Sort scalar tags so the same high-signal subset stays near the top in console output."""

@@ -1,6 +1,356 @@
 # 每日工作日志
 
+## 2026-04-21
+
+已完成：
+- 按用户要求将当前 Stage0 actor / critic 观测切换为 48 维最小闭环方案：
+  - `ball_joint_pos` 6
+  - `ball_joint_vel` 6
+  - `base_lin_vel` 3
+  - `base_ang_vel` 3
+  - `wheel_joint_vel` 6
+  - `wheel_longitudinal_slip` 6
+  - `wheel_normal_contact_force` 6
+  - `goal_relative_command` 4
+  - `last_action` 8
+- 已同步修改：
+  - `io_descriptors.py`
+  - `observations.py`
+  - `math_utils.py`
+- 已同步更新文档口径：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+- 已完成静态检查：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+
+产出/结论：
+- 当前 48 维观测已经把球铰状态、机体速度、轮系纵滑率和归一化法向接触力正式送入网络。
+- 当前仍未送入网络的量主要保留为诊断项，包括：
+  - `projected_gravity`
+  - `ball_joint_target_error`
+  - `head_roll_pitch`
+  - `tail_roll_pitch`
+  - `wheel_slip_angle`
+
+已完成：
+- 按用户要求统一诊断量与 allocator 的纵滑率定义：
+  - `observations.py` 中的纵滑率不再单独手写一份公式
+  - 已改为直接调用 `wheel_speed_allocator.py` 中新增的共享 torch 实现
+  - 当前控制与诊断共用的原始纵滑率定义为：
+    - `(v∥ - rΩ) / max(|v∥|, ε)`
+- 当前控制与诊断都不再对纵滑率做额外裁剪
+- 已同步更新：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+- 已完成静态检查：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/__init__.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+
+产出/结论：
+- 当前纵滑率定义的唯一来源已经收敛到 allocator 共享实现。
+- 如果后面再调整滑移公式，控制和诊断会一起变，不会再出现两份逻辑漂移。
+
+已完成：
+- 按用户要求统一球铰动作映射边界与终止边界：
+  - 当前后 `6` 维动作映射到 `q^d` 时，不再读取 `control` 侧单独的 action limit
+  - 已改为直接使用：
+    - `terminations.ball_joint_pos_lower_limits`
+    - `terminations.ball_joint_pos_upper_limits`
+  - allocator 内部 `q_cmd` 的位置饱和边界也同步改为 termination 边界
+- 已同步清理配置主干中的重复字段：
+  - 删除 `ControlCfg` 中旧的：
+    - `ball_joint_action_lower_limits`
+    - `ball_joint_action_upper_limits`
+  - 删除 `CompleteCarStage0EnvCfg` 中对应覆写
+- 已同步更新文档口径：
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+- 已完成静态检查：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+
+产出/结论：
+- 当前 Stage0 的球铰边界口径已经收敛为单一来源：
+  - termination 边界既负责 `ball_joint_out_of_bounds`
+  - 也负责动作映射与 `q_cmd` 饱和
+- 后续如果用户继续调球铰可动范围，只需要改 termination 边界，不需要再同步维护一套 action limit。
+
 ## 2026-04-20
+
+已完成：
+- 按用户要求，将论文第 3 章与当前 RL 主线同步升级为“球铰姿态规划器 + 接触感知低滑移 allocator”口径：
+  - 在 `chapter03.tex` 中保留原有名义纯滚动参考层
+  - 新增“面向低滑移的接触感知轮级牵引分配”小节
+  - 正式写入：
+    - 侧向速度分量 `v_{w,\perp}`
+    - 接触权重 `c_w`
+    - 平面命令整形 `u_v^\ast`
+    - 轮级角速度参考 `\Omega_{w,\mathrm{ref}}`
+    - 纵向滑移率 `s_w`
+    - 驱动扭矩命令 `\tau_w^{cmd}`
+- 已将当前 `wheel_speed_allocator.py` 重构为低滑移底层分配器：
+  - 保留球铰姿态规划器
+  - 新增轮心几何状态接口：
+    - `compute_wheel_kinematic_state(...)`
+  - 新增低滑移命令整形：
+    - `shape_planar_command_for_low_slip(...)`
+  - 新增名义轮速参考：
+    - `compute_wheel_speed_references(...)`
+  - 新增轮级牵引力矩分配：
+    - `compute_wheel_traction_targets(...)`
+  - 新增总入口：
+    - `compute_low_slip_control_targets(...)`
+- 已同步修改环境执行链：
+  - `env.py` 当前每步会读取：
+    - 六轮法向接触力
+    - 六轮实际滚动速度
+    - 六轮实际角速度
+  - 当前环境中：
+    - 球铰继续使用 `set_joint_position_target(...)`
+    - 车轮已从 `set_joint_velocity_target(...)` 改为 `set_joint_effort_target(...)`
+- 已同步修改：
+  - `mdp/actions.py`
+  - `complete_car_cfg.py`
+  - `complete_car_stage0_cfg.py`
+  - `kinematics/__init__.py`
+  - `validate_wheel_speed_allocator.py`
+  - `rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+- 当前验证结果：
+  - `python3 -m py_compile ...` 通过
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --run-smoke-cases` 通过
+  - 手动验证：
+    - `q = 0`
+    - `q^d = [20^\circ, 0, 0, 0, 0, 0]`
+    - `u_v^d = [1, 1]`
+    时，allocator 会把 `u_v^d` 整形成更小的 `\Omega_z`，并输出轮级力矩目标
+  - 论文编译通过：
+    - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex`
+  - 当前仍保留的论文既有问题：
+    - `fang2015survey`
+    - `MATSUMURA2017566`
+    两条参考文献仍缺失
+
+下一步建议：
+- 直接在新低滑移力矩控制链上启动一次真实训练 run，观察：
+  - `wheel_longitudinal_slip_abs_mean_raw`
+  - `wheel_slip_angle_abs_mean_raw`
+  - `wheel_torque_target_abs_mean_raw`
+  - `goal_success_rate`
+  是否相较旧主线出现结构性改善。
+
+已完成：
+- 按用户要求补写论文 `chapter03.tex` 中公式（3.31）（3.32）的详细推导：
+  - 已写清：
+    - 位置雅可比 `{}^{2}\mathbf G_w(\mathbf q)` 的列定义
+    - 前/后/中模块轮心位置对构型变量的链式求导
+    - 从惯性系绝对位置微分得到速度传播公式的过程
+    - `\mathbf R^T\dot{\mathbf R}` 与叉乘矩阵的关系
+    - 叉乘项 `{}^{2}\boldsymbol\omega_c^d \times {}^{2}\mathbf p_w` 的分量展开
+- 本轮结果：
+  - `(3.31)` 仍对应：
+    - `eq:wheel_position_jacobian`
+  - `(3.32)` 仍对应：
+    - `eq:wheel_center_velocity_direct_current`
+  - 新增推导未打乱原有公式编号
+- 修改文件：
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 已完成验证：
+  - 在 `毕业论文/毕业论文模板/LaTeX/` 下执行：
+    - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex`
+  - 主文件编译通过
+  - 当前仍保留与本轮无关的既有问题：
+    - `chapter01` 中 2 个未定义参考文献
+
+已完成：
+- 按用户要求，按论文 `chapter03.tex` 当前口径重写 RL 主线底层动作链：
+  - policy 动作维度仍为 `8`
+  - 前 `2` 维继续表示中模块期望平面运动命令 `u_v`
+  - 后 `6` 维语义已改为球铰期望构型 `q^d`，不再直接作为球铰执行器位置命令写入
+- 已在 `wheel_speed_allocator.py` 中加入球铰姿态规划器：
+  - `qdot_cmd = sat(K_q (q^d - q))`
+  - `q_cmd = sat(q + Δt qdot_cmd)`
+- 已将 wheel allocator 从旧的静态 `J_w(q)` 扩展为论文当前完整口径：
+  - `Ω^d = J_w(q) u_v + J_q(q) qdot_cmd`
+- 已同步修改 RL 环境执行链：
+  - `env.py`
+  - `mdp/actions.py`
+  - `io_descriptors.py`
+  - `complete_car_cfg.py`
+  - `complete_car_stage0_cfg.py`
+- 已重写 `validate_wheel_speed_allocator.py`，当前可直接验证：
+  - `q`
+  - `q^d`
+  - `u_v`
+  - `qdot_cmd`
+  - `q_cmd`
+  - `J_w(q)`
+  - `J_q(q)`
+  - `Ω^d`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/__init__.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `docs/RL阶段训练参数一览表.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 RL 主线已经不再是“动作后 6 维直接给球铰位置目标 + 静态 `J_w(q)`”。
+- 当前真实执行链已经切换为：
+  - `q, q^d, u_v -> qdot_cmd, q_cmd, Ω^d`
+- 已完成验证：
+  - `python3 -m py_compile ...` 通过
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --run-smoke-cases` 通过
+  - 手动验证：
+    - `q = 0, q^d = 0, u_v = [1, 1]`
+    - `q = 0, q^d = [20°, 0, 0, -20°, 0, 0], u_v = [0, 0]`
+
+下一步建议：
+- 直接在当前完整第 3 章口径下启动新的 Stage0 真实训练 run，再判断是否仍会收敛到超时坏平衡。
+
+已完成：
+- 参考论文 `chapter03.tex`，新增一份与第 3 章符号体系一致的 `Stage0` 推导文档：
+  - 新增文件：
+    - `docs/Stage0球铰姿态规划器与底层运动学模型推导.md`
+- 本轮推导口径：
+  - 完整继承第 3 章已固定的核心记号：
+    - `\mathbf u_v`
+    - `\mathbf q`
+    - `\mathbf q^d`
+    - `\mathbf q^{cmd}`
+    - `\boldsymbol\Omega^d`
+    - `\mathcal P`
+  - 在 `Stage0` 工作假设下做偏航约化：
+    - `\theta_f = \phi_f = \theta_r = \phi_r = 0`
+    - 只保留 `\psi_f,\psi_r`
+  - 新建球铰姿态规划器：
+    - 输入：
+      - `(\mathbf u_v,\mathbf q,\mathcal P_\psi)`
+    - 输出：
+      - `\mathbf q^d`
+      - `\mathbf q^{cmd}`
+      - `\dot{\psi}_f^d`
+      - `\dot{\psi}_r^d`
+  - 将当前轮速分配从：
+    - `\boldsymbol\Omega^d = \mathbf J_w(\mathbf q)\mathbf u_v`
+    扩展为：
+    - `\boldsymbol\Omega^d = \bar{\mathbf J}_w(\mathbf q)\bar{\mathbf u}_v`
+  - 其中扩展输入向量为：
+    - `\bar{\mathbf u}_v = [V_x^d,\Omega_z^d,\dot{\psi}_f^d,\dot{\psi}_r^d]^T`
+- 本轮结论：
+  - 当前已得到一套与论文第 3 章前后兼容的 `Stage0` 候选推导
+  - 当 `\dot{\psi}_f^d = \dot{\psi}_r^d = 0` 时，新模型会退化回当前第 3 章的静态几何轮速分配关系
+  - 这份文档当前只是候选推导稿，尚未直接回写进论文正文
+
+已完成：
+- 按用户要求统一仓库内 Markdown 文档的数学公式语法，并把该规则写入仓库级约束：
+  - `docs/stage0_structured_control_scheme.md` 中的公式已统一改为 Obsidian 可编译写法
+  - `AGENTS.md` 已新增 Markdown 公式规则：
+    - 行内公式使用 `$...$`
+    - 独立公式使用 `$$...$$`
+    - 仓库 Markdown 文档不再使用 `\(...\)` 或 `\[...\]`
+- 同步更新：
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 当前说明：
+  - 该规则用于仓库跟踪的 Markdown 文档
+  - 不改变论文 LaTeX 源文件下的数学公式写法
+
+已完成：
+- 按用户要求，把“球铰姿态规划器 + 接触加权轮速/驱动力分配器 + 高层 RL”方案整理为独立设计文档并落到 `docs/`：
+  - 新增文件：
+    - `docs/stage0_structured_control_scheme.md`
+- 文档内容覆盖：
+  - `Stage0` 研究目标
+  - 三层控制架构
+  - 高层动作 `a_t = [v_d, \kappa_d]`
+  - 球铰姿态规划器
+  - 含 `\dot{\psi}_f^d / \dot{\psi}_r^d` 的底层运动学模型
+  - 接触加权轮速/驱动力分配器
+  - `RL` 环境的 observation / reward / termination 设计
+  - `Stage0` 基线对比设计
+  - 待用户确认的研究判断
+- 当前说明：
+  - 本文档是候选方案汇总，不代表这些研究判断已经全部最终确认
+
+已完成：
+- 针对当前论文一致 `J_w(q)` 轮速分配器，按用户提出的三类姿态做了离线运动学诊断，并把结果上升为项目记忆：
+  - `q = 0, u_v = [1, 1]`
+  - `q = [0, 10^\circ, 0, 0, 0, 0], u_v = [1, 0]`
+  - `q = [1, 0, 0, 0, 0, 0], u_v = [1, 0]`
+- 本轮确认：
+  - 当前 allocator 只使用：
+    - 实际球铰构型 `q`
+    - 平面命令 `u_v`
+  - 当前 allocator 不使用：
+    - 接地状态
+    - 法向接触力
+    - 滑移 / 侧偏
+    - 实际车体速度反馈
+  - `q = 0` 时，当前模型在仿真语义上退化为三轴统一差速转向
+  - 前车抬起时，前轮不会因为失去接地而自动停轮：
+    - 分配器仍会给非零目标轮速
+    - 仿真里更接近“空转但不提供有效牵引”
+  - 当前车偏航 `\psi_f = 1 rad` 且 `u_v = [1, 0]` 时：
+    - 前轮线速度目标约为 `0.5403 m/s`
+    - 对应横向分量约为 `0.8415 m/s`
+    - 这意味着仿真里前车更可能被中后车推着走并产生较强侧滑 / 刮擦
+- 修改文件：
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 已完成验证：
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --ball-joint-pos 0 0 0 0 0 0 --planar-command 1 1 --show-jacobian`
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --ball-joint-pos-deg 0 10 0 0 0 0 --planar-command 1 0 --show-jacobian`
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --ball-joint-pos 1 0 0 0 0 0 --planar-command 1 0 --show-jacobian`
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --ball-joint-pos-deg 0 60 0 0 0 0 --planar-command 1 0`
+
+已完成：
+- 按用户要求将 `validate_wheel_speed_allocator.py` 升级为可重复使用的命令行验证脚本：
+  - 不再只依赖脚本内写死的输入
+  - 现已支持手动输入任意：
+    - 球铰构型 `q`
+    - 平面运动命令 `u_v = [V_x^d, \Omega_z^d]`
+- 当前新增命令行参数：
+  - `--ball-joint-pos`
+  - `--ball-joint-pos-deg`
+  - `--planar-command`
+  - `--show-jacobian`
+  - `--run-smoke-cases`
+- 当前脚本输出内容：
+  - 输入球铰顺序
+  - 输出轮关节顺序
+  - `q` 的弧度值与角度值
+  - `J_w(q)`（按需显示）
+  - 六轮角速度目标 `\boldsymbol\Omega^d`
+  - 对应轮缘线速度
+- 本轮修改文件：
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 已完成验证：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --run-smoke-cases`
+  - 手动输入示例：
+    - `q = 0, u_v = [1, 0]`
+    - `q = 0, u_v = [1, 1]`
+    - `\theta_f = 10^\circ, u_v = [1, 0]`
 
 已完成：
 - 按用户要求清理当前 TensorBoard 空白项：
@@ -9007,3 +9357,283 @@
   - `docs/current_status.md`
   - `docs/conversation_history.md`
   - `logs/daily_work_log.md`
+
+## 2026-04-20
+
+已完成：
+- 按用户要求，将论文第 3 章正式回写为保留球铰完整 `6` 自由度的通用口径，不再沿用此前 `Stage0` 候选推导稿中的偏航约化写法。
+- 已在 `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex` 中新增球铰姿态规划器建模：
+  - `\dot{\mathbf q}^{cmd} = \operatorname{sat}(\mathbf K_q(\mathbf q^d - \mathbf q))`
+  - `\mathbf q^{cmd} = \operatorname{sat}(\mathbf q + \Delta t\,\dot{\mathbf q}^{cmd})`
+- 已将六轮轮速解析分配由静态形式扩展为：
+  - `\boldsymbol\Omega^d = \mathbf J_w(\mathbf q)\mathbf u_v + \mathbf J_q(\mathbf q)\dot{\mathbf q}^{cmd}`
+- 已在第 3 章“代入具体结构参数向量后的最终解析结果”小节中补入：
+  - 静态分配矩阵 `\mathbf J_w(\mathbf q)`
+  - 构型变化率修正矩阵 `\mathbf J_q(\mathbf q)`
+  - 六个车轮角速度目标的显式表达式
+- 已完成论文主文件编译验证：
+  - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex`
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `chapter03.tex` 当前默认模型已经切换为“6 自由度球铰姿态规划器 + 构型变化率修正轮速分配”的通用口径。
+- `docs/Stage0球铰姿态规划器与底层运动学模型推导.md` 仍保留为平地 `Stage0` 偏航约化候选稿，但不再代表论文主文默认模型。
+- 本轮编译通过；当前剩余的 LaTeX 警告仅包含论文原有的两条缺失文献引用：
+  - `fang2015survey`
+  - `MATSUMURA2017566`
+
+下一步建议：
+- 若继续推进 RL 主线，需要明确当前环境是否回接论文新版中的 `\mathbf J_q(\mathbf q)\dot{\mathbf q}^{cmd}` 项，还是暂时保留静态 `\mathbf J_w(\mathbf q)\mathbf u_v` 作为 `Stage0` 平地主线实现。
+
+## 2026-04-21
+
+已完成：
+- 按用户要求新增“终端 / 对话输出公式记法”规则：
+  - 后续默认使用可直接阅读的数学符号
+  - 不再默认直接输出原始 LaTeX 源记法
+  - 仅在用户明确要求 LaTeX 源码，或任务本身就在处理 LaTeX / Markdown 数学源码时，才展示原始 LaTeX
+- 已将该规则写入：
+  - `AGENTS.md`
+- 已同步更新项目记忆：
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `AGENTS.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 以后终端里的公式讲解应优先写成可直接阅读的数学符号，例如：
+  - `q`
+  - `qᵈ`
+  - `q̇_cmd`
+  - `u_v*`
+  - `Ω_ref`
+  - `τ_cmd`
+- 仓库 Markdown 公式规则与论文 LaTeX 源文件写法不受本轮影响。
+
+## 2026-04-21
+
+已完成：
+- 按用户要求对 `chapter03.tex` 做整章级重写与润色：
+  - 重写了章节开头总述，明确区分：
+    - 名义运动学参考层
+    - 接触感知低滑移执行层
+  - 统一了全章关键符号口径：
+    - `\mathbf u_v^d`
+    - `\mathbf q`
+    - `\mathbf q^d`
+    - `\mathbf q^{cmd}`
+    - `\dot{\mathbf q}^{cmd}`
+    - `\boldsymbol\Omega^d`
+    - `\boldsymbol\Omega_{ref}`
+    - `\boldsymbol\tau^{cmd}`
+  - 重写了“高层命令与底层输出定义”小节，使名义参考层与最终执行层的边界更清楚
+  - 重写了“面向低滑移的接触感知轮级牵引分配”小节：
+    - 明确写清 `\mathbf J_w(\mathbf q)` 与 `\mathbf J_q(\mathbf q)` 没有失效
+    - 它们仍通过轮心速度表达、整形系数 `\mathbf a_w,b_w` 与 `\boldsymbol\Omega_{ref}` 进入低滑移执行层
+    - 明确写清当前车轮执行层是“以轮速参考为中间量的力矩驱动”
+  - 重写了章节结尾总结：
+    - 输入输出总结与正文分层口径一致
+    - 不再混写 `\boldsymbol\Omega^d`、`\boldsymbol\Omega_{ref}` 与 `\boldsymbol\tau^{cmd}`
+- 已完成编译验证：
+  - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex` 通过
+- 当前仍保留的论文既有问题：
+  - `fang2015survey` 文献缺失
+  - `MATSUMURA2017566` 文献缺失
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 第 3 章当前已经从“公式正确但层次容易混淆”的写法，收敛为“符号唯一、层次清晰、推导不断裂”的统一版本。
+- 当前第 3 章可直接按以下顺序讲解：
+  - 高层期望量
+  - 球铰姿态规划器
+  - 名义轮速参考层
+  - 低滑移执行层
+  - 最终轮级扭矩命令
+- 当前编译通过；本轮没有引入新的 LaTeX 报错，剩余 warning 仍是历史遗留文献问题。
+
+## 2026-04-21
+
+已完成：
+- 按用户要求清理 Stage0 动作链与车轮执行链中的死代码：
+  - 删除 no-op 的 `preprocess_policy_actions(...)`
+  - 删除旧的 `apply_wheel_velocity_targets(...)`
+  - 删除环境中未使用的：
+    - `_policy_actions`
+    - `_processed_actions`
+    - `_joint_vel_targets`
+- 已将环境动作链收敛为：
+  - policy 原始动作直接进入动作映射
+  - 球铰输出 `q_cmd`
+  - 车轮输出 `τ_cmd`
+- 已同步清理相关日志与文档口径：
+  - 不再记录 `Action/processed_abs_mean`、`Action/processed_std`
+  - 更新 `docs/RL阶段训练参数一览表.md`
+  - 更新 `docs/current_status.md`
+  - 更新 `docs/complete_car_direct_workflow_architecture.md`
+  - 更新 `docs/conversation_history.md`
+- 已完成静态检查：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/complete_car_direct_workflow_architecture.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 已不存在独立动作预处理层，`last_action` 记录的是上一时刻 policy 原始动作。
+- 当前车轮执行器只保留 effort / torque 写入路径，旧 wheel velocity target 写入残留已清理。
+- 后续代码讲解与训练审查都应直接按“原始动作 -> 映射 -> 球铰位置目标 / 车轮力矩目标”解释。
+
+## 2026-04-21
+
+已完成：
+- 按用户要求重写 `docs/RL阶段训练参数一览表.md`，使其与当前 `CompleteCar-Stage0` 实际运行链完全对齐。
+- 已按当前 active path 重新梳理并写清：
+  - 动作空间与高层命令映射
+  - 球铰姿态规划器
+  - 低滑移接触感知 allocator
+  - 命令采样
+  - 观测构造
+  - reward
+  - termination
+  - reset / randomization
+  - terrain / sensors
+  - PPO / train entry
+- 已在文档中明确区分：
+  - 当前真正进入训练闭环的量
+  - 只用于低层执行与日志诊断的量
+  - 虽然配置存在但当前未进入 active path 的字段
+- 已同步更新项目记忆：
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `docs/RL阶段训练参数一览表.md` 当前可以直接作为 Stage0 RL 环境逐环节审查的统一入口。
+- 文档口径已经与当前“高层动作 -> 球铰姿态规划器 -> 低滑移 allocator -> 球铰位置目标 + 车轮力矩目标”的主线一致。
+- 后续若继续查训练行为异常，应优先从该文档核对 active path，而不是回到旧版参数总表。
+
+## 2026-04-21
+
+已完成：
+- 按用户要求从当前 Stage0 active reward 中删除 `oscillation`。
+- 已同步清理奖励主链中的活跃引用：
+  - `mdp/rewards.py`
+  - `base/env.py`
+  - `base/complete_car_cfg.py`
+  - `baseline/complete_car_stage0_cfg.py`
+  - `rsl_rl/utils/logger.py`
+- 已同步更新项目记忆与参数文档：
+  - `docs/current_status.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/current_status.md`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 reward 只保留 5 项：
+  - `distance_to_target`
+  - `reached_target`
+  - `angle_to_target`
+  - `far_from_target`
+  - `angle_diff`
+- `compute_reward_terms(...)` 已不再依赖 `current_actions` 和 `last_actions`。
+- `last_action` 当前仅作为 48 维观测中的上一时刻动作信息保留，不再承担动作振荡惩罚的输入角色。
+
+## 2026-04-21
+
+已完成：
+- 按用户要求核对“step metrics 不打印项”是否会进入 TensorBoard。
+- 已确认：
+  - 当前绝大多数不进终端的 raw diagnostics 仍会写入 TensorBoard
+  - 当前 Stage0 明确不会产出的只有：
+    - `Critic/height_patch_mean`
+    - `Critic/height_patch_max`
+- 已从 `base/env.py` 中删除上述两个 dead step metrics。
+- 已同步更新项目记忆：
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 里，不进终端不等于不写 TensorBoard。
+- 保留下来的 step metrics 仍可用于后续逐项筛查。
+- 不会产出的 critic 高度 patch 两个空白项已清理。
+
+## 2026-04-21
+
+已完成：
+- 按用户指定顺序重构 Stage0 终端日志打印顺序与 TensorBoard 输出口径。
+- 已将终端打印固定为用户指定的 24 个高信号 tag 顺序。
+- 已将 TensorBoard extras 写入改为独立白名单，不再默认把所有 extras 都写入面板。
+- 已按用户要求同步删除未列出的 active step metrics：
+  - `Observation/turn_radius_raw`
+  - step 级 `Command/goal_target_*_world`
+  - `Observation/head_roll_pitch_abs_mean_raw`
+  - `Observation/tail_roll_pitch_abs_mean_raw`
+  - `Observation/goal_rel_*_raw`
+  - `Observation/last_action_abs_mean_raw`
+- `Termination/terminated_rate` 当前保留终端打印，但已不再写入 TensorBoard。
+- 同时清理了观测辅助函数中的失活项：
+  - `head_roll_pitch`
+  - `tail_roll_pitch`
+- 已同步更新：
+  - `docs/current_status.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `docs/current_status.md`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 的终端面板与 TensorBoard 面板已不再共用同一套 tag 保留规则。
+- 终端、TensorBoard、环境 step metrics 三处日志口径已经重新对齐到用户指定集合。

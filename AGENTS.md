@@ -497,6 +497,43 @@ When the user confirms that a code-explanation rhythm is preferred, future walkt
   - termination
 - default tone should remain teaching-oriented, patient, and low-jargon, without collapsing into a shallow summary
 
+### 8.3 Markdown formula style rule
+When creating or editing Markdown documents in this repository, all mathematical expressions must use Obsidian-compilable math syntax.
+
+Required format:
+
+- inline math must use `$...$`
+- display math must use `$$...$$`
+
+Do not use the following in repository Markdown documents:
+
+- `\(...\)`
+- `\[...\]`
+
+Additional rule:
+
+- prefer math markup that renders directly in Obsidian without extra preprocessing
+- this rule applies to Markdown documents such as files under `docs/`, logs, workflow notes, and other repository-tracked `.md` outputs
+- this rule does not change the LaTeX writing style used under the thesis source tree
+
+### 8.4 Terminal formula notation rule
+When responding in terminal/chat output for this repository, default to directly readable mathematical symbols instead of raw LaTeX source notation.
+
+Required behavior:
+
+- prefer readable forms such as `q`, `qᵈ`, `q̇_cmd`, `q_cmd`, `u_v*`, `Ω_ref`, `τ_cmd`
+- do not default to raw LaTeX source such as `\mathbf q`, `\dot{\mathbf q}^{cmd}`, `$...$`, or `$$...$$`
+- only use raw LaTeX notation in terminal/chat output when:
+  - the user explicitly asks for LaTeX source
+  - the task is editing, quoting, or discussing LaTeX / Markdown math source itself
+  - exact source notation must be shown to avoid ambiguity
+
+Additional rule:
+
+- this rule applies to assistant commentary/final answers in the terminal workflow
+- this rule does not change the math-source rules for repository Markdown files
+- this rule does not change the LaTeX writing style used under the thesis source tree
+
 When generating outputs, prefer:
 
 - executable complete code over fragments

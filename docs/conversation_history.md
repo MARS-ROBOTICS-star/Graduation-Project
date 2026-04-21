@@ -2,7 +2,575 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-21
+
+### Stage0 actor / critic 观测已按当前 8 维动作与低滑移主线升级为 48 维：球铰状态、机体速度、轮系纵滑率和法向接触力已正式进入网络
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 当前 active Stage0 actor / critic 观测已从旧的 `18 / 18` 升级为 `48 / 48`
+  - 当前进入网络的 48 维观测顺序为：
+    - `ball_joint_pos` 6
+    - `ball_joint_vel` 6
+    - `base_lin_vel` 3
+    - `base_ang_vel` 3
+    - `wheel_joint_vel` 6
+    - `wheel_longitudinal_slip` 6
+    - `wheel_normal_contact_force` 6
+    - `goal_relative_command` 4
+    - `last_action` 8
+  - 当前未送入 actor / critic、但仍保留用于诊断的主要量包括：
+    - `projected_gravity`
+    - `ball_joint_target_error`
+    - `head_roll_pitch`
+    - `tail_roll_pitch`
+    - `wheel_slip_angle`
+  - 这次调整的核心理由是：
+    - policy 当前输出的是 `u_v^d` 和 `q^d`
+    - reward 依赖目标误差与动作变化
+    - low-slip allocator 又显式依赖 `q`、`F_n`、`Ω`、`v∥`
+    - 因此旧的 18 维观测无法给 policy 足够的闭环状态
+- Reason:
+  - 用户明确要求按 48 维最小闭环方案落地当前观测空间
+- Impact:
+  - 后续 Stage0 训练解释不应再沿用“policy 只看 wheel speed + goal + last action”的旧口径
+  - 观测噪声维度统计和 descriptor 已同步改为 48 维
+- Status:
+  - active observation trunk upgraded
+- Verification:
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py` passed
+
+### 诊断量中的纵滑率已改为直接复用 allocator 的共享实现：控制与诊断现在共用同一条原始滑移公式，且都不再额外裁剪
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/__init__.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 当前 allocator 与观测/诊断量不再各自维护一份纵滑率公式
+  - `wheel_speed_allocator.py` 中新增了共享的 torch 实现，诊断量直接调用这条实现
+  - 当前两边共用的原始定义为：
+    - `(v∥ - rΩ) / max(|v∥|, ε)`
+  - 当前诊断量与 allocator 控制内部使用的纵滑率都不再额外裁剪
+  - 当前法向接触力 `F_n` 的定义仍与诊断量一致：
+    - 都是世界系轮地接触合力向量的模长再除以整车重力
+- Reason:
+  - 用户要求诊断量中的纵滑率直接使用 allocator 中的定义和代码，避免控制链和诊断链长期漂移
+- Impact:
+  - 以后解释训练日志里的 `wheel_longitudinal_slip` 时，应明确区分：
+    - 原始滑移定义已经与 allocator 完全统一
+    - 当前日志值与控制内部使用值在公式层面不再存在额外的裁剪差异
+- Status:
+  - active slip-definition source unified
+- Verification:
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/__init__.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py` passed
+
+### Stage0 球铰动作映射边界已与终止边界统一：后 6 维动作到 `q^d` 的映射和 allocator 内部 `q_cmd` 饱和不再单独维护 `control` 侧 limits，而是直接使用 `terminations.ball_joint_pos_lower_limits / upper_limits`
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 当前 active path 中，球铰动作映射边界和 `ball_joint_out_of_bounds` 判定边界已经统一为同一套数值
+  - `env.py` 在动作映射阶段生成 `q^d` 时，直接读取：
+    - `cfg.terminations.ball_joint_pos_lower_limits`
+    - `cfg.terminations.ball_joint_pos_upper_limits`
+  - allocator 内部姿态规划器对 `q_cmd` 的位置饱和也直接使用同一套 termination 边界
+  - `ControlCfg` 中旧的：
+    - `ball_joint_action_lower_limits`
+    - `ball_joint_action_upper_limits`
+    已从 active config 中移除，避免以后再次出现映射边界和终止边界漂移
+- Reason:
+  - 用户要求球铰的映射边界修改为与终止边界一致，并希望保持代码主线整洁
+- Impact:
+  - 以后解释 Stage0 球铰动作链时，应直接讲：
+    - `a_{2:8} -> q^d` 使用 termination 边界
+    - `q^d -> q_cmd` 的位置饱和仍使用同一套 termination 边界
+  - 不应再把当前环境理解成存在另一套独立的球铰 action limit
+- Status:
+  - active boundary definition unified
+- Verification:
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py` passed
+
+### Stage0 动作链与车轮执行链已完成一次代码级清理：no-op 动作预处理与旧 wheel velocity target 写入路径已删除，当前环境只保留“原始 policy 动作 -> 动作映射 -> 球铰位置目标 / 车轮力矩目标”
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/complete_car_direct_workflow_architecture.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - `preprocess_policy_actions(...)` 过去只是 clone policy 输出动作，不做 clip、滤波或改写，现已删除
+  - 环境内不再保留这些冗余状态：
+    - `_policy_actions`
+    - `_processed_actions`
+    - `_joint_vel_targets`
+  - 旧的 `apply_wheel_velocity_targets(...)` 已删除
+  - 当前车轮执行链只保留：
+    - allocator 内部生成 `\boldsymbol\Omega_{ref}`
+    - 再由 `\boldsymbol\Omega_{ref}` 计算 `\boldsymbol\tau^{cmd}`
+    - 最终通过 `set_joint_effort_target(...)` 下发到仿真
+  - 当前高层动作链已进一步收敛为：
+    - policy 原始动作 `[-1, 1]`
+    - 直接进入平面命令映射与球铰期望构型映射
+    - 不再存在单独的“processed action”层
+  - 日志层面不再记录：
+    - `Action/processed_abs_mean`
+    - `Action/processed_std`
+- Reason:
+  - 用户要求删除无实际作用的动作预处理环节，并去掉车轮旧速度驱动残留代码，保持 Stage0 主线整洁
+- Impact:
+  - 后续解释 Stage0 动作链时，应直接讲：
+    - `policy action -> u_v^d, q^d -> q_cmd, \tau_cmd`
+  - 不应再把当前环境理解成存在额外 preprocess 层或 wheel velocity actuator 写入层
+- Status:
+  - active RL code path simplified
+- Verification:
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py` passed
+
+### `docs/RL阶段训练参数一览表.md` 已按当前 Stage0 实际运行链重写，可作为后续 RL 环境逐环节审查的统一入口
+- Updated:
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 当前 `docs/RL阶段训练参数一览表.md` 已不再沿用旧的“纯轮速解析分配”口径
+  - 文档现已明确按当前主线组织为：
+    - 高层动作
+    - 球铰姿态规划器
+    - 低滑移接触感知 allocator
+    - 命令采样
+    - 观测
+    - reward
+    - termination
+    - reset / randomization
+    - terrain / sensors
+    - PPO / train entry
+  - 文档现已明确区分三类量：
+    - 当前真正进入训练闭环的量
+    - 只用于低层执行与日志诊断的量
+    - 虽然配置存在但当前未接入 active path 的字段
+  - 后续若继续审查 Stage0 训练行为，应优先以该文档为审查入口，而不是回到旧版参数总表或历史 run 口径
+- Reason:
+  - 用户要求按当前 RL 环境与各环节配置参数更新训练参数一览表，用于对 RL 环境做详细审查
+- Impact:
+  - 以后排查“观测不足、reward 监督弱、allocator 未被显式利用、done 条件过宽/过窄、PPO 数值配置是否是主因”等问题时，可以先从这一版参数总表快速定位 active path
+- Status:
+  - active RL audit reference updated
+
+
+### `chapter03.tex` 已完成整章级重写：符号体系统一为“高层期望量 / 名义参考层 / 低滑移执行层”三层口径，正文已显式写清 `J_w(q)` 与 `J_q(q)` 在低滑移执行层中的持续作用
+- Updated:
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 第 3 章当前已明确区分三类量：
+    - 高层期望量：`\mathbf u_v^d`、`\mathbf q^d`
+    - 名义参考层：`\boldsymbol\Omega^d`
+    - 低滑移执行层：`\mathbf u_v^\ast`、`\boldsymbol\Omega_{ref}`、`\boldsymbol\tau^{cmd}`
+  - 第 3 章当前已显式写清：
+    - `\boldsymbol\Omega^d = \mathbf J_w(\mathbf q)\mathbf u_v^d + \mathbf J_q(\mathbf q)\dot{\mathbf q}^{cmd}` 表示名义运动学参考层
+    - `\boldsymbol\Omega_{ref} = \mathbf J_w(\mathbf q)\mathbf u_v^\ast + \mathbf J_q(\mathbf q)\dot{\mathbf q}^{cmd}` 表示低滑移执行层中的轮速参考
+  - 低滑移小节中：
+    - 侧向速度代价并未绕开前文雅可比矩阵
+    - `\mathbf J_w(\mathbf q)` 与 `\mathbf J_q(\mathbf q)` 仍通过轮心速度表达、整形系数 `\mathbf a_w,b_w` 以及 `\boldsymbol\Omega_{ref}` 明确进入执行层
+  - 第 3 章结尾的输入输出总结现已与正文统一：
+    - 不再把整章简单写成“输出 `\boldsymbol\Omega^d` 与 `\mathbf q^{cmd}`”
+    - 而是明确包含低滑移执行层输出 `\boldsymbol\Omega_{ref}` 与 `\boldsymbol\tau^{cmd}`
+- Reason:
+  - 用户要求对 `chapter03.tex` 做整章级润色，提升逻辑严密性、推导完整性、语言通顺性和符号唯一性，并消除前后文对“轮速参考 / 扭矩命令 / 雅可比矩阵作用层次”的混淆
+- Impact:
+  - 后续答辩、论文讲解和 RL 主线说明，可以直接按“高层期望量 -> 名义参考层 -> 低滑移执行层”的三层结构展开
+  - 后续若继续扩写第 4 章或实验分析，应沿用这套分层口径，不再把 `\boldsymbol\Omega^d` 与 `\boldsymbol\Omega_{ref}` 混写
+- Status:
+  - active thesis chapter baseline updated
+- Verification:
+  - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex` passed
+  - remaining warnings are still the pre-existing undefined citations in `chapter01`
+
+### 终端讲解默认改为“可直接阅读的数学符号”而不是原始 LaTeX 源记法
+- Updated:
+  - `AGENTS.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 后续终端 / 对话讲解默认应使用可直接阅读的数学符号
+  - 优先使用：
+    - `q`
+    - `qᵈ`
+    - `q̇_cmd`
+    - `q_cmd`
+    - `u_v*`
+    - `Ω_ref`
+    - `τ_cmd`
+  - 不应默认直接输出原始 LaTeX 源记法，例如：
+    - `\mathbf q`
+    - `\dot{\mathbf q}^{cmd}`
+    - `$...$`
+    - `$$...$$`
+  - 例外情况仅包括：
+    - 用户明确要求 LaTeX 源码
+    - 任务本身是在编辑、核对或讨论 LaTeX / Markdown 数学源码
+    - 为避免歧义必须展示精确源码记法
+- Reason:
+  - 用户明确要求终端输出改为“编译后的公式符号”风格，避免阅读解释时反复看到源码级 LaTeX 记法
+- Impact:
+  - 后续代码讲解、论文讲解、训练链说明都应优先用可直接阅读的数学符号表达
+  - 但仓库 Markdown 数学规则与论文 LaTeX 源写法保持不变
+- Status:
+  - active output-style rule updated
+
 ## 2026-04-20
+
+### 论文第 3 章与 RL 主线已同步升级为“球铰姿态规划器 + 接触感知低滑移 allocator”：名义纯滚动轮速模型保留为参考层，环境最终车轮控制已从速度目标切换为力矩目标
+- Updated:
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/__init__.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 第 3 章当前默认口径不再停留在：
+    - `\boldsymbol\Omega^d = \mathbf J_w(\mathbf q)\mathbf u_v + \mathbf J_q(\mathbf q)\dot{\mathbf q}^{cmd}`
+  - 上式现在被明确降格为：
+    - 纯滚动名义参考层
+  - 当前正文已在其后新增低滑移执行层，包括：
+    - 接触权重 `c_w`
+    - 平面命令整形 `\mathbf u_v^\ast`
+    - 轮级参考角速度 `\boldsymbol\Omega_{ref}`
+    - 轮级驱动扭矩 `\boldsymbol\tau^{cmd}`
+  - RL 主线当前执行链已经切换为：
+    - `q^d -> \dot{\mathbf q}^{cmd}, \mathbf q^{cmd}`
+    - `u_v^d, q, \dot{\mathbf q}^{cmd}, F_n -> \mathbf u_v^\ast`
+    - `\mathbf u_v^\ast, q, \dot{\mathbf q}^{cmd} -> \boldsymbol\Omega_{ref}`
+    - `\boldsymbol\Omega_{ref}, \boldsymbol\Omega, v_\parallel^{act}, F_n -> \boldsymbol\tau^{cmd}`
+  - 环境当前对球铰仍使用位置目标：
+    - `set_joint_position_target(...)`
+  - 环境当前对车轮已不再使用速度目标：
+    - 原 `set_joint_velocity_target(...)` 已改为 `set_joint_effort_target(...)`
+  - `wheel_speed_allocator.py` 当前已具备这些接口：
+    - `compute_ball_joint_planner_outputs(...)`
+    - `compute_wheel_kinematic_state(...)`
+    - `shape_planar_command_for_low_slip(...)`
+    - `compute_wheel_speed_references(...)`
+    - `compute_wheel_traction_targets(...)`
+    - `compute_low_slip_control_targets(...)`
+  - `validate_wheel_speed_allocator.py` 当前验证口径也已同步升级：
+    - 手动输入 `q, q^d, u_v^d, F_n, \Omega, v_\parallel^{act}`
+    - 输出 `q_cmd, qdot_cmd, u_v^\ast, \Omega_{ref}, \tau^{cmd}, J_w(q), J_q(q)`
+- Reason:
+  - 用户明确要求围绕低滑移重构 allocator，并同时将其写回论文第 3 章与当前代码主线
+- Impact:
+  - 未来所有新的 Stage0 run 都必须按“力矩控制的低滑移 allocator”解释，不能再把当前主线理解为旧的速度目标解析分配器
+  - 下一步训练诊断应重点关注：
+    - reward 和 observation 是否仍不足以让策略主动利用低滑移控制链
+    - 在新低层下是否仍出现高滑移或超时坏平衡
+- Status:
+  - active RL / thesis baseline updated
+- Verification:
+  - `python3 -m py_compile ...` passed
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --run-smoke-cases` passed
+  - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex` passed
+  - remaining thesis warnings are still the pre-existing undefined citations in `chapter01`
+
+### `chapter03.tex` 中公式（3.31）（3.32）已补成完整推导链：从轮心位置对构型变量的显式依赖出发，先构造位置雅可比，再由绝对位置微分推得速度传播公式，并显式展开叉乘项
+- Updated:
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 论文第 3 章中：
+    - `eq:wheel_position_jacobian`
+    - `eq:wheel_center_velocity_direct_current`
+  - 现在已明确写出：
+    - `{}^{2}\mathbf G_w(\mathbf q)` 由六个构型变量偏导列向量堆叠而成
+    - 前模块轮心位置雅可比只依赖 `\mathbf q_f`
+    - 后模块轮心位置雅可比只依赖 `\mathbf q_r`
+    - 中模块轮心位置雅可比为零，因为其轮心位置不依赖球铰构型
+  - 当前正文已把速度传播公式写成一条完整链路：
+    - 惯性系下轮心绝对位置
+    - 对时间求导
+    - 左乘姿态矩阵转回主坐标系
+    - 使用 `\mathbf R^T \dot{\mathbf R} = [\boldsymbol\omega]_\times`
+    - 得到 `{}^{2}\mathbf v_w^d = {}^{2}\mathbf v_c^d + {}^{2}\boldsymbol\omega_c^d \times {}^{2}\mathbf p_w + {}^{2}\mathbf G_w(\mathbf q)\dot{\mathbf q}^{cmd}`
+  - 叉乘项已经按分量写开为：
+    - `{}^{2}\boldsymbol\omega_c^d \times {}^{2}\mathbf p_w = [-\Omega_z^d p_{wy}, \Omega_z^d p_{wx}, 0]^T`
+  - 本轮补写未改变编号：
+    - `(3.31)` 仍是 `eq:wheel_position_jacobian`
+    - `(3.32)` 仍是 `eq:wheel_center_velocity_direct_current`
+- Reason:
+  - 用户明确要求把位置雅可比、速度传播公式以及叉乘项的来源完整写清，而不是只保留结果式
+- Impact:
+  - 后续写答辩稿、讲第 3 章、解释低层模型时，可以直接引用论文正文中的完整推导，不需要再额外口头补链条
+- Status:
+  - active thesis exposition improved
+- Verification:
+  - `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex` passed
+  - remaining warnings are still the pre-existing undefined citations in `chapter01`
+
+### RL 主线已正式回接论文第 3 章完整低层模型：后 6 维动作现在表示球铰期望构型 `\mathbf q^d`，环境内部通过球铰姿态规划器生成 `\mathbf q^{cmd}` 与 `\dot{\mathbf q}^{cmd}`，六轮轮速由 `\mathbf J_w(\mathbf q)\mathbf u_v + \mathbf J_q(\mathbf q)\dot{\mathbf q}^{cmd}` 联合给出
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/__init__.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - RL 动作维度仍为 `8`，但后 `6` 维动作语义已改变：
+    - 不再直接表示球铰执行器位置命令
+    - 当前表示球铰期望构型 `\mathbf q^d`
+  - 环境当前每个控制周期内执行如下链路：
+    - `q^d = f(a_{2:8})`
+    - `\dot{\mathbf q}^{cmd} = \operatorname{sat}(\mathbf K_q(\mathbf q^d - \mathbf q))`
+    - `\mathbf q^{cmd} = \operatorname{sat}(\mathbf q + \Delta t\,\dot{\mathbf q}^{cmd})`
+    - `\boldsymbol\Omega^d = \mathbf J_w(\mathbf q)\mathbf u_v + \mathbf J_q(\mathbf q)\dot{\mathbf q}^{cmd}`
+  - 新版 allocator 当前同时包含：
+    - 球铰姿态规划器
+    - 静态分配矩阵 `\mathbf J_w(\mathbf q)`
+    - 构型变化率修正矩阵 `\mathbf J_q(\mathbf q)`
+  - `validate_wheel_speed_allocator.py` 当前已升级为完整低层链验证工具：
+    - 输入：
+      - `q`
+      - `q^d`
+      - `u_v`
+    - 输出：
+      - `\dot{\mathbf q}^{cmd}`
+      - `\mathbf q^{cmd}`
+      - `J_w(q)`
+      - `J_q(q)`
+      - `\boldsymbol\Omega^d`
+  - 数值验证已通过：
+    - `python3 -m py_compile ...`
+    - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --run-smoke-cases`
+- Reason:
+  - 用户明确要求按照论文当前推导重写 RL 动作空间、wheel allocator，并把球铰姿态规划器功能写入实际执行链
+- Impact:
+  - 未来所有新的 Stage0 run 都应按“完整第 3 章低层模型”解释，不能再把当前主线视为旧的静态 `J_w(q)` 分配器
+  - 下一步应直接做真实训练 run，而不是继续讨论动作链是否需要回接论文模型
+- Status:
+  - active RL mainline behavior changed
+
+### `chapter03.tex` 已正式写回为保留球铰完整 6 自由度的通用口径；此前的偏航约化 `Stage0` 推导稿不再代表论文主文默认模型
+- Updated:
+  - `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 论文第 3 章当前默认模型保留球铰完整 `6` 自由度：
+    - `\mathbf q`
+    - `\mathbf q^d`
+    - `\mathbf q^{cmd}`
+  - 第 3 章已显式引入球铰姿态规划器：
+    - `\dot{\mathbf q}^{cmd} = \operatorname{sat}(\mathbf K_q(\mathbf q^d - \mathbf q))`
+    - `\mathbf q^{cmd} = \operatorname{sat}(\mathbf q + \Delta t\,\dot{\mathbf q}^{cmd})`
+  - 六轮轮速分配已从仅依赖静态构型的：
+    - `\boldsymbol\Omega^d = \mathbf J_w(\mathbf q)\mathbf u_v`
+    - 扩展为：
+      - `\boldsymbol\Omega^d = \mathbf J_w(\mathbf q)\mathbf u_v + \mathbf J_q(\mathbf q)\dot{\mathbf q}^{cmd}`
+  - 第 3 章中：
+    - `\mathbf J_w(\mathbf q)` 表示静态几何分配矩阵
+    - `\mathbf J_q(\mathbf q)` 表示构型变化率修正矩阵
+  - `docs/Stage0球铰姿态规划器与底层运动学模型推导.md` 仍可保留为平地 `Stage0` 偏航约化候选稿，但它不再代表论文 `chapter03.tex` 的当前最终口径
+  - 论文主文件已完成 LaTeX 编译验证
+- Reason:
+  - 用户明确要求在将模型写回 `chapter03.tex` 时保留球铰的 `6` 个自由度，以便后续混合地形任务继续沿用统一符号和模型结构
+- Impact:
+  - 后续讨论必须区分：
+    - 论文主文的通用 `6` 自由度模型
+    - `Stage0` 平地偏航约化实现
+  - 如果后续要让 RL 环境与论文再次对齐，默认应以第 3 章当前的 `\mathbf J_w + \mathbf J_q` 结构为参照，而不是继续把偏航约化候选稿视为论文默认口径
+- Status:
+  - active thesis baseline updated
+
+### A chapter03-consistent Stage0 derivation draft now exists: under the yaw-only Stage0 assumption, the ball-joint posture planner generates `\mathbf q^d` from `\mathbf u_v`, and the low-level wheel-speed model is extended from `\mathbf J_w(\mathbf q)\mathbf u_v` to `\bar{\mathbf J}_w(\mathbf q)\bar{\mathbf u}_v` by explicitly injecting `\dot{\psi}_f^d` and `\dot{\psi}_r^d`
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/Stage0球铰姿态规划器与底层运动学模型推导.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - a dedicated derivation draft now bridges the current thesis Chapter03 notation and the proposed Stage0 structured-control route
+  - the draft keeps the Chapter03 core symbols unchanged:
+    - `\mathbf u_v`
+    - `\mathbf q`
+    - `\mathbf q^d`
+    - `\mathbf q^{cmd}`
+    - `\boldsymbol\Omega^d`
+    - `\mathcal P`
+  - the draft introduces a Stage0-specific reduction:
+    - `\theta_f = \phi_f = \theta_r = \phi_r = 0`
+    - only front/rear yaw remain active
+  - the draft defines a ball-joint posture planner:
+    - input:
+      - `(\mathbf u_v,\mathbf q,\mathcal P_\psi)`
+    - output:
+      - `\mathbf q^d`
+      - `\mathbf q^{cmd}`
+      - `\dot{\psi}_f^d`
+      - `\dot{\psi}_r^d`
+  - the draft extends the wheel-speed allocation model from the Chapter03 static-geometry form:
+    - `\boldsymbol\Omega^d = \mathbf J_w(\mathbf q)\mathbf u_v`
+    - to the Stage0 augmented form:
+      - `\boldsymbol\Omega^d = \bar{\mathbf J}_w(\mathbf q)\bar{\mathbf u}_v`
+  - the augmented command vector is:
+    - `\bar{\mathbf u}_v = [V_x^d,\Omega_z^d,\dot{\psi}_f^d,\dot{\psi}_r^d]^T`
+  - the augmented matrix remains backward compatible with Chapter03:
+    - when `\dot{\psi}_f^d = \dot{\psi}_r^d = 0`, it degenerates to the existing Chapter03 wheel-speed model under the yaw-only reduction
+- Reason:
+  - the user explicitly required modeling and derivation of the posture planner and low-level kinematic model while keeping notation and usage consistent with the thesis Chapter03 file
+- Impact:
+  - future implementation or thesis updates can reuse this derivation instead of mixing the older generic scheme notes with a different symbol system
+  - if the user later confirms the yaw-only Stage0 assumption, this draft can be promoted into the thesis text and the RL environment implementation
+- Status:
+  - candidate derivation promoted to durable project memory
+
+### Repository Markdown math syntax is now standardized to Obsidian-compatible `$...$` / `$$...$$`; future repository `.md` outputs should not use `\(...\)` or `\[...\]`
+- Updated:
+  - `AGENTS.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `docs/stage0_structured_control_scheme.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - repository-tracked Markdown documents now follow one math-markup rule:
+    - inline math uses `$...$`
+    - display math uses `$$...$$`
+  - future repository Markdown outputs should not use:
+    - `\(...\)`
+    - `\[...\]`
+  - this rule is intended for direct compilation/rendering in Obsidian without extra preprocessing
+  - this rule applies to Markdown files such as:
+    - `docs/`
+    - workflow notes
+    - logs
+    - other repository-tracked `.md` outputs
+  - this rule does not alter the LaTeX style used in the thesis source tree
+- Reason:
+  - the user explicitly required all future repository Markdown formulas to use Obsidian-compilable syntax
+- Impact:
+  - future Markdown documentation work should default to Obsidian math syntax instead of mixed Markdown/LaTeX delimiter styles
+- Status:
+  - active repository documentation rule updated
+
+### Current thesis-consistent `J_w(q)` allocator is purely geometry-based; in simulation it degenerates to skid steering at `q = 0`, keeps commanding airborne wheels, and produces strong front lateral scrub when `\psi_f \neq 0` but `\Omega_z^d = 0`
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the active allocator computes wheel targets from only:
+    - current ball-joint configuration `q`
+    - planar command `u_v = [V_x^d, \Omega_z^d]`
+  - it does not use:
+    - wheel-ground contact state
+    - normal contact force
+    - slip / slip angle
+    - actual base velocity feedback
+  - the env then sends those wheel targets directly to wheel velocity actuators every control step
+  - at `q = 0`, the current model reduces to three-axle differential steering:
+    - all three modules receive the same left/right differential pattern induced by `\Omega_z^d`
+  - for `q = [0, \theta_f, 0, 0, 0, 0]` and `u_v = [1, 0]`, the front-wheel linear-speed target becomes:
+    - `V_{front} = \cos(\theta_f)`
+  - therefore the allocator does not zero front-wheel commands when the front module is lifted:
+    - if the wheels lose ground contact, simulation will show free spin with little or no traction instead of automatic stop
+  - for `q = [\psi_f, 0, 0, 0, 0, 0]` and `u_v = [1, 0]`, the front-wheel linear-speed target becomes:
+    - `V_{front} = \cos(\psi_f)`
+  - at `\psi_f = 1 rad`, the validation result is:
+    - front-wheel linear-speed target `≈ 0.5403 m/s`
+    - implied lateral component magnitude `≈ 0.8415 m/s`
+  - this means the front module is not cleanly “kinematically steering” the vehicle in simulation:
+    - it is more likely to be pushed/dragged with strong lateral scrub unless friction is very low
+  - raw contact/slip quantities are available in diagnostics, but current actor observation still excludes them:
+    - the policy cannot directly condition on wheel unloading or side scrub
+- Reason:
+  - the user explicitly asked to confirm what the current motion model will actually look like in simulation under representative ball-joint poses
+- Impact:
+  - future discussion should treat the current allocator as a geometric target generator rather than a contact-aware traction allocator
+  - claims about terrain adaptability or reduced slip cannot be inferred from allocator formulas alone under the current implementation
+- Status:
+  - active model diagnosis promoted
+- Verification:
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --ball-joint-pos 0 0 0 0 0 0 --planar-command 1 1 --show-jacobian`
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --ball-joint-pos-deg 0 10 0 0 0 0 --planar-command 1 0 --show-jacobian`
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --ball-joint-pos 1 0 0 0 0 0 --planar-command 1 0 --show-jacobian`
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --ball-joint-pos-deg 0 60 0 0 0 0 --planar-command 1 0`
+
+### `validate_wheel_speed_allocator.py` is now a reusable manual CLI tool: it accepts arbitrary allocator inputs `q` and `u_v`, and returns `J_w(q)`, six wheel angular-speed targets, and wheel-edge linear-speed equivalents without needing to edit the script
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - the wheel-speed allocator validation utility is no longer limited to hard-coded smoke checks
+  - the current CLI supports manual input in either radians or degrees:
+    - `--ball-joint-pos`
+    - `--ball-joint-pos-deg`
+  - the planar command input is now explicit:
+    - `--planar-command VX WZ`
+  - the utility can optionally print the full allocation matrix:
+    - `--show-jacobian`
+  - the utility still preserves a built-in numerical regression path:
+    - `--run-smoke-cases`
+  - the script now prints, for each manual case:
+    - input ball-joint order
+    - output wheel-joint order
+    - `q` in rad
+    - `q` in deg
+    - `u_v = [V_x^d, \Omega_z^d]`
+    - `J_w(q)` when requested
+    - wheel angular-speed targets `\boldsymbol\Omega^d`
+    - wheel-edge linear-speed equivalents
+- Reason:
+  - the user explicitly required a reusable validation script that can evaluate arbitrary manually supplied inputs instead of only a few fixed examples
+- Impact:
+  - future formula checks, thesis examples, and debugging runs can now be reproduced directly from the command line without modifying Python source each time
+- Status:
+  - active offline allocator-validation workflow improved
+- Verification:
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py` passed
+  - `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --run-smoke-cases` passed
+  - manual CLI examples passed for:
+    - `q = 0, u_v = [1, 0]`
+    - `q = 0, u_v = [1, 1]`
+    - `\theta_f = 10^\circ, u_v = [1, 0]`
 
 ### `scripts/isaac_sim/control_keyboard.py` now prints the actual front/rear ball-joint angles and the equivalent front/rear relative poses in the terminal during teleoperation; in the current equivalent serial model these two views are the same state expressed as `z/y/x` vs `yaw/pitch/roll`
 - Updated:
@@ -522,6 +1090,63 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - the reached-target tolerance has been tightened to:
     - distance `< 0.2 m`
     - heading error `< 0.1 rad`
+
+## 2026-04-21
+
+- Decision / conclusion:
+  - the active Stage0 reward no longer includes `oscillation`
+  - the active reward terms are now:
+    - `distance_to_target`
+    - `reached_target`
+    - `angle_to_target`
+    - `far_from_target`
+    - `angle_diff`
+- Reason:
+  - the user requested removing the action-delta oscillation penalty from the active reward
+  - after the earlier action-path cleanup, keeping this term no longer matched the desired simplified Stage0 baseline
+- Impact:
+  - `compute_reward_terms(...)` no longer depends on `current_actions` or `last_actions`
+  - the base reward config no longer defines `oscillation_weight`
+  - Stage0 override and step metrics no longer log `Reward/oscillation`
+  - `last_action` remains in the 48-dim observation, but it is no longer tied to an action-smoothing reward term
+- Status:
+  - implemented in code and synced to active docs
+
+## 2026-04-21
+
+- Decision / conclusion:
+  - among the non-console step metrics, the active Stage0 path still writes the raw diagnostics to TensorBoard
+  - only `Critic/height_patch_mean` and `Critic/height_patch_max` were dead in the current Stage0 path and were removed
+- Reason:
+  - current Stage0 keeps `terrain.measure_heights = False`, so critic height-patch tensors are never produced
+  - the user wanted the non-output logging leftovers removed while preserving useful TensorBoard diagnostics
+- Impact:
+  - `Action/shaped_planar_command_abs_mean_raw`, `Action/contact_weight_mean_raw`, command traces, joint raw values, and other raw observation diagnostics remain available in TensorBoard
+  - the inactive critic height-patch logging branch was deleted from `env.py`
+- Status:
+  - implemented and py_compile passed
+
+## 2026-04-21
+
+- Decision / conclusion:
+  - the Stage0 logging surface is now explicitly split into:
+    - one fixed 24-tag console order
+    - one curated TensorBoard subset
+  - tags omitted by the user from the new logging spec were removed from the active step-metric path
+- Reason:
+  - the user requested a strict terminal print order and a separate TensorBoard ordering, with deleted items removed rather than merely hidden
+- Impact:
+  - `Termination/terminated_rate` remains in the console summary but is no longer written to TensorBoard
+  - removed from active step metrics:
+    - `Observation/turn_radius_raw`
+    - step-level `Command/goal_target_*_world`
+    - `Observation/head_roll_pitch_abs_mean_raw`
+    - `Observation/tail_roll_pitch_abs_mean_raw`
+    - `Observation/goal_rel_*_raw`
+    - `Observation/last_action_abs_mean_raw`
+  - `collect_raw_observation_terms(...)` no longer computes head/tail roll-pitch terms for logging
+- Status:
+  - implemented in `logger.py`, `env.py`, and `observations.py`; py_compile passed
   - termination success continues to share these tolerance values through `cfg.rewards.params`
 - Reason:
   - the user explicitly replaced the old reward design and explicitly removed the soft reverse-driving constraint from this round

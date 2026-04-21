@@ -254,9 +254,9 @@ CompleteCarEnvCfg
 - `self._terrain_runtime`
 - `self._sensor_runtime`
 - `self._ball_joint_ids` / `self._wheel_joint_ids`
-- `self.actions` / `self.last_actions` / `self._processed_actions`
+- `self.actions` / `self.last_actions`
 - `self.commands` / `self._command_time_left`
-- `self._joint_pos_targets` / `self._joint_vel_targets`
+- `self._joint_pos_targets` / `self._joint_effort_targets`
 - `self._episode_sums`
 - `self._root_height_sum` / `self._root_height_min`
 - `self._obs_history`

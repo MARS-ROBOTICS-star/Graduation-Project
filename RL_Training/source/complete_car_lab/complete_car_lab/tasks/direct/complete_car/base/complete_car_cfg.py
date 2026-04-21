@@ -43,8 +43,8 @@ class ControlCfg:
 
     ball_joint_names: tuple[str, ...] = tuple(BALL_JOINT_NAMES)
     wheel_joint_names: tuple[str, ...] = tuple(WHEEL_JOINT_NAMES)
-    ball_joint_action_lower_limits: tuple[float, ...] = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)
-    ball_joint_action_upper_limits: tuple[float, ...] = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
+    ball_joint_planner_gains: tuple[float, ...] = (10.0, 10.0, 10.0, 10.0, 10.0, 10.0)
+    ball_joint_planner_qdot_limits: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
     base_forward_velocity_max: float = 1.2  # 中模块期望纵向速度上限，单位：m/s。
     base_yaw_rate_max: float = 0.6  # 中模块期望偏航角速度上限，单位：rad/s。
     base_allow_reverse: bool = False  # 为 False 时，高层只输出前进命令，不输出倒车命令。
@@ -54,10 +54,17 @@ class ControlCfg:
     ball_joint_velocity_limit_sim: float = 1.0  # 球铰驱动器速度上限，单位：rad/s。
 
     wheel_joint_stiffness: float = 0.0  # 车轮位置刚度，单位：N*m/rad。
-    wheel_joint_damping: float = 4.0e3  # 车轮速度控制阻尼，单位：N*m*s/rad。
+    wheel_joint_damping: float = 0.0  # 车轮阻尼；当前低滑移主线使用力矩控制。
     wheel_joint_effort_limit_sim: float = 20.0  # 车轮驱动器力矩上限，单位：N*m。
     wheel_joint_velocity_limit_sim: float = 20.0  # 车轮驱动器速度上限，单位：rad/s。
     wheel_radius: float = WHEEL_RADIUS
+    low_slip_lambda_tracking: float = 1.0
+    low_slip_lambda_lateral: float = 5.0
+    contact_force_off_threshold: float = 0.01
+    contact_force_on_threshold: float = 0.08
+    wheel_torque_tracking_gain: float = 2.0
+    wheel_slip_feedback_gain: float = 4.0
+    wheel_slip_velocity_epsilon: float = 0.1
 
 
 @configclass
@@ -107,7 +114,6 @@ class ObservationCfg:
     history_length: int = 1
     clip_observations: float = 100.0
     wheel_slip_epsilon: float = 0.1
-    wheel_longitudinal_slip_clip: float = 1.0
     wheel_slip_angle_clip_rad: float = math.pi / 2.0
     scales: ObservationScalesCfg = ObservationScalesCfg()
     noise: ObservationNoiseCfg = ObservationNoiseCfg()
@@ -123,7 +129,6 @@ class RewardParamsCfg:
     distance_to_target_weight: float = 5.0
     reached_target_base_reward: float = 2.0
     reached_target_weight: float = 5.0
-    oscillation_weight: float = -0.05
     angle_to_target_threshold_rad: float = 2.0
     angle_to_target_weight: float = -1.5
     far_from_target_margin: float = 3.0

@@ -11,7 +11,6 @@ from ..utils.math_utils import wrap_to_pi_tensor
 REWARD_TERM_NAMES = (
     "distance_to_target",
     "reached_target",
-    "oscillation",
     "angle_to_target",
     "far_from_target",
     "angle_diff",
@@ -21,8 +20,6 @@ REWARD_TERM_NAMES = (
 def compute_reward_terms(
     cfg,
     commands: torch.Tensor,
-    current_actions: torch.Tensor,
-    last_actions: torch.Tensor,
     episode_length_buf: torch.Tensor,
     max_episode_length: int,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
@@ -44,8 +41,6 @@ def compute_reward_terms(
         / max_episode_length_f
     )
     reached_target = reached_target_mask.float() * params.reached_target_base_reward * reward_scale
-    action_delta = current_actions - last_actions
-    oscillation = torch.mean(torch.pow(torch.abs(action_delta), 4), dim=1) / max_episode_length_f
     angle_to_target_penalty = torch.where(
         torch.abs(angle_to_target) > params.angle_to_target_threshold_rad,
         torch.abs(angle_to_target) / max_episode_length_f,
@@ -66,7 +61,6 @@ def compute_reward_terms(
     components = {
         "distance_to_target": distance_to_target * params.distance_to_target_weight,
         "reached_target": reached_target * params.reached_target_weight,
-        "oscillation": oscillation * params.oscillation_weight,
         "angle_to_target": angle_to_target_penalty * params.angle_to_target_weight,
         "far_from_target": far_from_target * params.far_from_target_weight,
         "angle_diff": angle_diff * params.angle_diff_weight,

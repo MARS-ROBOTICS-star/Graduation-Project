@@ -109,6 +109,7 @@ def compute_policy_obs_noise_magnitudes(cfg) -> list[float]:
     magnitudes.extend([noise_level * noise_cfg.base_ang_vel] * 3)
     magnitudes.extend([noise_level * noise_cfg.wheel_joint_vel] * len(WHEEL_JOINT_NAMES))
     magnitudes.extend([noise_level * noise_cfg.wheel_longitudinal_slip] * len(WHEEL_JOINT_NAMES))
+    magnitudes.extend([noise_level * noise_cfg.wheel_slip_angle] * len(WHEEL_JOINT_NAMES))
     magnitudes.extend([noise_level * noise_cfg.wheel_normal_contact_force] * len(WHEEL_JOINT_NAMES))
     magnitudes.extend([noise_level * noise_cfg.commands] * cfg.commands.num_commands)
     magnitudes.extend([0.0] * cfg.action_space)
@@ -122,6 +123,7 @@ def compute_policy_obs_dim(cfg) -> int:
         + len(cfg.control.ball_joint_names)
         + 3
         + 3
+        + len(WHEEL_JOINT_NAMES)
         + len(WHEEL_JOINT_NAMES)
         + len(WHEEL_JOINT_NAMES)
         + len(WHEEL_JOINT_NAMES)

@@ -18,7 +18,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         # Stage0 keeps a full local copy of the active tunables so future tuning can
         # stay inside this file without bouncing back to the base template.
         self.stage_name = "stage0"
-        self.episode_length_s = 20.0
+        self.episode_length_s = 40.0
         self.decimation = 2
 
         self.scene.num_envs = 64
@@ -27,10 +27,11 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.scene.clone_in_fabric = True
 
         self.commands.num_commands = 4
-        self.commands.resampling_time = 20.0
-        self.commands.goal_distance = 8.0
+        self.commands.num_waypoints_per_episode = 2
+        self.commands.resampling_time = 40.0
+        self.commands.goal_distance = 10.0
         self.commands.goal_direction_max_deg = 30.0
-        self.commands.goal_heading_delta_max_deg = 12.0
+        self.commands.goal_heading_delta_max_deg = 0.0
         self.commands.zero_command = False
         self.commands.rel_standing_envs = 0.0
 
@@ -91,17 +92,21 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.observations.noise.commands = 0.0
 
         self.rewards.only_positive_rewards = False
-        self.rewards.params.target_position_tolerance = 0.2
+        self.rewards.params.target_position_tolerance = 2.0
         self.rewards.params.target_yaw_tolerance_deg = math.degrees(0.1)
-        self.rewards.params.distance_to_target_denominator_scale = 0.11
-        self.rewards.params.distance_to_target_weight = 5.0
+        self.rewards.params.distance_to_target_denominator_scale = 0.01
+        self.rewards.params.distance_to_target_weight = 6.0
+        self.rewards.params.progress_to_target_clip_m = 0.25
+        self.rewards.params.progress_to_target_relax_radius_m = 4.0
+        self.rewards.params.progress_to_target_weight = 8.0
         self.rewards.params.reached_target_base_reward = 2.0
-        self.rewards.params.reached_target_weight = 5.0
-        self.rewards.params.angle_to_target_threshold_rad = 2.0
-        self.rewards.params.angle_to_target_weight = -1.5
-        self.rewards.params.far_from_target_margin = 3.0
+        self.rewards.params.reached_target_weight = 6.0
+        self.rewards.params.far_from_target_margin = 6.0
         self.rewards.params.far_from_target_weight = -2.0
-        self.rewards.params.angle_diff_weight = 5.0
+        self.rewards.params.angle_diff_weight = 6.0
+        self.rewards.params.turn_speed_penalty_weight = -2.0
+        self.rewards.params.slip_penalty_weight = -2.0
+        self.rewards.params.slip_angle_penalty_ratio = 4.0
 
         self.terminations.orientation_limit_deg = 30.0
         self.terminations.head_tail_roll_limit_deg = 35.0

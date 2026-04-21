@@ -33,6 +33,12 @@ parser.add_argument("--agent", type=str, default="rsl_rl_cfg_entry_point")
 parser.add_argument("--checkpoint", type=str, default=None)
 parser.add_argument("--load_run", type=str, default=None)
 parser.add_argument("--real-time", action="store_true", default=False)
+parser.add_argument(
+    "--hide_goal_vis",
+    action="store_true",
+    default=False,
+    help="Hide goal position and heading markers during playback.",
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
 
@@ -130,6 +136,7 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     agent_cfg = _update_agent_cfg(agent_cfg)
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+    env_cfg.debug.enable_debug_draw = not args_cli.hide_goal_vis
     agent_cfg.device = env_cfg.sim.device
 
     log_root_path = os.path.abspath(os.path.join("logs", "rsl_rl", agent_cfg.experiment_name))

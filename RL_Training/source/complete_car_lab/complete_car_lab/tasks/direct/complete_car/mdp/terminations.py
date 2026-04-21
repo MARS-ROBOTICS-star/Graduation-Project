@@ -11,14 +11,17 @@ def compute_done_terms(
     cfg,
     robot,
     commands: torch.Tensor,
+    active_waypoint_index: torch.Tensor,
     ball_joint_ids,
     episode_length_buf: torch.Tensor,
     max_episode_length: int,
 ) -> dict[str, torch.Tensor]:
     ball_joint_pos = wrap_to_pi_tensor(robot.data.joint_pos[:, ball_joint_ids])
     current_goal_distance = torch.linalg.vector_norm(commands[:, :2], dim=1)
-    goal_heading_error = wrap_to_pi_tensor(commands[:, 3])
-    time_out = episode_length_buf >= max_episode_length - 1
+    waypoint_hit = current_goal_distance < cfg.rewards.params.target_position_tolerance
+    last_waypoint_index = max(int(getattr(cfg.commands, "num_waypoints_per_episode", 1)) - 1, 0)
+    is_success = waypoint_hit & (active_waypoint_index >= last_waypoint_index)
+    time_out = (episode_length_buf >= max_episode_length - 1) & ~is_success
     lower_limits = ball_joint_pos.new_tensor(cfg.terminations.ball_joint_pos_lower_limits)
     upper_limits = ball_joint_pos.new_tensor(cfg.terminations.ball_joint_pos_upper_limits)
     if lower_limits.numel() != ball_joint_pos.shape[1] or upper_limits.numel() != ball_joint_pos.shape[1]:
@@ -29,13 +32,12 @@ def compute_done_terms(
         (ball_joint_pos < lower_limits) | (ball_joint_pos > upper_limits),
         dim=1,
     )
-    is_success = (
-        (current_goal_distance < 0.2)
-        & (torch.abs(goal_heading_error) < 0.1)
+    far_from_target = current_goal_distance > (
+        cfg.commands.goal_distance + cfg.rewards.params.far_from_target_margin
     )
-    far_from_target = current_goal_distance > (cfg.commands.goal_distance + 3.0)
 
     return {
+        "waypoint_hit": waypoint_hit,
         "is_success": is_success,
         "far_from_target": far_from_target,
         "ball_joint_out_of_bounds": ball_joint_out_of_bounds,
@@ -47,6 +49,7 @@ def compute_dones(
     cfg,
     robot,
     commands: torch.Tensor,
+    active_waypoint_index: torch.Tensor,
     ball_joint_ids,
     episode_length_buf: torch.Tensor,
     max_episode_length: int,
@@ -55,6 +58,7 @@ def compute_dones(
         cfg,
         robot,
         commands,
+        active_waypoint_index,
         ball_joint_ids,
         episode_length_buf,
         max_episode_length,

@@ -20,6 +20,7 @@ def build_observation_descriptor(cfg) -> list[tuple[str, int]]:
         ("base_ang_vel", 3),
         ("wheel_joint_vel", len(WHEEL_JOINT_NAMES)),
         ("wheel_longitudinal_slip", len(WHEEL_JOINT_NAMES)),
+        ("wheel_slip_angle", len(WHEEL_JOINT_NAMES)),
         ("wheel_normal_contact_force", len(WHEEL_JOINT_NAMES)),
         ("goal_relative_command", cfg.commands.num_commands),
         ("last_action", cfg.action_space),

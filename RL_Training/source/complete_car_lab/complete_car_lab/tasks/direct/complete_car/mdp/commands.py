@@ -10,6 +10,98 @@ import torch
 from ..utils.math_utils import wrap_to_pi_tensor, world_xy_to_body_xy
 
 
+def _sample_direction_offsets(
+    num_samples: int,
+    max_offset_rad: float,
+    *,
+    device: torch.device | str,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Sample signed offsets with edge-biased magnitude."""
+
+    u = torch.rand(num_samples, device=device, dtype=dtype)
+    signs = torch.where(
+        torch.rand(num_samples, device=device) < 0.5,
+        -torch.ones(num_samples, device=device, dtype=dtype),
+        torch.ones(num_samples, device=device, dtype=dtype),
+    )
+    return signs * max_offset_rad * torch.sqrt(u)
+
+
+def sample_waypoint_command_sequences(
+    waypoint_targets_w: torch.Tensor,
+    env_ids: torch.Tensor,
+    start_pos_xy_w: torch.Tensor,
+    start_heading_w: torch.Tensor,
+    cfg,
+    sample_height_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Sample a short waypoint queue for every environment in ``env_ids``.
+
+    Each waypoint is sampled relative to the previous segment heading so a single
+    episode forms a short piecewise-linear path instead of unrelated point jumps.
+    """
+
+    if env_ids.numel() == 0:
+        empty = torch.empty((0, 0), device=waypoint_targets_w.device, dtype=waypoint_targets_w.dtype)
+        return empty, empty
+
+    device = waypoint_targets_w.device
+    dtype = waypoint_targets_w.dtype
+    num_envs = env_ids.numel()
+    num_waypoints = waypoint_targets_w.shape[1]
+    goal_direction_max = math.radians(cfg.goal_direction_max_deg)
+
+    direction_offsets = torch.zeros((num_envs, num_waypoints), device=device, dtype=dtype)
+    heading_offsets = torch.zeros_like(direction_offsets)
+
+    anchor_xy_w = start_pos_xy_w
+    anchor_heading_w = start_heading_w
+
+    standing_mask = torch.rand(num_envs, device=device) < cfg.rel_standing_envs if cfg.rel_standing_envs > 0.0 else None
+    zero_mask = torch.ones(num_envs, dtype=torch.bool, device=device) if cfg.zero_command else None
+
+    for waypoint_index in range(num_waypoints):
+        phi = _sample_direction_offsets(num_envs, goal_direction_max, device=device, dtype=dtype)
+        theta_los = wrap_to_pi_tensor(anchor_heading_w + phi)
+
+        target_xy_w = torch.stack(
+            (
+                anchor_xy_w[:, 0] + cfg.goal_distance * torch.cos(theta_los),
+                anchor_xy_w[:, 1] + cfg.goal_distance * torch.sin(theta_los),
+            ),
+            dim=-1,
+        )
+        target_heading_w = theta_los
+
+        if sample_height_fn is None:
+            target_z_w = torch.zeros(num_envs, device=device, dtype=dtype)
+        else:
+            target_z_w = sample_height_fn(target_xy_w)
+
+        if standing_mask is not None and torch.any(standing_mask):
+            target_xy_w = torch.where(standing_mask.unsqueeze(-1), anchor_xy_w, target_xy_w)
+            target_z_w = torch.where(standing_mask, torch.zeros_like(target_z_w), target_z_w)
+            target_heading_w = torch.where(standing_mask, anchor_heading_w, target_heading_w)
+            phi = torch.where(standing_mask, torch.zeros_like(phi), phi)
+
+        if zero_mask is not None:
+            target_xy_w = torch.where(zero_mask.unsqueeze(-1), start_pos_xy_w, target_xy_w)
+            target_z_w = torch.where(zero_mask, torch.zeros_like(target_z_w), target_z_w)
+            target_heading_w = torch.where(zero_mask, start_heading_w, target_heading_w)
+            phi = torch.where(zero_mask, torch.zeros_like(phi), phi)
+
+        waypoint_targets_w[env_ids, waypoint_index, 0:2] = target_xy_w
+        waypoint_targets_w[env_ids, waypoint_index, 2] = target_z_w
+        waypoint_targets_w[env_ids, waypoint_index, 3] = target_heading_w
+        direction_offsets[:, waypoint_index] = phi
+
+        anchor_xy_w = target_xy_w
+        anchor_heading_w = target_heading_w
+
+    return direction_offsets, heading_offsets
+
+
 def resample_goal_commands(
     command_targets_w: torch.Tensor,
     command_time_left: torch.Tensor,
@@ -72,7 +164,8 @@ def resample_goal_commands(
     command_time_left[env_ids] = cfg.resampling_time
     return phi, delta
 
-# 计算在小车坐标系下的目标位置及目标 heading
+
+# 计算在小车坐标系下的目标位置及当前 active waypoint 的视线方向误差
 def compute_relative_goal_commands(
     command_targets_w: torch.Tensor,
     base_pos_xy_w: torch.Tensor,
@@ -82,7 +175,7 @@ def compute_relative_goal_commands(
     delta_xy_w = command_targets_w[:, :2] - base_pos_xy_w
     relative_xy_b = world_xy_to_body_xy(delta_xy_w, base_yaw_w)
     relative_z = (command_targets_w[:, 2] - base_pos_z_w).unsqueeze(-1)
-    relative_heading = wrap_to_pi_tensor(command_targets_w[:, 3] - base_yaw_w).unsqueeze(-1)
+    relative_heading = torch.atan2(relative_xy_b[:, 1], relative_xy_b[:, 0]).unsqueeze(-1)
     return torch.cat((relative_xy_b, relative_z, relative_heading), dim=-1)
 
 

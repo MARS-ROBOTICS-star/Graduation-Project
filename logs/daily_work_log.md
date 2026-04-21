@@ -3,6 +3,288 @@
 ## 2026-04-21
 
 已完成：
+- 按用户要求，在修正为“双 waypoint、每段 `10m`、总名义路程约 `20m`”后的新 Stage0 主线上启动一轮真实训练，并全程观察终端输出：
+  - 命令：
+    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 64 --max_iterations 150 --run_name stage0_waypoint_quality_goal10_v1_150iter`
+  - 运行目录：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-21_21-51-09_stage0_waypoint_quality_goal10_v1_150iter`
+  - 对应 Isaac 日志：
+    - `/tmp/isaaclab/logs/isaaclab_2026-04-21_21-51-09.log`
+  - 训练总时长：
+    - `1286.63 s`
+- 已补导出本轮 TensorBoard 标量：
+  - `tensorboard_export/latest_values.csv`
+  - `tensorboard_export/summary.json`
+  - `tensorboard_export/scalars/*.csv`
+- 已完成 run 级诊断并同步项目记忆。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前双 waypoint Stage0 主线已经“能学”，不是单纯起训失败：
+  - `Train/mean_reward: -1.46 -> 19.15`
+  - `goal_success_rate: 0.0 -> 0.5625`
+  - `time_out_rate: 0.8809 -> 0.4375`
+  - `episode/waypoints_completed: 0.0 -> 1.3047`
+  - `episode/waypoint_completion_pct: 0.0 -> 65.23`
+- 训练存在明显两阶段形态：
+  - `iteration 0-117` 长时间平台，多数 episode 超时
+  - `iteration 118+` 才出现 success 跃迁
+  - `iteration 131` 一度达到：
+    - `goal_success_rate = 1.0`
+    - `time_out_rate = 0.0`
+    - `waypoints_completed = 2.0`
+  - 但该峰值没有稳定保持到末轮
+- 当前主要问题不是吞吐或启动链，而是行为质量和成功稳定性：
+  - 纵滑率从 `9.22` 降到 `3.49`
+  - 但侧滑角从 `0.514` 升到 `0.630 rad`
+  - 说明当前完成 waypoint 的方式仍偏高侧滑
+  - `Loss/value` 末轮升到 `0.3265`，late-phase critic 稳定性偏弱
+- 本轮运行性能正常：
+  - `Perf/total_fps` 平均约 `4024`
+  - `collection_time` 平均约 `7.95 s`
+
+下一步：
+- 基于本轮真实 run 重新判断 reward 平衡，重点检查：
+  - `slip_penalty`
+  - `turn_speed_penalty`
+  - `progress_to_target`
+ 之间是否把策略推向了“会完成但不够干净”的解。
+
+已完成：
+- 按用户最新修正，将 Stage0 双 waypoint 几何从“每段 20m”改为“每段 10m、总名义路程约 20m”：
+  - `commands.goal_distance: 20.0 -> 10.0`
+- 已同步更新当前状态与参数文档口径。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/current_status.md`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前双 waypoint Stage0 的默认几何已经修正为：
+  - 两段 waypoint
+  - 每段 `10m`
+  - 总名义路程约 `20m`
+- reward 与 termination 的实现形式不变，但它们依赖 `goal_distance` 的量会自动改到新尺度。
+
+已完成：
+- 按用户确认的 5 点方案，将 Stage0 从“单目标终点捕获”重构为“平地双 waypoint 高质量连续运动”主线：
+  - `commands.num_waypoints_per_episode = 2`
+  - `commands.goal_distance = 20.0`
+  - `episode_length_s = 40.0`
+  - 命中当前 waypoint 后自动切到下一个
+  - 只有最后一个 waypoint 命中时 episode 才算 `success`
+- 已将 `wheel_slip_angle` 正式加入 actor / critic observation：
+  - 观测维度由 `48 / 48` 增至 `54 / 54`
+- 已重构 reward 主干：
+  - 保留 `distance_to_target / progress_to_target / reached_target / far_from_target / angle_diff`
+  - 新增 `turn_speed_penalty`
+  - 新增 `slip_penalty`
+  - 当前 `commands[:, 3]` 已改为 active waypoint bearing，而不是最终目标朝向误差
+- 已修正 `termination` 口径一致性：
+  - `far_from_target` 不再写死 `goal_distance + 3.0`
+  - 已改为读取 `goal_distance + far_from_target_margin`
+- 已完成静态检查：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- 已完成 smoke run：
+  - 命令：
+    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 64 --max_iterations 2 --run_name smoke_stage0_waypoint_quality_v1`
+  - 运行目录：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-21_21-23-45_smoke_stage0_waypoint_quality_v1`
+  - 对应 Isaac 日志：
+    - `/tmp/isaaclab/logs/isaaclab_2026-04-21_21-23-45.log`
+  - 在修正 `far_from_target` 判定口径后，又补跑了一次 smoke：
+    - 命令：
+      - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 64 --max_iterations 2 --run_name smoke_stage0_waypoint_quality_v2_far_margin_fix`
+    - 运行目录：
+      - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-21_21-32-41_smoke_stage0_waypoint_quality_v2_far_margin_fix`
+    - 对应 Isaac 日志：
+      - `/tmp/isaaclab/logs/isaaclab_2026-04-21_21-32-41.log`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/current_status.md`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 的任务语义已经切换到用户确认的新平地主线，不再沿用旧的单目标终点捕获口径。
+- 代码链已经能正常启动并输出新的 waypoint / reward / observation 指标，`far_from_target` 口径也已和配置统一。
+- 当前最需要继续验证的是 reward 平衡；smoke run 中 `slip_penalty` 量级偏大，初始总回报为负。
+
+已完成：
+- 对照 `RLRoverLab` 的 `AAU` 目标可视化实现，完成当前 Stage0 回放链路的目标位姿 marker 接线：
+  - 核对结论：
+    - `AAU` 的做法不是在 `eval.py` 里临时绘制
+    - 而是在命令运行时对象里通过 `VisualizationMarkers` 持有 marker，并在每步 debug callback 里刷新
+  - 当前本仓库落地方式：
+    - 在 `debug_draw.py` 中新增目标位置球 marker 与目标朝向箭头 marker
+    - 在 `base/env.py` 中用现有 `command_targets_w` 每步刷新 marker
+    - 在 `scripts/play.py` 中默认开启该可视化
+    - 如需隐藏，可传：
+      - `--hide_goal_vis`
+- 已完成静态检查：
+  - `python3 -m py_compile RL_Training/scripts/play.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py`
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `python scripts/play.py --task CompleteCar-Stage0 ...` 默认会显示目标位置与目标朝向。
+- 当前实现直接复用了 `command_targets_w` 的世界系目标缓存，不需要再额外维护一套回放专用目标状态。
+
+已完成：
+- 按用户确认的终点捕获导向方案重调 Stage0 reward：
+  - 删除 `angle_to_target`
+  - `distance_to_target_weight: 5.0 -> 8.0`
+  - `angle_diff_weight: 5.0 -> 10.0`
+  - 新增 `progress_to_target_relax_radius_m = 2.0`
+  - `progress_to_target` 在 `d <= 2.0 m` 时改为只奖励前进，不惩罚短暂停止、绕行或后退
+- 已同步清理运行时日志主链：
+  - `env.py` 不再输出 `Reward/angle_to_target`
+  - `logger.py` 不再保留 `Reward/angle_to_target` 的终端 / TensorBoard / episode tag
+- 已完成静态检查：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- 已完成短 smoke run 验证：
+  - 命令：
+    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 64 --max_iterations 2 --run_name smoke_reward_terminal_capture_v2`
+  - 运行目录：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-21_19-02-56_smoke_reward_terminal_capture_v2`
+  - 对应 Isaac 日志：
+    - `/tmp/isaaclab/logs/isaaclab_2026-04-21_19-02-56.log`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/current_status.md`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 active reward 已从 6 项改为 5 项，不再包含 `angle_to_target`。
+- 新 reward 口径已经可以正常启动训练，smoke run 未出现 reward / logger 相关运行时错误。
+- 下一步应直接跑一轮新的真实训练，验证：
+  - `time_out_rate` 是否下降
+  - `goal_heading_error_abs` 是否改善
+  - `goal_success_rate` 是否更稳定
+
+已完成：
+- 按用户要求启动一轮 Stage0 GPU 真实训练前，先修复了 low-slip allocator 的启动阻塞：
+  - 问题位置：
+    - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+  - 现象：
+    - 首轮 run `2026-04-21_15-39-43_stage0_full_diagnosis_2026-04-21` 在首个 `env.step()` 崩溃
+    - 报错为：
+      - `TypeError: maximum(): argument 'other' must be Tensor, not float`
+  - 原因：
+    - torch 路径 `_sat(...)` 直接把 Python float 边界传给了 `torch.maximum / minimum`
+  - 修复：
+    - `_sat(...)` 现已统一把 `lower / upper` 转成与 `values` 同 device、同 dtype 的 Tensor
+- 已完成验证：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+
+产出/结论：
+- 当前 low-slip 主线训练不再会在 contact weight 饱和阶段因 float/Tensor 类型不匹配崩溃。
+
+已完成：
+- 按用户要求启动并全程终端观察一轮 `CompleteCar-Stage0` GPU 真实训练：
+  - 命令：
+    - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --run_name stage0_full_diagnosis_2026-04-21_v2`
+  - 运行目录：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-21_15-40-55_stage0_full_diagnosis_2026-04-21_v2`
+  - 对应 Isaac 日志：
+    - `/tmp/isaaclab/logs/isaaclab_2026-04-21_15-40-55.log`
+  - 对应 Hydra 输出：
+    - `RL_Training/outputs/2026-04-21/15-40-55/`
+  - 实际停止位置：
+    - `iteration 147 / 700`
+  - 停止原因：
+    - 终端行为形态、关键标量趋势和运行时问题已稳定显现，继续跑完整个 `700` 轮的信息增量很低
+- 已完成：
+  - 导出本轮 TensorBoard 标量：
+    - `tensorboard_export/`
+  - 读取并核对：
+    - `params/env.yaml`
+    - `params/agent.yaml`
+    - `.hydra/overrides.yaml`
+    - `latest_values.csv`
+    - `summary.json`
+
+本轮关键结果：
+- 启动与接线正常：
+  - articulation 初始化正常
+  - `ball_joints` / `wheel_joints` actuator collection 正常
+  - 本轮真实训练配置为：
+    - `cuda:0`
+    - `64` 个 env
+    - `8` 维动作
+    - `48 / 48` 观测
+- 当前 low-slip 主线相比旧坏平衡，确实出现了结构性改善：
+  - `Train/mean_reward`：
+    - `0.238 -> 4.075`
+  - `goal_pos_error`：
+    - `7.689 m -> 3.018 m`
+    - 最好约 `2.668 m`
+  - `goal_completion_pct`：
+    - `4.14% -> 62.28%`
+    - 最好约 `66.65%`
+  - `wheel_longitudinal_slip_abs_mean_raw`：
+    - `9.401 -> 5.860`
+    - 最低约 `3.669`
+  - `wheel_torque_target_abs_mean_raw`：
+    - `4.666 -> 3.890`
+- 但主失败模式没有消失：
+  - 末轮：
+    - `mean_episode_length = 1199`
+    - `time_out_rate = 1.0`
+    - `termination_success_rate = 0.0`
+    - `Tracking/goal_success_rate = 0.0`
+  - 说明当前策略主要学成了：
+    - 更低滑移地接近目标
+    - 但不是稳定完成到达
+- 本轮还暴露出两个新的诊断重点：
+  - success 统计口径分裂：
+    - `Termination/success_rate` 多次出现脉冲式非零，最大约 `0.193`
+    - `Tracking/goal_success_rate` 全程为 `0`
+    - 当前高概率是 reset 前后统计时刻不一致
+  - rollout collection 性能退化：
+    - `Perf/total_fps` 在约 `iteration 117` 后从 `~3330` 掉到 `~2240`
+    - `Perf/collection_time` 从 `~9.6 s` 涨到 `~14.4 s`
+    - `learning_time` 基本稳定，性能问题集中在 rollout collection
+
+当前结论：
+- 当前 Stage0 新主线已经不再是“完全不会朝目标靠近”，但仍没有形成稳定到达策略。
+- 下一轮优先级不应先改 PPO 数值，而应先查清：
+  - success 指标为什么口径分裂
+  - collection throughput 为什么在中段断崖下降
+  - reward 是否仍主要奖励“接近目标 + 活到超时”
+
+已完成：
 - 按用户要求将当前 Stage0 actor / critic 观测切换为 48 维最小闭环方案：
   - `ball_joint_pos` 6
   - `ball_joint_vel` 6
@@ -9637,3 +9919,110 @@
 产出/结论：
 - 当前 Stage0 的终端面板与 TensorBoard 面板已不再共用同一套 tag 保留规则。
 - 终端、TensorBoard、环境 step metrics 三处日志口径已经重新对齐到用户指定集合。
+
+## 2026-04-21
+
+已完成：
+- 修正 `Tracking/goal_success_rate` 的统计时序：
+  - 已改为和 `Termination/success_rate` 一样，使用 reset 批次的 `_last_done_terms["is_success"]`
+  - 已从 step metrics 中移除旧的 post-reset 重算路径
+- 清理 rollout 热路径：
+  - 删除 `_get_rewards()` 中未被 reward 使用的 contact-force / `raw_obs_terms` 死开销
+  - 在 `_get_observations()` 中缓存 post-reset `relative_goal_commands` 与 `raw_obs_terms`
+  - 让 `_collect_step_metrics()` 复用缓存，避免同一步重复 contact 查询
+- 新增 Stage0 reward：
+  - `progress_to_target`
+  - `progress_to_target_clip_m = 0.25`
+  - `progress_to_target_weight = 6.0`
+- 更新日志与文档：
+  - `Reward/progress_to_target` 已进入终端 / TensorBoard
+  - `docs/RL阶段训练参数一览表.md` 已同步更新为 6 项 reward 口径
+- 完成真实训练 run：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-21_16-56-14_success_fix_perf_fix_progress_reward_v1`
+  - 共跑满 `150` 轮
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/current_status.md`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- success 统计口径已修正：
+  - 新 run 中 `Tracking/goal_success_rate` 与 `Termination/success_rate` 逐轮完全一致
+  - `max_abs_diff = 0`
+- throughput 断崖已消失：
+  - 旧 run 在 `110-130` 窗口内 `collection_time` 平均约 `12.69 s`
+  - 新 run 同窗口内 `collection_time` 平均约 `7.89 s`
+  - 新 run 到 `126-149` 窗口仍稳定在约 `7.86 s`
+- progress reward 明显提升了逼近与成功率：
+  - `goal_pos_error` 最低约 `1.51 m`
+  - `goal_completion_pct` 最高约 `81.17%`
+  - `goal_success_rate` 最高约 `0.5156`
+  - 末轮 `goal_success_rate ≈ 0.2305`
+  - 末轮 `time_out_rate ≈ 0.7695`
+- 当前新的主问题：
+  - 近目标朝向误差仍偏大
+  - 中后段纵滑率重新升高
+  - 策略已从“不会逼近”转成“会逼近且常有 success 脉冲，但还不能稳定、低滑移地完成”
+
+## 2026-04-21
+
+已完成：
+- 跑满第三轮终点捕获导向 reward 的长回合真实训练：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-21_19-11-12_reward_terminal_capture_v2_250iter`
+  - `max_iterations = 250`
+  - `num_envs = 64`
+- 全程监控训练终端日志，确认训练过程中：
+  - 无启动报错或中途崩溃
+  - `Tracking/goal_success_rate` 与 `Termination/success_rate` 一直一致
+  - `iteration 100-128` 出现一次集中性的 `collection_time` spike，之后自行恢复
+- 完成该 run 的 TensorBoard 标量导出与离线诊断：
+  - 已生成 `tensorboard_export/summary.json`
+  - 已生成 `tensorboard_export/latest_values.csv`
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 本轮训练完整跑满 `250` 轮，训练总时长约 `2473.55 s`
+- 关键结果：
+  - `Train/mean_reward`：
+    - `0.706 -> 16.935`
+    - 最高约 `17.94`
+  - `goal_success_rate`：
+    - 末轮约 `0.3125`
+    - 最高约 `0.5576`
+    - 最后 `50` 轮平均约 `0.3672`
+  - `time_out_rate`：
+    - 末轮约 `0.6875`
+    - 最低约 `0.4424`
+    - 最后 `50` 轮平均约 `0.6328`
+  - `goal_pos_error`：
+    - 末轮约 `1.859 m`
+    - 最低约 `1.484 m`
+  - `goal_heading_error_abs`：
+    - 末轮约 `0.172 rad`
+    - 最低约 `0.155 rad`
+- 当前主问题：
+  - 成功率已明显提升，但超时仍是主终止模式
+  - `100+` 轮后位置误差不再继续收敛，terminal position capture 仍不稳定
+  - 终端 heading 已较上一轮明显改善，但纵滑与侧滑仍偏高：
+    - `wheel_longitudinal_slip_abs_mean_raw` 末轮约 `5.29`
+    - `wheel_slip_angle_abs_mean_raw` 末轮约 `0.600 rad`
+  - reward 后段仍以 `progress_to_target` 为最强 dense 项：
+    - `progress ≈ 0.00712`
+    - `distance ≈ 0.00513`
+    - `angle_diff ≈ 0.00360`
+  - `iteration 100-128` 存在暂态性能异常：
+    - `collection_time` 平均约 `12.37 s`
+    - `fps` 约 `2.6k`
+    - 后续又恢复到 `~8.68 s / 3.69k`

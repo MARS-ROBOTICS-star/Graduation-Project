@@ -10,15 +10,13 @@ from ..kinematics import compute_longitudinal_slip_torch
 from ..utils.math_utils import quat_rotate, wrap_to_pi_tensor
 
 
-def _compute_wheel_contact_observations(
+def compute_wheel_motion_observations(
     wheel_body_lin_vel_w: torch.Tensor,
     wheel_body_quat_w: torch.Tensor,
     wheel_joint_vel: torch.Tensor,
-    wheel_contact_forces_w: torch.Tensor,
     wheel_radius: float,
     slip_velocity_epsilon: float,
-    total_vehicle_weight: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     x_axis_local = torch.zeros_like(wheel_body_lin_vel_w)
     x_axis_local[..., 0] = 1.0
     y_axis_local = torch.zeros_like(wheel_body_lin_vel_w)
@@ -40,6 +38,26 @@ def _compute_wheel_contact_observations(
 
     # Describe the mismatch angle between wheel heading and actual travel direction.
     wheel_slip_angle = torch.atan2(v_y, torch.abs(v_x) + slip_velocity_epsilon)
+
+    return wheel_longitudinal_slip, wheel_slip_angle
+
+
+def _compute_wheel_contact_observations(
+    wheel_body_lin_vel_w: torch.Tensor,
+    wheel_body_quat_w: torch.Tensor,
+    wheel_joint_vel: torch.Tensor,
+    wheel_contact_forces_w: torch.Tensor,
+    wheel_radius: float,
+    slip_velocity_epsilon: float,
+    total_vehicle_weight: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    wheel_longitudinal_slip, wheel_slip_angle = compute_wheel_motion_observations(
+        wheel_body_lin_vel_w=wheel_body_lin_vel_w,
+        wheel_body_quat_w=wheel_body_quat_w,
+        wheel_joint_vel=wheel_joint_vel,
+        wheel_radius=wheel_radius,
+        slip_velocity_epsilon=slip_velocity_epsilon,
+    )
 
     # The runtime sensor path reconstructs one wheel-ground normal-force resultant vector in world frame
     # by summing all contact-point (normal_force_scalar * contact_normal_vector) terms for each wheel.
@@ -75,6 +93,11 @@ def collect_raw_observation_terms(
         slip_velocity_epsilon=cfg.observations.wheel_slip_epsilon,
         total_vehicle_weight=total_vehicle_weight,
     )
+    wheel_slip_angle = torch.clamp(
+        wheel_slip_angle,
+        min=-cfg.observations.wheel_slip_angle_clip_rad,
+        max=cfg.observations.wheel_slip_angle_clip_rad,
+    )
 
     return {
         "base_lin_vel": robot.data.root_com_lin_vel_b,
@@ -92,6 +115,27 @@ def collect_raw_observation_terms(
     }
 
 
+def compute_actor_observation_from_raw_terms(cfg, raw_terms: dict[str, torch.Tensor]) -> torch.Tensor:
+    """Construct the actor observation from already collected raw observation terms."""
+
+    scales = cfg.observations.scales
+    return torch.cat(
+        [
+            raw_terms["ball_joint_pos"] * scales.ball_joint_pos,
+            raw_terms["ball_joint_vel"] * scales.ball_joint_vel,
+            raw_terms["base_lin_vel"] * scales.base_lin_vel,
+            raw_terms["base_ang_vel"] * scales.base_ang_vel,
+            raw_terms["wheel_joint_vel"] * scales.wheel_joint_vel,
+            raw_terms["wheel_longitudinal_slip"] * scales.wheel_longitudinal_slip,
+            raw_terms["wheel_slip_angle"] * scales.wheel_slip_angle,
+            raw_terms["wheel_normal_contact_force"] * scales.wheel_normal_contact_force,
+            raw_terms["relative_goal_commands"] * scales.commands,
+            raw_terms["last_actions"] * scales.last_action,
+        ],
+        dim=-1,
+    )
+
+
 def compute_actor_observation(
     cfg,
     robot,
@@ -106,7 +150,6 @@ def compute_actor_observation(
 ) -> torch.Tensor:
     """构造 Actor 观测；当前 Critic 观测与其保持一致。"""
 
-    scales = cfg.observations.scales
     raw_terms = collect_raw_observation_terms(
         cfg,
         robot,
@@ -119,21 +162,7 @@ def compute_actor_observation(
         relative_goal_commands,
         last_actions,
     )
-
-    return torch.cat(
-        [
-            raw_terms["ball_joint_pos"] * scales.ball_joint_pos,
-            raw_terms["ball_joint_vel"] * scales.ball_joint_vel,
-            raw_terms["base_lin_vel"] * scales.base_lin_vel,
-            raw_terms["base_ang_vel"] * scales.base_ang_vel,
-            raw_terms["wheel_joint_vel"] * scales.wheel_joint_vel,
-            raw_terms["wheel_longitudinal_slip"] * scales.wheel_longitudinal_slip,
-            raw_terms["wheel_normal_contact_force"] * scales.wheel_normal_contact_force,
-            raw_terms["relative_goal_commands"] * scales.commands,
-            raw_terms["last_actions"] * scales.last_action,
-        ],
-        dim=-1,
-    )
+    return compute_actor_observation_from_raw_terms(cfg, raw_terms)
 
 
 def compute_critic_observation(actor_obs: torch.Tensor, height_patch: torch.Tensor | None) -> torch.Tensor:

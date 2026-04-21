@@ -928,6 +928,8 @@ class TorchWheelSpeedAllocator:
 
     def _sat(self, values, lower, upper):
         torch = self.torch
+        lower = torch.as_tensor(lower, device=values.device, dtype=values.dtype)
+        upper = torch.as_tensor(upper, device=values.device, dtype=values.dtype)
         return torch.minimum(torch.maximum(values, lower), upper)
 
     def _build_rotation_and_derivatives(self, module_angles):

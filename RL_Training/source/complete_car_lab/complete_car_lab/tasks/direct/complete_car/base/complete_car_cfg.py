@@ -25,6 +25,7 @@ class CommandCfg:
     """目标位姿命令采样器配置。"""
 
     num_commands: int = 4
+    num_waypoints_per_episode: int = 1
     resampling_time: float = 5.0  # 目标重采样周期，单位：s。
     goal_distance: float = 20
     goal_direction_max_deg: float = 18.43
@@ -127,13 +128,17 @@ class RewardParamsCfg:
     target_yaw_tolerance_deg: float = math.degrees(0.1)
     distance_to_target_denominator_scale: float = 0.11
     distance_to_target_weight: float = 5.0
+    progress_to_target_clip_m: float = 0.25
+    progress_to_target_relax_radius_m: float = 0.0
+    progress_to_target_weight: float = 0.0
     reached_target_base_reward: float = 2.0
     reached_target_weight: float = 5.0
-    angle_to_target_threshold_rad: float = 2.0
-    angle_to_target_weight: float = -1.5
     far_from_target_margin: float = 3.0
     far_from_target_weight: float = -2.0
     angle_diff_weight: float = 5.0
+    turn_speed_penalty_weight: float = 0.0
+    slip_penalty_weight: float = 0.0
+    slip_angle_penalty_ratio: float = 1.0
 
 
 @configclass

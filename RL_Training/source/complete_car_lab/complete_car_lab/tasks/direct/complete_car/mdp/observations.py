@@ -76,6 +76,7 @@ def collect_raw_observation_terms(
     total_vehicle_weight: torch.Tensor,
     ball_joint_targets: torch.Tensor,
     relative_goal_commands: torch.Tensor,
+    next_turn_delta: torch.Tensor,
     last_actions: torch.Tensor,
 ) -> dict[str, torch.Tensor]:
     """返回未乘 observation scale 的原始观测分量。"""
@@ -111,6 +112,7 @@ def collect_raw_observation_terms(
         "wheel_slip_angle": wheel_slip_angle,
         "wheel_normal_contact_force": wheel_normal_contact_force,
         "relative_goal_commands": relative_goal_commands,
+        "next_turn_delta": next_turn_delta,
         "last_actions": last_actions,
     }
 
@@ -130,6 +132,7 @@ def compute_actor_observation_from_raw_terms(cfg, raw_terms: dict[str, torch.Ten
             raw_terms["wheel_slip_angle"] * scales.wheel_slip_angle,
             raw_terms["wheel_normal_contact_force"] * scales.wheel_normal_contact_force,
             raw_terms["relative_goal_commands"] * scales.commands,
+            raw_terms["next_turn_delta"] * scales.next_turn_delta,
             raw_terms["last_actions"] * scales.last_action,
         ],
         dim=-1,
@@ -146,6 +149,7 @@ def compute_actor_observation(
     total_vehicle_weight: torch.Tensor,
     ball_joint_targets: torch.Tensor,
     relative_goal_commands: torch.Tensor,
+    next_turn_delta: torch.Tensor,
     last_actions: torch.Tensor,
 ) -> torch.Tensor:
     """构造 Actor 观测；当前 Critic 观测与其保持一致。"""
@@ -160,6 +164,7 @@ def compute_actor_observation(
         total_vehicle_weight,
         ball_joint_targets,
         relative_goal_commands,
+        next_turn_delta,
         last_actions,
     )
     return compute_actor_observation_from_raw_terms(cfg, raw_terms)

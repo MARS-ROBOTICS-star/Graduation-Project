@@ -3,6 +3,51 @@
 ## 2026-04-21
 
 已完成：
+- 按用户要求，把 Stage0 继续推进到“路线预瞄 + 强制第二段转弯 + 差速代价”版本：
+  - observation 新增 `next_turn_delta`
+  - waypoint 采样新增 `min_segment_turn_deg = 20.0°`
+  - reward 新增 `differential_turn_cost`
+  - `slip_penalty / turn_speed_penalty` 已改为按转向需求加权
+- 已同步更新 observation dim / descriptor / noise dim / logger：
+  - actor / critic 观测维度由 `54 / 54` 升至 `55 / 55`
+- 已完成静态检查：
+  - `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- 已尝试补跑 smoke：
+  - 命令：
+    - `python3 scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 16 --max_iterations 2 --run_name smoke_stage0_next_turn_preview_v1`
+  - 结果：
+    - 当前终端环境直接报 `ModuleNotFoundError: No module named 'isaaclab'`
+    - 本轮未能完成 runtime smoke
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/current_status.md`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 active Stage0 代码口径已变为：
+  - 双 waypoint
+  - 每段 `10m`
+  - 第二段相对第一段最小转角 `20°`
+  - 观测 `55 / 55`
+  - reward `8` 项
+- `differential_turn_cost` 当前基于三组左右轮扭矩差平均绝对值，不直接奖励球铰角度。
+- 本轮代码改动已通过静态检查，但由于 Isaac Lab 运行环境缺失，尚未完成新的 smoke 与真实训练验证。
+
+下一步：
+- 先恢复 Isaac Lab 运行环境，再补跑 smoke 与新的真实训练，重点检查 `differential_turn_cost / slip_penalty / turn_speed_penalty` 是否真的把策略推向协同转向。
+
+已完成：
 - 按用户要求，在修正为“双 waypoint、每段 `10m`、总名义路程约 `20m`”后的新 Stage0 主线上启动一轮真实训练，并全程观察终端输出：
   - 命令：
     - `python scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 64 --max_iterations 150 --run_name stage0_waypoint_quality_goal10_v1_150iter`
@@ -9923,6 +9968,119 @@
 ## 2026-04-21
 
 已完成：
+- 按用户要求停止使用 `MinerU`，改用 `opendataloader-pdf` 执行 PDF 转 Markdown：
+  - 仓库已克隆到：
+    - `/home/lbz/opendataloader-pdf-fulltty`
+  - 本机源码构建受 `mvn` 缺失阻塞，因此本轮采用：
+    - `/tmp/opendataloader-pdf-venv` 虚拟环境
+    - 安装已发布的 `opendataloader-pdf` 包
+  - 在当前终端环境下，已确认必须使用：
+    - `JAVA_TOOL_OPTIONS=-Djava.awt.headless=true`
+    否则会因 `DISPLAY=:0` 触发 Java AWT/X11 报错
+- 已完成研究背景/综述第一批与第二批共 `22` 篇核心文献的 Markdown 转换：
+  - 输出目录：
+    - `docs/literature/opendataloader_output/`
+  - 已核对结果：
+    - 预期 `22` 篇
+    - 实际 `22` 篇
+    - 缺失 `0` 篇
+- 本轮完成的文献包括：
+  - 第一批 `15` 篇：
+    - `Borges 2022`
+    - `Papadakis 2013`
+    - `Prado 2018`
+    - `Iagnemma 2003`
+    - `Kayacan 2018`
+    - `Lei 2021`
+    - `Li 2021`
+    - `Bai 2019`
+    - `Gosselin & Hamel 1994`
+    - `Abe 2021`
+    - `Josef & Degani 2020`
+    - `Hu 2021`
+    - `Wiberg 2022`
+    - `Wiberg 2024`
+    - `Henderson 2019`
+  - 第二批 `7` 篇：
+    - `Cordes 2017`
+    - `Cordes 2018`
+    - `Lim 2009`
+    - `Huang 2024`
+    - `Xu 2024`
+    - `Mortensen & Bøgh 2024`
+    - `Patterson 2024`
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前研究背景/综述的主干文献已经具备可直接阅读的 Markdown 工作底稿。
+- 后续文献阅读应优先读取：
+  - `docs/literature/opendataloader_output/*.md`
+  再回查原始 PDF 做图表、公式、页码核对。
+
+下一步：
+- 进入这 `22` 篇文献的结构化阅读，按七个综述模块提炼可直接写入论文的背景与相关工作骨架。
+
+已完成：
+- 按用户给定的 7 个综述写作模块，对 `docs/literature/` 本地文献库完成首轮筛选与分层：
+  - 主干文献池
+  - 近年补充文献
+  - 延后阅读/暂不作为主干的论文
+- 已核对本地文献库形态：
+  - 当前基本仍为 PDF
+  - 存在重复文件与 `_zh-CN_dual` 双语版本
+  - 存在少量学位论文与预印本，不适合直接作为主干引用
+- 已形成首轮主干清单：
+  - 复杂地形/可通行性综述：
+    - `Borges 2022`
+    - `Papadakis 2013`
+  - 铰接/主动悬架/传统控制代表文献：
+    - `Iagnemma 2003`
+    - `Cordes 2017`
+    - `Kayacan 2018`
+    - `Lei 2021`
+    - `Li 2021`
+  - 球面并联启发文献：
+    - `Bai 2019`
+    - `Gosselin & Hamel 1994`
+    - `Abe 2021`
+  - RL 主干文献：
+    - `Josef & Degani 2020`
+    - `Hu 2021`
+    - `Wiberg 2022`
+    - `Wiberg 2024`
+    - `Xu 2024`
+    - `Mortensen & Bøgh 2024`
+  - RL 方法学局限文献：
+    - `Henderson 2019`
+    - `Patterson 2024`
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前研究背景/综述的文献处理方式已明确：
+  - 不再对整库 PDF 无差别处理
+  - 先围绕七模块建立主干文献池
+  - 再按优先级把核心文献转为 `md`
+- 当前不建议先作为主干的文献包括：
+  - 学位论文：
+    - `Attard 2023`
+    - `Mehta 2025`
+  - 预印本：
+    - `Fue 2026`
+  - 纯机构学闭式解细节论文：
+    - 暂留待机构章节再用
+
+下一步：
+- 先对主干文献去重并确定 canonical 版本，再优先转换第一批 `md`，随后进入结构化阅读与综述笔记。
+
+已完成：
 - 修正 `Tracking/goal_success_rate` 的统计时序：
   - 已改为和 `Termination/success_rate` 一样，使用 reset 批次的 `_last_done_terms["is_success"]`
   - 已从 step metrics 中移除旧的 post-reset 重算路径
@@ -10026,3 +10184,41 @@
     - `collection_time` 平均约 `12.37 s`
     - `fps` 约 `2.6k`
     - 后续又恢复到 `~8.68 s / 3.69k`
+
+## 2026-04-22
+
+已完成：
+- 按用户要求将 `far_from_target` 从 Stage0 reward 中删除，只保留为 termination 护栏。
+- 同步清理 reward 配置、episode logger 与参数文档中的旧口径：
+  - active reward 现固定为 `7` 项
+  - `Reward/far_from_target`、`episode/far_from_target`、`episode_per_step/far_from_target` 已移除
+- 补跑静态检查：
+  - `python3 -m py_compile ...` 通过
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/current_status.md`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 reward 口径为：
+  - `distance_to_target`
+  - `progress_to_target`
+  - `reached_target`
+  - `angle_diff`
+  - `turn_speed_penalty`
+  - `slip_penalty`
+  - `differential_turn_cost`
+- `far_from_target` 现在只负责：
+  - `termination` 判定
+  - `Termination/far_from_target_rate` 诊断统计
+- 当前代码主线中不再存在 `far_from_target_weight`。
+- 本轮未补跑 Isaac Lab runtime smoke：
+  - 当前终端环境仍缺少 `isaaclab`
+  - 运行 `scripts/train.py` 仍会卡在环境依赖，而不是 reward 代码本身

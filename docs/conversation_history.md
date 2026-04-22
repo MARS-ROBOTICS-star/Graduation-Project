@@ -2,7 +2,228 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-22
+
+### Stage0 当前 active reward 已移除 `far_from_target`；该量只保留在 termination 中作为越界护栏
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 用户已明确要求将 `far_from_target` 直接从 reward 中删除，不再作为 shaping 项参与总奖励累加。
+  - 当前 Stage0 active reward 固定为 `7` 项：
+    - `distance_to_target`
+    - `progress_to_target`
+    - `reached_target`
+    - `angle_diff`
+    - `turn_speed_penalty`
+    - `slip_penalty`
+    - `differential_turn_cost`
+  - `far_from_target_margin` 仍保留在共享 reward 参数中，但其用途已收缩为 termination 阈值配置，而不是 reward 权重配置。
+  - `Termination/far_from_target_rate` 继续保留，用于诊断 episode 是否因远离当前 active waypoint 而结束。
+  - 这意味着当前默认任务语义已经明确为：
+    - `far_from_target` 是越界终止条件
+    - 不是密集 reward 或事件 reward
+- Reason:
+  - 用户判断该项在当前双 waypoint 主线中不适合作为 reward shaping，更适合只承担 episode 护栏职责。
+- Impact:
+  - 后续 reward 调参、实验对比与论文叙述时，应按“7 项 active reward + 1 个 far termination 护栏”的口径保持一致。
+  - 若未来需要重新引入 far-distance 惩罚，必须视为新的研究决策，而不是默认沿用旧配置。
+- Status:
+  - 代码、配置、logger 与参数文档已同步
+  - `python3 -m py_compile ...` 已通过
+  - runtime smoke 仍未补跑，当前终端环境依然缺少 `isaaclab`
+
 ## 2026-04-21
+
+### 研究背景/综述第一、二批核心文献已改用 `opendataloader-pdf` 转换为 Markdown；后续文献阅读应优先使用 `docs/literature/opendataloader_output/` 下的 `md`
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 用户明确要求本轮不要继续使用 `MinerU`，改用：
+    - `https://github.com/opendataloader-project/opendataloader-pdf`
+  - 该仓库已完整克隆到：
+    - `/home/lbz/opendataloader-pdf-fulltty`
+  - 由于本机缺少 `mvn`，本轮没有直接在源码仓内本地构建 Java CLI，而是采用：
+    - 先克隆仓库用于确认接口与运行方式
+    - 再在 `/tmp/opendataloader-pdf-venv` 中安装已发布的 `opendataloader-pdf` 包执行转换
+  - 在当前终端环境下，`opendataloader-pdf` 本地模式默认会触发 Java AWT 对 `DISPLAY=:0` 的依赖；必须使用：
+    - `JAVA_TOOL_OPTIONS=-Djava.awt.headless=true`
+    才能稳定运行
+  - 当前已完成第一批与第二批共 `22` 篇核心文献的 Markdown 转换，输出位于：
+    - `docs/literature/opendataloader_output/`
+  - 本轮转换的 canonical 文献集合包括：
+    - 第一批 `15` 篇：
+      - `Borges 2022`
+      - `Papadakis 2013`
+      - `Prado 2018`
+      - `Iagnemma 2003`
+      - `Kayacan 2018`
+      - `Lei 2021`
+      - `Li 2021`
+      - `Bai 2019`
+      - `Gosselin & Hamel 1994`
+      - `Abe 2021`
+      - `Josef & Degani 2020`
+      - `Hu 2021`
+      - `Wiberg 2022`
+      - `Wiberg 2024`
+      - `Henderson 2019`
+    - 第二批 `7` 篇：
+      - `Cordes 2017`
+      - `Cordes 2018`
+      - `Lim 2009`
+      - `Huang 2024`
+      - `Xu 2024`
+      - `Mortensen & Bøgh 2024`
+      - `Patterson 2024`
+  - 本轮已核对：
+    - `expected = 22`
+    - `actual = 22`
+    - `missing = 0`
+  - 后续若继续使用该工具批量转换，应优先沿用当前命令模式：
+    - 使用 `/tmp/opendataloader-pdf-venv/bin/opendataloader-pdf`
+    - 设置 `JAVA_TOOL_OPTIONS=-Djava.awt.headless=true`
+    - 输出到 `docs/literature/opendataloader_output/`
+- Reason:
+  - 用户认为 `MinerU` 太慢，要求切换到更快的 PDF 转 Markdown 工具
+- Impact:
+  - 后续阅读、提纲抽取、综述写作时，应优先读 `opendataloader_output` 下的 Markdown，再回查 PDF 校正图表、公式和页码
+  - 当前这 `22` 篇已经具备可直接进入结构化阅读的工作底稿，不需要再重复转换
+- Status:
+  - completed
+
+### 研究背景/综述七模块的首轮文献筛选已完成；后续写作应采用“主干文献池 + 近年补充 + 延后阅读”的三层组织，而不是继续混合处理整库 PDF
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 用户已明确研究背景/综述部分的 7 个写作模块：
+    - 复杂地形移动机器人的应用背景与能力需求
+    - 地面车辆常见构型及其局限
+    - 铰接式地面车辆的研究意义
+    - 球面并联关节启发构型的引入动机
+    - 该类构型的控制难点
+    - 现有控制方法与不足
+    - 强化学习在复杂移动机器人控制中的价值与不足
+  - 本地 `docs/literature/` 当前仍以 PDF 为主，且存在重复文件、`_zh-CN_dual` 双语版本与少量学位论文/预印本，因此后续阅读不应对整库无差别转换。
+  - 当前综述主干文献池应优先围绕以下几条线组织：
+    - 地形可通行性/复杂地形能力需求：
+      - `Borges 2022`
+      - `Papadakis 2013`
+      - `Prado 2018`
+    - 铰接式/主动悬架车辆的意义、建模与控制：
+      - `Iagnemma 2003`
+      - `Cordes 2017`
+      - `Kayacan 2018`
+      - `Lei 2021`
+      - `Li 2021`
+    - 球面并联/多自由度球面运动启发：
+      - `Bai 2019`
+      - `Gosselin & Hamel 1994`
+      - `Abe 2021`
+    - 复杂地形车辆 RL 与 sim-to-real：
+      - `Josef & Degani 2020`
+      - `Hu 2021`
+      - `Wiberg 2022`
+      - `Wiberg 2024`
+      - `Xu 2024`
+      - `Mortensen & Bøgh 2024`
+    - RL 方法学局限与实验规范：
+      - `Henderson 2019`
+      - `Patterson 2024`
+  - 当前不宜作为综述主干优先文献的类型包括：
+    - 学位论文：
+      - `Attard 2023`
+      - `Mehta 2025`
+    - 未经同行评审预印本：
+      - `Fue 2026`
+    - 纯机构学闭式解/工作空间细节论文：
+      - 暂不作为研究背景首轮主干材料，保留到机构章节或后续细化时再用
+  - 当前 `md` 转换优先级应采用两批：
+    - 第一批必须转：
+      - 两篇综述
+      - 五篇铰接/主动悬架/传统控制代表文献
+      - 三篇球面并联启发文献
+      - 四到六篇 RL 主干文献
+    - 第二批再转：
+      - 2024/2025 新工作与平台/课程学习/补充应用文献
+- Reason:
+  - 用户当前不是继续做泛检索，而是要为“研究背景 + 综述”建立可写作的文献主线与阅读顺序
+- Impact:
+  - 后续文献处理应先服务于七模块写作结构，而不是继续按“是否和 RL/铰接沾边”粗放收集
+  - 后续如果要批量转 `md`，应先处理主干文献池并去重，再进入结构化阅读笔记
+- Status:
+  - first-pass thesis-background literature screening completed
+
+### Stage0 已按用户要求切到“路线预瞄 + 强制第二段转弯 + 差速代价”版本；当前 active code 为 `55 / 55` 观测与 `8` 项 reward，但 runtime smoke 在本轮受本机 Isaac Lab 环境缺失阻塞
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/current_status.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 用户已明确要求平地 Stage0 继续走纯 RL 路线，但要把“第二个 waypoint 的转向需求”暴露给策略，并让任务分布与 reward 都更真实地需要协同转向。
+  - 当前 active Stage0 观测已从 `54 / 54` 升级为 `55 / 55`：
+    - 新增 `next_turn_delta`
+    - 其含义为：
+      - `turn_delta = next_segment_heading - current_segment_heading`
+    - 当前实现没有把整条路径状态塞进 observation，而是只补这一条最小预瞄量。
+  - 当前 Stage0 waypoint 采样已新增：
+    - `commands.min_segment_turn_deg = 20.0`
+    - 对当前双 waypoint 任务而言，这意味着第二段相对第一段的转角不再会退化到近似直线。
+  - 当前 active reward 已从 `7` 项变为 `8` 项：
+    - `distance_to_target`
+    - `progress_to_target`
+    - `reached_target`
+    - `far_from_target`
+    - `angle_diff`
+    - `turn_speed_penalty`
+    - `slip_penalty`
+    - `differential_turn_cost`
+  - `differential_turn_cost` 当前实现为三组左右轮扭矩差的平均绝对值：
+    - `(body, head, tail)` 三组 left-right pair
+    - 数据源为 env 已缓存的 `_last_wheel_torque_targets`
+  - 当前 turn-demand 逻辑已不再只看 active waypoint bearing：
+    - `turn_speed_penalty` 使用 `max(current bearing demand, preview turn_delta demand)`
+    - `slip_penalty` 与 `differential_turn_cost` 使用按 turn-demand 缩放的惩罚系数
+    - 当前默认缩放区间是：
+      - `turn_demand_penalty_min_scale = 0.25`
+      - `turn_demand_penalty_max_scale = 1.5`
+  - 本轮已完成 targeted `py_compile`，语法与接口接线层面通过。
+  - 本轮试图补跑 smoke：
+    - `python3 scripts/train.py --task CompleteCar-Stage0 --headless --device cuda:0 --num_envs 16 --max_iterations 2 --run_name smoke_stage0_next_turn_preview_v1`
+    - 但当前终端环境直接报：
+      - `ModuleNotFoundError: No module named 'isaaclab'`
+    - 因此这次阻塞来自本机 Isaac Lab 运行环境缺失，而不是本轮代码修改本身。
+- Reason:
+  - 用户明确要求实现：
+    - next-turn preview
+    - 第二段 waypoint 最小转角下限
+    - 针对“纯差速硬拧”的 reward 代价，而不是直接奖励球铰摆动
+- Impact:
+  - 后续所有 Stage0 训练与分析都应基于新的 `55 / 55` observation 与 `8` 项 reward 口径，而不是继续沿用上一版 `54 / 54` 的 run 解释。
+  - 在恢复 Isaac Lab 环境之前，本轮修改只能视为“代码已落地且静态通过”，不能视为“运行时已验证”。
+- Status:
+  - active Stage0 code updated; runtime smoke pending environment restore
 
 ### run `2026-04-21_21-51-09_stage0_waypoint_quality_goal10_v1_150iter` 证明：修正为“双 waypoint、每段 10m、总名义路程约 20m”后，Stage0 已能学会完成 waypoint，但当前成功仍不稳定，且完成方式偏高侧滑
 - Run:

@@ -28,6 +28,37 @@ def _sample_direction_offsets(
     return signs * max_offset_rad * torch.sqrt(u)
 
 
+def _sample_direction_offsets_with_min_abs(
+    num_samples: int,
+    max_offset_rad: float,
+    min_abs_offset_rad: float,
+    *,
+    device: torch.device | str,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Sample signed offsets whose magnitude stays in ``[min_abs_offset_rad, max_offset_rad]``."""
+
+    if max_offset_rad <= 0.0:
+        return torch.zeros(num_samples, device=device, dtype=dtype)
+
+    clamped_min = min(max(min_abs_offset_rad, 0.0), max_offset_rad)
+    if clamped_min <= 0.0:
+        return _sample_direction_offsets(num_samples, max_offset_rad, device=device, dtype=dtype)
+
+    if clamped_min >= max_offset_rad:
+        magnitudes = torch.full((num_samples,), max_offset_rad, device=device, dtype=dtype)
+    else:
+        u = torch.rand(num_samples, device=device, dtype=dtype)
+        magnitudes = clamped_min + (max_offset_rad - clamped_min) * torch.sqrt(u)
+
+    signs = torch.where(
+        torch.rand(num_samples, device=device) < 0.5,
+        -torch.ones(num_samples, device=device, dtype=dtype),
+        torch.ones(num_samples, device=device, dtype=dtype),
+    )
+    return signs * magnitudes
+
+
 def sample_waypoint_command_sequences(
     waypoint_targets_w: torch.Tensor,
     env_ids: torch.Tensor,
@@ -51,6 +82,7 @@ def sample_waypoint_command_sequences(
     num_envs = env_ids.numel()
     num_waypoints = waypoint_targets_w.shape[1]
     goal_direction_max = math.radians(cfg.goal_direction_max_deg)
+    min_segment_turn = math.radians(getattr(cfg, "min_segment_turn_deg", 0.0))
 
     direction_offsets = torch.zeros((num_envs, num_waypoints), device=device, dtype=dtype)
     heading_offsets = torch.zeros_like(direction_offsets)
@@ -62,7 +94,16 @@ def sample_waypoint_command_sequences(
     zero_mask = torch.ones(num_envs, dtype=torch.bool, device=device) if cfg.zero_command else None
 
     for waypoint_index in range(num_waypoints):
-        phi = _sample_direction_offsets(num_envs, goal_direction_max, device=device, dtype=dtype)
+        if waypoint_index > 0 and min_segment_turn > 0.0:
+            phi = _sample_direction_offsets_with_min_abs(
+                num_envs,
+                goal_direction_max,
+                min_segment_turn,
+                device=device,
+                dtype=dtype,
+            )
+        else:
+            phi = _sample_direction_offsets(num_envs, goal_direction_max, device=device, dtype=dtype)
         theta_los = wrap_to_pi_tensor(anchor_heading_w + phi)
 
         target_xy_w = torch.stack(

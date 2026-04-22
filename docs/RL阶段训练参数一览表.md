@@ -108,6 +108,7 @@ $$
 
 - `commands.num_waypoints_per_episode = 2`
 - `commands.goal_distance = 10.0 m`
+- `commands.min_segment_turn_deg = 20.0°`
 - `commands.resampling_time = 40.0 s`
 - `episode_length_s = 40.0 s`
 - waypoint 队列只在 reset 时一次性采样
@@ -168,7 +169,7 @@ $$
 - articulation root prim：`/complete_car_alternative/body_car_chassis`
 - 生成机器人时启用接触传感：`activate_contact_sensors = True`
 - 默认 root 初始位置：`(0.0, 0.0, 0.30)`
-- 默认所有球铰角、轮角、球铰角速度、轮角速度都为 `0`
+- 默认所有球铰角、轮角速度都为 `0`
 
 ### 4.3 执行器参数
 
@@ -212,15 +213,14 @@ $$
 - `2 + 6 = 8`
 
 ### 5.2 policy 输出后的内部动作张量
-
-当前环境已经不再保留独立的 `preprocess_policy_actions(...)` 阶段。  
+ 
 policy 输出的 `[-1, 1]` 动作会直接写入环境内部动作张量：
 
 - `self.actions`
 - `self.last_actions`
 
-当前 reward 已不再包含基于相邻两步原始动作差分的振荡惩罚项。`last_action` 目前保留在观测中，仅作为策略可见的上一时刻动作信息。
-同时，环境内也不再保留旧的 wheel velocity target 写入路径，车轮执行链只保留 effort / torque 目标写入。
+`last_action` 目前保留在观测中，仅作为策略可见的上一时刻动作信息。
+
 
 ### 5.3 平面命令分支
 
@@ -341,8 +341,6 @@ allocator 运行时先构造：
 
 - 轮速雅可比 $J_w(q) \in \mathbb{R}^{6 \times 2}$
 - 姿态变化率修正雅可比 $J_q(q) \in \mathbb{R}^{6 \times 6}$
-
-它们并没有失效，只是在低滑移整形步骤里采用了逐轮展开的等价写法。
 
 ### 6.4 接触权重
 
@@ -493,7 +491,7 @@ $$
 当前 Stage0 在 reset 时一次性采样一段长度为 `2` 的 waypoint 队列。  
 第 `k` 个 waypoint 总是相对“上一段的 heading”采样，因此整回合形成的是一条短折线，而不是彼此独立的随机点。
 
-第 `k` 段先采样相对上一段 heading 的偏角：
+第 `1` 段先采样相对上一段 heading 的偏角：
 
 $$
 \phi = s \cdot \phi_{max} \cdot \sqrt{u}
@@ -504,6 +502,28 @@ $$
 - $u \sim U[0,1)$
 - $s \in \{-1, +1\}$
 - 采用 $\sqrt{u}$ 是为了做边缘强化采样
+
+从第 `2` 段开始，当前 active 代码会强制满足最小转角下限：
+
+$$
+|\phi| \in [\phi_{min}, \phi_{max}]
+$$
+
+其中当前 Stage0 为：
+
+- $\phi_{min} = 20.0^\circ$
+- $\phi_{max} = 30.0^\circ$
+
+实现上使用：
+
+$$
+|\phi| = \phi_{min} + (\phi_{max} - \phi_{min}) \sqrt{u}
+$$
+
+因此在当前双 waypoint 任务里：
+
+- 第一段仍允许较小转向
+- 第二段相对第一段不会再退化为近似直线
 
 再得到：
 
@@ -551,6 +571,25 @@ $$
 - 它用于衡量“当前 waypoint 在车头左前方还是右前方偏了多少”
 - 它**不是**“到达 waypoint 时车头最终应该朝向哪里”的终点姿态误差
 
+### 7.5 当前 next-turn preview
+
+当前 observation 还额外送入一个最小路线预瞄量：
+
+$$
+turn\_delta = \operatorname{wrap}\left(\psi_{seg,next} - \psi_{seg,current}\right)
+$$
+
+其中：
+
+- $\psi_{seg,current}$ 是当前 active waypoint 对应的段 heading
+- $\psi_{seg,next}$ 是下一个 waypoint 对应的段 heading
+- 如果当前已经是最后一个 waypoint，则 `turn_delta = 0`
+
+它的作用不是直接告诉策略完整路径，而是只告诉它：
+
+- 下一段相对当前段要往左还是往右拐
+- 下一拐的大致转角有多大
+
 ## 8. 观测空间
 
 ### 8.1 实际送入 policy 的观测
@@ -567,16 +606,17 @@ wheel_longitudinal_slip   6
 wheel_slip_angle          6
 wheel_normal_contact_force 6
 goal_relative_command     4
+next_turn_delta           1
 last_action               8
 ----------------------------
-total                    54
+total                    55
 ```
 
 当前 critic 观测：
 
 - 因为 `terrain.measure_heights = False`
 - 所以 critic 不追加 terrain height patch
-- 当前 critic 维度也为 `54`
+- 当前 critic 维度也为 `55`
 
 ### 8.2 可以被构造但当前没有送入 policy 的原始观测项
 
@@ -588,8 +628,10 @@ total                    54
 - `base_ang_vel`
 - `wheel_joint_vel`
 - `wheel_longitudinal_slip`
+- `wheel_slip_angle`
 - `wheel_normal_contact_force`
 - `relative_goal_commands`
+- `next_turn_delta`
 - `last_actions`
 
 这意味着当前 policy：
@@ -598,12 +640,13 @@ total                    54
 - 已经能看到轮系纵滑率
 - 已经能看到轮系侧滑角
 - 已经能看到归一化法向接触力
+- 已经能看到下一段相对当前段的最小预瞄转角
 - 仍然看不到球铰目标误差
 - 看不到机体姿态
 
 ### 8.3 当前观测 scale
 
-虽然当前 actor 只选择了 9 类量送入网络，但配置中仍保留了完整 scale 参数：
+虽然当前 actor 只选择了 11 类量送入网络，但配置中仍保留了完整 scale 参数：
 
 - `base_lin_vel = 1.0`
 - `base_ang_vel = 1.0`
@@ -617,6 +660,7 @@ total                    54
 - `wheel_slip_angle = 1.0`
 - `wheel_normal_contact_force = 1.0`
 - `commands = 1.0`
+- `next_turn_delta = 1.0`
 - `last_action = 1.0`
 
 ### 8.4 观测历史、裁剪与噪声
@@ -671,15 +715,15 @@ $$
 
 ### 9.1 当前 reward 总式
 
-$$  
+$$
 reward =
 reward_{distance}
 + reward_{progress}
 + reward_{reached}
-+ reward_{far}
 + reward_{angle\_diff}
 + reward_{turn\_speed}
 + reward_{slip}
++ reward_{diff\_turn}
 $$  
 
 当前 reward term 名称：
@@ -687,10 +731,10 @@ $$
 - `distance_to_target`
 - `progress_to_target`
 - `reached_target`
-- `far_from_target`
 - `angle_diff`
 - `turn_speed_penalty`
 - `slip_penalty`
+- `differential_turn_cost`
 
 ### 9.2 当前 reward 参数
 
@@ -704,11 +748,13 @@ $$
 - `reached_target_base_reward = 2.0`
 - `reached_target_weight = 6.0`
 - `far_from_target_margin = 6.0`
-- `far_from_target_weight = -2.0`
 - `angle_diff_weight = 6.0`
 - `turn_speed_penalty_weight = -2.0`
 - `slip_penalty_weight = -2.0`
+- `differential_turn_cost_weight = -1.0`
 - `slip_angle_penalty_ratio = 4.0`
+- `turn_demand_penalty_min_scale = 0.25`
+- `turn_demand_penalty_max_scale = 1.5`
 - `only_positive_rewards = False`
 
 说明：
@@ -758,16 +804,25 @@ $$
 reward_{reached} = 6.0 \cdot 2.0 \cdot \frac{T - t}{T} \cdot waypoint\_hit
 $$
 
-远离目标惩罚：
-
-$$  
-reward_{far} = -2.0 \cdot \mathbb{1}(d > goal\_distance + 6.0)
-$$  
-
 当前 waypoint 方向对齐项：
 
 $$
 reward_{angle\_diff} = 6.0 \cdot \frac{1}{1+|goal\_bearing|} \cdot \frac{1}{T}
+$$
+
+当前 turn-demand 定义：
+
+$$
+turn\_demand =
+\max
+\left(
+\operatorname{clip}(|goal\_bearing| / 30^\circ,\; 0,\; 1),
+\operatorname{clip}(|turn\_delta| / 30^\circ,\; 0,\; 1)
+\right)
+$$
+
+$$
+turn\_penalty\_scale = 0.25 + (1.5 - 0.25)\, turn\_demand
 $$
 
 转向时高速惩罚：
@@ -776,8 +831,7 @@ $$
 reward_{turn\_speed} =
 -2.0 \cdot
 \frac{
-\operatorname{clip}(|goal\_bearing| / 30^\circ,\; 0,\; 1)
-\cdot
+turn\_demand \cdot
 \left\|v_{base,xy}\right\| / 2.0
 }{T}
 $$
@@ -788,26 +842,50 @@ $$
 reward_{slip} =
 -2.0 \cdot
 \frac{
+turn\_penalty\_scale \cdot
+\left(
 \operatorname{mean}(|s_{long}|)
 +
 4.0 \cdot \operatorname{mean}(|\alpha_{slip}|)
+\right)
 }{T}
 $$
+
+左右差速代价：
+
+$$
+reward_{diff\_turn} =
+-1.0 \cdot
+\frac{
+turn\_penalty\_scale \cdot
+\operatorname{mean}\left(|\tau_{left} - \tau_{right}|\right)
+}{T}
+$$
+
+其中当前实现对三组左右轮对求平均：
+
+- `body_left/right`
+- `head_left/right`
+- `tail_left/right`
 
 ### 9.4 审查 reward 时必须知道的事实
 
 - 当前 reward 已不再直接惩罚高层 8 维动作变化
 - 当前 reward 已经开始直接约束：
   - 当前 active waypoint 的方向对齐
+  - 当前段与下一段共同定义的 turn-demand
   - 转向时的过高前进速度
   - 纵滑率
   - 侧滑角
+  - 左右轮差速扭矩
 - 当前 reward 仍然**没有直接约束**：
+  - far-from-target 越界
   - 接触权重
   - 扭矩大小
   - 球铰极限使用率
   - 轮速参考误差
-- 因此当前 low-slip allocator 的好坏既会通过显式滑移项影响 reward，也会通过是否更容易完成 waypoint 跟踪来间接体现
+- 当前 `far_from_target` 已不再是 reward 项，而只作为 termination 护栏存在。
+- 因此当前 low-slip allocator 的好坏既会通过显式滑移项和差速代价影响 reward，也会通过是否更容易完成 waypoint 跟踪来间接体现
 
 ## 10. 终止条件
 
@@ -1056,6 +1134,7 @@ $$
 - `wheel_slip_angle`
 - `wheel_normal_contact_force`
 - `goal_relative_command`
+- `next_turn_delta`
 - `last_action`
 
 直接决定执行器的量：
@@ -1066,9 +1145,11 @@ $$
 直接进入 reward / termination 的量：
 
 - `relative_goal_commands`
+- `next_turn_delta`
 - `base_lin_vel_b`
 - `wheel_longitudinal_slip`
 - `wheel_slip_angle`
+- `wheel_torque_targets`
 - 当前球铰角 `q`
 - `episode_length_buf`
 
@@ -1082,7 +1163,6 @@ $$
 - `contact_weights`
 - `shaped_planar_command`
 - `wheel_speed_reference`
-- `wheel_torque_targets`
 - `wheel_slip_angle`
 - `ball_joint_target_error`
 - `projected_gravity`
@@ -1101,8 +1181,8 @@ $$
 - `Reward/progress_to_target`
 - `Reward/angle_diff`
 - `Reward/turn_speed_penalty`
+- `Reward/differential_turn_cost`
 - `Reward/slip_penalty`
-- `Reward/far_from_target`
 - `Observation/wheel_longitudinal_slip_abs_mean_raw`
 - `Observation/wheel_slip_angle_abs_mean_raw`
 - `Observation/wheel_normal_contact_force_sum_raw`
@@ -1166,7 +1246,7 @@ $$
 如果要对当前 RL 环境做系统审查，建议按下面顺序看：
 
 1. 先确认双 waypoint 平地几何是否合理
-2. 再确认 `54` 维观测是否已经覆盖你想约束的行为质量
+2. 再确认 `55` 维观测是否已经覆盖你想约束的行为质量
 3. 再看 8 维动作如何通过 planner 和 allocator 变成 $q_{cmd}$ 与 $\tau_{cmd}$
 4. 再核对 reward 是否真的在鼓励你希望的“连续通过 + 低滑移转向”，而不是仅仅鼓励“接近当前点即可”
 5. 再核对 termination 是否过宽或过窄

@@ -39,6 +39,26 @@ parser.add_argument(
     default=False,
     help="Hide goal position and heading markers during playback.",
 )
+parser.add_argument(
+    "--show_wheel_slip_vis",
+    action="store_true",
+    default=False,
+    help="Draw wheel rolling directions in green and actual planar velocity directions in red.",
+)
+parser.add_argument(
+    "--slip_vis_close_view",
+    action="store_true",
+    default=False,
+    help="Use a closer fixed camera view for inspecting wheel-slip visualization.",
+)
+parser.add_argument(
+    "--create_follow_views",
+    action="store_true",
+    default=False,
+    help="Create selectable follow cameras under /view: one top-down camera per env and one chase camera.",
+)
+parser.add_argument("--follow_view_top_height", type=float, default=2.5)
+parser.add_argument("--follow_view_chase_env", type=int, default=0)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
 
@@ -123,6 +143,27 @@ def _resolve_checkpoint_path(log_root_path: str, run_pattern: str, checkpoint_pa
     return get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
 
 
+def _validate_checkpoint_file(path: str) -> str:
+    """Ensure the resolved checkpoint is a real file before passing it to torch.load."""
+    resolved_path = os.path.abspath(os.path.expanduser(path))
+    if os.path.isdir(resolved_path):
+        raise IsADirectoryError(
+            f"Checkpoint must be a .pt file, but got directory: {resolved_path}. "
+            "Check the value passed after --checkpoint."
+        )
+    if not os.path.isfile(resolved_path):
+        raise FileNotFoundError(f"Checkpoint file does not exist: {resolved_path}")
+    return resolved_path
+
+
+def _resolve_explicit_checkpoint_path(checkpoint: str) -> str:
+    """Resolve a user-provided checkpoint path without turning local files into temp dirs."""
+    local_path = Path(checkpoint).expanduser()
+    if local_path.is_file():
+        return str(local_path.resolve())
+    return _validate_checkpoint_file(retrieve_file_path(checkpoint))
+
+
 def _parse_rsl_rl_version(version_str: str):
     """Parse vendored rsl_rl versions robustly."""
     try:
@@ -136,15 +177,24 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     agent_cfg = _update_agent_cfg(agent_cfg)
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
-    env_cfg.debug.enable_debug_draw = not args_cli.hide_goal_vis
+    env_cfg.debug.enable_debug_draw = (not args_cli.hide_goal_vis) or args_cli.show_wheel_slip_vis or args_cli.create_follow_views
+    env_cfg.debug.visualize_wheel_slip = args_cli.show_wheel_slip_vis
+    env_cfg.debug.create_follow_views = args_cli.create_follow_views
+    env_cfg.debug.follow_view_top_height = args_cli.follow_view_top_height
+    env_cfg.debug.follow_view_chase_env_index = args_cli.follow_view_chase_env
+    if args_cli.slip_vis_close_view:
+        env_cfg.viewer.eye = (6.0, -8.0, 5.0)
+        env_cfg.viewer.lookat = (6.0, 0.0, 0.4)
+        env_cfg.viewer.origin_type = "world"
     agent_cfg.device = env_cfg.sim.device
 
     log_root_path = os.path.abspath(os.path.join("logs", "rsl_rl", agent_cfg.experiment_name))
     if args_cli.checkpoint:
-        resume_path = retrieve_file_path(args_cli.checkpoint)
+        resume_path = _resolve_explicit_checkpoint_path(args_cli.checkpoint)
     else:
         run_pattern, checkpoint_pattern = _resolve_checkpoint_lookup_args(agent_cfg)
-        resume_path = _resolve_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
+        resume_path = _validate_checkpoint_file(_resolve_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern))
+    print(f"[INFO] Loading checkpoint: {resume_path}")
     log_dir = os.path.dirname(resume_path)
     env_cfg.log_dir = log_dir
 

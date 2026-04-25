@@ -49,14 +49,14 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.control.ball_joint_planner_qdot_limits = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
         self.control.wheel_joint_stiffness = 0.0
         self.control.wheel_joint_damping = 0.0
-        self.control.wheel_joint_effort_limit_sim = 20.0
+        self.control.wheel_joint_effort_limit_sim = 15.0
         self.control.wheel_joint_velocity_limit_sim = 20.0
         self.control.low_slip_lambda_tracking = 1.0
-        self.control.low_slip_lambda_lateral = 5.0
+        self.control.low_slip_lambda_lateral = 10.0
         self.control.contact_force_off_threshold = 0.01
         self.control.contact_force_on_threshold = 0.08
-        self.control.wheel_torque_tracking_gain = 2.0
-        self.control.wheel_slip_feedback_gain = 4.0
+        self.control.wheel_torque_tracking_gain = 1.5
+        self.control.wheel_slip_feedback_gain = 8.0
         self.control.wheel_slip_velocity_epsilon = 0.1
 
         self.observations.use_history = False
@@ -92,7 +92,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.observations.noise.commands = 0.0
 
         self.rewards.only_positive_rewards = False
-        self.rewards.params.target_position_tolerance = 2.0
+        self.rewards.params.target_position_tolerance = 0.5
         self.rewards.params.target_yaw_tolerance_deg = math.degrees(0.1)
         self.rewards.params.distance_to_target_denominator_scale = 0.01
         self.rewards.params.distance_to_target_weight = 6.0
@@ -106,7 +106,13 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.rewards.params.angle_diff_weight = 6.0
         self.rewards.params.turn_speed_penalty_weight = -2.0
         self.rewards.params.slip_penalty_weight = -2.0
-        self.rewards.params.slip_angle_penalty_ratio = 4.0
+        self.rewards.params.slip_angle_penalty_ratio = 6.0
+        self.rewards.params.progress_gate_longitudinal_k = 3.0
+        self.rewards.params.progress_gate_slip_angle_scale_rad = 1.5
+        self.rewards.params.progress_gate_min_multiplier = 0.10
+        self.rewards.params.progress_gate_max_multiplier = 1.5
+        self.rewards.params.low_slip_longitudinal_threshold = 1.0
+        self.rewards.params.low_slip_angle_threshold_rad = 0.35
 
         self.terminations.orientation_limit_deg = 30.0
         self.terminations.head_tail_roll_limit_deg = 35.0

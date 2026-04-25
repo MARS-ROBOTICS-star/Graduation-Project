@@ -15,7 +15,7 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.terrain.mode = "generator"
         self.curriculum.enabled = True
         self.curriculum.max_init_terrain_level = 5
-        self.curriculum.default_terrain_name = "flat"
+        self.curriculum.default_terrain_name = "slope down"
         self.terrain.measure_heights = True
 
         self.sensors.imu.enabled = False

@@ -29,7 +29,7 @@ def compute_reward_terms(
     wheel_longitudinal_slip: torch.Tensor,
     wheel_slip_angle: torch.Tensor,
     waypoint_hit_mask: torch.Tensor,
-) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+) -> tuple[torch.Tensor, dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     params = cfg.rewards.params
     max_episode_length_f = float(max(max_episode_length, 1))
     current_goal_distance = torch.linalg.vector_norm(commands[:, :2], dim=1)
@@ -50,7 +50,31 @@ def compute_reward_terms(
     if params.progress_to_target_relax_radius_m > 0.0:
         near_goal_mask = current_goal_distance <= params.progress_to_target_relax_radius_m
         progress_delta = torch.where(near_goal_mask, torch.clamp(progress_delta, min=0.0), progress_delta)
-    progress_to_target = progress_delta / max(float(cfg.commands.goal_distance), 1.0e-6)
+    goal_distance_f = max(float(cfg.commands.goal_distance), 1.0e-6)
+    positive_progress = torch.clamp(progress_delta, min=0.0) / goal_distance_f
+    negative_progress = torch.clamp(progress_delta, max=0.0) / goal_distance_f
+    mean_longitudinal_slip = torch.mean(torch.abs(wheel_longitudinal_slip), dim=1)
+    mean_slip_angle = torch.mean(torch.abs(wheel_slip_angle), dim=1)
+    longitudinal_gate = torch.exp(
+        -0.5
+        * torch.sum(
+            torch.square(wheel_longitudinal_slip / max(float(params.progress_gate_longitudinal_k), 1.0e-6)),
+            dim=1,
+        )
+    )
+    slip_angle_phase = torch.clamp(
+        math.pi * torch.abs(wheel_slip_angle) / max(float(params.progress_gate_slip_angle_scale_rad), 1.0e-6),
+        min=0.0,
+        max=math.pi,
+    )
+    slip_angle_gate = torch.prod(0.5 * torch.cos(slip_angle_phase) + 0.5, dim=1)
+    progress_gate = torch.minimum(longitudinal_gate, slip_angle_gate)
+    progress_multiplier = (
+        params.progress_gate_min_multiplier
+        + (params.progress_gate_max_multiplier - params.progress_gate_min_multiplier) * progress_gate
+    )
+    ungated_progress_to_target = positive_progress + negative_progress
+    progress_to_target = progress_multiplier * positive_progress + negative_progress
     reached_target = waypoint_hit_mask.float() * params.reached_target_base_reward * reward_scale
     far_from_target_threshold = cfg.commands.goal_distance + params.far_from_target_margin
     far_from_target = torch.where(
@@ -67,8 +91,6 @@ def compute_reward_terms(
     planar_speed = torch.linalg.vector_norm(base_lin_vel_b[:, :2], dim=1)
     normalized_planar_speed = planar_speed / max(float(cfg.control.base_forward_velocity_max), 1.0e-6)
     turn_speed_penalty = turn_intensity * normalized_planar_speed / max_episode_length_f
-    mean_longitudinal_slip = torch.mean(torch.abs(wheel_longitudinal_slip), dim=1)
-    mean_slip_angle = torch.mean(torch.abs(wheel_slip_angle), dim=1)
     slip_penalty = (
         mean_longitudinal_slip
         + params.slip_angle_penalty_ratio * mean_slip_angle
@@ -86,4 +108,13 @@ def compute_reward_terms(
     total_reward = sum(components.values())
     if cfg.rewards.only_positive_rewards:
         total_reward = torch.clamp(total_reward, min=0.0)
-    return total_reward, components
+    diagnostics = {
+        "progress_ungated": ungated_progress_to_target,
+        "progress_positive": positive_progress,
+        "progress_negative": negative_progress,
+        "progress_longitudinal_gate": longitudinal_gate,
+        "progress_slip_angle_gate": slip_angle_gate,
+        "progress_gate": progress_gate,
+        "progress_multiplier": progress_multiplier,
+    }
+    return total_reward, components, diagnostics

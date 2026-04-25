@@ -11,8 +11,9 @@ from isaaclab.app import AppLauncher
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RL_PROJECT_ROOT = PROJECT_ROOT / "RL_Training"
-if str(RL_PROJECT_ROOT) not in sys.path:
-    sys.path.append(str(RL_PROJECT_ROOT))
+EXTENSION_SOURCE = RL_PROJECT_ROOT / "source" / "complete_car_lab"
+if str(EXTENSION_SOURCE) not in sys.path:
+    sys.path.append(str(EXTENSION_SOURCE))
 
 
 parser = argparse.ArgumentParser(description="Preview the locally generated MGDP stage1 terrain in Isaac Sim.")
@@ -43,8 +44,8 @@ from isaaclab.sim import SimulationContext
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 
-from complete_car_rl_training.tasks.direct.complete_car.assets import COMPLETE_CAR_CFG
-from complete_car_rl_training.tasks.direct.complete_car.terrain import (
+from complete_car_lab.tasks.direct.complete_car.assets import build_complete_car_robot_cfg
+from complete_car_lab.tasks.direct.complete_car.terrain.terrain_builder import (
     Stage1TerrainCfg,
     build_stage1_terrain_data,
     get_terrain_name_from_idx,
@@ -89,7 +90,7 @@ class Stage1PreviewSceneCfg(InteractiveSceneCfg):
         spawn=sim_utils.DomeLightCfg(intensity=2500.0, color=(0.75, 0.75, 0.75)),
     )
 
-    robot = COMPLETE_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    robot = build_complete_car_robot_cfg(prim_path="{ENV_REGEX_NS}/Robot")
 
 
 def main() -> None:

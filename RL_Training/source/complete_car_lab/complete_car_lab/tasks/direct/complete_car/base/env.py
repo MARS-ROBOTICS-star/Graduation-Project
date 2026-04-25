@@ -86,8 +86,19 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._last_contact_weights = torch.zeros_like(self._last_wheel_speed_reference)
         self._episode_sums = {name: torch.zeros(self.num_envs, device=self.device) for name in REWARD_TERM_NAMES}
         self._last_reward_components = {name: torch.zeros(self.num_envs, device=self.device) for name in REWARD_TERM_NAMES}
+        self._last_reward_diagnostics = {
+            "progress_ungated": torch.zeros(self.num_envs, device=self.device),
+            "progress_positive": torch.zeros(self.num_envs, device=self.device),
+            "progress_negative": torch.zeros(self.num_envs, device=self.device),
+            "progress_longitudinal_gate": torch.zeros(self.num_envs, device=self.device),
+            "progress_slip_angle_gate": torch.zeros(self.num_envs, device=self.device),
+            "progress_gate": torch.zeros(self.num_envs, device=self.device),
+            "progress_multiplier": torch.zeros(self.num_envs, device=self.device),
+        }
         self._last_total_reward = torch.zeros(self.num_envs, device=self.device)
         self._episode_total_reward_sum = torch.zeros(self.num_envs, device=self.device)
+        self._last_active_waypoint_pos_error = torch.zeros(self.num_envs, device=self.device)
+        self._last_active_waypoint_bearing_abs = torch.zeros(self.num_envs, device=self.device)
         self._last_done_terms = {
             "waypoint_hit": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             "is_success": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
@@ -127,6 +138,17 @@ class CompleteCarDirectEnv(DirectRLEnv):
             goal_positions_w=self.command_targets_w[:, :3],
             goal_headings_w=self.command_targets_w[:, 3],
         )
+        if self.cfg.debug.visualize_wheel_slip:
+            wheel_body_quat_w = self.robot.data.body_quat_w[:, self._wheel_body_ids]
+            wheel_forward_axis_local = torch.zeros_like(self.robot.data.body_lin_vel_w[:, self._wheel_body_ids])
+            wheel_forward_axis_local[..., 0] = 1.0
+            self._debug_draw.draw_wheel_motion(
+                wheel_positions_w=self.robot.data.body_pos_w[:, self._wheel_body_ids],
+                wheel_forward_axis_w=quat_rotate(wheel_body_quat_w, wheel_forward_axis_local),
+                wheel_velocity_w=self.robot.data.body_lin_vel_w[:, self._wheel_body_ids],
+            )
+        if self.cfg.debug.create_follow_views:
+            self._update_follow_views()
         extras["metrics"] = self._collect_step_metrics()
         return observations, rewards, terminated, time_outs, extras
 
@@ -389,7 +411,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             min=-self.cfg.observations.wheel_slip_angle_clip_rad,
             max=self.cfg.observations.wheel_slip_angle_clip_rad,
         )
-        total_reward, components = compute_reward_terms(
+        total_reward, components, diagnostics = compute_reward_terms(
             self.cfg,
             relative_goal_commands,
             self._previous_goal_distance,
@@ -404,6 +426,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
         for name, value in components.items():
             self._episode_sums[name] += value
             self._last_reward_components[name].copy_(value)
+        for name, value in diagnostics.items():
+            self._last_reward_diagnostics[name].copy_(value)
 
         self._episode_total_reward_sum += total_reward
         self._last_total_reward.copy_(total_reward)
@@ -430,6 +454,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         relative_goal_commands = self._compute_relative_goal_commands()
         self.commands.copy_(relative_goal_commands)
+        self._last_active_waypoint_pos_error.copy_(torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1))
+        self._last_active_waypoint_bearing_abs.copy_(torch.abs(relative_goal_commands[:, 3]))
         done_terms = compute_done_terms(
             self.cfg,
             self.robot,
@@ -474,6 +500,23 @@ class CompleteCarDirectEnv(DirectRLEnv):
         extras["episode/waypoint_completion_pct"] = float(
             torch.mean(self._episode_waypoints_completed[env_ids].float() / float(self._num_waypoints_per_episode) * 100.0).item()
         )
+        extras["episode/end_active_waypoint_pos_error"] = float(
+            torch.mean(self._last_active_waypoint_pos_error[env_ids]).item()
+        )
+        extras["episode/end_active_waypoint_bearing_abs"] = float(
+            torch.mean(self._last_active_waypoint_bearing_abs[env_ids]).item()
+        )
+        waypoint_hit_mask = self._last_done_terms["waypoint_hit"][env_ids]
+        extras["episode/waypoint_hit_rate"] = float(torch.mean(waypoint_hit_mask.float()).item())
+        if torch.any(waypoint_hit_mask):
+            extras["episode/waypoint_hit_pos_error"] = float(
+                torch.mean(self._last_active_waypoint_pos_error[env_ids][waypoint_hit_mask]).item()
+            )
+        success_mask = self._last_done_terms["is_success"][env_ids]
+        if torch.any(success_mask):
+            extras["episode/success_hit_pos_error"] = float(
+                torch.mean(self._last_active_waypoint_pos_error[env_ids][success_mask]).item()
+            )
         terminated = (
             self._last_done_terms["is_success"][env_ids]
             | self._last_done_terms["far_from_target"][env_ids]
@@ -481,7 +524,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
         )
         extras["Termination/terminated_rate"] = float(torch.mean(terminated.float()).item())
         extras["Termination/success_rate"] = float(torch.mean(self._last_done_terms["is_success"][env_ids].float()).item())
-        extras["Tracking/goal_success_rate"] = float(torch.mean(self._last_done_terms["is_success"][env_ids].float()).item())
         extras["Termination/time_out_rate"] = float(torch.mean(self._last_done_terms["time_out"][env_ids].float()).item())
         extras["Termination/far_from_target_rate"] = float(
             torch.mean(self._last_done_terms["far_from_target"][env_ids].float()).item()
@@ -519,12 +561,36 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 self.last_actions,
             )
         self.commands.copy_(relative_goal_commands)
-        middle_roll_deg = torch.rad2deg(torch.abs(quaternion_to_rpy(self.robot.data.root_link_quat_w)[:, 0]))
-        goal_pos_error = torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1)
-        goal_heading_error_abs = torch.abs(relative_goal_commands[:, 3])
-        nominal_goal_distance = goal_pos_error.new_full(goal_pos_error.shape, self.cfg.commands.goal_distance)
-        goal_distance_covered = torch.clamp(nominal_goal_distance - goal_pos_error, min=0.0)
-        goal_completion_pct = 100.0 * goal_distance_covered / torch.clamp(nominal_goal_distance, min=1.0e-6)
+        if self._sensor_runtime is not None:
+            wheel_contact_forces_w_for_metrics = self._sensor_runtime.get_wheel_contact_forces_w(WHEEL_BODY_NAMES)
+        else:
+            wheel_contact_forces_w_for_metrics = torch.zeros(
+                (self.num_envs, len(self._wheel_body_ids), 3),
+                device=self.device,
+                dtype=self.robot.data.root_link_pos_w.dtype,
+            )
+        wheel_normal_force_n = torch.linalg.vector_norm(wheel_contact_forces_w_for_metrics, dim=-1)
+        middle_rpy = quaternion_to_rpy(self.robot.data.root_link_quat_w)
+        middle_roll_deg = torch.rad2deg(middle_rpy[:, 0])
+        middle_pitch_deg = torch.rad2deg(middle_rpy[:, 1])
+        active_waypoint_pos_error = torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1)
+        active_waypoint_bearing_abs = torch.abs(relative_goal_commands[:, 3])
+        nominal_goal_distance = active_waypoint_pos_error.new_full(active_waypoint_pos_error.shape, self.cfg.commands.goal_distance)
+        active_segment_distance_covered = torch.clamp(nominal_goal_distance - active_waypoint_pos_error, min=0.0)
+        active_segment_completion_pct = 100.0 * active_segment_distance_covered / torch.clamp(
+            nominal_goal_distance,
+            min=1.0e-6,
+        )
+        episode_completion_pct = self._episode_waypoints_completed.float() / float(self._num_waypoints_per_episode) * 100.0
+        wheel_longitudinal_slip_abs = torch.abs(raw_obs_terms["wheel_longitudinal_slip"])
+        wheel_slip_angle_abs = torch.abs(raw_obs_terms["wheel_slip_angle"])
+        longitudinal_slip_abs_mean_per_env = torch.mean(wheel_longitudinal_slip_abs, dim=1)
+        slip_angle_abs_mean_per_env = torch.mean(wheel_slip_angle_abs, dim=1)
+        low_longitudinal_slip_mask = (
+            longitudinal_slip_abs_mean_per_env <= self.cfg.rewards.params.low_slip_longitudinal_threshold
+        )
+        low_slip_angle_mask = slip_angle_abs_mean_per_env <= self.cfg.rewards.params.low_slip_angle_threshold_rad
+        low_slip_mask = low_longitudinal_slip_mask & low_slip_angle_mask
         ball_joint_pos = raw_obs_terms["ball_joint_pos"]
         ball_joint_lower_limits = ball_joint_pos.new_tensor(self.cfg.terminations.ball_joint_pos_lower_limits).unsqueeze(0)
         ball_joint_upper_limits = ball_joint_pos.new_tensor(self.cfg.terminations.ball_joint_pos_upper_limits).unsqueeze(0)
@@ -547,9 +613,29 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Reward/angle_diff": float(torch.mean(self._last_reward_components["angle_diff"]).item()),
             "Reward/turn_speed_penalty": float(torch.mean(self._last_reward_components["turn_speed_penalty"]).item()),
             "Reward/slip_penalty": float(torch.mean(self._last_reward_components["slip_penalty"]).item()),
-            "Tracking/goal_pos_error": float(torch.mean(goal_pos_error).item()),
-            "Tracking/goal_heading_error_abs": float(torch.mean(goal_heading_error_abs).item()),
-            "Tracking/goal_completion_pct": float(torch.mean(goal_completion_pct).item()),
+            "ProgressGate/ungated_progress_raw": float(
+                torch.mean(self._last_reward_diagnostics["progress_ungated"]).item()
+            ),
+            "ProgressGate/positive_progress_raw": float(
+                torch.mean(self._last_reward_diagnostics["progress_positive"]).item()
+            ),
+            "ProgressGate/negative_progress_raw": float(
+                torch.mean(self._last_reward_diagnostics["progress_negative"]).item()
+            ),
+            "ProgressGate/longitudinal_gate": float(
+                torch.mean(self._last_reward_diagnostics["progress_longitudinal_gate"]).item()
+            ),
+            "ProgressGate/slip_angle_gate": float(
+                torch.mean(self._last_reward_diagnostics["progress_slip_angle_gate"]).item()
+            ),
+            "ProgressGate/combined_gate": float(torch.mean(self._last_reward_diagnostics["progress_gate"]).item()),
+            "ProgressGate/multiplier": float(torch.mean(self._last_reward_diagnostics["progress_multiplier"]).item()),
+            "Tracking/active_waypoint_pos_error": float(torch.mean(active_waypoint_pos_error).item()),
+            "Tracking/active_waypoint_bearing_abs": float(torch.mean(active_waypoint_bearing_abs).item()),
+            "Tracking/active_segment_completion_pct": float(torch.mean(active_segment_completion_pct).item()),
+            "Tracking/active_waypoint_index_mean": float(torch.mean(self._active_waypoint_index.float()).item()),
+            "Tracking/waypoints_completed_mean": float(torch.mean(self._episode_waypoints_completed.float()).item()),
+            "Tracking/episode_completion_pct": float(torch.mean(episode_completion_pct).item()),
             "Action/policy_abs_mean": float(torch.mean(torch.abs(self.actions)).item()),
             "Action/policy_std": float(self.actions.std(unbiased=False).item()),
             "Action/wheel_speed_reference_abs_mean_raw": float(
@@ -573,7 +659,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
             ),
             "Command/goal_heading_offset_deg": float(torch.rad2deg(self._goal_heading_offsets[command_env_id]).item()),
             "Observation/base_lin_vel_y_raw": float(torch.mean(raw_obs_terms["base_lin_vel"][:, 1]).item()),
-            "Observation/tilt_deg": float(torch.mean(middle_roll_deg).item()),
+            "Observation/tilt_deg": float(torch.mean(torch.abs(middle_roll_deg)).item()),
+            "Observation/roll_deg": float(torch.mean(middle_roll_deg).item()),
+            "Observation/pitch_deg": float(torch.mean(middle_pitch_deg).item()),
+            "Observation/pitch_abs_deg": float(torch.mean(torch.abs(middle_pitch_deg)).item()),
             "Observation/projected_gravity_xy_norm_raw": float(
                 torch.mean(torch.linalg.vector_norm(raw_obs_terms["projected_gravity"][:, :2], dim=1)).item()
             ),
@@ -586,15 +675,45 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 torch.mean(torch.abs(raw_obs_terms["wheel_joint_vel"])).item()
             ),
             "Observation/wheel_longitudinal_slip_abs_mean_raw": float(
-                torch.mean(torch.abs(raw_obs_terms["wheel_longitudinal_slip"])).item()
+                torch.mean(wheel_longitudinal_slip_abs).item()
             ),
             "Observation/wheel_slip_angle_abs_mean_raw": float(
-                torch.mean(torch.abs(raw_obs_terms["wheel_slip_angle"])).item()
+                torch.mean(wheel_slip_angle_abs).item()
+            ),
+            "LowSlip/longitudinal_slip_pass_rate": float(
+                torch.mean(low_longitudinal_slip_mask.float()).item()
+            ),
+            "LowSlip/slip_angle_pass_rate": float(
+                torch.mean(low_slip_angle_mask.float()).item()
+            ),
+            "LowSlip/combined_pass_rate": float(
+                torch.mean(low_slip_mask.float()).item()
+            ),
+            "LowSlip/longitudinal_slip_margin": float(
+                torch.mean(self.cfg.rewards.params.low_slip_longitudinal_threshold - longitudinal_slip_abs_mean_per_env).item()
+            ),
+            "LowSlip/slip_angle_margin": float(
+                torch.mean(self.cfg.rewards.params.low_slip_angle_threshold_rad - slip_angle_abs_mean_per_env).item()
             ),
             "Observation/wheel_normal_contact_force_sum_raw": float(
                 torch.mean(torch.sum(raw_obs_terms["wheel_normal_contact_force"], dim=1)).item()
             ),
         }
+        per_wheel_metric_sources = {
+            "wheel_joint_vel": raw_obs_terms["wheel_joint_vel"],
+            "wheel_speed_reference": self._last_wheel_speed_reference,
+            "wheel_torque_target": self._last_wheel_torque_targets,
+            "contact_weight": self._last_contact_weights,
+            "normal_force": wheel_normal_force_n,
+            "longitudinal_slip": raw_obs_terms["wheel_longitudinal_slip"],
+            "slip_angle": raw_obs_terms["wheel_slip_angle"],
+        }
+        for wheel_index, wheel_name in enumerate(WHEEL_JOINT_NAMES):
+            wheel_log_name = wheel_name.removesuffix("_joint")
+            for metric_name, values in per_wheel_metric_sources.items():
+                metrics[f"PerWheel/{wheel_log_name}/{metric_name}"] = float(
+                    torch.mean(values[:, wheel_index]).item()
+                )
         for joint_index, joint_name in enumerate(BALL_JOINT_NAMES):
             metrics[f"Observation/{joint_name}_pos_raw"] = float(torch.mean(ball_joint_pos[:, joint_index]).item())
             metrics[f"Observation/{joint_name}_limit_usage_mean_raw"] = float(
@@ -657,6 +776,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
             root_state[:, 2],
         )
         self._previous_goal_distance[env_ids] = torch.linalg.vector_norm(self.commands[env_ids, :2], dim=1)
+        self._last_active_waypoint_pos_error[env_ids] = self._previous_goal_distance[env_ids]
+        self._last_active_waypoint_bearing_abs[env_ids] = torch.abs(self.commands[env_ids, 3])
 
         self.actions[env_ids] = 0.0
         self.last_actions[env_ids] = 0.0
@@ -685,6 +806,38 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._debug_draw.draw_goal_pose(
             goal_positions_w=self.command_targets_w[:, :3],
             goal_headings_w=self.command_targets_w[:, 3],
+        )
+        if self.cfg.debug.create_follow_views:
+            self._update_follow_views(root_positions_w=root_state[:, :3], root_yaws_w=reset_yaw_w, env_ids=env_ids)
+
+    def _update_follow_views(
+        self,
+        root_positions_w: torch.Tensor | None = None,
+        root_yaws_w: torch.Tensor | None = None,
+        env_ids: torch.Tensor | None = None,
+    ) -> None:
+        if root_positions_w is None:
+            root_positions_w = self.robot.data.root_link_pos_w
+        elif env_ids is not None and root_positions_w.shape[0] != self.num_envs:
+            full_root_positions_w = self.robot.data.root_link_pos_w.clone()
+            full_root_positions_w[env_ids] = root_positions_w
+            root_positions_w = full_root_positions_w
+
+        if root_yaws_w is None:
+            root_yaws_w = quaternion_to_rpy(self.robot.data.root_link_quat_w)[:, 2]
+        elif env_ids is not None and root_yaws_w.shape[0] != self.num_envs:
+            full_root_yaws_w = quaternion_to_rpy(self.robot.data.root_link_quat_w)[:, 2]
+            full_root_yaws_w[env_ids] = root_yaws_w
+            root_yaws_w = full_root_yaws_w
+
+        self._debug_draw.update_follow_views(
+            self.sim,
+            root_positions_w,
+            root_yaws_w,
+            top_height=self.cfg.debug.follow_view_top_height,
+            chase_env_index=self.cfg.debug.follow_view_chase_env_index,
+            chase_offset_b=self.cfg.debug.follow_view_chase_offset_b,
+            chase_target_offset_b=self.cfg.debug.follow_view_chase_target_offset_b,
         )
 
 

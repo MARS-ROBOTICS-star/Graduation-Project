@@ -59,6 +59,30 @@ def _sample_direction_offsets_with_min_abs(
     return signs * magnitudes
 
 
+def _sample_direction_offsets_with_min_abs_per_sample(
+    min_abs_offsets_rad: torch.Tensor,
+    max_offset_rad: float,
+    *,
+    device: torch.device | str,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Sample signed offsets with per-environment minimum absolute magnitudes."""
+
+    num_samples = min_abs_offsets_rad.numel()
+    if max_offset_rad <= 0.0:
+        return torch.zeros(num_samples, device=device, dtype=dtype)
+
+    min_abs_offsets_rad = torch.clamp(min_abs_offsets_rad.to(device=device, dtype=dtype), min=0.0, max=max_offset_rad)
+    u = torch.rand(num_samples, device=device, dtype=dtype)
+    magnitudes = min_abs_offsets_rad + (max_offset_rad - min_abs_offsets_rad) * torch.sqrt(u)
+    signs = torch.where(
+        torch.rand(num_samples, device=device) < 0.5,
+        -torch.ones(num_samples, device=device, dtype=dtype),
+        torch.ones(num_samples, device=device, dtype=dtype),
+    )
+    return signs * magnitudes
+
+
 def sample_waypoint_command_sequences(
     waypoint_targets_w: torch.Tensor,
     env_ids: torch.Tensor,
@@ -94,11 +118,12 @@ def sample_waypoint_command_sequences(
     zero_mask = torch.ones(num_envs, dtype=torch.bool, device=device) if cfg.zero_command else None
 
     for waypoint_index in range(num_waypoints):
-        if waypoint_index > 0 and min_segment_turn > 0.0:
-            phi = _sample_direction_offsets_with_min_abs(
-                num_envs,
+        if waypoint_index > 0:
+            previous_abs_turn = torch.abs(direction_offsets[:, waypoint_index - 1])
+            min_abs_turn = torch.clamp(previous_abs_turn + torch.finfo(dtype).eps, min=min_segment_turn)
+            phi = _sample_direction_offsets_with_min_abs_per_sample(
+                min_abs_turn,
                 goal_direction_max,
-                min_segment_turn,
                 device=device,
                 dtype=dtype,
             )

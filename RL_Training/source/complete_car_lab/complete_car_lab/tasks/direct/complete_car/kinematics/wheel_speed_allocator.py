@@ -138,6 +138,33 @@ def _build_local_wheel_vectors(geometry: CompleteCarWheelAllocatorGeometry) -> d
     }
 
 
+def compute_longitudinal_slip_torch(
+    rolling_speed_actual,
+    wheel_joint_vel,
+    wheel_radius: float,
+    slip_velocity_epsilon: float,
+    *,
+    clip: float | None = None,
+):
+    """Shared torch implementation of the runtime longitudinal slip definition."""
+
+    import torch
+
+    wheel_radius_tensor = torch.as_tensor(
+        wheel_radius,
+        device=rolling_speed_actual.device,
+        dtype=rolling_speed_actual.dtype,
+    )
+    safe_speed = torch.maximum(
+        torch.abs(rolling_speed_actual),
+        torch.full_like(rolling_speed_actual, slip_velocity_epsilon),
+    )
+    longitudinal_slip = (rolling_speed_actual - wheel_radius_tensor * wheel_joint_vel) / safe_speed
+    if clip is not None:
+        longitudinal_slip = torch.clamp(longitudinal_slip, min=-clip, max=clip)
+    return longitudinal_slip
+
+
 class NumpyWheelSpeedAllocator:
     """NumPy implementation for offline validation and formula checks."""
 
@@ -897,6 +924,8 @@ class TorchWheelSpeedAllocator:
 
     def _sat(self, values, lower, upper):
         torch = self.torch
+        lower = torch.as_tensor(lower, device=values.device, dtype=values.dtype)
+        upper = torch.as_tensor(upper, device=values.device, dtype=values.dtype)
         return torch.minimum(torch.maximum(values, lower), upper)
 
     def _build_rotation_and_derivatives(self, module_angles):

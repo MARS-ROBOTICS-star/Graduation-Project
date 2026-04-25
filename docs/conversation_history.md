@@ -4,6 +4,69 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-25
 
+### Stage1 terrain generator 已删除 `flat` 地形入口，generator 默认地形改为 `slope down`
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- User request:
+  - 结束 Isaac Sim 进程，并修改生成地形的代码，删去 `flat`。
+- Durable conclusion:
+  - `Stage1TerrainCfg.terrain_dict` 当前不再包含 `flat`。
+  - `make_tile_by_name(...)` 当前不再支持 `terrain_name == "flat"` 的分支。
+  - `make_flat_tile(...)` 已删除。
+  - generator 默认地形名已从 `flat` 改为 `slope down`，防止 `CompleteCarTerrainRuntime.setup_scene()` 校验默认地形名时失败。
+  - 当前 `preview_stage1_tile.py --list-terrains` 输出 `12` 类地形：`slope down`、`slope up`、`uneven rough`、`stairs down`、`stairs up`、`discrete obstacles`、`hurdle`、`gap`、`ramp`、`beam`、`new stairs down`、`pit`。
+  - 本轮只删除 `flat`，没有额外重排其它地形权重或列分布。
+- Verification:
+  - 已结束前一轮 `preview_stage1_terrain.py` Isaac Sim GUI 进程。
+  - `python3 -m py_compile` passed for modified terrain/config/preview scripts.
+  - `/home/ubuntu/IsaacLab/isaaclab.sh -p scripts/isaac_sim/preview_stage1_tile.py --list-terrains` passed and no longer prints `flat`.
+  - Direct `terrain_builder.py` load plus `build_stage1_terrain_data(...)` passed; `HAS_FLAT` printed `False`.
+- Status:
+  - completed
+
+### Stage1 全部混合地形 tile 画廊脚本已迁移到当前 `complete_car_lab` 主线并完成 GUI 启动验证
+- Updated:
+  - `scripts/isaac_sim/preview_stage1_tile.py`
+  - `scripts/isaac_sim/preview_stage1_terrain.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 当前查看全部 Stage1 混合地形的默认入口是 `scripts/isaac_sim/preview_stage1_tile.py`。
+  - `preview_stage1_tile.py` 默认加载 `20 x 10`、共 `200` 个独立 tile 的全课程分离画廊。
+  - `preview_stage1_terrain.py` 只在需要查看完整拼接大地图时使用。
+  - 两个脚本现在都从 `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py` 使用当前地形生成逻辑，不再依赖旧的 `complete_car_rl_training` 包路径。
+  - 当时全部地形名为：`flat`、`slope down`、`slope up`、`uneven rough`、`stairs down`、`stairs up`、`discrete obstacles`、`hurdle`、`gap`、`ramp`、`beam`、`new stairs down`、`pit`；随后用户已要求删除 `flat`，以本文件更新后的 Stage1 terrain generator 结论为准。
+- Verification:
+  - `python3 -m py_compile scripts/isaac_sim/preview_stage1_tile.py scripts/isaac_sim/preview_stage1_terrain.py` passed.
+  - `/home/ubuntu/IsaacLab/isaaclab.sh -p scripts/isaac_sim/preview_stage1_tile.py --list-terrains` passed.
+  - `/home/ubuntu/IsaacLab/isaaclab.sh -p scripts/isaac_sim/preview_stage1_tile.py --device cuda:0` 已启动 GUI 并打印 `[STAGE1_TILE_PREVIEW]`，加载 `200` 个 tile。
+- Status:
+  - completed; GUI preview process left running for manual inspection
+
+### 后六种 Stage1 地形预览脚本已迁移到当前 `complete_car_lab` 主线并完成 GUI 启动验证
+- Updated:
+  - `scripts/isaac_sim/preview_stage1_last_six.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 当前查看 Stage1 后六种地形应使用 `scripts/isaac_sim/preview_stage1_last_six.py`。
+  - 该脚本现在从 `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py` 加载 `Stage1TerrainCfg` 和地形 tile 生成函数。
+  - 后六种地形固定为：`hurdle`、`gap`、`ramp`、`beam`、`new stairs down`、`pit`。
+  - 默认 GUI 模式会加载 `20 x 10`、共 `200` 个独立 tile 的画廊，列方向按后六种地形循环，行方向展示不同难度层。
+- Verification:
+  - `python3 -m py_compile scripts/isaac_sim/preview_stage1_last_six.py` passed.
+  - `/home/ubuntu/IsaacLab/isaaclab.sh -p scripts/isaac_sim/preview_stage1_last_six.py --list-terrains` passed.
+  - `/home/ubuntu/IsaacLab/isaaclab.sh -p scripts/isaac_sim/preview_stage1_last_six.py --device cuda:0` 已启动 GUI 并打印 `[STAGE1_LAST_SIX_PREVIEW]`，加载 `200` 个 tile。
+- Status:
+  - completed; GUI preview process left running for manual inspection
+
 ### Stage0 源码已按用户要求重新加入 policy `yaw_rate_cmd`，动作和观测回到 `8` 维 / `54 / 54`
 - Updated:
   - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
@@ -10734,3 +10797,463 @@ This file stores durable conclusions from past Codex sessions so that future ses
     - 国外先追 `articulated mobile robot` 与 `articulated rover` 两条线
 - Status:
   - completed
+
+## 2026-04-25
+
+### Stage0 8 维动作 baseline 已完成 700 iteration GPU 复现实验，但当前结果只能证明“能稳定满足 waypoint 终止”，不能证明“低滑移协同转向已经学成”
+- Updated:
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+  - `results/stage0_8d_700iter_diagnosis_2026-04-25.md`
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_10-29-24_stage0_8d_baseline_repro_700iter`
+- Configuration:
+  - `64` env
+  - `700` iterations
+  - actor / critic observation `54 / 54`
+  - action dimension `8`
+  - action meaning: `[vx_cmd, yaw_rate_cmd] + q^d`
+  - flat dual-waypoint Stage0 baseline
+- Engineering fixes required before the run:
+  - restored `compute_longitudinal_slip_torch(...)` in `wheel_speed_allocator.py`
+  - made `TorchWheelSpeedAllocator._sat(...)` convert scalar bounds into tensors before `torch.maximum` / `torch.minimum`
+- Durable result:
+  - training ran to completion and saved `model_699.pt`
+  - first success rate at least `0.9` occurred at iteration `152`
+  - success rate stayed at `1.0` from iteration `236` onward
+  - final and last-100-window values:
+    - `termination_success_rate`: `1.0 / 1.0`
+    - `time_out_rate`: `0.0 / 0.0`
+    - `waypoints_completed`: `2.0 / 2.0`
+    - `waypoint_completion_pct`: `100% / 100%`
+    - `goal_pos_error`: final about `6.73 m`, last-100 average about `6.77 m`
+    - `goal_completion_pct`: final about `33.65%`, last-100 average about `33.29%`
+    - longitudinal slip: final about `3.08`, last-100 average about `3.09`
+    - slip angle: final about `0.73 rad`, last-100 average about `0.73 rad`
+- Interpretation:
+  - current Stage0 8D pipeline is runnable and can reliably satisfy the configured waypoint termination condition
+  - `goal_success_rate / waypoints_completed` and `goal_pos_error / goal_completion_pct` are not semantically aligned in the current logs
+  - the likely issue is that target-error metrics are reporting the active or resampled target after waypoint transition, while success is counted at the just-hit waypoint condition
+  - this run must not be used as evidence of precise final-target pose capture until success-instant error and episode-final error are logged separately
+  - this run must not be used as evidence of low-slip cooperative turning because side slip remains high and longitudinal slip remains nontrivial
+- Next required conclusion-building step:
+  - verify logging semantics first
+  - then run deterministic replay/evaluation from `model_699.pt`
+  - only after the metric semantics are clear should reward or task redesign be discussed
+- Status:
+  - completed and diagnosed
+
+### Stage0 成功半径已从 `2.0 m` 收紧到 `0.5 m`，双 waypoint 采样已改为第 2 段偏角大于第 1 段偏角
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- User request:
+  - 修改成功距离为 `0.5 m`
+  - 要求第二个 waypoint 相比第一个 waypoint 有更大的偏角
+- Durable decision:
+  - Stage0 当前 success 命中半径改为 `target_position_tolerance = 0.5`
+  - waypoint 队列采样中，后续 waypoint 的偏角绝对值按逐环境方式约束为大于前一段偏角绝对值
+  - 对当前双 waypoint 任务而言，即 `|phi_2| > |phi_1|`
+- Impact:
+  - 任务显著变难：最后一个 waypoint 必须进入 `0.5 m` 半径才成功
+  - 第 2 段路径不再可能比第 1 段更接近直线，训练分布会更强调第二段转向
+  - 该配置尚未完成 Isaac Lab smoke 或真实训练验证
+- Status:
+  - code and docs updated
+
+### Stage0 评价指标已清理：旧的 `goal_*` 跟踪指标不再作为当前 active 日志口径，改为显式区分 active waypoint、命中瞬间和 episode 完成度
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Reason:
+  - 旧指标 `Tracking/goal_success_rate` 与 `Termination/success_rate` 重复
+  - 旧指标 `Tracking/goal_pos_error` 实际表示当前 active waypoint 距离，不是最终目标误差
+  - 旧指标 `Tracking/goal_heading_error_abs` 实际表示 active waypoint bearing，不是独立目标航向误差
+  - 旧指标 `Tracking/goal_completion_pct` 实际表示当前段完成度，不是整个 episode 完成度
+- New current metrics:
+  - `Tracking/active_waypoint_pos_error`
+  - `Tracking/active_waypoint_bearing_abs`
+  - `Tracking/active_segment_completion_pct`
+  - `Tracking/active_waypoint_index_mean`
+  - `Tracking/waypoints_completed_mean`
+  - `Tracking/episode_completion_pct`
+  - `episode/waypoint_hit_rate`
+  - `episode/end_active_waypoint_pos_error`
+  - `episode/end_active_waypoint_bearing_abs`
+  - `episode/waypoint_hit_pos_error`
+  - `episode/success_hit_pos_error`
+- Durable conclusion:
+  - 后续新 run 不再使用 `Tracking/goal_success_rate`、`Tracking/goal_pos_error`、`Tracking/goal_heading_error_abs`、`Tracking/goal_completion_pct` 作为当前主线指标
+  - 历史 run 中这些旧 tag 只能按当时日志语义解释，不能和新 run 的 active waypoint 指标直接同名比较
+- Status:
+  - code and docs updated; smoke not yet run
+
+### Stage0 `0.5 m` 成功半径与 `|phi_2| > |phi_1|` 双 waypoint 配置已完成早停正式训练，结果证明任务可学成但未保存平台期末端 checkpoint
+- Updated:
+  - `results/stage0_tol05_turn2_gt_turn1_earlystop_diagnosis_2026-04-25.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_13-37-33_stage0_tol05_turn2_gt_turn1_700iter`
+- Configuration:
+  - `64` env
+  - original max iterations `700`
+  - early-stopped after iteration `294`
+  - actor / critic observation `54 / 54`
+  - action dimension `8`
+  - `target_position_tolerance = 0.5 m`
+  - dual waypoint, `goal_distance = 10 m`, `goal_direction_max_deg = 30°`
+  - waypoint sampling requires `|phi_2| > |phi_1|`
+- Durable result:
+  - first full `success_rate = 1.0` occurred at iteration `210`
+  - iteration `269-294` had `26` consecutive full-success iterations
+  - final and last-20-window values:
+    - `termination_success_rate`: `1.0 / 1.0`
+    - `time_out_rate`: `0.0 / 0.0`
+    - `episode/waypoints_completed`: `2.0 / 2.0`
+    - `episode/waypoint_completion_pct`: `100% / 100%`
+    - `episode/success_hit_pos_error`: final about `0.486 m`, last-20 average about `0.488 m`
+    - longitudinal slip: final about `2.97`, last-20 average about `3.00`
+    - slip angle: final about `0.71 rad`, last-20 average about `0.71 rad`
+- Interpretation:
+  - the stricter `0.5 m` success condition and stronger second-waypoint turning distribution are learnable in the current Stage0 8D setup
+  - new episode-level metrics remove the earlier ambiguity: success-instant error is correctly below `0.5 m`
+  - step-level `Tracking/waypoints_completed_mean` and `Tracking/episode_completion_pct` are instantaneous cross-env averages and must not be interpreted as episode-final completion rate
+  - this run still does not support a low-slip cooperative-turning claim because side slip remains high and longitudinal slip remains nontrivial
+- Engineering limitation:
+  - because early stop happened between scheduled checkpoint saves with `save_interval = 100`, the run only contains `model_0.pt`, `model_100.pt`, and `model_200.pt`
+  - future replay / eval should not treat `model_200.pt` as the plateau policy from iteration `294`
+- Status:
+  - completed and diagnosed
+
+### Stage0 已增加 `/view` 随车相机与车轮侧滑箭头可视化回放工具
+- Updated:
+  - `RL_Training/scripts/play.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Reason:
+  - the user observed that high logged slip angle did not visibly affect vehicle motion in replay
+  - a top-down vehicle-following view and wheel-center direction arrows were needed to distinguish whole-body instability from wheel-level lateral scrub
+- Implementation:
+  - added `play.py --show_wheel_slip_vis`
+  - added `play.py --create_follow_views`
+  - added `play.py --follow_view_top_height`
+  - added `play.py --follow_view_chase_env`
+  - created selectable USD cameras under `/view`
+  - `/view/env_i/top_down_camera`: one top-down camera per env, positioned above the middle-body root and updated on reset and step
+  - `/view/env_i/chase_camera`: one oblique chase camera for the selected env, updated on reset and step
+  - green arrow: wheel rolling direction
+  - red arrow: actual planar velocity direction of the wheel body
+  - arrow origins are the wheel centers; the red velocity arrow is slightly raised to avoid visual overlap
+- Replay used:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_10-29-24_stage0_8d_baseline_repro_700iter/model_699.pt`
+  - output video: `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_10-29-24_stage0_8d_baseline_repro_700iter/videos/play/rl-video-step-0.mp4`
+- Durable conclusion:
+  - vehicle body motion can look visually stable even when wheel-level slip angle is high
+  - in replay inspection, red and green wheel direction arrows show visible angular mismatch during turning
+  - therefore the high slip angle should be interpreted as wheel-ground lateral scrub / contact-quality issue, not necessarily as obvious whole-vehicle yaw instability
+  - this supports the current wording: Stage0 can complete waypoint reaching, but high-slip cooperative-turning quality is not yet proven
+- Status:
+  - visualization tool added
+  - short 2-env replay validation completed using the full 700-iteration run's final checkpoint `model_699.pt`
+  - `play.py` now resolves explicit local checkpoint paths directly and validates that the final `resume_path` is a file before `torch.load`, preventing directory paths such as `/tmp` from being silently loaded
+
+### Stage0 下一轮训练配置已改为低滑移评价与更强滑移惩罚，并缩短 checkpoint 保存间隔
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- User decision:
+  - 新增 low-slip 评价指标
+  - 增强 `slip_penalty`
+  - 保存间隔改小，确保保存平台 checkpoint
+- Implementation:
+  - added low-slip thresholds to reward params:
+    - `low_slip_longitudinal_threshold = 1.0`
+    - `low_slip_angle_threshold_rad = 0.35`
+  - added step-level metrics:
+    - `LowSlip/longitudinal_slip_pass_rate`
+    - `LowSlip/slip_angle_pass_rate`
+    - `LowSlip/combined_pass_rate`
+    - `LowSlip/longitudinal_slip_margin`
+    - `LowSlip/slip_angle_margin`
+  - Stage0 `slip_penalty_weight` changed from `-2.0` to `-4.0`
+  - Stage0 `slip_angle_penalty_ratio` changed from `4.0` to `6.0`
+  - PPO `save_interval` changed from `100` to `25`
+- Durable interpretation:
+  - Low-slip thresholds are evaluation metrics, not hard success termination conditions.
+  - The next training run should be judged by both task completion and low-slip quality:
+    - `Termination/success_rate`
+    - `episode/waypoints_completed`
+    - `episode/success_hit_pos_error`
+    - `LowSlip/combined_pass_rate`
+    - raw longitudinal slip and side-slip angle means
+  - A future plateau should save at least one checkpoint because the interval is now short enough for the previous 26-iteration full-success plateau pattern.
+- Verification:
+  - `python3 -m py_compile` passed for modified config, env, logger, and PPO files.
+- Status:
+  - code and docs updated; new GPU training not yet started
+
+### Stage0 low-slip penalty v1 正式训练完成并诊断
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_15-42-10_stage0_lowslip_penalty_v1_700iter`
+- Report:
+  - `results/stage0_lowslip_penalty_v1_700iter_diagnosis_2026-04-25.md`
+- Training outcome:
+  - full `700` iterations completed
+  - platform checkpoints were saved every `25` iterations, including `model_475.pt` through `model_699.pt`
+  - first `success_rate = 1.0` occurred at iteration `457`
+  - first 25-iteration mean `success_rate >= 0.95` occurred at iteration `587`
+  - final `success_rate = 0.9453`
+  - iteration `675-699` mean `success_rate ≈ 0.976`
+- Low-slip outcome:
+  - final longitudinal slip mean `2.863`
+  - final slip angle mean `0.634 rad`
+  - final `LowSlip/combined_pass_rate = 0.041`
+  - iteration `675-699` mean `LowSlip/combined_pass_rate ≈ 0.018`
+  - iteration `675-699` mean longitudinal slip `≈ 2.899`
+  - iteration `675-699` mean slip angle `≈ 0.685 rad`
+- Durable conclusion:
+  - stronger `slip_penalty` preserved high task success but did not produce low-slip behavior
+  - the learned policy still tends to increase wheel-speed reference to complete the waypoint task, and higher wheel-speed reference is strongly associated with higher side-slip angle
+  - `success_rate` and low-slip quality must remain separate evaluation targets
+  - future low-slip optimization should not blindly continue by only increasing the same scalar slip penalty; the objective/constraint role of low slip needs a user-owned research decision before implementation
+- Status:
+  - completed and diagnosed
+
+### Stage0 low-slip progress gate 方案已整理为设计文档
+- Document:
+  - `docs/stage0_low_slip_progress_gate_design_2026-04-25.md`
+- User idea:
+  - make longitudinal slip and side-slip quality act as gates on positive `progress_to_target`
+  - treat low-slip forward progress as higher-quality progress instead of only adding a separate slip penalty
+- Candidate formula:
+  - longitudinal gate: product of six wheel terms `exp[-0.5 * (kappa_i / k)^2]`
+  - side-slip gate: product of six wheel terms `0.5*cos(K*abs(alpha_i)) + 0.5`, with clipping to avoid cosine periodic recovery
+  - combined gate: average of longitudinal and side-slip gates
+  - recommended first-pass modulation: `M = 0.25 + 1.25G`
+  - positive progress is multiplied by `M`; negative progress remains ungated
+- Recommended first-pass parameters:
+  - `k = 3.0`
+  - `K = pi / 1.5`
+  - `M_min = 0.25`
+  - `M_max = 1.5`
+- Durable interpretation:
+  - direct multiplication by the raw six-wheel product gate is too aggressive
+  - with the recommended modulation, latest high-slip behavior would keep about `31%` positive progress instead of being fully zeroed
+  - this is a candidate design only; it has not yet been implemented in `RL_Training/`
+- Status:
+  - documented, awaiting user decision before implementation
+
+### Stage0 low-slip progress gate 已按用户确认接入源码
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/stage0_low_slip_progress_gate_design_2026-04-25.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Implementation:
+  - `progress_to_target` now splits progress into positive and negative parts
+  - positive progress is multiplied by `M = 0.25 + 1.25G`
+  - negative progress remains ungated
+  - longitudinal gate uses the six-wheel product `exp[-0.5 * (kappa_i / 3.0)^2]`
+  - side-slip gate uses the six-wheel product `0.5*cos(clip(pi*abs(alpha_i)/1.5, 0, pi)) + 0.5`
+  - combined gate is the average of longitudinal and side-slip gates
+  - `slip_penalty_weight` was reduced from `-4.0` to `-2.0` so the gate becomes the main low-slip shaping mechanism
+- New logs:
+  - `ProgressGate/combined_gate`
+  - `ProgressGate/multiplier`
+  - `ProgressGate/longitudinal_gate`
+  - `ProgressGate/slip_angle_gate`
+  - `ProgressGate/positive_progress_raw`
+  - `ProgressGate/negative_progress_raw`
+  - `ProgressGate/ungated_progress_raw`
+- Verification:
+  - `python3 -m py_compile` passed for modified reward/config/env/logger files
+  - isolated numeric check produced a low-slip multiplier about `1.442` and a high-slip multiplier about `0.309`, while negative progress stayed ungated
+- Status:
+  - implemented; formal training validation is recorded in the following entry
+
+### Stage0 low-slip progress gate v1 正式训练完成并诊断
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter`
+- Report:
+  - `results/stage0_lowslip_gate_v1_700iter_diagnosis_2026-04-25.md`
+- Training outcome:
+  - full `700` iterations completed; final checkpoint is `model_699.pt`
+  - platform checkpoints are available every `25` iterations, including `model_600.pt`, `model_625.pt`, `model_650.pt`, `model_675.pt`, and `model_699.pt`
+  - first `success_rate = 1.0` occurred at iteration `555`
+  - first 25-iteration mean `success_rate >= 0.95` occurred at iteration `602`
+  - first 50-iteration mean `success_rate >= 0.95` occurred at iteration `627`
+  - max consecutive full-success segment was iteration `688-698`, `11` iterations
+  - iteration `675-699` mean `success_rate ≈ 0.986`
+  - iteration `675-699` mean `waypoints_completed ≈ 1.984`
+  - iteration `675-699` mean `success_hit_pos_error ≈ 0.490 m`
+- Low-slip outcome:
+  - iteration `675-699` mean longitudinal slip `≈ 2.739`
+  - iteration `675-699` mean slip angle `≈ 0.691 rad`
+  - iteration `675-699` mean `LowSlip/combined_pass_rate ≈ 0.013`
+  - iteration `675-699` mean `ProgressGate/multiplier ≈ 0.392`
+- Comparison with low-slip penalty v1:
+  - gate v1 improved last-25 mean `success_rate` by about `0.011`
+  - gate v1 reduced last-25 mean longitudinal slip by about `0.160`
+  - gate v1 reduced last-25 mean wheel-speed reference by about `0.546`
+  - gate v1 increased last-25 mean side-slip angle by about `0.006 rad`
+  - gate v1 reduced last-25 mean `LowSlip/combined_pass_rate` by about `0.0048`
+- Durable conclusion:
+  - low-slip progress gate v1 preserves high task success and slightly improves longitudinal slip / wheel-speed reference, but it does not produce low-side-slip behavior
+  - current gate is effective soft shaping, not a low-slip constraint
+  - high success under about `0.69 rad` side-slip remains possible because positive progress keeps about `39%` multiplier and `reached_target` still strongly rewards high-slip target hits
+  - future work should not interpret this run as evidence of low-slip control; it is evidence that the current Stage0 task can be solved while still sliding laterally
+- Status:
+  - completed and diagnosed
+
+### low-slip gate v1 回放后新增中车 pitch 与 per-wheel 诊断日志
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- User observation:
+  - replay of `stage0_lowslip_gate_v1_700iter/model_699.pt` showed the middle body carrying a visible forward pitch
+  - the existing `Observation/tilt_deg` was found to be roll, not forward pitch
+  - the middle-left wheel visually appeared to barely rotate
+  - side-slip should be reduced; user accepts some fixed-axis side-slip but wants the upper bound around `0.5 rad` / `30°`
+- Implementation:
+  - added `Observation/roll_deg`
+  - added `Observation/pitch_deg`
+  - added `Observation/pitch_abs_deg`
+  - kept `Observation/tilt_deg` as absolute roll for historical continuity
+  - added per-wheel TensorBoard metrics under `PerWheel/<wheel>/...`:
+    - `wheel_joint_vel`
+    - `wheel_speed_reference`
+    - `wheel_torque_target`
+    - `contact_weight`
+    - `normal_force`：实际接触合力模长，单位为 N
+    - `longitudinal_slip`
+    - `slip_angle`
+- Durable conclusion:
+  - before changing rewards again, the next diagnostic run should verify whether the apparent left-wheel non-rotation is present in actual joint velocity, reference velocity, torque command, contact weight, and normal force
+  - the high longitudinal slip may be caused by low-level contact/drive allocation, not only by reward shaping
+  - future side-slip thresholds should use `0.5 rad` / `30°` as the current user-stated upper bound, rather than the previous stricter `0.35 rad` evaluation threshold unless the user reaffirms it
+- Verification:
+  - `python3 -m py_compile` passed for `base/env.py` and `rsl_rl/utils/logger.py`
+  - `git diff --check` passed
+- Status:
+  - implemented; requires a new replay or training run to generate the new logs
+
+### Stage0 下一轮低滑移优化已先调整底层执行参数，progress gate 组合方式暂未改
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- User request:
+  - 计算将 progress gate 组合方式从平均改为 `Gκ·Gα` 或 `min(Gκ,Gα)`，并将 `progress_gate_min_multiplier` 从 `0.25` 降到 `0.10` 后，progress 是否会被压死。
+  - 修改底层参数：
+    - `wheel_slip_feedback_gain: 4.0 -> 8.0`
+    - `wheel_torque_tracking_gain: 2.0 -> 1.5`
+    - `wheel_joint_effort_limit_sim: 20.0 -> 15.0`
+    - `low_slip_lambda_lateral: 5.0 -> 10.0`
+- Calculation based on `stage0_lowslip_gate_v1_700iter` last 25 iterations:
+  - `Gκ ≈ 0.196`
+  - `Gα ≈ 0.031`
+  - old average gate `G = (Gκ + Gα) / 2 ≈ 0.114`
+  - old multiplier `M = 0.25 + 1.25G ≈ 0.392`
+  - if average is kept but `M_min = 0.10`, multiplier would be about `0.259`
+  - if using product `Gκ·Gα`, multiplier would be about `0.109`
+  - if using `min(Gκ,Gα)`, multiplier would be about `0.144`
+- Durable conclusion:
+  - Product/min gate would not mathematically kill progress because the multiplier floor remains `0.10`.
+  - Product gate is almost floor-locked under the current high-slip behavior and is riskier for learning.
+  - `min(Gκ,Gα)` is still strict but preserves slightly more gradient difference than product; if the gate combination is changed later, `min` should be tried before product.
+  - In this session only the low-level execution parameters were changed; reward gate formulas and `progress_gate_min_multiplier` remain unchanged pending explicit user decision.
+- Status:
+  - low-level parameter update implemented; reward gate combination not changed
+
+### Stage0 low-slip progress gate 设计文档已补充 v1 实测复算与 v2 推荐
+- Updated:
+  - `docs/stage0_low_slip_progress_gate_design_2026-04-25.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- User request:
+  - 对 gate 方案进行计算，并更新 `stage0_low_slip_progress_gate_design_2026-04-25.md`。
+- Calculation source:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter`
+  - TensorBoard export under `tensorboard_export/scalars/`
+- Added to design document:
+  - v1 implemented formula:
+    - `G_avg = (Gκ + Gα) / 2`
+    - `M = 0.25 + 1.25G_avg`
+  - v1 training validation:
+    - last-25 `success_rate ≈ 0.986`
+    - last-25 longitudinal slip `≈ 2.739`
+    - last-25 slip angle `≈ 0.691 rad`
+    - last-25 `Gκ ≈ 0.196`
+    - last-25 `Gα ≈ 0.031`
+    - last-25 current multiplier `≈ 0.392`
+  - v2 candidate recalculation with `M_min = 0.10` and `M_max = 1.5`:
+    - average gate multiplier `≈ 0.259`
+    - product gate multiplier `≈ 0.109`
+    - min gate multiplier `≈ 0.144`
+- Durable conclusion:
+  - lowering `M_min` to `0.10` prevents mathematical zeroing of progress.
+  - product gate is almost floor-locked on current high-slip behavior and may reduce learnable distinction among bad behaviors.
+  - min gate is stricter than average gate but less floor-locked than product; if reward gate is modified next, try `min(Gκ,Gα)` before `Gκ·Gα`.
+  - no reward code was changed in this step; this is a design-document and decision-support update.
+- Status:
+  - documentation updated; implementation pending explicit user decision
+
+### Stage0 low-slip progress gate v2 已接入：`G = min(Gκ,Gα)`，`M_min = 0.10`
+- Updated:
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/stage0_low_slip_progress_gate_design_2026-04-25.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- User decision:
+  - 将 `G_avg` 改为 `G_min = min(Gκ,Gα)`。
+  - 将 `M_min` 从 `0.25` 降到 `0.10`。
+- Implementation:
+  - `progress_gate = torch.minimum(longitudinal_gate, slip_angle_gate)`
+  - `progress_gate_min_multiplier = 0.10`
+  - `progress_gate_max_multiplier` remains `1.5`
+  - Therefore current Stage0 progress multiplier is `M = 0.10 + 1.40G_min`.
+- Durable conclusion:
+  - Current `ProgressGate/combined_gate` now means the min-combined gate, not the old average gate.
+  - Based on the previous v1 last-25 gate values, this change is expected to reduce high-slip positive-progress multiplier from about `0.392` to about `0.144`.
+  - This remains a shaping change, not a success-condition change; high-slip target hits may still receive `reached_target` unless that reward is changed later.
+- Status:
+  - implemented; formal training validation pending

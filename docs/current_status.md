@@ -6,12 +6,84 @@
 
 ## 当前阶段
 - 当前处于：
-  - Stage0 主体配置曾按用户要求回退到当前已知最佳真实 run 对应口径：
-    - `2026-04-21_21-51-09_stage0_waypoint_quality_goal10_v1_150iter`
-  - 当前源码已按用户最新要求把 `yaw_rate_cmd` 加回 policy 动作空间：
+  - Stage0 主体配置已回到平地双 waypoint baseline 主线。
+  - 当前源码已把 `yaw_rate_cmd` 加回 policy 动作空间：
     - policy 动作为 `8` 维：`[vx_cmd, yaw_rate_cmd] + q^d`
     - actor / critic 观测为 `54 / 54`
     - 环境内部直接将二维底盘平面命令 `[vx_cmd, yaw_rate_cmd]` 交给低层 allocator
+  - 2026-04-25 已完成一轮当前 `8` 维动作口径的 700 iteration GPU 训练：
+    - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_10-29-24_stage0_8d_baseline_repro_700iter`
+    - 结果：训练正常跑满，后段 success / waypoint completion 饱和，但目标误差和滑移质量仍不足以支持“精确到达”或“低滑移协同转向”结论
+  - 2026-04-25 已完成一轮 `0.5 m` 成功半径与 `|phi_2| > |phi_1|` 双 waypoint 配置的正式 GPU 训练，并按用户要求在平台期早停：
+    - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_13-37-33_stage0_tol05_turn2_gt_turn1_700iter`
+    - 原计划 `700` iterations，实际在 iteration `294` 后停止
+    - iteration `269-294` 连续 `26` 轮 `success_rate = 1.0`、`time_out_rate = 0.0`
+    - episode 级 `waypoints_completed = 2`、`waypoint_completion_pct = 100%`
+    - `success_hit_pos_error` 后段约 `0.488 m`，符合 `0.5 m` 成功半径
+    - 但因 `save_interval=100` 且在保存间隔中途早停，当前仅保存 `model_0.pt/100.pt/200.pt`，没有保存 plateau 末端 checkpoint
+  - 当前源码已按下一轮低滑移优化训练要求更新：
+    - 新增 low-slip 评价指标：纵滑达标率、侧滑达标率、综合达标率和对应 margin
+    - Stage0 已接入 low-slip gated progress v2：
+      - 纵滑 gate：六轮 `exp[-0.5 * (kappa_i / 3.0)^2]` 乘积
+      - 侧滑 gate：六轮 `0.5*cos(clip(pi*abs(alpha_i)/1.5, 0, pi)) + 0.5` 乘积
+      - 综合 gate：`G = min(Gκ, Gα)`
+      - progress multiplier：`M = 0.10 + 1.40G`
+      - 只门控正向 progress，负向 progress 不削弱
+    - Stage0 `slip_penalty_weight: -4.0 -> -2.0`，使滑移惩罚退回背景约束
+    - Stage0 `slip_angle_penalty_ratio: 4.0 -> 6.0`
+    - low-slip 评价阈值：纵向滑移均值 `< 1.0`，侧滑角均值 `< 0.35 rad`
+    - PPO `save_interval: 100 -> 25`，避免再次早停时丢失平台期 checkpoint
+  - 2026-04-25 已完成一轮 low-slip penalty v1 正式 GPU 训练：
+    - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_15-42-10_stage0_lowslip_penalty_v1_700iter`
+    - 实际完整跑满 `700` iterations
+    - 已保存 `model_0.pt/model_25.pt/.../model_675.pt/model_699.pt`，平台期 checkpoint 保存问题已解决
+    - 后段 `success_rate` 约 `0.95`，多次达到 `1.0`
+    - 但后段 low-slip 质量未达标：后 25 轮 `LowSlip/combined_pass_rate ≈ 0.018`、纵向滑移约 `2.899`、侧滑角约 `0.685 rad`
+    - 结论：增强 `slip_penalty` 可以保留高成功率，但没有把策略改造成低侧滑、低纵滑完成方式
+  - 2026-04-25 已完成一轮 low-slip progress gate v1 正式 GPU 训练：
+    - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter`
+    - 完整跑满 `700` iterations，最终 checkpoint 为 `model_699.pt`
+    - 后 25 轮平均 `success_rate ≈ 0.986`，`waypoints_completed ≈ 1.984`，`success_hit_pos_error ≈ 0.490 m`
+    - 第一次 25 轮平均 `success_rate >= 0.95` 出现在 iteration `602`
+    - 最长连续满成功为 iteration `688-698`，共 `11` 轮
+    - 后 25 轮 low-slip 质量仍未达标：纵向滑移约 `2.739`、侧滑角约 `0.691 rad`、`LowSlip/combined_pass_rate ≈ 0.013`
+    - 结论：progress gate v1 保住高成功率并略降轮速参考/纵滑，但没有降低侧滑角，也没有实现低滑移完成方式
+  - 2026-04-25 用户回放 low-slip gate v1 后观察到：
+    - 中车全程存在明显前俯，旧 `Observation/tilt_deg` 实际记录的是 roll，不是 pitch
+    - 中车左侧轮子视觉上基本不转，可能与纵滑仍高有关
+    - 侧滑角允许存在一定定轴侧滑，但应控制到最高不超过约 `0.5 rad` / `30°`
+    - 当前源码已新增 `Observation/pitch_deg`、`Observation/pitch_abs_deg` 与 per-wheel 诊断日志，用于下一轮回放或训练定位问题
+  - 2026-04-25 已按下一轮低滑移优化要求调整 Stage0 底层执行参数：
+    - `wheel_slip_feedback_gain: 4.0 -> 8.0`
+    - `wheel_torque_tracking_gain: 2.0 -> 1.5`
+    - `wheel_joint_effort_limit_sim: 20.0 -> 15.0`
+    - `low_slip_lambda_lateral: 5.0 -> 10.0`
+    - reward gate 组合方式已从平均 gate 改为 `min(Gκ,Gα)`，`progress_gate_min_multiplier` 已从 `0.25` 降到 `0.10`
+    - 已更新 `docs/stage0_low_slip_progress_gate_design_2026-04-25.md`：
+      - 当前 v1 后 25 轮 `Gκ≈0.196`、`Gα≈0.031`
+      - 当前 v1 multiplier 约 `0.392`
+      - 若改为 `Gκ·Gα` 且 `M_min=0.10`，multiplier 约 `0.109`
+      - 若改为 `min(Gκ,Gα)` 且 `M_min=0.10`，multiplier 约 `0.144`
+      - 当前已按推荐接入 `min(Gκ,Gα)`，暂不直接上乘积 gate
+  - 2026-04-25 已为 `play.py` 增加侧滑可视化与随车视角回放工具：
+    - `--show_wheel_slip_vis`：绿色箭头表示车轮滚动方向，红色箭头表示车轮实际平面速度方向
+    - `--create_follow_views`：在 stage 中创建 `/view/env_*/top_down_camera` 与指定环境的 `/view/env_*/chase_camera`
+    - 顶视角位于中车 root 正上方，默认高度 `2.5 m`；斜上方第三视角默认跟随 `env_0`
+    - 当前用于回放核对的模型应采用完整 700 iteration run 的最终 checkpoint：`2026-04-25_10-29-24_stage0_8d_baseline_repro_700iter/model_699.pt`
+    - 已用 `model_699.pt` 录制视频：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_10-29-24_stage0_8d_baseline_repro_700iter/videos/play/rl-video-step-0.mp4`
+    - `play.py` 已修复显式 checkpoint 解析：本地 `.pt` 文件直接加载，加载前会校验 checkpoint 必须是文件，避免把 `/tmp` 等目录传给 `torch.load`
+  - 2026-04-25 已修复并启动后六种 Stage1 地形查看脚本：
+    - 脚本：`scripts/isaac_sim/preview_stage1_last_six.py`
+    - 当前从 `RL_Training/source/complete_car_lab/.../terrain/terrain_builder.py` 读取地形生成逻辑，不再引用旧的 `complete_car_rl_training/.../terrain_generator.py`
+    - `--list-terrains` 已确认输出：`hurdle`、`gap`、`ramp`、`beam`、`new stairs down`、`pit`
+    - GUI 启动已加载 `20 x 10`、共 `200` 个 tile 的后六类地形画廊
+  - 2026-04-25 已修复并启动 Stage1 全部混合地形 tile 画廊：
+    - 默认查看脚本：`scripts/isaac_sim/preview_stage1_tile.py`
+    - 当前从 `RL_Training/source/complete_car_lab/.../terrain/terrain_builder.py` 读取地形生成逻辑
+    - 用户要求删除 `flat` 后，`--list-terrains` 当前输出 `12` 类地形：`slope down`、`slope up`、`uneven rough`、`stairs down`、`stairs up`、`discrete obstacles`、`hurdle`、`gap`、`ramp`、`beam`、`new stairs down`、`pit`
+    - GUI 启动已加载 `20 x 10`、共 `200` 个 tile 的全课程分离画廊
+    - `scripts/isaac_sim/preview_stage1_terrain.py` 也已迁移到当前 `complete_car_lab` 路径，继续用于查看整张拼接 stage1 地图
+    - `CompleteCarStage1EnvCfg.curriculum.default_terrain_name` 已从 `flat` 改为 `slope down`，避免 generator 启动时引用已删除地形
   - 当前源码主线不再使用：
     - `next_turn_delta`
     - `min_segment_turn_deg = 20.0°`
@@ -23,7 +95,8 @@
   - 双 waypoint
   - 每段 `10 m`
   - 总名义路程约 `20 m`
-  - 命中半径 `< 2.0 m`
+  - 命中半径 `< 0.5 m`
+  - 第 2 段 waypoint 偏角约束为 `|phi_2| > |phi_1|`
   - 回合时长 `40 s`
   - `64` 个并行环境
 - 当前动作空间：
@@ -44,22 +117,145 @@
   - `last_action`
 - 当前 reward 口径：
   - `distance_to_target`
-  - `progress_to_target`
+  - `progress_to_target`，当前为 low-slip gated progress
   - `reached_target`
   - `far_from_target`
   - `angle_diff`
   - `turn_speed_penalty`
   - `slip_penalty`
+- 当前 low-slip 评价口径：
+  - `LowSlip/longitudinal_slip_pass_rate`
+  - `LowSlip/slip_angle_pass_rate`
+  - `LowSlip/combined_pass_rate`
+  - `LowSlip/longitudinal_slip_margin`
+  - `LowSlip/slip_angle_margin`
+  - 阈值只用于评价，不作为成功终止条件
+- 当前新增 per-wheel 诊断日志：
+  - `PerWheel/<wheel>/wheel_joint_vel`
+  - `PerWheel/<wheel>/wheel_speed_reference`
+  - `PerWheel/<wheel>/wheel_torque_target`
+  - `PerWheel/<wheel>/contact_weight`
+  - `PerWheel/<wheel>/normal_force`：实际接触合力模长，单位为 N
+  - `PerWheel/<wheel>/longitudinal_slip`
+  - `PerWheel/<wheel>/slip_angle`
+- 当前姿态诊断日志：
+  - `Observation/roll_deg`
+  - `Observation/pitch_deg`
+  - `Observation/pitch_abs_deg`
+  - 旧 `Observation/tilt_deg` 保持为中车 roll 绝对值
+- 当前 progress gate 日志口径：
+  - `ProgressGate/combined_gate`
+  - `ProgressGate/multiplier`
+  - `ProgressGate/longitudinal_gate`
+  - `ProgressGate/slip_angle_gate`
+  - `ProgressGate/positive_progress_raw`
+  - `ProgressGate/negative_progress_raw`
+  - `ProgressGate/ungated_progress_raw`
+  - 当前 `ProgressGate/combined_gate` 表示 `min(Gκ,Gα)`，不再表示平均 gate
 - `RL_Training/` 源码当前低层执行链保持不变：
   - 高层策略输出 `u_v^d=[vx_cmd, yaw_rate_cmd]` 与 `q^d`
   - 环境内部将二维底盘平面命令直接交给 allocator
   - 环境内部 allocator 生成 `q_cmd`、`Omega_ref`、`tau_cmd`
   - 车轮仍走 torque target 链
+  - 当前低层参数：
+    - `wheel_joint_effort_limit_sim = 15.0`
+    - `wheel_torque_tracking_gain = 1.5`
+    - `wheel_slip_feedback_gain = 8.0`
+    - `low_slip_lambda_lateral = 10.0`
 
 ## 已完成里程碑
 - 已有最佳真实 run：
   - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-21_21-51-09_stage0_waypoint_quality_goal10_v1_150iter`
   - 该 run 已证明双 waypoint 主线“能学”，但成功仍不稳定，且完成方式偏高侧滑。
+- 已完成当前 8 维动作主线 700 iteration 复现实验：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_10-29-24_stage0_8d_baseline_repro_700iter`
+  - 关键结果：
+    - `termination_success_rate` 后段稳定为 `1.0`
+    - `time_out_rate` 后段稳定为 `0.0`
+    - `waypoints_completed` 后段稳定为 `2`
+    - `waypoint_completion_pct` 后段稳定为 `100%`
+    - `goal_pos_error` 后段仍约 `6.77 m`
+    - `goal_completion_pct` 后段仍约 `33%`
+    - 纵向滑移从约 `9.44` 降到约 `3.09`
+    - 侧滑角从约 `0.52 rad` 升到约 `0.73 rad`
+  - 完整诊断报告：
+    - `results/stage0_8d_700iter_diagnosis_2026-04-25.md`
+- 已完成当前 `0.5 m` 成功半径与增强第二段转向分布的早停正式训练：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_13-37-33_stage0_tol05_turn2_gt_turn1_700iter`
+  - 关键结果：
+    - 原计划最大 `700` iterations，实际训练到 iteration `294`
+    - `success_rate` 第一次满成功在 iteration `210`
+    - iteration `269-294` 连续 `26` 轮满成功
+    - 末尾 `success_rate = 1.0`
+    - 末尾 `time_out_rate = 0.0`
+    - 末尾 `episode/waypoints_completed = 2`
+    - 末尾 `episode/waypoint_completion_pct = 100%`
+    - 末尾 `episode/success_hit_pos_error = 0.486 m`
+    - 后 20 轮 `success_hit_pos_error` 约 `0.488 m`
+    - 后 20 轮侧滑角约 `0.711 rad`
+    - 后 20 轮纵向滑移约 `3.002`
+  - 完整诊断报告：
+    - `results/stage0_tol05_turn2_gt_turn1_earlystop_diagnosis_2026-04-25.md`
+  - 限制：
+    - 当前 run 未保存 iteration `294` 的 plateau checkpoint；最新 checkpoint 仍是 `model_200.pt`
+- 已完成 low-slip penalty v1 正式训练：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_15-42-10_stage0_lowslip_penalty_v1_700iter`
+  - 关键结果：
+    - 完整跑满 `700` iterations
+    - 第一次 `success_rate = 1.0` 出现在 iteration `457`
+    - 第一次 25 轮平均 `success_rate >= 0.95` 出现在 iteration `587`
+    - iteration `675-699` 平均 `success_rate ≈ 0.976`
+    - iteration `675-699` 平均纵向滑移约 `2.899`
+    - iteration `675-699` 平均侧滑角约 `0.685 rad`
+    - iteration `675-699` 平均 `LowSlip/combined_pass_rate ≈ 0.018`
+    - `wheel_speed_reference` 与 `slip_angle` 后段强相关，说明高成功率主要伴随更强轮速执行和更高侧滑
+  - 完整诊断报告：
+    - `results/stage0_lowslip_penalty_v1_700iter_diagnosis_2026-04-25.md`
+- 已完成 low-slip progress gate v1 正式训练：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter`
+  - 关键结果：
+    - 完整跑满 `700` iterations
+    - 第一次 `success_rate = 1.0` 出现在 iteration `555`
+    - 第一次 25 轮平均 `success_rate >= 0.95` 出现在 iteration `602`
+    - 第一次 50 轮平均 `success_rate >= 0.95` 出现在 iteration `627`
+    - iteration `675-699` 平均 `success_rate ≈ 0.986`
+    - iteration `675-699` 平均 `waypoints_completed ≈ 1.984`
+    - iteration `675-699` 平均 `success_hit_pos_error ≈ 0.490 m`
+    - iteration `675-699` 平均纵向滑移约 `2.739`
+    - iteration `675-699` 平均侧滑角约 `0.691 rad`
+    - iteration `675-699` 平均 `LowSlip/combined_pass_rate ≈ 0.013`
+    - iteration `675-699` 平均 `ProgressGate/multiplier ≈ 0.392`
+  - 完整诊断报告：
+    - `results/stage0_lowslip_gate_v1_700iter_diagnosis_2026-04-25.md`
+  - 结论：
+    - progress gate v1 可以保住高成功率并略微降低纵滑与轮速参考，但没有降低侧滑角，也不能作为低滑移控制已实现的证据。
+- 已完成 low-slip gate v1 回放后的诊断日志补强：
+  - 新增中车 pitch 相关 TensorBoard 指标：
+    - `Observation/pitch_deg`
+    - `Observation/pitch_abs_deg`
+  - 新增显式 roll 指标：
+    - `Observation/roll_deg`
+  - 新增每轮诊断指标：
+    - `PerWheel/<wheel>/wheel_joint_vel`
+    - `PerWheel/<wheel>/wheel_speed_reference`
+    - `PerWheel/<wheel>/wheel_torque_target`
+    - `PerWheel/<wheel>/contact_weight`
+    - `PerWheel/<wheel>/normal_force`：实际接触合力模长，单位为 N
+    - `PerWheel/<wheel>/longitudinal_slip`
+    - `PerWheel/<wheel>/slip_angle`
+  - 用途：
+    - 核对用户观察到的中车前俯、左侧轮不转、纵滑偏高之间是否存在因果关系
+    - 区分低层接触/分配异常与 reward shaping 不足
+- 已完成一次车轮侧滑可视化与 `/view` 随车相机核对：
+  - 回放模型：`2026-04-25_10-29-24_stage0_8d_baseline_repro_700iter/model_699.pt`
+  - 回放视频：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_10-29-24_stage0_8d_baseline_repro_700iter/videos/play/rl-video-step-0.mp4`
+  - 新增 stage 视角：
+    - `/view/env_i/top_down_camera`：每个环境一个，中车 root 正上方 `2.5 m` 顶视角，随 reset 和 step 更新
+    - `/view/env_0/chase_camera`：默认给 `env_0` 一个斜上方第三视角，随 reset 和 step 更新
+  - 观察结论：
+    - 车体整体运动在视频中看起来比较平稳
+    - 车轮处红色实际速度方向箭头与绿色滚动方向箭头在转向段存在可见夹角
+    - 当前高侧滑更像车轮接触层面的横向擦滑，而不是肉眼明显的整车失稳或甩尾
 - 已完成当前源码同步：
   - Stage0 环境已回到与上述最佳 run 一致的任务、观测主项和 reward 口径。
   - 动作空间已按用户最新要求恢复为 `8` 维，重新加入 policy 输出的 `yaw_rate_cmd`。
@@ -82,22 +278,48 @@
     - 纵向滑移 `\kappa_w` 在论文中按“车轮圆周速度大于实际纵向滚动速度时为正滑转”的口径定义
 
 ## 当前主要问题
-- 当前终端环境仍缺少 `isaaclab`：
-  - 直接执行 `python3 scripts/train.py ...` 会报 `ModuleNotFoundError: No module named 'isaaclab'`
-  - 因此本轮只能完成代码回退与静态校验，不能在本机会话内直接补跑 smoke。
+- 普通 `python3 scripts/train.py ...` 仍不是默认可用路线；当前可运行路线是通过 `/home/ubuntu/IsaacLab/isaaclab.sh -p scripts/train.py ...` 启动 Isaac Lab。
 - 当前 reward 评价结论：
   - 关键学习信号主要来自 `progress_to_target` 与 `reached_target`，辅以 `distance_to_target` 和 `angle_diff`。
   - `slip_penalty` 有约束作用，但不足以稳定实现低侧滑、低纵滑和球铰协同转向。
   - `far_from_target` 主要是失败护栏，`turn_speed_penalty` 量级偏弱且只基于当前目标视线角。
-- 最佳 run 虽然能学，但仍有两个未解决问题：
-  - 成功率后段有脉冲，但末轮不稳定
-  - 完成方式偏高侧滑，不适合直接作为“协同转向已经学成”的证据
+  - 2026-04-25 的 700 iteration run 已经证明当前 8 维动作主线可以稳定跑满并使 success / waypoint completion 饱和，但仍有三个未解决问题：
+  - `goal_success_rate = 1.0`、`waypoints_completed = 2` 与 `goal_pos_error ≈ 6.77 m`、`goal_completion_pct ≈ 33%` 同时出现，说明成功终止指标与目标误差日志之间存在语义错位或记录时机差异
+  - 侧滑角后段约 `0.73 rad`，不能作为低侧滑控制证据
+  - 纵向滑移虽明显下降，但后段约 `3.09`，仍不能作为低纵滑控制证据
+  - 2026-04-25 的 low-slip penalty v1 训练进一步证明：
+    - 单纯增强当前 `slip_penalty` 不足以实现低滑移完成
+    - 高成功率与高轮速参考、较高侧滑角仍明显绑定
+    - low-slip 指标应继续作为独立评价目标，不能被 `success_rate` 替代
+  - 2026-04-25 已整理 low-slip progress gate 设计备选方案：
+    - 文件：`docs/stage0_low_slip_progress_gate_design_2026-04-25.md`
+    - 核心思路：用纵滑 gate 和侧滑 gate 调制正向 `progress_to_target`，让低滑移前进获得更高 progress，高滑移前进只保留基础 progress
+    - v1 参数：`k = 3.0`、`K = pi / 1.5`、`M = 0.25 + 1.25G_avg`
+    - v1 已接入 `RL_Training/` 并完成正式训练验证
+    - 当前源码已切换为 v2：`G = min(Gκ,Gα)`，`M = 0.10 + 1.40G`
+  - 2026-04-25 的 low-slip progress gate v1 训练进一步证明：
+    - gate v1 后段 `ProgressGate/multiplier` 约 `0.392`，说明高滑移 progress 确实被削弱
+    - 但高成功率仍然可以在侧滑角约 `0.69 rad` 条件下形成，说明当前 gate 是 soft shaping，不是 low-slip 约束
+    - 相比 penalty v1，gate v1 后 25 轮纵滑降低约 `0.160`、轮速参考降低约 `0.546`，但侧滑角增加约 `0.006 rad`、综合 low-slip 达标率下降约 `0.0048`
+- 用户已在 2026-04-25 后续要求收紧 Stage0 成功条件并增强第二段转向需求：
+  - `target_position_tolerance: 2.0 m -> 0.5 m`
+  - waypoint 采样改为第 2 段偏角绝对值大于第 1 段偏角绝对值
+  - 该新配置已完成一轮正式 GPU 训练并证明可以进入满成功平台
+  - 但本轮未保存 plateau 末端 checkpoint，不能直接用于最终 deterministic replay
+- 2026-04-25 已清理 Stage0 评价指标命名：
+  - 移除重复且易误解的 `Tracking/goal_success_rate`
+  - 将 active waypoint 距离类指标改名为 `Tracking/active_waypoint_*`
+  - 新增 `Tracking/waypoints_completed_mean`、`Tracking/episode_completion_pct`
+  - 新增 episode 级 `episode/waypoint_hit_rate`
+  - 新增 episode 结束时的 `episode/end_active_waypoint_pos_error`、`episode/waypoint_hit_pos_error`、`episode/success_hit_pos_error`
+  - 旧 run 的 `goal_pos_error / goal_completion_pct` 仍只代表历史日志，不再代表当前 active 指标命名
 - 论文 `chapter04` 与答辩材料仍未完全同步 `chapter03` 当前接口口径。
-- `RL_Training/` 源码已重新加入 policy `yaw_rate_cmd`，恢复为 `8` 维动作模型；该口径尚未完成本轮 Isaac Lab smoke。
 - 论文 `chapter03` 目前仍记录“不含 `yaw_rate_cmd`”的 `7` 维动作推导，已与当前 `RL_Training/` 源码重新加入 `yaw_rate_cmd` 的 `8` 维动作口径不一致；若后续论文要同步，需要单独修改第 3 章。
 
 ## 下一步优先级
-1. 先恢复 Isaac Lab 运行环境。
-2. 用当前 `54 / 54`、`8` 维动作的 Stage0 主线补跑 smoke run。
-3. 再复跑一轮当前 `8` 维动作主线的真实训练，确认当前代码与历史最好结果对齐。
-4. 只有在这条 baseline 重新复现后，才继续推进 `next_turn preview / differential_turn_cost` 这类新设计。
+1. 重新启动一次回放或短诊断运行，检查 `Observation/pitch_deg` 与 `PerWheel/body_car_wheel_left/*` 等 per-wheel 曲线，确认左侧轮不转是否真实存在于关节速度、轮速参考、扭矩和接触权重中。
+2. 若左侧轮实际关节速度长期接近零，先定位低层 allocator、接触权重或驱动器执行问题，再讨论 reward。
+3. 低滑移下一轮改造前，应先由用户判断 low-slip 在 Stage0 中是“评价目标”“奖励偏好”还是“必须满足的成功条件”。
+4. 下一轮正式训练应验证当前 low-slip gate v2：`G = min(Gκ,Gα)`、`M = 0.10 + 1.40G`，重点观察侧滑角是否从约 `0.69 rad` 向 `0.5 rad` 收敛，以及纵滑是否继续下降。
+5. 用新日志指标继续区分 episode 结束完成度、命中瞬间误差、step 级 active waypoint 进度和低滑移质量，不要混用统计口径。
+6. 论文侧若继续采用当前 RL 源码，应单独同步 `chapter03` 中 `7` 维动作推导与当前 `8` 维动作源码的口径冲突。

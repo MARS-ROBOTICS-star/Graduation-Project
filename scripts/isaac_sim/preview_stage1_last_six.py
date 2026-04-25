@@ -13,17 +13,18 @@ from isaaclab.app import AppLauncher
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RL_PROJECT_ROOT = PROJECT_ROOT / "RL_Training"
-if str(RL_PROJECT_ROOT) not in sys.path:
-    sys.path.append(str(RL_PROJECT_ROOT))
+EXTENSION_SOURCE = RL_PROJECT_ROOT / "source" / "complete_car_lab"
+if str(EXTENSION_SOURCE) not in sys.path:
+    sys.path.append(str(EXTENSION_SOURCE))
 
 STAGE1_TERRAIN_PATH = (
-    RL_PROJECT_ROOT
-    / "complete_car_rl_training"
+    EXTENSION_SOURCE
+    / "complete_car_lab"
     / "tasks"
     / "direct"
     / "complete_car"
     / "terrain"
-    / "terrain_generator.py"
+    / "terrain_builder.py"
 )
 
 
@@ -150,7 +151,7 @@ from isaaclab.sim import SimulationContext
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 
-from complete_car_rl_training.tasks.direct.complete_car.assets import COMPLETE_CAR_CFG
+from complete_car_lab.tasks.direct.complete_car.assets import build_complete_car_robot_cfg
 
 
 def is_single_tile_mode() -> bool:
@@ -353,7 +354,7 @@ class Stage1LastSixPreviewSceneCfg(InteractiveSceneCfg):
     )
 
     if args_cli.spawn_car:
-        robot = COMPLETE_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        robot = build_complete_car_robot_cfg(prim_path="{ENV_REGEX_NS}/Robot")
 
 
 def main() -> None:

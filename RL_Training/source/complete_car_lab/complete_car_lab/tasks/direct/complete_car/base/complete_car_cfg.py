@@ -140,6 +140,12 @@ class RewardParamsCfg:
     turn_speed_penalty_weight: float = 0.0
     slip_penalty_weight: float = 0.0
     slip_angle_penalty_ratio: float = 1.0
+    progress_gate_longitudinal_k: float = 3.0
+    progress_gate_slip_angle_scale_rad: float = 1.5
+    progress_gate_min_multiplier: float = 0.10
+    progress_gate_max_multiplier: float = 1.5
+    low_slip_longitudinal_threshold: float = 1.0
+    low_slip_angle_threshold_rad: float = 0.35
 
 
 @configclass
@@ -199,7 +205,7 @@ class CurriculumCfg:
 
     enabled: bool = False
     max_init_terrain_level: int = 0
-    default_terrain_name: str = "flat"
+    default_terrain_name: str = "slope down"
     move_up_distance_ratio: float = 0.5
     move_down_command_ratio: float = 0.5
 
@@ -219,6 +225,12 @@ class DebugCfg:
     """调试辅助配置。"""
 
     enable_debug_draw: bool = False
+    visualize_wheel_slip: bool = False
+    create_follow_views: bool = False
+    follow_view_top_height: float = 2.5
+    follow_view_chase_env_index: int = 0
+    follow_view_chase_offset_b: tuple[float, float, float] = (-4.0, -3.0, 2.4)
+    follow_view_chase_target_offset_b: tuple[float, float, float] = (1.0, 0.0, 0.4)
     log_sensor_outputs: bool = True
 
 

@@ -41,7 +41,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.control.ball_joint_planner_gains = (10.0, 10.0, 10.0, 10.0, 10.0, 10.0)
         self.control.base_forward_velocity_max = 2.0
         self.control.base_yaw_rate_max = 2.0
-        self.control.base_allow_reverse = True
+        self.control.base_allow_reverse = False
         self.control.ball_joint_stiffness = 8000.0
         self.control.ball_joint_damping = 1000.0
         self.control.ball_joint_effort_limit_sim = 20.0

@@ -84,6 +84,12 @@
     - GUI 启动已加载 `20 x 10`、共 `200` 个 tile 的全课程分离画廊
     - `scripts/isaac_sim/preview_stage1_terrain.py` 也已迁移到当前 `complete_car_lab` 路径，继续用于查看整张拼接 stage1 地图
     - `CompleteCarStage1EnvCfg.curriculum.default_terrain_name` 已从 `flat` 改为 `slope down`，避免 generator 启动时引用已删除地形
+  - 2026-04-25 已输出 Stage1 “方向通过地形”任务设计草案：
+    - 文件：`docs/stage1_directional_terrain_task_design_2026-04-25.md`
+    - 当前仅为设计文档，尚未修改训练代码
+    - 核心思路：Stage1 不再以命中 waypoint 为主目标，而是在当前两列同地形通道内沿 `$+x$` 稳定通过一段地形
+    - 建议第一版固定参数：单 tile `8 m x 8 m`，两列通道宽 `16 m`，`rear/front/side margin = 1/1/2 m`，reset yaw `±5°`，通过距离 `6 m`，升级距离 `5 m`，降级距离 `2 m`，episode `16 s`
+    - 后续若实施，应让 reset 出生点、reset 朝向、方向目标点、出界终止和 curriculum 共用同一套地形通道边界
   - 当前源码主线不再使用：
     - `next_turn_delta`
     - `min_segment_turn_deg = 20.0°`
@@ -323,3 +329,4 @@
 4. 下一轮正式训练应验证当前 low-slip gate v2：`G = min(Gκ,Gα)`、`M = 0.10 + 1.40G`，重点观察侧滑角是否从约 `0.69 rad` 向 `0.5 rad` 收敛，以及纵滑是否继续下降。
 5. 用新日志指标继续区分 episode 结束完成度、命中瞬间误差、step 级 active waypoint 进度和低滑移质量，不要混用统计口径。
 6. 论文侧若继续采用当前 RL 源码，应单独同步 `chapter03` 中 `7` 维动作推导与当前 `8` 维动作源码的口径冲突。
+7. 若切换到 Stage1 混合地形训练，应先实现 `docs/stage1_directional_terrain_task_design_2026-04-25.md` 中的方向通过任务，避免继续用自由 waypoint 目标把小车引导到其它地形列或地图外。

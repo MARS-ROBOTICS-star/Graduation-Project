@@ -4,6 +4,33 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-25
 
+### Stage1 “方向通过地形”任务设计草案已输出，尚未接入训练代码
+- Updated:
+  - `docs/stage1_directional_terrain_task_design_2026-04-25.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- User request:
+  - 将关于 Stage1 行驶方向、reset 朝向和边缘问题的解决方案输出为 Markdown 文件，并加入具体数字和示意图。
+- Durable conclusion:
+  - Stage1 混合地形任务不应继续主要解释为“精确命中 waypoint”，而应改成“在当前地形通道内沿 `$+x$` 稳定通过一段地形”。
+  - 设计草案建议把每两列同地形视为一个 `16 m` 宽通道；单 tile 仍为 `8 m x 8 m`。
+  - 第一版建议参数：
+    - `rear_margin = 1.0 m`
+    - `front_margin = 1.0 m`
+    - `side_margin = 2.0 m`
+    - `yaw_clearance_margin = 1.0 m`
+    - `target_y_offset_max = 1.0 m`
+    - `reset_yaw_max_deg = 5.0°`
+    - 有效通过距离 `6.0 m`
+    - curriculum 升级距离 `5.0 m`
+    - curriculum 降级距离 `2.0 m`
+    - episode 时长 `16.0 s`
+  - 后续若实施，应让 reset 出生点、reset 朝向、方向目标点、出界终止和 curriculum 使用同一套地形通道边界。
+  - 当前只输出设计文档，未修改 `RL_Training/` 训练代码。
+- Status:
+  - design documented; implementation pending user decision
+
 ### Stage1 terrain generator 已删除 `flat` 地形入口，generator 默认地形改为 `slope down`
 - Updated:
   - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`

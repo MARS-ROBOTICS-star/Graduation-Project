@@ -12001,3 +12001,30 @@
 
 下一步：
 - 启动正式训练验证 v2 是否能把侧滑角从约 `0.69 rad` 压向 `0.5 rad`，同时让纵滑继续下降。
+
+## 2026-04-25
+
+已完成：
+- 按用户要求输出 Stage1 混合地形“方向通过”任务设计草案。
+- 文档用具体数字说明了如何统一处理：
+  - 行驶方向目标点生成
+  - reset 出生点
+  - reset 朝向
+  - 边缘 tile 目标点约束
+  - 出界判定
+  - curriculum 升级 / 降级
+- 文档中加入了地形通道、reset 采样区、目标点生成区和失败边界的示意图。
+
+修改文件：
+- `docs/stage1_directional_terrain_task_design_2026-04-25.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 后续建议从“命中 waypoint”转为“在当前两列同地形通道内沿 `$+x$` 稳定通过一段地形”。
+- 第一版建议参数为：单 tile `8 m x 8 m`，两列通道宽 `16 m`，`rear/front/side margin = 1/1/2 m`，reset yaw `±5°`，有效通过距离 `6 m`，升级距离 `5 m`，降级距离 `2 m`，episode `16 s`。
+- 当前仅完成设计文档，尚未修改训练代码。
+
+下一步：
+- 等用户确认该 Stage1 任务定义后，再修改 `terrain_runtime.py`、`mdp/resets.py`、`mdp/commands.py`、`mdp/terminations.py`、`mdp/curriculum.py` 和 `base/env.py`。

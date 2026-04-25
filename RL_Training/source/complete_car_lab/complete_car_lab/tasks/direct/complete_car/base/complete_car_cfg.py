@@ -85,7 +85,6 @@ class ObservationScalesCfg:
     wheel_slip_angle: float = 1.0
     wheel_normal_contact_force: float = 1.0
     commands: float = 1.0
-    next_turn_delta: float = 1.0
     last_action: float = 1.0
 
 
@@ -107,7 +106,6 @@ class ObservationNoiseCfg:
     wheel_slip_angle: float = 0.0
     wheel_normal_contact_force: float = 0.0
     commands: float = 0.0
-    next_turn_delta: float = 0.0
 
 
 @configclass
@@ -137,13 +135,11 @@ class RewardParamsCfg:
     reached_target_base_reward: float = 2.0
     reached_target_weight: float = 5.0
     far_from_target_margin: float = 3.0
+    far_from_target_weight: float = -2.0
     angle_diff_weight: float = 5.0
     turn_speed_penalty_weight: float = 0.0
     slip_penalty_weight: float = 0.0
-    differential_turn_cost_weight: float = 0.0
     slip_angle_penalty_ratio: float = 1.0
-    turn_demand_penalty_min_scale: float = 0.25
-    turn_demand_penalty_max_scale: float = 1.5
 
 
 @configclass

@@ -55,6 +55,7 @@ The temporary parallel directory created in the previous round has been removed.
   - Local Isaac Sim 5.1 and Isaac Lab 2.3.x references.
 - `docs/literature/`
   - Local paper corpus and converted markdown outputs.
+  - Source PDFs are organized under `综述论文/` and `研究论文/`; converted Markdown stays in `opendataloader_output/`.
 - `毕业论文/`
   - Thesis template, LaTeX sources, and compiled artifacts.
 

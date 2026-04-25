@@ -22,7 +22,7 @@ Options:
 
 Examples:
   scripts/literature/mineru_batch_convert.sh
-  scripts/literature/mineru_batch_convert.sh --pdf docs/literature/Sartoretti\ 等\ -\ 2019\ -\ Distributed\ learning\ of\ decentralized\ control\ policies\ for\ articulated\ mobile\ robots.pdf
+  scripts/literature/mineru_batch_convert.sh --pdf docs/literature/研究论文/Sartoretti\ 等\ -\ 2019\ -\ Distributed\ learning\ of\ decentralized\ control\ policies\ for\ articulated\ mobile\ robots.pdf
   scripts/literature/mineru_batch_convert.sh -- --lang en
 EOF
 }
@@ -80,7 +80,16 @@ if [[ -n "${SINGLE_PDF}" ]]; then
 else
   while IFS= read -r pdf; do
     PDFS+=("${pdf}")
-  done < <(find "${INPUT_ROOT}" -maxdepth 1 -type f -name '*.pdf' | sort)
+  done < <(
+    {
+      find "${INPUT_ROOT}" -maxdepth 1 -type f -name '*.pdf'
+      for subdir in "综述论文" "研究论文"; do
+        if [[ -d "${INPUT_ROOT}/${subdir}" ]]; then
+          find "${INPUT_ROOT}/${subdir}" -type f -name '*.pdf'
+        fi
+      done
+    } | sort -u
+  )
 fi
 
 if [[ "${#PDFS[@]}" -eq 0 ]]; then

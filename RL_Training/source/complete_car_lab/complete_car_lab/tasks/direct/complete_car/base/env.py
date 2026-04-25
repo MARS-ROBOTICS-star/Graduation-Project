@@ -98,7 +98,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._last_critic_height_patch: torch.Tensor | None = None
         self._cached_step_raw_obs_terms: dict[str, torch.Tensor] | None = None
         self._cached_step_relative_goal_commands: torch.Tensor | None = None
-        self._cached_step_next_turn_delta: torch.Tensor | None = None
 
         self._obs_history = None
         if self.cfg.observations.use_history and self.cfg.observations.history_length > 1:
@@ -282,23 +281,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
         target_z_w = self._terrain_runtime.sample_heights_world_xy(target_xy_w)
         return torch.nan_to_num(target_z_w, nan=0.0, posinf=0.0, neginf=0.0)
 
-    def _compute_next_turn_delta(self, env_ids: torch.Tensor | None = None) -> torch.Tensor:
-        if env_ids is None:
-            env_ids = torch.arange(self.num_envs, device=self.device, dtype=torch.long)
-        if env_ids.numel() == 0:
-            return torch.zeros((0, 1), device=self.device, dtype=self.command_targets_w.dtype)
-
-        active_indices = self._active_waypoint_index[env_ids]
-        next_turn_delta = torch.zeros(env_ids.numel(), device=self.device, dtype=self.command_targets_w.dtype)
-        has_next_mask = active_indices < (self._num_waypoints_per_episode - 1)
-        if torch.any(has_next_mask):
-            next_env_ids = env_ids[has_next_mask]
-            current_indices = active_indices[has_next_mask]
-            current_segment_heading = self._waypoint_targets_w[next_env_ids, current_indices, 3]
-            next_segment_heading = self._waypoint_targets_w[next_env_ids, current_indices + 1, 3]
-            next_turn_delta[has_next_mask] = mdp_commands.wrap_to_pi_tensor(next_segment_heading - current_segment_heading)
-        return next_turn_delta.unsqueeze(-1)
-
     def _sync_active_waypoint_targets(self, env_ids: torch.Tensor) -> None:
         if env_ids.numel() == 0:
             return
@@ -344,7 +326,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
             )
 
         relative_goal_commands = self._compute_relative_goal_commands()
-        next_turn_delta = self._compute_next_turn_delta()
         self.commands.copy_(relative_goal_commands)
         raw_obs_terms = collect_raw_observation_terms(
             self.cfg,
@@ -356,11 +337,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._total_vehicle_weight,
             self._joint_pos_targets[:, self._ball_joint_ids],
             relative_goal_commands,
-            next_turn_delta,
             self.last_actions,
         )
         self._cached_step_relative_goal_commands = relative_goal_commands
-        self._cached_step_next_turn_delta = next_turn_delta
         self._cached_step_raw_obs_terms = raw_obs_terms
         current_actor_obs = compute_actor_observation_from_raw_terms(self.cfg, raw_obs_terms)
         actor_obs = update_history(self._obs_history, current_actor_obs)
@@ -397,7 +376,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
 
     def _get_rewards(self) -> torch.Tensor:
         relative_goal_commands = self._compute_relative_goal_commands()
-        next_turn_delta = self._compute_next_turn_delta()
         self.commands.copy_(relative_goal_commands)
         wheel_longitudinal_slip, wheel_slip_angle = compute_wheel_motion_observations(
             wheel_body_lin_vel_w=self.robot.data.body_lin_vel_w[:, self._wheel_body_ids],
@@ -414,14 +392,12 @@ class CompleteCarDirectEnv(DirectRLEnv):
         total_reward, components = compute_reward_terms(
             self.cfg,
             relative_goal_commands,
-            next_turn_delta,
             self._previous_goal_distance,
             self.episode_length_buf,
             self.max_episode_length,
             self.robot.data.root_com_lin_vel_b,
             wheel_longitudinal_slip,
             wheel_slip_angle,
-            self._last_wheel_torque_targets,
             self._last_done_terms["waypoint_hit"],
         )
         self._previous_goal_distance.copy_(torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1))
@@ -448,7 +424,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 dim=1,
             )
             self._cached_step_relative_goal_commands = None
-            self._cached_step_next_turn_delta = None
             self._cached_step_raw_obs_terms = None
         return total_reward
 
@@ -520,11 +495,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
 
     def _collect_step_metrics(self) -> dict[str, float]:
         relative_goal_commands = self._cached_step_relative_goal_commands
-        next_turn_delta = self._cached_step_next_turn_delta
         raw_obs_terms = self._cached_step_raw_obs_terms
-        if relative_goal_commands is None or next_turn_delta is None or raw_obs_terms is None:
+        if relative_goal_commands is None or raw_obs_terms is None:
             relative_goal_commands = self._compute_relative_goal_commands()
-            next_turn_delta = self._compute_next_turn_delta()
             if self._sensor_runtime is not None:
                 wheel_contact_forces_w = self._sensor_runtime.get_wheel_contact_forces_w(WHEEL_BODY_NAMES)
             else:
@@ -543,7 +516,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 self._total_vehicle_weight,
                 self._joint_pos_targets[:, self._ball_joint_ids],
                 relative_goal_commands,
-                next_turn_delta,
                 self.last_actions,
             )
         self.commands.copy_(relative_goal_commands)
@@ -571,11 +543,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Reward/distance_to_target": float(torch.mean(self._last_reward_components["distance_to_target"]).item()),
             "Reward/progress_to_target": float(torch.mean(self._last_reward_components["progress_to_target"]).item()),
             "Reward/reached_target": float(torch.mean(self._last_reward_components["reached_target"]).item()),
+            "Reward/far_from_target": float(torch.mean(self._last_reward_components["far_from_target"]).item()),
             "Reward/angle_diff": float(torch.mean(self._last_reward_components["angle_diff"]).item()),
             "Reward/turn_speed_penalty": float(torch.mean(self._last_reward_components["turn_speed_penalty"]).item()),
-            "Reward/differential_turn_cost": float(
-                torch.mean(self._last_reward_components["differential_turn_cost"]).item()
-            ),
             "Reward/slip_penalty": float(torch.mean(self._last_reward_components["slip_penalty"]).item()),
             "Tracking/goal_pos_error": float(torch.mean(goal_pos_error).item()),
             "Tracking/goal_heading_error_abs": float(torch.mean(goal_heading_error_abs).item()),
@@ -598,7 +568,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Command/goal_rel_y": float(relative_goal_commands[command_env_id, 1].item()),
             "Command/goal_rel_z": float(relative_goal_commands[command_env_id, 2].item()),
             "Command/goal_rel_heading": float(relative_goal_commands[command_env_id, 3].item()),
-            "Command/next_turn_delta": float(next_turn_delta[command_env_id, 0].item()),
             "Command/goal_direction_offset_deg": float(
                 torch.rad2deg(self._goal_direction_offsets[command_env_id]).item()
             ),
@@ -624,9 +593,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
             ),
             "Observation/wheel_normal_contact_force_sum_raw": float(
                 torch.mean(torch.sum(raw_obs_terms["wheel_normal_contact_force"], dim=1)).item()
-            ),
-            "Observation/next_turn_delta_abs_mean_raw": float(
-                torch.mean(torch.abs(raw_obs_terms["next_turn_delta"])).item()
             ),
         }
         for joint_index, joint_name in enumerate(BALL_JOINT_NAMES):
@@ -711,7 +677,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._episode_sums[name][env_ids] = 0.0
         self._episode_total_reward_sum[env_ids] = 0.0
         self._cached_step_relative_goal_commands = None
-        self._cached_step_next_turn_delta = None
         self._cached_step_raw_obs_terms = None
         if self._terrain_runtime is not None:
             self._terrain_runtime.curriculum_ready = True

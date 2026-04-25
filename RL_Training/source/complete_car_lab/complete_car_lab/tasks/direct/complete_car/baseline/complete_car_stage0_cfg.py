@@ -31,7 +31,6 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.commands.resampling_time = 40.0
         self.commands.goal_distance = 10.0
         self.commands.goal_direction_max_deg = 30.0
-        self.commands.min_segment_turn_deg = 20.0
         self.commands.goal_heading_delta_max_deg = 0.0
         self.commands.zero_command = False
         self.commands.rel_standing_envs = 0.0
@@ -76,7 +75,6 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.observations.scales.wheel_slip_angle = 1.0
         self.observations.scales.wheel_normal_contact_force = 1.0
         self.observations.scales.commands = 1.0
-        self.observations.scales.next_turn_delta = 1.0
         self.observations.scales.last_action = 1.0
         self.observations.noise.enabled = False
         self.observations.noise.level = 1.0
@@ -92,7 +90,6 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.observations.noise.wheel_slip_angle = 0.0
         self.observations.noise.wheel_normal_contact_force = 0.0
         self.observations.noise.commands = 0.0
-        self.observations.noise.next_turn_delta = 0.0
 
         self.rewards.only_positive_rewards = False
         self.rewards.params.target_position_tolerance = 2.0
@@ -105,13 +102,11 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.rewards.params.reached_target_base_reward = 2.0
         self.rewards.params.reached_target_weight = 6.0
         self.rewards.params.far_from_target_margin = 6.0
+        self.rewards.params.far_from_target_weight = -2.0
         self.rewards.params.angle_diff_weight = 6.0
         self.rewards.params.turn_speed_penalty_weight = -2.0
         self.rewards.params.slip_penalty_weight = -2.0
-        self.rewards.params.differential_turn_cost_weight = -1.0
         self.rewards.params.slip_angle_penalty_ratio = 4.0
-        self.rewards.params.turn_demand_penalty_min_scale = 0.25
-        self.rewards.params.turn_demand_penalty_max_scale = 1.5
 
         self.terminations.orientation_limit_deg = 30.0
         self.terminations.head_tail_roll_limit_deg = 35.0

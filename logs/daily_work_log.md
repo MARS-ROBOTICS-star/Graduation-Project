@@ -1,5 +1,437 @@
 # 每日工作日志
 
+## 2026-04-22
+
+已完成：
+- 基于已筛选的 `22` 篇核心文献与七个固定写作模块，输出一份可直接用于论文写作的 Markdown 提纲：
+  - `docs/literature/研究背景与综述提纲_基于22篇核心文献.md`
+- 该提纲已按七个部分组织：
+  - 每节目标
+  - 建议写作顺序
+  - 文献排序与推荐理由
+  - 可直接展开的段落逻辑
+- 按用户要求，将已筛选出的 `22` 篇核心文献按照七个综述模块重新排序，并确定各节主干引用顺序。
+- 已明确后续写作原则：
+  - 每一节优先使用前 `2-3` 篇 backbone 文献搭主线
+  - 其余文献作为补充论证或过渡引用
+
+修改文件：
+- `docs/literature/研究背景与综述提纲_基于22篇核心文献.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前已经有一份可直接进入论文写作阶段的综述骨架，不再只停留在文献池和排序阶段。
+- 当前七个综述模块的主干顺序已明确：
+  - 背景与能力需求：
+    - `Borges 2022`
+    - `Papadakis 2013`
+    - `Prado 2018`
+  - 常见构型及局限：
+    - `Papadakis 2013`
+    - `Borges 2022`
+    - `Lei 2021`
+  - 铰接式车辆意义：
+    - `Iagnemma 2003`
+    - `Li 2021`
+    - `Cordes 2017`
+  - 球面并联启发动机：
+    - `Bai 2019`
+    - `Abe 2021`
+    - `Gosselin & Hamel 1994`
+  - 控制难点：
+    - `Li 2021`
+    - `Wiberg 2022`
+    - `Cordes 2017`
+  - 传统方法与不足：
+    - `Kayacan 2018`
+    - `Iagnemma 2003`
+    - `Li 2021`
+  - RL 价值与不足：
+    - `Wiberg 2022`
+    - `Wiberg 2024`
+    - `Josef & Degani 2020`
+    - `Henderson 2019`
+    - `Patterson 2024`
+
+下一步：
+- 直接基于该顺序进入七个模块的结构化阅读与综述草稿搭建。
+
+## 2026-04-23
+
+已完成：
+- 按用户要求在 CNKI 完成一轮与“主动铰接车辆 / 地面轮式移动机器人 / 当前毕设结构相似论文”相关的中文文献检索与筛选。
+- 已完成多组关键词交叉检索，并提炼出当前最接近毕设结构的三类文献簇：
+  - `吉林大学`“二自由度铰接式车体轮式机器人”系列
+  - `北京理工大学`“分布式驱动—转向多级铰接移动机器人”方向
+  - `北京交通大学 / 吉林大学`“双铰接式车辆 / 双铰接轮式越野工程车辆”方向
+- 已确认矿山铰接车相关论文更适合作为控制与自动驾驶背景补充，主要覆盖：
+  - 折腰转向
+  - 路径跟踪
+  - 自主行驶
+  - 松软路面建模
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前中文相关工作主链不应再从泛化“轮式移动机器人”开始，而应优先围绕“二自由度铰接车体 / 多级铰接移动机器人 / 双铰接车辆”继续下钻。
+- 后续若需要写中文综述或 related work，可直接复用本轮筛出的高相关论文题目作为入口。
+
+下一步：
+- 若继续文献工作，可对本轮筛出的高相关论文逐篇提取摘要、关键词、方法点与可迁移到毕设的结构/控制要素。
+
+已完成：
+- 按用户要求补回论文正文页眉下方横线。
+- 已将 `DLUT-thesis.cls` 中 `DLUT@heading` 与 `DLUT@headingNoNum` 的 `\headrulewidth` 从 `0pt` 调整为 `0.4pt`。
+- 已重新执行：
+  - `xelatex -interaction=nonstopmode main.tex`
+  - 并确认 `main.pdf` 中页眉横线已恢复显示。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/DLUT-thesis.cls`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前恢复原模板口径的基础上，页眉下方横线已重新显示。
+
+已完成：
+- 按用户最新要求，将上一轮对论文模板格式所做的整改恢复原样。
+- 已回退：
+  - `毕业论文/毕业论文模板/LaTeX/DLUT-thesis.cls`
+  - `毕业论文/毕业论文模板/LaTeX/main.tex`
+- 已准备重新编译，使 `main.pdf` 与 `main.bbl` 回到原模板输出口径。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/DLUT-thesis.cls`
+- `毕业论文/毕业论文模板/LaTeX/main.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前论文模板不再处于“已按学校格式整改完成”状态，而是已恢复到整改前原样。
+- 后续若再次进行格式合规修正，需要从当前原模板状态重新开始。
+
+下一步：
+- 重新执行 `bibtex` 与 `xelatex`，确认 `main.bbl` 和 `main.pdf` 已回到原模板输出。
+
+已完成：
+- 在用户明确保留“封面未填信息”和“中文题目 21 字不改”的前提下，对 `毕业论文/毕业论文模板/LaTeX/` 完成一轮模板层格式整改。
+- 已修改：
+  - `DLUT-thesis.cls`
+  - `main.tex`
+- 已完成的主要修正包括：
+  - 页边距改为 `上 3.5 / 下 2.5 / 左 2.5 / 右 2.5 cm`
+  - 页眉改为中文题目，页脚改为底部居中纯页码
+  - 封面中英文题目样式改为新的字体链与字号控制
+  - 图表标题恢复为 `图 / 表`
+  - `结论 / 附录 / 致谢 / 参考文献` 标题改为中文
+  - 参考文献样式切换为 `gbt7714-numerical`
+  - `main.bbl` 不再含旧模板中多余的 `J.` / `C.`
+- 已完成重新编译与结果核对：
+  - `bibtex main`
+  - `xelatex -interaction=nonstopmode main.tex`
+  - `main.pdf` 正常生成
+  - 已核对 `pdffonts`、`pdftotext` 与 `main.bbl`
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/DLUT-thesis.cls`
+- `毕业论文/毕业论文模板/LaTeX/main.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前模板层主问题已从“已审查未整改”推进到“已整改并编译验证”。
+- 当前剩余未动项仅为用户明确保留的封面占位信息与 `21` 字中文题目。
+
+下一步：
+- 若继续论文格式收尾，优先补齐封面真实信息，并决定是否把中文题目压缩到 `20` 字以内。
+
+已完成：
+- 根据 `docs/格式规则.md` 对 `毕业论文/毕业论文模板/LaTeX/` 进行一轮格式审查，重点核对封面、页眉页脚、页边距与参考文献。
+- 已同时检查源码与导出 PDF：
+  - `DLUT-thesis.cls`
+  - `main.tex`
+  - `main.bbl`
+  - `reference/ref.bib`
+  - `main.pdf`
+- 已确认的主要问题包括：
+  - 封面中文题目当前超过 `20` 字，且样式未严格落到学校要求
+  - 封面仍存在 `评阅教师` 占位符与空白完成日期
+  - 页边距与页眉内容不符合学校格式规则
+  - 参考文献标题输出为 `References`
+  - 参考文献仍使用 `GBT7714-2005NLang`
+  - `main.bbl` 中各条文献末尾额外输出 `J.` / `C.`
+  - 当前 PDF 实际嵌入字体为 `Fandol / NimbusRom`，尚未严格匹配学校要求字体
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前论文格式问题的主矛盾在模板层，不在 `chapter01.tex` 正文内容本身。
+- 若后续继续整改论文格式，应优先修改 `DLUT-thesis.cls` 与参考文献样式链。
+
+下一步：
+- 若继续论文格式整改，先处理：
+  - 封面字段与标题长度
+  - 页边距与页眉
+  - `参考文献` 标题与 `GB/T 7714-2015` 样式
+  - 字体环境与字体映射
+
+已完成：
+- 按用户要求，对 `毕业论文/毕业论文模板/LaTeX/chapters/chapter01.tex` 第一节进行二轮重写，不再沿用首轮“复杂地形移动机器人的应用背景与能力需求”的单一展开方式。
+- 已将第一节改写为“研究背景与研究意义”，并重组为四个小节：
+  - `复杂地形地面机器人的应用需求与研究价值`
+  - `非结构化环境的主要特征与技术挑战`
+  - `国内外研究发展概况`
+  - `本文问题的研究意义`
+- 已按用户要求在首节中补入并串联多类应用场景：
+  - 农业
+  - 林业
+  - 矿山/工程作业
+  - 灾害救援
+  - 野外勘测
+  - 行星探测
+- 已从本地文献转换结果中抽取并复制三张应用场景相关图片到论文目录：
+  - `毕业论文/毕业论文模板/LaTeX/figures/ch1_agri_articulated_ugv.png`
+  - `毕业论文/毕业论文模板/LaTeX/figures/ch1_forestry_xt28.png`
+  - `毕业论文/毕业论文模板/LaTeX/figures/ch1_construction_acv_risk.png`
+- 已保留并复用现有复杂地形环境图与铰接式行星车图，使第一章开头形成“场景需求 + 地形挑战 + 平台形态”的图文组合。
+- 已再次执行主文档编译检查：
+  - 命令：
+    - `latexmk -xelatex -interaction=nonstopmode main.tex`
+  - 结果：
+    - `main.pdf` 成功生成
+    - 第一节新增正文、插图与引用均已进入版面
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter01.tex`
+- `毕业论文/毕业论文模板/LaTeX/figures/ch1_agri_articulated_ugv.png`
+- `毕业论文/毕业论文模板/LaTeX/figures/ch1_forestry_xt28.png`
+- `毕业论文/毕业论文模板/LaTeX/figures/ch1_construction_acv_risk.png`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 第一章第一节当前已经从“应用背景与能力需求”首轮草稿，推进到面向本科工科论文风格的“研究背景与研究意义”版本。
+- 当前首节已经显式回答“为什么这个问题值得研究”，并把应用需求、环境压力、技术挑战和国内外发展情况压缩到同一条论证链中。
+
+下一步：
+- 若继续论文主线，优先统一 `chapter01.tex` 其余各节与新第一节之间的语言风格、段落密度和标题口径。
+
+已完成：
+- 按用户要求，在 `毕业论文/毕业论文模板/LaTeX/chapters/chapter01.tex` 中开始正式撰写第一章，先完成第一部分“复杂地形移动机器人的应用背景与能力需求”。
+- 将 `chapter01.tex` 从英文模板占位稿改为中文论文正文，当前章节标题改为“绪论”。
+- 第一部分已按既定顺序落稿：
+  - 应用场景：行星探测、搜救、矿业、农业、林业、施工现场等
+  - 复杂地形特征：坡度变化、障碍物、松软地面、碎石/坑洼、感知不完备
+  - 能力需求映射：可通行性判断、姿态稳定性、持续轮地接触与法向载荷分配、效率与安全平衡
+  - 问题落点：复杂地形适应是“机构-接触-控制”共同作用的问题
+- 已从参考文献中抽取并接入插图：
+  - 采用 `Borges 2022` Figure 1 的三张越野地形示意图
+  - 已复制到论文目录：
+    - `毕业论文/毕业论文模板/LaTeX/figures/ch1_offroad_grass.png`
+    - `毕业论文/毕业论文模板/LaTeX/figures/ch1_offroad_sand.png`
+    - `毕业论文/毕业论文模板/LaTeX/figures/ch1_offroad_gravel.png`
+- 已在 `毕业论文/毕业论文模板/LaTeX/reference/ref.bib` 中新增本节使用的参考文献条目：
+  - `borges2022survey`
+  - `papadakis2013terrain`
+  - `prado2018overcoming`
+  - `wiberg2022control`
+  - `huang2024terrain`
+  - `xu2024rl`
+- 已执行主文档编译检查：
+  - 命令：
+    - `latexmk -xelatex -interaction=nonstopmode main.tex`
+  - 结果：
+    - `main.pdf` 成功生成
+    - 新增章节、图片路径与参考文献引用均已接入主文档
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter01.tex`
+- `毕业论文/毕业论文模板/LaTeX/reference/ref.bib`
+- `毕业论文/毕业论文模板/LaTeX/figures/ch1_offroad_grass.png`
+- `毕业论文/毕业论文模板/LaTeX/figures/ch1_offroad_sand.png`
+- `毕业论文/毕业论文模板/LaTeX/figures/ch1_offroad_gravel.png`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 第一章写作已从“文献筛选/提纲阶段”推进到“论文正文首段落稿阶段”。
+- 当前 `chapter01.tex` 已成为后续七部分继续补写的主文件，不再沿用模板原始英文内容。
+- 第一部分的论证链已经固定为：
+  - 场景需求
+  - 地形特征
+  - 能力映射
+  - `机构-接触-控制` 耦合落点
+
+下一步：
+- 继续在 `chapter01.tex` 中补写第二部分“地面车辆常见构型及其局限”。
+
+已完成：
+- 根据已筛选的 `22` 篇核心文献，完成 `chapter01.tex` 第一章剩余六部分与本章小结的首轮综述写作。
+- 已补写的章节包括：
+  - `地面车辆常见构型及其局限`
+  - `铰接式地面车辆的研究意义`
+  - `“球面并联关节启发”构型的引入动机`
+  - `该类构型的控制难点`
+  - `现有控制方法与不足`
+  - `强化学习在复杂移动机器人控制中的价值与不足`
+  - `本章小结`
+- 已从参考文献中新增接入两张图片：
+  - `Cordes 2018` 的 SherpaTT 行星车平台实物图
+  - `Abe 2021` 的 ABENICS 主动球铰机构图
+  - 已复制到论文目录：
+    - `毕业论文/毕业论文模板/LaTeX/figures/ch1_articulated_rover.png`
+    - `毕业论文/毕业论文模板/LaTeX/figures/ch1_active_ball_joint.png`
+- 已在 `毕业论文/毕业论文模板/LaTeX/reference/ref.bib` 中补齐第一章剩余部分所需的核心文献条目。
+- 已移除 `毕业论文/毕业论文模板/LaTeX/main.tex` 中模板自带的 `\nocite{*}`，使参考文献列表只保留正文实际引用的文献。
+- 已再次执行主文档编译检查：
+  - 命令：
+    - `latexmk -xelatex -interaction=nonstopmode main.tex`
+  - 结果：
+    - `main.pdf` 成功生成
+    - 第一章新增正文、图片与参考文献引用均已进入版面
+    - 模板原始示例参考文献未再出现在导出参考文献列表中
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter01.tex`
+- `毕业论文/毕业论文模板/LaTeX/main.tex`
+- `毕业论文/毕业论文模板/LaTeX/reference/ref.bib`
+- `毕业论文/毕业论文模板/LaTeX/figures/ch1_articulated_rover.png`
+- `毕业论文/毕业论文模板/LaTeX/figures/ch1_active_ball_joint.png`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `chapter01.tex` 已不再处于“只完成第一部分”的状态，而是完成了整章七部分综述的首轮落稿。
+- 第一章当前已形成完整论证链：
+  - 复杂地形能力需求
+  - 常见构型及其局限
+  - 铰接式车辆意义
+  - 球面并联关节启发动机
+  - 控制难点
+  - 传统控制方法不足
+  - RL 价值与不足
+- 后续论文写作若继续推进，不应再回到“下一段进入第一章第二部分”的旧状态。
+
+下一步：
+- 若继续论文主线，优先对 `chapter01.tex` 做二轮语言压缩、引用规范和版式检查，再决定是否继续改写后续章节模板内容。
+
+已完成：
+- 按用户要求，将 `docs/literature/` 下的原始 PDF 文献按“综述论文 / 研究论文”完成分类归档。
+- 新建目录：
+  - `docs/literature/综述论文/`
+  - `docs/literature/研究论文/`
+- 已将原先平铺在 `docs/literature/` 根目录的 `83` 篇 PDF 全部迁移完成：
+  - `综述论文` `12` 篇
+  - `研究论文` `71` 篇
+  - 根目录剩余 PDF `0` 篇
+- 已保留 `docs/literature/opendataloader_output/` 不变，避免影响当前第一章综述写作、提纲抽取和本地 Markdown 引用链。
+- 已同步更新本地文献处理脚本，使其兼容新的分类目录结构：
+  - `scripts/literature/mineru_batch_convert.sh`
+  - `scripts/literature/build_literature_manifest.py`
+- 已同步更新顶层说明与项目记忆：
+  - `README.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+
+修改文件：
+- `docs/literature/综述论文/`
+- `docs/literature/研究论文/`
+- `scripts/literature/mineru_batch_convert.sh`
+- `scripts/literature/build_literature_manifest.py`
+- `README.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 本地原始 PDF 文献库已从“根目录平铺”切换为“按文献类型分类归档”。
+- 现有 `opendataloader_output` Markdown 主线未被打断，论文写作相关路径保持稳定。
+- 后续新增 PDF 应直接进入对应分类目录，批量转换脚本仍可从 `docs/literature/` 作为统一入口调用。
+
+下一步：
+- 若后续还要进一步整理，可再按研究主题在两类目录内部做二级分类；当前这一轮先保持最短路径，只完成“综述 / 研究”一级归档。
+
+已完成：
+- 根据本地代表文献的 `Introduction`，完成一轮“复杂地形地面机器人研究背景如何开头、如何收缩问题”的写法调研，目标是直接服务于毕业论文第一章二轮润色。
+- 本轮重点抽查并比对了以下文献的引言开头：
+  - `Borges 2022`
+  - `Papadakis 2013`
+  - `Prado 2018`
+  - `Wiberg 2022`
+  - `Cordes 2017`
+  - `Cordes 2018`
+  - `Li 2021`
+  - `Huang 2024`
+  - `Josef 2020`
+  - `Xu 2024`
+- 已形成可复用结论：
+  - 主流写法不是直接讲机构或算法，而是先讲：
+    - 应用场景 / 任务价值
+    - 复杂地形特征与风险
+    - 由此产生的能力需求或现有方法不足
+    - 最后再收缩到本文对象与贡献
+  - 更贴合当前论文主线的推荐起笔顺序仍是：
+    - `场景需求 → 地形特征 → 能力映射 → 机构-接触-控制耦合`
+- 已将该结论同步到项目记忆，供后续 `chapter01.tex` 二轮语言压缩和首段改写直接复用。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前已经明确：复杂地形地面机器人研究背景的高频写法是“由场景和环境压力推到技术问题”，而不是“由方法反推问题”。
+- 当前第一章第一节现有结构与代表文献主流开头方式一致，后续二轮润色应以压缩和提纯表达为主，不宜重写成方法先行结构。
+
+下一步：
+- 若继续论文写作，可直接基于本轮结论，对 `chapter01.tex` 第一节首两段做更强的学术化压缩，并强化从场景到能力需求的因果连接。
+
+已完成：
+- 根据学校模板文件 `docs/大连理工大学本科毕业论文（设计）模板.doc`，整理出一份可直接用于 LaTeX 论文版式检查的 Markdown 规则文档：
+  - `docs/格式规则.md`
+- 本轮已系统提炼的规则范围包括：
+  - 页面设置与页边距
+  - 页眉页脚与页码
+  - 封面题目与信息项
+  - 原创性声明、使用授权声明
+  - 中文摘要、英文摘要、关键词、目录
+  - 引言、正文、章/节/节内一级标题
+  - 图、表、公式
+  - 参考文献
+  - 结论、附录、修改记录、致谢
+  - 打印与装订要求
+- 已在规则文档中区分：
+  - 模板正文或文本框中的明确规定
+  - 由样例页面整理出的`样例推断`
+- 已将该规则文件定位为后续论文格式检查的默认核对口径，避免之后再次从旧版 `.doc` 模板中重复人工抽取。
+
+修改文件：
+- `docs/格式规则.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前仓库内已经有一份面向毕业论文 LaTeX 版式校对的结构化规则清单。
+- 后续若检查 `毕业论文/毕业论文模板/LaTeX/` 下的正文、参考文献或封面格式，可直接以 `docs/格式规则.md` 为基线。
+
+下一步：
+- 若继续论文排版工作，可直接对照 `docs/格式规则.md` 对 `main.tex` 及各章节输出 PDF 做首轮格式核查。
+
 ## 2026-04-21
 
 已完成：
@@ -10222,3 +10654,659 @@
 - 本轮未补跑 Isaac Lab runtime smoke：
   - 当前终端环境仍缺少 `isaaclab`
   - 运行 `scripts/train.py` 仍会卡在环境依赖，而不是 reward 代码本身
+
+## 2026-04-23
+
+已完成：
+- 使用 `opendataloader-pdf` 将以下 `3` 篇中文铰接车辆相关文献转换为 Markdown：
+  - `双铰接轮式越野工程车辆机液复合驱动系统研究_宁悦.pdf`
+  - `具有二自由度铰接式车体的轮式机器人稳定性研究_李阳.pdf`
+  - `具有二自由度铰接车体轮式机器人牵引力对稳定性的影响研究_马玉玺.pdf`
+- 转换产物已写入：
+  - `docs/literature/opendataloader_output/双铰接轮式越野工程车辆机液复合驱动系统研究_宁悦.md`
+  - `docs/literature/opendataloader_output/具有二自由度铰接式车体的轮式机器人稳定性研究_李阳.md`
+  - `docs/literature/opendataloader_output/具有二自由度铰接车体轮式机器人牵引力对稳定性的影响研究_马玉玺.md`
+- 已根据这 `3` 篇文献的参考文献，整理出“铰接式车辆相关文献名称”清单，并按“国内 / 国外 + 年份升序”排序：
+  - `docs/literature/三篇文献参考文献中的铰接式车辆相关文献整理.md`
+- 已重新生成 `docs/literature/catalog.md`，使新生成的 Markdown 能在目录中被索引到。
+- 对 `马玉玺` 一文的参考文献区做了额外校核：
+  - 由于文本层存在编码污染，使用原 PDF 参考文献页图进行人工复核，再与 `宁悦 / 李阳` 两篇交叉去重。
+
+修改文件：
+- `docs/literature/opendataloader_output/双铰接轮式越野工程车辆机液复合驱动系统研究_宁悦.md`
+- `docs/literature/opendataloader_output/具有二自由度铰接式车体的轮式机器人稳定性研究_李阳.md`
+- `docs/literature/opendataloader_output/具有二自由度铰接车体轮式机器人牵引力对稳定性的影响研究_马玉玺.md`
+- `docs/literature/三篇文献参考文献中的铰接式车辆相关文献整理.md`
+- `docs/literature/catalog.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 本轮共整理出：
+  - 国内相关条目 `21` 条
+  - 国外相关条目 `15` 条
+- 当前最适合继续扩展的两条引用链为：
+  - 国内：`铰接式装载机 / 铰接式车辆稳定性 / 铰接式拖拉机`
+  - 国外：`articulated frame steer vehicle / articulated mobile robot / articulated rover`
+
+## 2026-04-23
+
+已完成：
+- 按用户要求，未在本地文献库或 CNKI 中继续补搜，而是直接在谷歌浏览器中使用 `Google Scholar` 对 `2014` 年及之后的铰接式车辆相关文献做了补充检索。
+- 本轮补检关键词覆盖：
+  - `双铰接车辆`
+  - `双轴铰接式车辆`
+  - `二自由度铰接车体`
+  - `三自由度铰接车体`
+  - `articulated frame steer vehicle`
+  - `double articulated vehicle`
+  - `center-articulated vehicle`
+  - `articulated mobile robot`
+  - `articulated rover`
+- 已将补检结果按“国内 / 国外 + 年份升序”补写到：
+  - `docs/literature/三篇文献参考文献中的铰接式车辆相关文献整理.md`
+- 已同时把原表的最后一列从只适用于三篇源文献的 `被引用于` 扩成了通用的 `条目归属`：
+  - `宁 / 李 / 马` 表示源文献参考文献条目
+  - `GS 后补` 表示本轮 Google Scholar 新增条目
+- 已在同一文档中补写 `2014` 年后的发展趋势总结。
+
+修改文件：
+- `docs/literature/三篇文献参考文献中的铰接式车辆相关文献整理.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前该整理文件已不再只覆盖 `2013` 年前老文献，而是补齐了 `2014` 年后国内外铰接式车辆、铰接式移动机器人、center-articulated rover/vehicle 的代表性发展条目。
+- 这轮 Google Scholar 补检后，能够看出的主线是：
+  - 国内：
+    - `折腰液压转向`
+    - `路径跟踪与 MPC`
+    - `分布式驱动协同控制`
+    - `矿山重载铰接车辆`
+    - `多级铰接移动机器人`
+  - 国外：
+    - `active stability`
+    - `path-following / MPC / trajectory planning`
+    - `center-articulated rover`
+    - `articulated mobile robot`
+- `双铰接 / 三自由度铰接车体` 这类显式命名论文在 `2014` 年后数量仍不算多；后续若继续扩展，更适合沿 `控制 / 规划 / 稳定性 / 场景应用` 向下追文献，而不是只按结构命名检索。
+
+## 2026-04-23
+
+已完成：
+- 按用户要求，将：
+  - `docs/literature/三篇文献参考文献中的铰接式车辆相关文献整理.md`
+  中整理出的全部文献导入 Zotero 集合：
+  - `铰接车辆发展历程`
+- 本轮为此新增本地导入脚本：
+  - `scripts/literature/import_markdown_refs_to_zotero_collection.py`
+- 脚本工作流为：
+  - 解析 Markdown 表格
+  - 读取 `zotero.sqlite`
+  - 复用库内已有同题名条目
+  - 为缺失条目创建标准 Zotero 条目并归入指定 collection
+- 实际导入前后共生成两份数据库备份：
+  - `/home/lbz/Zotero/zotero.sqlite.backup_2026-04-23_21-59-07`
+  - `/home/lbz/Zotero/zotero.sqlite.backup_2026-04-23_22-02-13_before_attachment`
+- 导入完成后，又对该集合执行了一轮本地 PDF 自动回填：
+  - 使用：
+    - `scripts/literature/attach_local_pdfs_to_zotero_collection.py`
+  - 从 `docs/literature/` 自动补挂成功 `1` 个 PDF：
+    - `分布式驱动—转向多级铰接移动机器人构形设计及控制方法_胡喆熙.pdf`
+  - 新增附件 parent key：
+    - `U6BT9Y4Z`
+  - 新增附件 key：
+    - `IZ9LFFPG`
+
+修改文件：
+- `scripts/literature/import_markdown_refs_to_zotero_collection.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `铰接车辆发展历程` 集合当前共 `82` 条文献：
+  - 复用已有条目 `6` 条
+  - 新建条目 `76` 条
+- 当前该集合 PDF 覆盖情况为：
+  - 已带 PDF 条目 `7` 条
+  - 暂无 PDF 条目 `75` 条
+- 本地目录自动匹配目前基本已跑尽；后续若继续补 PDF，更适合对剩余无 PDF 条目做单篇下载与定向补挂，而不是重复跑本地目录扫描。
+
+已完成：
+- 按用户要求，将 `chapter03.tex` 从上一轮“运动学参考层 + 动力学响应层”版本恢复为原来的“运动学模型 + 轮速分配”版本。
+- 已恢复以下原有章节主线：
+  - `球铰姿态规划器`
+  - `名义轮速解析分配`
+  - `六轮轮速分配矩阵`
+  - `面向低滑移的接触感知轮级牵引分配`
+  - `代入具体结构参数向量后的最终解析结果`
+- 已恢复原有关键符号与接口：
+  - `\mathbf q`
+  - `\mathbf q^{d}`
+  - `\mathbf q^{cmd}`
+  - `\dot{\mathbf q}^{cmd}`
+  - `\boldsymbol\Omega^{d}`
+  - `\boldsymbol\Omega_{\mathrm{ref}}`
+  - `\boldsymbol\tau^{cmd}`
+- 已执行：
+  - `latexmk -xelatex -interaction=nonstopmode main.tex`
+- 已确认 `main.pdf` 可正常生成。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `chapter03` 的默认口径已重新回到“原运动学模型 + 轮速分配”，不再沿用上一轮纯动力学替换版。
+- 若后续继续修改第 3 章，下一步应在当前已恢复的运动学章节之后追加动力学模型，而不是再次覆盖现有正文。
+
+已完成：
+- 按用户要求重写毕业论文 `chapter03.tex`，将原“球铰姿态规划器 + 轮速解析分配”主线改写为“运动学参考层 + 动力学响应层”主线。
+- 已删除旧版章节中的：
+  - `球铰姿态规划器`
+  - `\mathbf q^{cmd}`
+  - `\dot{\mathbf q}^{cmd}`
+- 已统一球铰状态符号为：
+  - `\mathbf q_a=[\phi_1,\theta_1,\psi_1,\phi_2,\theta_2,\psi_2]^T`
+- 已在 `chapter03.tex` 中写入以下动力学内容：
+  - 建模目标与基本假设
+  - 坐标系、轮索引与状态/输入定义
+  - 几何接口与运动学层输出
+  - 车轮转动动力学
+  - 轮胎与地面接触模型
+  - 整车平面动力学
+  - 球铰执行动力学
+  - 总体状态空间表达
+  - 与现有控制链路的对应关系
+  - 参数辨识与实现建议
+- 已执行：
+  - `latexmk -xelatex -interaction=nonstopmode main.tex`
+- 已确认 `main.pdf` 可正常生成。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `chapter03` 的 canonical 接口已改为：
+  - 运动学层输出 `(\boldsymbol\omega^{\mathrm{ref}}, \mathbf q_a^{\mathrm{ref}})`
+  - 动力学层显式描述 `车轮转动 + 轮胎/接触 + 平面动力学 + 球铰执行`
+- 后续论文写作默认不应再回到 `q^{cmd}` / `\dot q^{cmd}` 的旧链路。
+- 当前章节已能作为后续轮端力矩分配、防滑控制与横摆稳定补偿的统一模型基础。
+
+下一步：
+- 若继续论文正文，优先检查 `chapter03` 与 `chapter04` 的术语、符号和控制链路衔接是否一致。
+
+## 2026-04-24
+
+已完成：
+- 按用户给定的建模目标与方程结构，重写 `chapter03.tex` 中 `整车动力学模型` 一节。
+- 保留前文原有运动学主线不动，仅替换动力学部分正文，使其改为：
+  - `中车质心平面运动 + 六轮转动 + 两处球铰执行动态`
+- 已将动力学层外部输入统一为：
+  - `(\boldsymbol\omega^{\mathrm{ref}}, \mathbf q_a^{\mathrm{ref}})`
+- 已在正文中显式补入球铰状态与前文运动学变量的对应关系：
+  - `\phi_1=\phi_f, \theta_1=\theta_f, \psi_1=\psi_f`
+  - `\phi_2=\phi_r, \theta_2=\theta_r, \psi_2=\psi_r`
+- 已按用户要求写入并统一以下动力学子模块：
+  - 几何接口 `x_i(\mathbf q_a), y_i(\mathbf q_a), \chi_i(\mathbf q_a)`
+  - 轮速跟踪生成轮端力矩
+  - 线性刚度 + 摩擦圆饱和轮胎模型
+  - `u,v,r` 三自由度平面动力学
+  - `PD` 球铰执行动力学
+  - 总体状态空间表达与控制链路
+- 已执行：
+  - `latexmk -xelatex -interaction=nonstopmode main.tex`
+- 已确认：
+  - `main.pdf` 可正常生成
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `chapter03` 已不再是单纯的“恢复旧运动学版本”状态，而是：
+  - 前半段保留原运动学推导
+  - 后半段动力学部分采用新控制导向写法
+- 当前动力学部分的 canonical 接口为：
+  - `(\boldsymbol\omega^{\mathrm{ref}}, \mathbf q_a^{\mathrm{ref}}) -> 动力学响应`
+- 当前球铰对平面动力学的影响默认通过：
+  - `x_i(\mathbf q_a), y_i(\mathbf q_a), \chi_i(\mathbf q_a), F_{z,i}`
+  进入模型，不再额外手工添加独立的“球铰横摆力矩输入项”。
+- 当前章节内部仍保留 `\boldsymbol\Omega^{d}` / `\boldsymbol\Omega_{\mathrm{ref}}` 与 `\boldsymbol\omega^{\mathrm{ref}}` 的桥接表述；若后续继续润色，应把这一映射关系再写得更直接。
+
+下一步：
+- 若继续论文主线，优先统一 `chapter03` 与 `chapter04` 对动力学输入接口、轮速参考符号和球铰状态符号的写法。
+
+已完成：
+- 在用户明确确认后，继续收敛 `chapter03.tex` 的章节结构，删除运动学部分中已不再适合保留的两块内容：
+  - `球铰规划器`
+  - `面向低滑移的接触感知轮级牵引分配`
+- 已将第 3 章结构统一为：
+  - 运动学解析分配
+  - 动力学响应模型
+- 已将运动学层接口明确为：
+  - `(\boldsymbol\Omega^{d}, \mathbf q_a^{\mathrm{ref}})`
+- 已将动力学层接口明确为：
+  - `(\boldsymbol\omega^{\mathrm{ref}}, \mathbf q_a^{\mathrm{ref}})`
+  - 且 `\boldsymbol\omega^{\mathrm{ref}}=\boldsymbol\Omega^{d}`
+- 已同步修改并清理 `chapter03.tex` 中与旧链路相关的表述，使其不再保留：
+  - `q^{cmd}`
+  - `\dot q^{cmd}`
+  - `\boldsymbol\Omega_{\mathrm{ref}}`
+  - `\boldsymbol\tau^{cmd}`
+  作为第 3 章当前主线接口
+- 已同步更新项目记忆文件，使当前仓库默认状态不再沿用“保留旧运动学主线的混合版”描述：
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 本轮未新增代码或仿真运行；论文主文档编译状态继续沿用上一轮确认结果：
+  - `latexmk -xelatex -interaction=nonstopmode main.tex`
+  - `main.pdf` 可正常生成
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `chapter03` 的 canonical 结构已不再是“旧运动学 + 新动力学”的混合版，而是“运动学解析分配 + 动力学响应模型”的纯模型版。
+- 后续若继续撰写 `chapter04`、控制链说明或答辩材料，应直接沿用：
+  - `高层命令 -> (\boldsymbol\Omega^{d}, \mathbf q_a^{\mathrm{ref}}) -> (\boldsymbol\omega^{\mathrm{ref}}, \mathbf q_a^{\mathrm{ref}}) -> 动力学响应`
+  的链路说明。
+
+下一步：
+- 若继续论文主线，优先检查 `chapter04`、控制框图和实验描述中是否仍残留旧符号与旧接口表述。
+
+已完成：
+- 按用户逐条给出的符号统一要求，继续修改 `chapter03.tex` 中动力学推导部分，使其与前文运动学模型的符号体系保持一致。
+- 已将动力学部分的主坐标系从独立的 `\{B\}` 统一回前文的 `\{B_2\}`。
+- 已将动力学部分的车轮编号从：
+  - `\mathrm{fL},\mathrm{fR},\mathrm{mL},\mathrm{mR},\mathrm{rL},\mathrm{rR}`
+  统一改为：
+  - `1L,1R,2L,2R,3L,3R`
+- 已将动力学部分的平面状态从：
+  - `u,v,r`
+  统一改为：
+  - `V_x,V_y,\Omega_z`
+- 已将动力学部分的车轮半径从：
+  - `R_w`
+  统一改为：
+  - `\rho_w`
+- 已将动力学输入记号从：
+  - `\mathbf u_c`
+  统一改为：
+  - `\mathbf u_{\mathrm{dyn}}`
+- 已将整车质量与附加阻尼记号从：
+  - `M,c_u,c_v,c_r`
+  统一改为：
+  - `m,c_x,c_y,c_{\Omega}`
+- 已取消动力学部分中新引入的球铰角重排记号：
+  - `\mathbf q_a`
+  - `\psi_1,\theta_1,\phi_1,\psi_2,\theta_2,\phi_2`
+- 已改为直接沿用前文构型向量：
+  - `\mathbf q=[\psi_f,\theta_f,\phi_f,\psi_r,\theta_r,\phi_r]^T`
+  - `\mathbf q^{\mathrm{ref}}=\mathbf q^{d}`
+- 已将动力学中的轮心平面位置与滚动方向改为直接复用前文运动学结果：
+  - `${}^{2}\mathbf p_w`
+  - `${}^{2}\mathbf p_{w,xy}`
+  - `${}^{2}\mathbf t_w`
+  - `\chi_w=\operatorname{atan2}({}^{2}t_{y,w},{}^{2}t_{x,w})`
+- 已同步修改运动学部分的接口表述，使其不再输出重排后的 `q_a^{\mathrm{ref}}`，而是直接采用：
+  - `(\boldsymbol\Omega^{d}, \mathbf q^{\mathrm{ref}})`
+- 已同步修改动力学部分接口为：
+  - `(\boldsymbol\omega^{\mathrm{ref}}, \mathbf q^{\mathrm{ref}})`
+  - 且 `\boldsymbol\omega^{\mathrm{ref}}=\boldsymbol\Omega^{d}`
+- 已重新执行：
+  - `latexmk -xelatex -interaction=nonstopmode main.tex`
+- 已确认：
+  - `main.pdf` 可正常生成
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `chapter03` 的动力学推导已不再使用与前文运动学分离的一套独立符号，而是统一回整章单一符号体系。
+- 当前第 3 章的 canonical 接口链已明确为：
+  - `高层命令 -> (\boldsymbol\Omega^{d}, \mathbf q^{\mathrm{ref}}) -> (\boldsymbol\omega^{\mathrm{ref}}, \mathbf q^{\mathrm{ref}}) -> 动力学响应`
+
+下一步：
+- 若继续论文主线，优先检查 `chapter04`、控制框图与答辩材料是否仍残留 `\mathbf q_a`、`q_a^{\mathrm{ref}}`、`u,v,r` 等旧记号。
+
+已完成：
+- 按用户要求，重排 `docs/RL运动学，动力学参数符号定义.md` 中的整篇数学表达，使其符合仓库要求的 Obsidian 可编译格式。
+- 已将文件中原有的伪公式块、断裂矩阵和非标准显示写法统一改写为：
+  - 行内公式使用 `$...$`
+  - 块级公式使用 `$$...$$`
+- 已保留原文件的章节结构与符号内容主旨，仅重写公式与排版，不额外改变文档讨论主题。
+- 已检查并确认该文件中不再残留：
+  - `\(...\)`
+  - `\[...\]`
+  这类不符合仓库 Markdown 规则的数学写法。
+
+修改文件：
+- `docs/RL运动学，动力学参数符号定义.md`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `docs/RL运动学，动力学参数符号定义.md` 当前已经可以直接在 Obsidian 中按标准数学语法渲染，不再是上一版那种混有伪公式标记的不可直接编译状态。
+
+下一步：
+- 若继续处理该文档，可进一步根据当前 `chapter03` 的最新符号体系，决定是否把文中 `v_x/v_y/\omega_z`、`R_k` 等记号再和论文正文逐项对齐。
+
+已完成：
+- 按用户要求删除 `chapter03.tex` 中整段动力学模型推导，并将第 3 章从“运动学 + 动力学”版本回切为旧的运动学/执行层主线。
+- 已将第 3 章标题改回：
+  - `整车底层运动学模型与轮速分配`
+- 已恢复并重写以下章节主线：
+  - `球铰姿态规划器`
+  - `名义轮速解析分配`
+  - `面向低滑移的接触感知轮级牵引分配`
+- 已恢复 canonical 符号链：
+  - `\mathbf q`
+  - `\mathbf q^{d}`
+  - `\mathbf q^{cmd}`
+  - `\dot{\mathbf q}^{cmd}`
+  - `\boldsymbol\Omega^{d}`
+  - `\boldsymbol\Omega_{\mathrm{ref}}`
+  - `\boldsymbol\tau^{cmd}`
+- 已按当前 `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py` 的逻辑写回 low-slip 执行层，包括：
+  - 接触权重 `\gamma_w`
+  - 侧向速度仿射项 `\mathbf a_w,b_w`
+  - 平面命令整形 `\mathbf u_v^{\ast}`
+  - 轮速参考 `\boldsymbol\Omega_{\mathrm{ref}}`
+  - 纵滑抑制轮端力矩 `\boldsymbol\tau^{cmd}`
+- 已重新执行：
+  - `latexmk -xelatex -interaction=nonstopmode main.tex`
+- 已确认：
+  - `main.pdf` 可正常生成
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `chapter03` 已不再保留动力学段，默认应按“球铰姿态规划器 + 名义轮速解析分配 + 低滑移执行层”理解。
+- 当前第 3 章默认接口已恢复为：
+  - `(\mathbf u,\mathbf q,\mathcal P) \mapsto (\boldsymbol\Omega^{d}, \mathbf q^{cmd})`
+  - `(\mathbf u_v^{d}, \mathbf q, \dot{\mathbf q}^{cmd}, \mathbf F_n, \boldsymbol\Omega, \mathbf v_{\parallel}^{\mathrm{act}}) \mapsto (\mathbf u_v^{\ast}, \boldsymbol\Omega_{\mathrm{ref}}, \boldsymbol\tau^{cmd}, \mathbf q^{cmd})`
+
+下一步：
+- 若继续论文主线，优先检查 `chapter04`、控制框图和答辩材料中是否仍残留 `\mathbf q^{\mathrm{ref}}`、`\boldsymbol\omega^{\mathrm{ref}}`、`\mathbf u_{\mathrm{dyn}}` 等上一版动力学口径。
+
+已完成：
+- 按用户要求，用当前已知最佳真实 run 的环境配置覆写现有 Stage0 环境主线：
+  - 目标 run：
+    - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-21_21-51-09_stage0_waypoint_quality_goal10_v1_150iter`
+- 已将 Stage0 环境回退到与该 run 对应的实际口径：
+  - 观测从 `55 / 55` 回退为 `54 / 54`
+  - 删除 `next_turn_delta`
+  - 删除 `differential_turn_cost`
+  - 恢复 `far_from_target` 为 reward 项
+  - 取消 `min_segment_turn_deg = 20.0°`
+  - 取消按 turn-demand 缩放的 `turn_speed_penalty / slip_penalty`
+- 已核对并恢复该 run 的关键参数：
+  - `base_allow_reverse = True`
+  - `distance_to_target_weight = 6.0`
+  - `progress_to_target_weight = 8.0`
+  - `progress_to_target_relax_radius_m = 4.0`
+  - `reached_target_weight = 6.0`
+  - `far_from_target_weight = -2.0`
+  - `angle_diff_weight = 6.0`
+  - `turn_speed_penalty_weight = -2.0`
+  - `slip_penalty_weight = -2.0`
+- 已同步更新：
+  - `complete_car_cfg.py`
+  - `complete_car_stage0_cfg.py`
+  - `observations.py`
+  - `rewards.py`
+  - `env.py`
+  - `io_descriptors.py`
+  - `math_utils.py`
+  - `logger.py`
+  - `docs/current_status.md`
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- 已完成静态检查：
+  - `python3 -m py_compile ...` 通过
+
+产出/结论：
+- 当前 Stage0 active baseline 已重新固定为最佳 run 对应的 `54 / 54` 双 waypoint 环境。
+- 后续若继续推进 `next_turn preview / differential_turn_cost`，应明确视为新分支，而不是当前默认环境。
+
+下一步：
+- 先恢复 Isaac Lab 运行环境，再用这条已回退 baseline 补跑 smoke 和真实训练复现。
+
+已完成：
+- 回答并核对当前 Stage0 active baseline 的奖励函数。
+- 以当前源码为准，将 `docs/RL阶段训练参数一览表.md` 更新为详细版本，补充：
+  - Stage0 总览
+  - waypoint 与相对命令含义
+  - 动作空间与低层执行链
+  - `54 / 54` 观测项明细
+  - `7` 项 reward 的公式、权重、工程含义和终止关系
+  - PPO 参数与 TensorBoard 重点观测量
+  - 当前配置的使用边界
+- 已特别澄清：
+  - 当前 `angle_diff` 使用的是当前目标点在车体系下的视线方向误差，不是额外的终点航向误差。
+
+修改文件：
+- `docs/RL阶段训练参数一览表.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 奖励函数已在参数表中固化为源码级详细说明。
+- 当前 reward 仍为 `distance_to_target / progress_to_target / reached_target / far_from_target / angle_diff / turn_speed_penalty / slip_penalty` 七项，不包含 `next_turn_delta` 与 `differential_turn_cost`。
+
+下一步：
+- 若继续 RL 主线，先恢复 Isaac Lab 运行环境并补跑当前 `54 / 54` baseline 的 smoke run。
+
+已完成：
+- 按用户要求，对 `chapter03` 进行一轮毕业论文风格语言润色。
+- 润色重点：
+  - 将引言从“控制模块流程说明”改为“建模对象、建模目的与模型层次”说明。
+  - 强化坐标系、构型变量、轮心位置、轮心速度、无滑移约束和六轮轮速分配之间的承接关系。
+  - 将低滑移执行层改写为“名义运动学之后为什么还需要执行整形”的叙述。
+  - 减少术语堆叠，保留公式、符号、接口和技术口径不变。
+- 已重新执行：
+  - `latexmk -xelatex -interaction=nonstopmode main.tex`
+- 编译结果：
+  - `main.pdf` 正常生成。
+- 已核对当前 `RL_Training/` 源码状态：
+  - 当前 action space 为 `1 + 6 = 7`。
+  - `map_base_actions_to_planar_command()` 将 policy 的单个纵向速度动作补为 `[vx_cmd, 0]`。
+  - 已对相关 Python 文件执行 `py_compile` 静态检查，语法检查通过。
+  - 仍存在模板既有字体与 overfull 警告，但无本次润色导致的 LaTeX 错误。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `chapter03` 当前技术结构仍保持为“球铰姿态规划器 + 名义轮速解析分配 + 低滑移执行层”。
+- 本轮只调整写作风格和段落组织，不改变模型公式、接口和符号体系。
+
+下一步：
+- 若继续论文侧工作，优先检查 `chapter04` 与第 3 章当前模型接口、符号和写作风格是否一致。
+
+已完成：
+- 对当前 Stage0 reward 进行作用边界分析。
+- 明确当前 reward 主导学习的是：
+  - 向当前 active waypoint 推进
+  - 命中 waypoint
+  - 不远离目标
+- 明确当前 reward 不能直接证明：
+  - 低侧滑已经实现
+  - 低纵滑已经实现
+  - 球铰协同转向已经学成
+  - 前中后车体形成类似“贪吃蛇”的连续跟随运动
+- 已同步更新当前状态和跨会话结论。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 可以作为平地双 waypoint baseline，但不能作为低滑移蛇形协同转向的最终证据。
+- 后续若要支撑该类论文结论，需要新增明确的行为质量指标和对应训练验证。
+
+下一步：
+- 先复现当前 baseline，再讨论是否引入下一段转向预告、低滑移成功判据或球铰协同转向评价指标。
+
+已完成：
+- 按用户要求，对 `chapter03` 进行一轮符号一致性修订。
+- 主要修订内容：
+  - 重新写明 `d / cmd / ref / act` 的含义，避免把所有带 `d` 的量都说成“高层策略直接给出”。
+  - 中模块偏航角速度由 `\Omega_z` 改为 `\omega_z`，车轮角速度继续使用 `\Omega`。
+  - 低滑移整形中的优化变量由无上标 `\mathbf u_v` 改为 `\tilde{\mathbf u}_v`。
+  - 低滑移侧向速度仿射系数由 `\mathbf a_w,b_w` 改为 `\boldsymbol\alpha_w,\beta_w`。
+  - 删除第二次对 `\boldsymbol\Omega^{d}` 的重复堆叠定义，改为引用前文排列顺序。
+  - 补充 `${}^{2}\mathbf v_w^{\mathrm{act}}` 的来源说明。
+  - 将低滑移牵引分配层接口输出改为 `(\mathbf u_v^{\ast},\boldsymbol\Omega_{\mathrm{ref}},\boldsymbol\tau^{cmd})`，不再把 `\mathbf q^{cmd}` 写成低滑移层自身输出。
+  - 论文中纵向滑移 `\kappa_w` 按“车轮圆周速度大于实际纵向滚动速度时为正滑转”的口径定义。
+- 已重新执行：
+  - `latexmk -xelatex -interaction=nonstopmode main.tex`
+- 编译结果：
+  - `main.pdf` 正常生成。
+  - 仍存在模板既有字体、overfull 和 BibTeX 字段警告，但无本次符号修订导致的 LaTeX 错误。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 第 3 章后续默认采用本轮修订后的符号口径。
+- 若后续要求源码注释或实现公式与论文完全同符号，需要单独核对 `wheel_speed_allocator.py` 中纵向滑移符号方向。
+
+下一步：
+- 检查 `chapter04`、控制框图和答辩材料是否仍使用旧符号 `\Omega_z`、`\mathbf a_w,b_w` 或把 `\mathbf q^{cmd}` 写成低滑移层输出。
+
+已完成：
+- 按用户要求，将 `chapter03` 中的高层动作口径改为“不输出 `yaw_rate_cmd`”。
+- 已重新推导并修改第 3 章运动学模型：
+  - 高层动作由原来的平面命令口径改为 `V_x^d + q^d` 的 `7` 维动作。
+  - 名义轮心速度改为由中模块纵向平动和球铰构型速度项组成，不再包含独立中模块偏航角速度项。
+  - 六轮名义轮速分配改为 `Omega^d = J_w(q) V_x^d + J_q(q) qdot_cmd`，其中 `J_w(q)` 为 `6 x 1`。
+  - 低滑移执行层由二维平面速度整形改为标量纵向速度整形，输出 `V_x^*`、`Omega_ref` 和 `tau_cmd`。
+- 已重新执行：
+  - `latexmk -xelatex -interaction=nonstopmode main.tex`
+- 编译结果：
+  - `main.pdf` 正常生成。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 论文第 3 章当前默认采用“不含 `yaw_rate_cmd`”的运动学模型。
+- 当前仓库中的 `RL_Training/` active baseline 已是 `7` 维动作口径：policy 输出 `vx_cmd + q^d`，环境内部将底盘命令补成 `[vx_cmd, 0]` 后交给 allocator；该源码口径尚未完成 Isaac Lab smoke 或真实训练复现。
+
+下一步：
+- 检查 `chapter04`、控制框图和答辩材料是否仍按旧的 `yaw_rate_cmd` 或二维平面命令口径描述第 3 章模型。
+
+已完成：
+- 按用户要求修改 `RL_Training/` Stage0 动作空间，去掉 policy 输出的 `yaw_rate_cmd`。
+- 已将动作维度从 `8` 改为 `7`：
+  - 第 `1` 维为底盘纵向速度命令 `vx_cmd`
+  - 后 `6` 维为球铰期望姿态 `q^d`
+- 已同步环境动作切片：
+  - `planar_actions = actions[:, :1]`
+  - `ball_joint_actions = actions[:, 1:]`
+- 已将动作映射改为只读取 `vx_cmd`，并在环境内部补成 `[vx_cmd, 0]` 传给低层 allocator。
+- 因 `last_action` 随动作维度变化，当前 actor / critic 观测维度从 `54 / 54` 改为 `53 / 53`。
+- 已同步更新当前状态、跨会话结论和 RL 阶段训练参数表。
+- 已执行：
+  - `python3 -m py_compile ...`
+- 静态检查结果：
+  - 相关环境文件语法通过。
+- 当前终端环境缺少 `torch` 和 `isaaclab`，因此未完成张量级动作映射测试或 Isaac Lab smoke。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+- `docs/current_status.md`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 源码和参数文档已经与“不含 policy `yaw_rate_cmd`”的 `7` 维动作口径一致。
+- 低层 allocator 接口暂时保持二维平面命令输入，第二维固定为 `0`，不是 policy 动作。
+
+下一步：
+- 恢复 Isaac Lab / torch 运行环境后，优先补跑当前 `53 / 53`、`7` 维动作 Stage0 smoke。
+
+## 2026-04-25
+
+已完成：
+- 按用户最新要求，将 `yaw_rate_cmd` 加回 `RL_Training/` Stage0 policy 动作空间。
+- 已将动作维度从 `7` 恢复为 `8`：
+  - 前 `2` 维为底盘平面命令 `[vx_cmd, yaw_rate_cmd]`
+  - 后 `6` 维为球铰期望姿态 `q^d`
+- 已同步环境动作切片：
+  - `planar_actions = actions[:, :2]`
+  - `ball_joint_actions = actions[:, 2:]`
+- 已将动作映射恢复为同时读取 `vx_cmd` 与 `yaw_rate_cmd`，并使用 `base_forward_velocity_max` 与 `base_yaw_rate_max` 映射物理命令。
+- 因 `last_action` 随动作维度变化，当前 actor / critic 观测维度从 `53 / 53` 恢复为 `54 / 54`。
+- 已同步更新当前状态、跨会话结论和 RL 阶段训练参数表。
+- 已执行：
+  - `python3 -m py_compile ...`
+- 静态检查结果：
+  - 相关环境文件语法通过。
+- 当前终端环境缺少 `torch` 和 `isaaclab`，因此未完成张量级动作映射测试或 Isaac Lab smoke。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+- `docs/current_status.md`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 源码和参数文档已恢复到包含 policy `yaw_rate_cmd` 的 `8` 维动作口径。
+- 当前 actor / critic 观测维度为 `54 / 54`。
+
+下一步：
+- 恢复 Isaac Lab / torch 运行环境后，优先补跑当前 `54 / 54`、`8` 维动作 Stage0 smoke。
+
+已完成：
+- 按用户要求，将当前仓库中的已跟踪文件改动同步到 GitHub。
+- 同步范围限定为 tracked files：
+  - 使用 `git add -u` 暂存已跟踪文件的新增修改和删除。
+  - 未跟踪文件、PDF/DOC、`results/` 下载产物和未跟踪脚本未纳入提交。
+
+修改文件：
+- 本次提交包含当前已跟踪文件中的 RL 代码、项目状态文档、训练参数表、README、日志和相关文献脚本改动。
+
+产出/结论：
+- 当前同步操作不会把工作区中未跟踪的大文件和临时下载结果推送到 GitHub。

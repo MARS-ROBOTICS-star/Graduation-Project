@@ -1,72 +1,37 @@
 # 当前状态
 
 ## 当前总目标
-- 将 `RL_Training/` 下的 Stage0 固化为一条可复现、可解释的平地双 waypoint 纯 RL 连续转向 baseline。
-- 当前重点是让策略在路线级转向需求下学会预瞄、协同球铰，并减少高侧滑的“纯差速硬拧”完成方式。
+- 将 `RL_Training/` 下的 Stage0 固化为一条可复现、可解释的平地双 waypoint 纯 RL baseline。
+- 先稳住一条已经被真实训练证明“能学起来”的环境主线，再在此基础上继续讨论更高质量的协同转向改造。
 
 ## 当前阶段
 - 当前处于：
-  - Stage0 代码主线已完成新一轮结构改造：
-    - observation 新增 `next_turn_delta`
-    - waypoint 采样新增 `min_segment_turn_deg = 20.0°`
-    - reward 新增 `differential_turn_cost`
-    - `slip_penalty / turn_speed_penalty` 已改为按转向需求加权
-- 当前工作重点是：
-  - 先恢复 Isaac Lab 运行环境并完成 smoke run
-  - 再跑新的真实训练，判断纯 RL 是否开始利用球铰降低差速转向代价
-  - 并行完成研究背景/综述首轮文献筛选，先围绕“复杂地形能力需求 → 铰接式车辆 → 球面并联关节启发 → 控制挑战 → 传统方法不足 → RL 价值与不足”建立主干文献池
-
-## 本轮已完成
-- 已完成研究背景/综述主干文献的 Markdown 转换：
-  - 已放弃本轮继续使用 `MinerU`
-  - 改用 `opendataloader-pdf`
-  - 第一批与第二批共 `22` 篇核心文献已转换为 `md`
-  - 产物目录：
-    - `docs/literature/opendataloader_output/`
-- 已完成 next-turn preview 观测接线：
-  - 利用 `env.py` 中现有 `_waypoint_targets_w` 与 `_active_waypoint_index`
-  - 新增 `turn_delta = next_segment_heading - current_segment_heading`
-  - actor / critic observation 现已从 `54 / 54` 增至 `55 / 55`
-- 已完成 waypoint 采样约束修改：
-  - Stage0 当前 `goal_direction_max_deg = 30.0°`
-  - Stage0 当前 `min_segment_turn_deg = 20.0°`
-  - 因此第二段 waypoint 不再允许退化为近似直线
-- 已完成 reward 结构修改：
-  - 当前 active reward 为：
-    - `distance_to_target`
-    - `progress_to_target`
-    - `reached_target`
-    - `angle_diff`
-    - `turn_speed_penalty`
-    - `slip_penalty`
+  - Stage0 主体配置曾按用户要求回退到当前已知最佳真实 run 对应口径：
+    - `2026-04-21_21-51-09_stage0_waypoint_quality_goal10_v1_150iter`
+  - 当前源码已按用户最新要求把 `yaw_rate_cmd` 加回 policy 动作空间：
+    - policy 动作为 `8` 维：`[vx_cmd, yaw_rate_cmd] + q^d`
+    - actor / critic 观测为 `54 / 54`
+    - 环境内部直接将二维底盘平面命令 `[vx_cmd, yaw_rate_cmd]` 交给低层 allocator
+  - 当前源码主线不再使用：
+    - `next_turn_delta`
+    - `min_segment_turn_deg = 20.0°`
     - `differential_turn_cost`
-  - `far_from_target` 已从 reward 中删除，只保留为 termination 护栏
-  - `differential_turn_cost` 当前基于左右轮扭矩差
-  - `slip_penalty` 与 `differential_turn_cost` 当前使用按转向需求缩放的惩罚系数
-  - `turn_speed_penalty` 当前使用“当前 bearing 与 preview turn_delta 取大”的转向需求
-- 已完成代码链同步：
-  - `io_descriptors.py`、observation dim 统计、noise dim 统计、logger tag 已同步更新
-- 已完成静态检查：
-  - `python3 -m py_compile ...` 通过
-
-## 当前主要问题
-- 新主线还没有完成 runtime 验证：
-  - 当前终端环境缺少 `isaaclab`
-  - 直接执行 `python3 scripts/train.py ...` 会报：
-    - `ModuleNotFoundError: No module named 'isaaclab'`
-- 因此目前最新的真实训练结论仍来自上一版 `54 / 54` 观测、未含 `differential_turn_cost` 的 run：
-  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-21_21-51-09_stage0_waypoint_quality_goal10_v1_150iter`
-  - 那一版已经证明双 waypoint 主线“能学”，但成功仍不稳定，且完成方式偏高侧滑
+    - 按 turn-demand 缩放的 `slip_penalty / turn_speed_penalty`
 
 ## 当前默认设计
 - 平地 Stage0 当前默认口径：
   - 双 waypoint
   - 每段 `10 m`
   - 总名义路程约 `20 m`
-  - 第二段相对第一段最小转角 `20°`
   - 命中半径 `< 2.0 m`
   - 回合时长 `40 s`
+  - `64` 个并行环境
+- 当前动作空间：
+  - `8` 维
+  - `2` 维底盘平面命令
+  - `6` 维球铰期望姿态
 - 当前观测主链：
+  - `54 / 54`
   - `ball_joint_pos`
   - `ball_joint_vel`
   - `base_lin_vel`
@@ -76,21 +41,63 @@
   - `wheel_slip_angle`
   - `wheel_normal_contact_force`
   - `goal_relative_command`
-  - `next_turn_delta`
   - `last_action`
-- 当前 reward 设计口径：
-  - 不直接奖励球铰角度
-  - 通过 preview 转向需求、滑移、转向速度、左右轮差速代价共同塑造协同转向
-  - 车轮最终执行链仍为 torque target
-  - allocator 仍是固定低层，不是学习器
+- 当前 reward 口径：
+  - `distance_to_target`
+  - `progress_to_target`
+  - `reached_target`
+  - `far_from_target`
+  - `angle_diff`
+  - `turn_speed_penalty`
+  - `slip_penalty`
+- `RL_Training/` 源码当前低层执行链保持不变：
+  - 高层策略输出 `u_v^d=[vx_cmd, yaw_rate_cmd]` 与 `q^d`
+  - 环境内部将二维底盘平面命令直接交给 allocator
+  - 环境内部 allocator 生成 `q_cmd`、`Omega_ref`、`tau_cmd`
+  - 车轮仍走 torque target 链
+
+## 已完成里程碑
+- 已有最佳真实 run：
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-21_21-51-09_stage0_waypoint_quality_goal10_v1_150iter`
+  - 该 run 已证明双 waypoint 主线“能学”，但成功仍不稳定，且完成方式偏高侧滑。
+- 已完成当前源码同步：
+  - Stage0 环境已回到与上述最佳 run 一致的任务、观测主项和 reward 口径。
+  - 动作空间已按用户最新要求恢复为 `8` 维，重新加入 policy 输出的 `yaw_rate_cmd`。
+  - 已通过 `py_compile` 静态检查。
+- 论文侧当前仍保持：
+  - `chapter01` 七部分首轮落稿已完成
+  - `chapter03` 已恢复为“球铰姿态规划器 + 名义轮速解析分配 + 低滑移执行层”结构
+  - `chapter03` 已完成一轮语言润色：公式、接口和技术口径未改，行文改为更接近本科毕业论文的“建模对象—变量定义—几何关系—速度关系—轮速分配—执行整形”递进叙述
+  - `chapter03` 已按“高层动作不给 `yaw_rate_cmd`”重新推导运动学模型：
+    - 高层动作改为 `7` 维：`V_x^d` 与 `q^d`
+    - 名义轮心速度不再含独立偏航角速度项，写为 `V_x^d e_x + G_w(q) qdot_cmd`
+    - 名义轮速分配改为 `Omega^d = J_w(q) V_x^d + J_q(q) qdot_cmd`，其中 `J_w(q)` 为 `6 x 1`
+    - 低滑移整形变量改为标量 `tilde V_x`，输出整形后的纵向速度 `V_x^*`
+  - `chapter03` 已完成符号一致性修订：
+    - 第 3 章当前不再把中模块偏航角速度作为高层输入；若叙述偏航角速度，只用于说明旧动作口径不再采用
+    - 车轮角速度继续使用 `\Omega`
+    - 低滑移优化变量改为 `\tilde V_x`
+    - 侧向速度仿射系数改为 `\boldsymbol\alpha_w,\beta_w`
+    - 低滑移层接口不再把 `\mathbf q^{cmd}` 写成自身输出
+    - 纵向滑移 `\kappa_w` 在论文中按“车轮圆周速度大于实际纵向滚动速度时为正滑转”的口径定义
+
+## 当前主要问题
+- 当前终端环境仍缺少 `isaaclab`：
+  - 直接执行 `python3 scripts/train.py ...` 会报 `ModuleNotFoundError: No module named 'isaaclab'`
+  - 因此本轮只能完成代码回退与静态校验，不能在本机会话内直接补跑 smoke。
+- 当前 reward 评价结论：
+  - 关键学习信号主要来自 `progress_to_target` 与 `reached_target`，辅以 `distance_to_target` 和 `angle_diff`。
+  - `slip_penalty` 有约束作用，但不足以稳定实现低侧滑、低纵滑和球铰协同转向。
+  - `far_from_target` 主要是失败护栏，`turn_speed_penalty` 量级偏弱且只基于当前目标视线角。
+- 最佳 run 虽然能学，但仍有两个未解决问题：
+  - 成功率后段有脉冲，但末轮不稳定
+  - 完成方式偏高侧滑，不适合直接作为“协同转向已经学成”的证据
+- 论文 `chapter04` 与答辩材料仍未完全同步 `chapter03` 当前接口口径。
+- `RL_Training/` 源码已重新加入 policy `yaw_rate_cmd`，恢复为 `8` 维动作模型；该口径尚未完成本轮 Isaac Lab smoke。
+- 论文 `chapter03` 目前仍记录“不含 `yaw_rate_cmd`”的 `7` 维动作推导，已与当前 `RL_Training/` 源码重新加入 `yaw_rate_cmd` 的 `8` 维动作口径不一致；若后续论文要同步，需要单独修改第 3 章。
 
 ## 下一步优先级
-1. 先恢复 Isaac Lab 运行环境并补跑 smoke run，确认 `55 / 55` 观测链与新 reward/log 指标运行无误。
-2. 再跑一轮新的真实训练，重点检查：
-   - `Reward/differential_turn_cost`
-   - `Reward/slip_penalty`
-   - `Reward/turn_speed_penalty`
-   - `Observation/wheel_slip_angle_abs_mean_raw`
-   - `Action/wheel_torque_target_abs_mean_raw`
-3. 在回放中核对球铰是否开始提前参与第二段转向，而不是继续主要依赖高侧滑差速机动。
-4. 按已完成的文献筛选结果，优先把综述主干文献转为 `md`，再进入结构化阅读与综述写作。
+1. 先恢复 Isaac Lab 运行环境。
+2. 用当前 `54 / 54`、`8` 维动作的 Stage0 主线补跑 smoke run。
+3. 再复跑一轮当前 `8` 维动作主线的真实训练，确认当前代码与历史最好结果对齐。
+4. 只有在这条 baseline 重新复现后，才继续推进 `next_turn preview / differential_turn_cost` 这类新设计。

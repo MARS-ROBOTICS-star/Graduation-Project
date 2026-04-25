@@ -2,10 +2,25 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 
-def find_best_markdown(doc_dir: Path) -> Path | None:
+def collect_pdfs(source_root: Path) -> list[Path]:
+    pdfs = set(source_root.glob("*.pdf"))
+    for subdir in ("综述论文", "研究论文"):
+        category_dir = source_root / subdir
+        if category_dir.is_dir():
+            pdfs.update(category_dir.rglob("*.pdf"))
+    return sorted(pdfs, key=lambda path: path.relative_to(source_root).as_posix())
+
+
+def find_best_markdown(output_root: Path, doc_name: str) -> Path | None:
+    flat_candidate = output_root / f"{doc_name}.md"
+    if flat_candidate.is_file():
+        return flat_candidate
+
+    doc_dir = output_root / doc_name
     if not doc_dir.is_dir():
         return None
     markdown_files = sorted(doc_dir.rglob("*.md"))
@@ -17,7 +32,12 @@ def find_best_markdown(doc_dir: Path) -> Path | None:
     return markdown_files[0]
 
 
-def find_assets_dir(doc_dir: Path) -> Path | None:
+def find_assets_dir(output_root: Path, doc_name: str) -> Path | None:
+    flat_candidate = output_root / f"{doc_name}_images"
+    if flat_candidate.is_dir():
+        return flat_candidate
+
+    doc_dir = output_root / doc_name
     if not doc_dir.is_dir():
         return None
     for name in ("images", "assets"):
@@ -31,7 +51,7 @@ def find_assets_dir(doc_dir: Path) -> Path | None:
 
 
 def build_manifest(source_root: Path, output_root: Path, manifest_path: Path) -> None:
-    pdfs = sorted(source_root.glob("*.pdf"))
+    pdfs = collect_pdfs(source_root)
     manifest_dir = manifest_path.parent
     lines = [
         "# Literature Catalog",
@@ -43,15 +63,15 @@ def build_manifest(source_root: Path, output_root: Path, manifest_path: Path) ->
     ]
 
     for pdf in pdfs:
-        doc_dir = output_root / pdf.stem
-        md_path = find_best_markdown(doc_dir)
-        assets_dir = find_assets_dir(doc_dir)
+        md_path = find_best_markdown(output_root, pdf.stem)
+        assets_dir = find_assets_dir(output_root, pdf.stem)
         status = "ready" if md_path else "pending"
-        pdf_rel = pdf.relative_to(manifest_dir)
-        md_rel = md_path.relative_to(manifest_dir) if md_path else None
-        assets_rel = assets_dir.relative_to(manifest_dir) if assets_dir else None
+        pdf_rel = Path(os.path.relpath(pdf, manifest_dir))
+        md_rel = Path(os.path.relpath(md_path, manifest_dir)) if md_path else None
+        assets_rel = Path(os.path.relpath(assets_dir, manifest_dir)) if assets_dir else None
 
-        pdf_link = f"[{pdf.name}]({pdf_rel.as_posix()})"
+        pdf_label = pdf.relative_to(source_root).as_posix()
+        pdf_link = f"[{pdf_label}]({pdf_rel.as_posix()})"
         md_link = f"[{md_rel.name}]({md_rel.as_posix()})" if md_rel else "-"
         assets_link = f"[{assets_rel.name}]({assets_rel.as_posix()})" if assets_rel else "-"
         lines.append(f"| {status} | {pdf_link} | {md_link} | {assets_link} |")

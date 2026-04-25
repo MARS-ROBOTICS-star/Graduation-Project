@@ -1,1260 +1,650 @@
 # RL阶段训练参数一览表
 
-本文档记录当前 `RL_Training/` 工作区内 `CompleteCar-Stage0` 的**实际生效配置**，用于对 RL 环境做逐环节审查。  
-口径以当前源码为准，不再沿用旧的纯轮速解析分配主线，也不沿用历史 run 中已经失效的 observation、reward 或 termination 说明。
+本文档记录当前 `RL_Training/` 工作区内 `CompleteCar-Stage0` 的实际生效配置。
+当前 Stage0 的任务、观测主项和 reward 已按用户要求回退到当前已知最佳真实 run 对应口径：
 
-## 0. 口径与源码来源
+- `2026-04-21_21-51-09_stage0_waypoint_quality_goal10_v1_150iter`
 
-当前文档对应的主线源码：
+在此基础上，动作空间已按用户最新要求重新加入 policy `yaw_rate_cmd`。因此本文档描述的是当前 active baseline，而不是后续待验证的新分支：
 
-- 任务环境配置：`RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
-- 共享环境主干：`RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
-- 环境主类：`RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
-- 动作映射：`RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py`
-- 低层 allocator：`RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
-- 命令采样：`RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
-- 观测构造：`RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
-- 奖励函数：`RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
-- 终止条件：`RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
-- reset 与随机化：
-  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/resets.py`
-  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/randomization.py`
-- 地形与传感器：
-  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
-  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
-- 机器人与执行器：
-  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py`
-  - `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/actuators_cfg.py`
-- PPO 配置：`RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
-- 训练入口：`RL_Training/scripts/train.py`
+- `54 / 54` actor / critic 观测
+- `8` 维动作
+- 平地双 waypoint
+- 每段 `10 m`
+- reward 为 `7` 项
+- 包含 `far_from_target`
+- 不包含 `next_turn_delta`
+- 不包含 `differential_turn_cost`
+- 不启用基于 preview turn-demand 的 penalty scaling
 
-## 1. 当前 Stage0 主线到底是什么
+## 0. 对应源码
 
-当前 `CompleteCar-Stage0` 不是“policy 直接输出 6 个轮子的轮速”或“policy 直接输出 6 个轮子的扭矩”。  
-它的实际执行链是：
+| 模块 | 源码 |
+|---|---|
+| Stage0 配置覆盖 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py` |
+| 共享配置主干 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py` |
+| 环境主类 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py` |
+| 命令采样 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py` |
+| 动作映射 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py` |
+| 观测拼接 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py` |
+| 奖励函数 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py` |
+| 终止条件 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py` |
+| IO 维度描述 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py` |
+| PPO 配置 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py` |
+| 低滑移分配器 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py` |
 
-$$
-a_t
-\rightarrow [u_v^d, q^d]
-\rightarrow [\dot q_{cmd}, q_{cmd}]
-\rightarrow u_v^\ast
-\rightarrow \Omega_{ref}
-\rightarrow \tau_{cmd}
-$$
+## 1. 当前 Stage0 总览
 
-其中：
+| 项目         |                  当前值 | 说明                                                  |
+| ---------- | -------------------: | --------------------------------------------------- |
+| 任务 ID      | `CompleteCar-Stage0` | 平地 baseline                                         |
+| 阶段名        |             `stage0` | `CompleteCarStage0EnvCfg.stage_name`                |
+| 并行环境数      |                 `64` | `scene.num_envs`                                    |
+| 环境间距       |              `4.0 m` | `scene.env_spacing`                                 |
+| 仿真步长       |          `1 / 120 s` | `control.sim_dt`                                    |
+| decimation |                  `2` | 每 `2` 个 sim step 更新一次 RL 控制                         |
+| 控制周期       |           `1 / 60 s` | `control.control_dt`                                |
+| 回合时长       |               `40 s` | `episode_length_s`                                  |
+| 最大控制步数     |               `2400` | `40 / (1 / 60)`                                     |
+| 地形         |              `plane` | `terrain.enabled = False`，`terrain.mode = "plane"`  |
+| 课程学习       |                   关闭 | `curriculum.enabled = False`                        |
+| 传感器增强      |                   关闭 | IMU、相机、雷达、高度扫描均关闭                                   |
+| 动作随机化      |                   关闭 | `randomization.enable_action_randomization = False` |
+| 观测噪声       |                   关闭 | `observations.noise.enabled = False`                |
 
-- policy 输出高层动作 $a_t \in \mathbb{R}^8$
-- 前 $2$ 维动作映射为中模块平面命令 $u_v^d = [V_x^d, \Omega_z^d]^\top$
-- 后 $6$ 维动作映射为两组球铰期望构型 $q^d$
-- 环境内部的球铰姿态规划器生成 $\dot q_{cmd}$ 和 $q_{cmd}$
-- 环境内部的低滑移 allocator 再生成：
-  - 整形后的平面命令 $u_v^\ast$
-  - 轮速参考 $\Omega_{ref}$
-  - 最终轮级扭矩 $\tau_{cmd}$
-- 球铰执行器最终接收的是位置目标 $q_{cmd}$
-- 车轮执行器最终接收的是力矩目标 $\tau_{cmd}$
+## 2. 任务命令与 waypoint
 
-一句话概括当前主线：
+| 参数                           |      当前值 | 工程含义                      |
+| ---------------------------- | -------: | ------------------------- |
+| `num_commands`               |      `4` | 相对目标命令维度                  |
+| `num_waypoints_per_episode`  |      `2` | 每个 episode 有两个连续 waypoint |
+| `resampling_time`            | `40.0 s` | 与回合时长一致，当前不是短周期重采样任务      |
+| `goal_distance`              | `10.0 m` | 每段 waypoint 名义距离          |
+| 总名义路径长度                      | `20.0 m` | 两段 waypoint，共约 `20 m`     |
+| `goal_direction_max_deg`     |  `30.0°` | 每段目标方向相对上一段方向的最大偏转        |
+| `min_segment_turn_deg`       |   `0.0°` | 当前不强制第二段最小转角              |
+| `goal_heading_delta_max_deg` |   `0.0°` | 当前目标航向与目标点视线方向一致          |
+| `zero_command`               |  `False` | 不退化为原地目标                  |
+| `rel_standing_envs`          |    `0.0` | 不随机生成原地保持样本               |
 
-- **策略学高层运动意图**
-- **环境内部固定低层模型负责低滑移、接触感知、轮级牵引分配**
+当前 `relative_goal_commands` 的 4 个分量为：
 
-## 2. 审查时建议先固定的符号表
+| 分量 | 维度 | 含义 |
+|---|---:|---|
+| `goal_rel_x` | `1` | 当前 active waypoint 在车体系下的 x 相对位置 |
+| `goal_rel_y` | `1` | 当前 active waypoint 在车体系下的 y 相对位置 |
+| `goal_rel_z` | `1` | 当前 active waypoint 相对车体高度 |
+| `goal_rel_heading` | `1` | 当前目标点在车体系下的视线方向角，即 `atan2(goal_rel_y, goal_rel_x)` |
 
-为避免审查时把论文层、代码层和日志层混在一起，本文档统一使用下列符号：
+注意：当前 reward 中的 `angle_diff` 使用的是 `goal_rel_heading`，不是一个额外的“最终目标航向误差”。由于 Stage0 设置 `goal_heading_delta_max_deg = 0.0°`，目标航向采样本身与该段视线方向一致，但源码实际进入 reward 的量仍然是相对目标点视线角。
 
-- $q \in \mathbb{R}^6$：当前球铰实际构型
-- $q^d \in \mathbb{R}^6$：policy 给出的球铰期望构型
-- $\dot q_{cmd} \in \mathbb{R}^6$：球铰姿态规划器输出的变化率命令
-- $q_{cmd} \in \mathbb{R}^6$：球铰执行器最终跟踪的位置目标
-- $u_v^d = [V_x^d, \Omega_z^d]^\top \in \mathbb{R}^2$：policy 给出的原始平面命令
-- $u_v^\ast \in \mathbb{R}^2$：低滑移整形后的平面命令
-- $F_n \in \mathbb{R}^6$：6 个轮子的归一化法向接触力
-- $\Omega \in \mathbb{R}^6$：6 个轮子的实际角速度
-- $v_{\parallel}^{act} \in \mathbb{R}^6$：6 个轮子的实际滚动方向速度
-- $\Omega_{ref} \in \mathbb{R}^6$：低层模型内部的轮速参考
-- $\tau_{cmd} \in \mathbb{R}^6$：最终下发给车轮执行器的驱动扭矩命令
+## 3. 动作空间
 
-## 3. 环境总览与时序参数
+总动作维度为 `8`：
 
-### 3.1 任务身份
+| 动作分量 | 维度 | 映射方式 | 当前范围或限制 |
+|---|---:|---|---|
+| `base_planar_command` | `2` | 归一化动作映射为 `[vx_cmd, yaw_rate_cmd]` | `vx_cmd ∈ [-2.0, 2.0] m/s`，`yaw_rate_cmd ∈ [-2.0, 2.0] rad/s` |
+| `ball_joint_posture_reference` | `6` | 归一化动作映射为 6 个球铰期望姿态 `q^d` | 使用球铰 lower / upper limits 与默认零位线性映射 |
 
-- 任务名：`CompleteCar-Stage0`
-- 环境类：`CompleteCarDirectEnv`
-- 环境配置类：`CompleteCarStage0EnvCfg`
-- PPO 配置类：`CompleteCarStage0PPORunnerCfg`
-- 训练入口脚本：`RL_Training/scripts/train.py`
+当前底盘命令参数：
 
-### 3.2 并行规模、时间步与回合长度
+| 参数 | 当前值 |
+|---|---:|
+| `base_forward_velocity_max` | `2.0 m/s` |
+| `base_yaw_rate_max` | `2.0 rad/s` |
+| `base_allow_reverse` | `True` |
 
-- 并行环境数：`64`
-- `scene.env_spacing = 4.0`
-- `scene.replicate_physics = True`
-- `scene.clone_in_fabric = True`
-
-时间相关参数：
-
-- 仿真步长：`sim_dt = 1 / 120 s`
-- 控制降采样：`decimation = 2`
-- 控制周期：`control_dt = sim_dt × decimation = 1 / 60 s`
-- 回合时长：`episode_length_s = 40.0 s`
-- 每回合最大控制步数：`40 × 60 = 2400`
-- 每回合最大仿真步数：`40 × 120 = 4800`
-
-### 3.3 当前 Stage0 的任务几何
-
-当前 Stage0 是**平地、双 waypoint、命中后切换 active waypoint** 的 baseline：
-
-- `commands.num_waypoints_per_episode = 2`
-- `commands.goal_distance = 10.0 m`
-- `commands.min_segment_turn_deg = 20.0°`
-- `commands.resampling_time = 40.0 s`
-- `episode_length_s = 40.0 s`
-- waypoint 队列只在 reset 时一次性采样
-- active waypoint 满足 `distance < 2.0 m` 后立即切到下一个
-- 只有最后一个 waypoint 被命中时，episode 才记为 `success`
-- 当前默认几何含义是：
-  - 每段 waypoint 长度 `10.0 m`
-  - 因为有 `2` 段，所以总名义路径长度约 `20.0 m`
-
-## 4. 机器人、关节、轮子与执行器
-
-### 4.1 受控关节与轮子顺序
-
-球铰关节顺序：
-
-```text
-[
-  spm1_platform_joint_z,
-  spm1_platform_joint_y,
-  spm1_platform_joint_x,
-  spm2_platform_joint_z,
-  spm2_platform_joint_y,
-  spm2_platform_joint_x,
-]
-```
-
-车轮关节顺序：
-
-```text
-[
-  body_car_wheel_left_joint,
-  body_car_wheel_right_joint,
-  head_car_wheel_left_joint,
-  head_car_wheel_right_joint,
-  tail_car_wheel_left_joint,
-  tail_car_wheel_right_joint,
-]
-```
-
-车轮刚体顺序：
-
-```text
-[
-  body_car_wheel_left,
-  body_car_wheel_right,
-  head_car_wheel_left,
-  head_car_wheel_right,
-  tail_car_wheel_left,
-  tail_car_wheel_right,
-]
-```
-
-注意：allocator 与环境内部使用的 6 轮顺序是**中轮、前轮、后轮**，不是论文里常见的前-中-后展示顺序。
-
-### 4.2 机器人资产与初始状态
-
-- USD 文件：`USD/complete_car.usd`
-- articulation root prim：`/complete_car_alternative/body_car_chassis`
-- 生成机器人时启用接触传感：`activate_contact_sensors = True`
-- 默认 root 初始位置：`(0.0, 0.0, 0.30)`
-- 默认所有球铰角、轮角速度都为 `0`
-
-### 4.3 执行器参数
-
-球铰执行器：
-
-- `stiffness = 8000.0`
-- `damping = 1000.0`
-- `effort_limit_sim = 20.0`
-- `velocity_limit_sim = 1.0 rad/s`
-
-车轮执行器：
-
-- `stiffness = 0.0`
-- `damping = 0.0`
-- `effort_limit_sim = 20.0`
-- `velocity_limit_sim = 20.0 rad/s`
-- 轮半径：`r_wheel = 0.19 m`
-
-当前最终 actuator 写入方式：
-
-- 球铰：`set_joint_position_target(...)`
-- 车轮：`set_joint_effort_target(...)`
-
-因此当前车轮已经不是最终速度控制链，而是最终**力矩控制链**。
-
-## 5. 动作空间与动作映射
-
-### 5.1 动作描述符
-
-当前动作描述符为：
-
-```text
-[
-  ("base_planar_command", 2),
-  ("ball_joint_posture_reference", 6),
-]
-```
-
-因此动作总维度为：
-
-- `2 + 6 = 8`
-
-### 5.2 policy 输出后的内部动作张量
- 
-policy 输出的 `[-1, 1]` 动作会直接写入环境内部动作张量：
-
-- `self.actions`
-- `self.last_actions`
-
-`last_action` 目前保留在观测中，仅作为策略可见的上一时刻动作信息。
-
-
-### 5.3 平面命令分支
-
-前 2 维动作映射为：
+当 `base_allow_reverse = True` 时，第一维归一化动作 `a_v` 直接映射为：
 
 $$
-u_v^d = [V_x^d, \Omega_z^d]^\top
+v_x^{cmd}=a_v \cdot v_{max}
 $$
 
-当前参数：
+当 `base_allow_reverse = False` 时才会使用前进-only 映射；当前 Stage0 不使用该模式。
 
-- `base_forward_velocity_max = 2.0 m/s`
-- `base_yaw_rate_max = 2.0 rad/s`
-- `base_allow_reverse = True`
-
-映射结果：
-
-- 第 1 维动作映射到 $[-2.0, 2.0]$ m/s
-- 第 2 维动作映射到 $[-2.0, 2.0]$ rad/s
-
-因为 `base_allow_reverse = True`，当前 Stage0 允许倒车。
-
-### 5.4 球铰期望构型分支
-
-后 6 维动作映射为：
+当前 policy 输出 `yaw_rate_cmd`。环境传给低层 allocator 的期望平面命令为：
 
 $$
-q^d = [\psi_f^d, \theta_f^d, \phi_f^d, \psi_r^d, \theta_r^d, \phi_r^d]^\top
+\mathbf u_v^{d}=[v_x^{cmd},\omega_z^{cmd}]^T
 $$
 
-当前动作上下限：
+## 4. 低层执行链
 
-- 下限：`(-0.6, -1.0, -0.5, -0.6, -1.0, -0.5)`
-- 上限：`(0.6, 0.4, 0.5, 0.6, 0.4, 0.5)`
+当前 Stage0 策略不直接输出 6 个轮子的轮速或扭矩。实际控制链为：
 
-映射逻辑：
+1. policy 输出 `8` 维动作。
+2. 前 `2` 维映射为底盘平面命令 `[vx_cmd, yaw_rate_cmd]`。
+3. 后 `6` 维映射为球铰期望姿态 `q^d`。
+4. 环境内部球铰姿态规划器根据当前球铰状态与 `q^d` 生成 `q_cmd`。
+5. 低滑移 allocator 根据平面命令、球铰状态、轮地接触与滑移信息生成 `Omega_ref` 与 `tau_cmd`。
+6. 球铰执行位置控制，车轮执行力矩控制。
 
-- 以默认复位姿态为中心
-- 正动作沿上限方向张开
-- 负动作沿下限方向张开
-- 当前动作映射边界直接与 `ball_joint_out_of_bounds` 使用的终止边界保持一致，不再单独维护一套 `control` 侧 action limit
+关键低层参数：
 
-### 5.5 球铰姿态规划器
+| 参数 | 当前值 | 含义 |
+|---|---:|---|
+| `ball_joint_planner_gains` | `(10, 10, 10, 10, 10, 10)` | 球铰姿态规划比例增益 |
+| `ball_joint_planner_qdot_limits` | `(1, 1, 1, 1, 1, 1) rad/s` | 球铰规划速度限制 |
+| `ball_joint_stiffness` | `8000.0` | 球铰位置驱动刚度 |
+| `ball_joint_damping` | `1000.0` | 球铰位置驱动阻尼 |
+| `ball_joint_effort_limit_sim` | `20.0 N*m` | 球铰仿真力矩限制 |
+| `ball_joint_velocity_limit_sim` | `1.0 rad/s` | 球铰仿真速度限制 |
+| `wheel_joint_stiffness` | `0.0` | 车轮不走位置刚度 |
+| `wheel_joint_damping` | `0.0` | 车轮不靠阻尼驱动 |
+| `wheel_joint_effort_limit_sim` | `20.0 N*m` | 车轮力矩限制 |
+| `wheel_joint_velocity_limit_sim` | `20.0 rad/s` | 车轮速度限制 |
+| `low_slip_lambda_tracking` | `1.0` | 低滑移分配器的跟踪权重 |
+| `low_slip_lambda_lateral` | `5.0` | 低滑移分配器的横向滑移抑制权重 |
+| `contact_force_off_threshold` | `0.01` | 接触权重关闭阈值 |
+| `contact_force_on_threshold` | `0.08` | 接触权重开启阈值 |
+| `wheel_torque_tracking_gain` | `2.0` | 轮速跟踪力矩增益 |
+| `wheel_slip_feedback_gain` | `4.0` | 纵向滑移反馈抑制增益 |
+| `wheel_slip_velocity_epsilon` | `0.1` | 纵向滑移计算中的速度小量 |
 
-环境内部先执行：
+## 5. 观测空间
 
-$$
-\dot q_{cmd} = \mathrm{sat}(K_q (q^d - q))
-$$
+actor / critic 观测维度均为 `54 / 54`。当前 Critic 不额外追加 privileged state，也不追加高度 patch。
 
-$$
-q_{cmd} = \mathrm{sat}(q + \Delta t\, \dot q_{cmd})
-$$
+| 观测项 | 维度 | 缩放 | 来源或含义 |
+|---|---:|---:|---|
+| `ball_joint_pos` | `6` | `1.0` | 6 个球铰位置，经过角度 wrap |
+| `ball_joint_vel` | `6` | `1.0` | 6 个球铰速度 |
+| `base_lin_vel` | `3` | `1.0` | 车体质心线速度，body frame |
+| `base_ang_vel` | `3` | `1.0` | 车体质心角速度，body frame |
+| `wheel_joint_vel` | `6` | `1.0` | 6 个车轮关节速度 |
+| `wheel_longitudinal_slip` | `6` | `1.0` | 6 个车轮纵向滑移率 |
+| `wheel_slip_angle` | `6` | `1.0` | 6 个车轮侧偏角，裁剪到 `[-pi / 2, pi / 2]` |
+| `wheel_normal_contact_force` | `6` | `1.0` | 6 个车轮法向接触力，按整车重量归一化 |
+| `goal_relative_command` | `4` | `1.0` | 当前 active waypoint 相对命令 |
+| `last_action` | `8` | `1.0` | 上一步 policy 动作 |
 
-当前参数：
-
-- `ball_joint_planner_gains = (10, 10, 10, 10, 10, 10)`
-- `ball_joint_planner_qdot_limits = (1, 1, 1, 1, 1, 1) rad/s`
-- `control_dt = 1 / 60 s`
-- `q^d` 到 `q_cmd` 的位置饱和边界与 termination 完全一致：
-  - `(-0.6, -1.0, -0.5, -0.6, -1.0, -0.5)` 到 `(0.6, 0.4, 0.5, 0.6, 0.4, 0.5)`
-
-这意味着：
-
-- policy 给出的 `q^d` 本身就被限制在与 termination 一致的球铰边界内
-- 同时姿态规划器输出的 `q_{cmd}` 也会再次按同一组边界做饱和
-- 如果实际球铰角仍然越过这组边界，episode 会被终止
-
-## 6. 低滑移接触感知 allocator
-
-### 6.1 allocator 在整个 RL 链中的位置
-
-当前 allocator 不是网络，而是环境内部的固定低层模型。  
-其输入输出为：
-
-$$
-(q, q^d, u_v^d, F_n, \Omega, v_{\parallel}^{act})
-\rightarrow
-(\dot q_{cmd}, q_{cmd}, u_v^\ast, \Omega_{ref}, \tau_{cmd})
-$$
-
-### 6.2 当前几何参数
-
-allocator 使用的几何常数为：
-
-- $a_x = 0.25633374$
-- $b_f = 0.30654739$
-- $b_r = 0.30633826$
-- $l_1 = -0.00989449$
-- $l_2 = 0.00000932$
-- $l_3 = 0.00968251$
-- $d_1 = 0.44737875$
-- $d_2 = 0.44737968$
-- $d_3 = 0.44737875$
-- $h_1 = -0.043083285$
-- $h_2 = -0.02578188$
-- $h_3 = -0.043100655$
-- $r_{wheel} = 0.19$
-
-这些参数决定：
-
-- 轮心位置
-- 轮滚动方向
-- 轮侧向方向
-- 位置雅可比
-- 名义轮速参考与侧向速度代价
-
-### 6.3 轮心运动学状态
-
-allocator 运行时先构造：
-
-- 每个轮子的轮心位置 $p_w$
-- 滚动方向 $t_w$
-- 侧向方向 $n_w$
-- 位置雅可比 $G_w(q)$
-
-同时代码里仍显式保留：
-
-- 轮速雅可比 $J_w(q) \in \mathbb{R}^{6 \times 2}$
-- 姿态变化率修正雅可比 $J_q(q) \in \mathbb{R}^{6 \times 6}$
-
-### 6.4 接触权重
-
-当前接触权重计算为：
+维度合计：
 
 $$
-c = \mathrm{sat}\left(\frac{F_n - F_{off}}{F_{on} - F_{off}}, 0, 1\right)
+6+6+3+3+6+6+6+6+4+8=54
 $$
 
-当前参数：
+当前不在观测中的项：
 
-- `contact_force_off_threshold = 0.01`
-- `contact_force_on_threshold = 0.08`
-
-说明：
-
-- 当轮子接触力很小，权重接近 `0`
-- 当轮子稳定接地，权重接近 `1`
-
-### 6.5 低滑移平面命令整形
-
-allocator 不是直接执行 $u_v^d$，而是求解：
-
-$$
-\min_{u_v}
-\; \lambda_{tracking} \|u_v - u_v^d\|^2
-+ \lambda_{lateral} \sum_w c_w (a_w^\top u_v + b_w)^2
-$$
-
-当前参数：
-
-- `low_slip_lambda_tracking = 1.0`
-- `low_slip_lambda_lateral = 5.0`
-
-平面命令幅值限制：
-
-- 前向速度上限：`2.0 m/s`
-- 偏航角速度上限：`2.0 rad/s`
-
-因此当前整形的倾向是：
-
-- 保持接近期望命令
-- 但更重地压低有接触轮的侧向速度
-
-### 6.6 名义轮速参考
-
-整形完成后再生成：
-
-$$
-\Omega_{ref} = \frac{1}{r_{wheel}} \operatorname{proj}_{roll}(v_w^{nom})
-$$
-
-其中轮心名义速度可以理解为由三部分叠加得到：
-
-- 车体平移项
-- 车体偏航项
-- 球铰姿态变化项
-
-这一步的角色是：
-
-- 给后续扭矩控制器一个“理想纯滚动下轮子应当怎么转”的参考量
-
-### 6.7 滑移与扭矩分配
-
-纵向滑移按下式计算：
-
-$$
-s = \frac{v_{\parallel}^{act} - r_{wheel}\,\Omega}{\max(|v_{\parallel}^{act}|, \varepsilon)}
-$$
-
-当前参数：
-
-- `wheel_slip_velocity_epsilon = 0.1`
-
-最终扭矩律为：
-
-$$
-\tau_{cmd} = \mathrm{sat}\Big(c \odot [K_\Omega (\Omega_{ref} - \Omega) - K_s s]\Big)
-$$
-
-当前参数：
-
-- `wheel_torque_tracking_gain = 2.0`
-- `wheel_slip_feedback_gain = 4.0`
-- `wheel_joint_effort_limit_sim = 20.0 N·m`
-
-这说明当前低层控制器不是单纯速度跟踪，而是：
-
-- 轮速参考跟踪项
-- 纵向滑移抑制项
-- 接触权重抑制项
-
-三者共同决定最终扭矩。
-
-### 6.8 审查 allocator 时要特别注意的事实
-
-- policy 当前**能看到**：
-  - 轮系纵滑率
-  - 轮系侧滑角
-  - 归一化法向接触力
-- policy 仍然**看不到**：
-  - 接触权重 $c$
-  - 整形后的平面命令 $u_v^\ast$
-  - 轮速参考 $\Omega_{ref}$
-  - 最终轮级扭矩 $\tau_{cmd}$
-- 当前 reward 已经开始**显式约束**：
-  - 转向时过高的平面速度
-  - 纵滑率
-  - 侧滑角
-- 因此当前 low-slip 链对训练的影响有两条：
-  - 通过 observation / reward 直接影响策略
-  - 通过真实动力学执行结果间接影响策略
-
-## 7. 命令采样与任务目标
-
-### 7.1 命令维度与语义
-
-当前命令维度：`4`
-
-$$
-commands = [goal\_rel\_x,\; goal\_rel\_y,\; goal\_rel\_z,\; goal\_bearing]
-$$
-
-世界系目标存储为：
-
-$$
-command\_targets\_w = [x_t, y_t, z_t, \psi_{seg}]
-$$
-
-这里要区分两个量：
-
-- `command_targets_w[:, :3]` 是当前 active waypoint 的世界系位置
-- `command_targets_w[:, 3]` 当前主要用于 marker 可视化，表示该段路径的世界系方位角 `\psi_{seg}`
-- 真正送入 observation / reward / termination 的第 4 维不是最终目标朝向误差，而是**车体系下指向当前 active waypoint 的 bearing**
-
-### 7.2 目标采样参数
-
-- `num_waypoints_per_episode = 2`
-- `goal_distance = 10.0 m`
-- `goal_direction_max_deg = 30.0°`
-- `goal_heading_delta_max_deg = 0.0°`
-- `resampling_time = 40.0 s`
-- `zero_command = False`
-- `rel_standing_envs = 0.0`
-
-### 7.3 当前 waypoint 队列采样逻辑
-
-当前 Stage0 在 reset 时一次性采样一段长度为 `2` 的 waypoint 队列。  
-第 `k` 个 waypoint 总是相对“上一段的 heading”采样，因此整回合形成的是一条短折线，而不是彼此独立的随机点。
-
-第 `1` 段先采样相对上一段 heading 的偏角：
-
-$$
-\phi = s \cdot \phi_{max} \cdot \sqrt{u}
-$$
-
-其中：
-
-- $u \sim U[0,1)$
-- $s \in \{-1, +1\}$
-- 采用 $\sqrt{u}$ 是为了做边缘强化采样
-
-从第 `2` 段开始，当前 active 代码会强制满足最小转角下限：
-
-$$
-|\phi| \in [\phi_{min}, \phi_{max}]
-$$
-
-其中当前 Stage0 为：
-
-- $\phi_{min} = 20.0^\circ$
-- $\phi_{max} = 30.0^\circ$
-
-实现上使用：
-
-$$
-|\phi| = \phi_{min} + (\phi_{max} - \phi_{min}) \sqrt{u}
-$$
-
-因此在当前双 waypoint 任务里：
-
-- 第一段仍允许较小转向
-- 第二段相对第一段不会再退化为近似直线
-
-再得到：
-
-$$
-\theta_{los} = \psi_{base} + \phi
-$$
-
-因为当前 `goal_heading_delta_max_deg = 0.0°`，所以：
-
-$$
-\psi_{seg} = \theta_{los}
-$$
-
-最后在世界系写入目标：
-
-$$
-\begin{aligned}
-x_t &= x_{anchor} + d \cos \theta_{los} \\
-y_t &= y_{anchor} + d \sin \theta_{los} \\
-z_t &= 0 \quad \text{(平地模式)}
-\end{aligned}
-$$
-
-然后把本段的终点位置和方位作为下一段的 `anchor`。
-
-### 7.4 相对目标命令
-
-环境真正送入 observation、reward、termination 的是相对目标量：
-
-$$
-relative\_xy_b = R_z(-\psi_{base})(target\_xy_w - base\_xy_w)
-$$
-
-$$
-relative\_z = z_t - z_{base}
-$$
-
-$$
-goal\_bearing = \operatorname{atan2}(goal\_rel\_y,\; goal\_rel\_x)
-$$
-
-因此当前 `commands[:, 3]` 的物理含义是：
-
-- 当前车体在本体坐标系下看向 active waypoint 的视线角
-- 它用于衡量“当前 waypoint 在车头左前方还是右前方偏了多少”
-- 它**不是**“到达 waypoint 时车头最终应该朝向哪里”的终点姿态误差
-
-### 7.5 当前 next-turn preview
-
-当前 observation 还额外送入一个最小路线预瞄量：
-
-$$
-turn\_delta = \operatorname{wrap}\left(\psi_{seg,next} - \psi_{seg,current}\right)
-$$
-
-其中：
-
-- $\psi_{seg,current}$ 是当前 active waypoint 对应的段 heading
-- $\psi_{seg,next}$ 是下一个 waypoint 对应的段 heading
-- 如果当前已经是最后一个 waypoint，则 `turn_delta = 0`
-
-它的作用不是直接告诉策略完整路径，而是只告诉它：
-
-- 下一段相对当前段要往左还是往右拐
-- 下一拐的大致转角有多大
-
-## 8. 观测空间
-
-### 8.1 实际送入 policy 的观测
-
-当前 actor 观测顺序：
-
-```text
-ball_joint_pos            6
-ball_joint_vel            6
-base_lin_vel              3
-base_ang_vel              3
-wheel_joint_vel           6
-wheel_longitudinal_slip   6
-wheel_slip_angle          6
-wheel_normal_contact_force 6
-goal_relative_command     4
-next_turn_delta           1
-last_action               8
-----------------------------
-total                    55
-```
-
-当前 critic 观测：
-
-- 因为 `terrain.measure_heights = False`
-- 所以 critic 不追加 terrain height patch
-- 当前 critic 维度也为 `55`
-
-### 8.2 可以被构造但当前没有送入 policy 的原始观测项
-
-但当前真正送入网络的是：
-
-- `ball_joint_pos`
-- `ball_joint_vel`
-- `base_lin_vel`
-- `base_ang_vel`
-- `wheel_joint_vel`
-- `wheel_longitudinal_slip`
-- `wheel_slip_angle`
-- `wheel_normal_contact_force`
-- `relative_goal_commands`
 - `next_turn_delta`
-- `last_actions`
-
-这意味着当前 policy：
-
-- 已经能看到球铰当前构型与速度
-- 已经能看到轮系纵滑率
-- 已经能看到轮系侧滑角
-- 已经能看到归一化法向接触力
-- 已经能看到下一段相对当前段的最小预瞄转角
-- 仍然看不到球铰目标误差
-- 看不到机体姿态
-
-### 8.3 当前观测 scale
-
-虽然当前 actor 只选择了 11 类量送入网络，但配置中仍保留了完整 scale 参数：
-
-- `base_lin_vel = 1.0`
-- `base_ang_vel = 1.0`
-- `projected_gravity = 1.0`
-- `ball_joint_pos = 1.0`
-- `ball_joint_vel = 1.0`
-- `ball_joint_target_error = 1.0`
-- `module_roll_pitch = 1.0`
-- `wheel_joint_vel = 1.0`
-- `wheel_longitudinal_slip = 1.0`
-- `wheel_slip_angle = 1.0`
-- `wheel_normal_contact_force = 1.0`
-- `commands = 1.0`
-- `next_turn_delta = 1.0`
-- `last_action = 1.0`
-
-### 8.4 观测历史、裁剪与噪声
-
-- `use_history = False`
-- `history_length = 1`
-- `clip_observations = 100.0`
-- `noise.enabled = False`
-- `noise.level = 1.0`
-
-当前 observation noise **整体关闭**，即使各分量噪声幅值仍保留在配置中，也不会生效。
-
-### 8.5 轮系诊断量公式
-
-纵滑率：
-
-$$
-v_x = v_{wheel} \cdot e_{forward}
-$$
-
-$$
-v_{surface} = r_{wheel} \Omega
-$$
-
-$$
-wheel\_longitudinal\_slip = \frac{v_x - v_{surface}}{\max(|v_x|, \varepsilon)}
-$$
-
-说明：
-
-- 当前诊断量里的纵滑率已经直接复用 allocator 的共享实现
-- allocator 与诊断量的原始定义完全一致：
-  - $\dfrac{v_x - r\Omega}{\max(|v_x|,\varepsilon)}$
-- 当前诊断量与 allocator 控制内部使用的纵滑率都不再做额外裁剪
-
-侧滑角：
-
-$$
-wheel\_slip\_angle = \arctan2(v_y, |v_x| + \varepsilon)
-$$
-
-接触力：
-
-$$
-wheel\_normal\_contact\_force = \frac{\|f_{contact}\|}{W_{vehicle}}
-$$
-
-这些量里，当前只有 `ball_joint_target_error` 和 `projected_gravity` 不进入 policy；  
-`wheel_slip_angle` 已经进入 actor / critic observation，同时也保留在日志里。
-
-## 9. 奖励函数
-
-### 9.1 当前 reward 总式
-
-$$
-reward =
-reward_{distance}
-+ reward_{progress}
-+ reward_{reached}
-+ reward_{angle\_diff}
-+ reward_{turn\_speed}
-+ reward_{slip}
-+ reward_{diff\_turn}
-$$  
-
-当前 reward term 名称：
-
-- `distance_to_target`
-- `progress_to_target`
-- `reached_target`
-- `angle_diff`
-- `turn_speed_penalty`
-- `slip_penalty`
-- `differential_turn_cost`
-
-### 9.2 当前 reward 参数
-
-- `target_position_tolerance = 2.0`
-- `target_yaw_tolerance_deg = degrees(0.1) ≈ 5.73°`
-- `distance_to_target_denominator_scale = 0.01`
-- `distance_to_target_weight = 6.0`
-- `progress_to_target_clip_m = 0.25`
-- `progress_to_target_relax_radius_m = 4.0`
-- `progress_to_target_weight = 8.0`
-- `reached_target_base_reward = 2.0`
-- `reached_target_weight = 6.0`
-- `far_from_target_margin = 6.0`
-- `angle_diff_weight = 6.0`
-- `turn_speed_penalty_weight = -2.0`
-- `slip_penalty_weight = -2.0`
-- `differential_turn_cost_weight = -1.0`
-- `slip_angle_penalty_ratio = 4.0`
-- `turn_demand_penalty_min_scale = 0.25`
-- `turn_demand_penalty_max_scale = 1.5`
-- `only_positive_rewards = False`
-
-说明：
-
-- `target_yaw_tolerance_deg` 仍保留在共享配置里
-- 但当前 Stage0 的 waypoint 命中与 episode success 已经**不再使用**该 yaw 阈值
-
-### 9.3 各项 reward 的真实公式
-
-waypoint 命中判定：
-
-$$
-waypoint\_hit = (\|commands_{xy}\| < 2.0)
-$$
-
-距离项：
-
-$$
-reward_{distance} = 6.0 \cdot \frac{1}{1 + 0.01\, d^2} \cdot \frac{1}{T}
-$$
-
-进度项：
-
-$$
-reward_{progress} =
-8.0 \cdot
-\frac{\Delta d_{relaxed}}{goal\_distance}
-$$
-
-其中：
-
-$$
-\Delta d = \operatorname{clip}(d_{prev} - d,\,-0.25,\,0.25)
-$$
-
-$$
-\Delta d_{relaxed} =
-\begin{cases}
-\max(\Delta d, 0), & d \le 4.0 \\
-\Delta d, & d > 4.0
-\end{cases}
-$$
-
-waypoint 命中奖励：
-
-$$
-reward_{reached} = 6.0 \cdot 2.0 \cdot \frac{T - t}{T} \cdot waypoint\_hit
-$$
-
-当前 waypoint 方向对齐项：
-
-$$
-reward_{angle\_diff} = 6.0 \cdot \frac{1}{1+|goal\_bearing|} \cdot \frac{1}{T}
-$$
-
-当前 turn-demand 定义：
-
-$$
-turn\_demand =
-\max
-\left(
-\operatorname{clip}(|goal\_bearing| / 30^\circ,\; 0,\; 1),
-\operatorname{clip}(|turn\_delta| / 30^\circ,\; 0,\; 1)
-\right)
-$$
-
-$$
-turn\_penalty\_scale = 0.25 + (1.5 - 0.25)\, turn\_demand
-$$
-
-转向时高速惩罚：
-
-$$
-reward_{turn\_speed} =
--2.0 \cdot
-\frac{
-turn\_demand \cdot
-\left\|v_{base,xy}\right\| / 2.0
-}{T}
-$$
-
-滑移惩罚：
-
-$$
-reward_{slip} =
--2.0 \cdot
-\frac{
-turn\_penalty\_scale \cdot
-\left(
-\operatorname{mean}(|s_{long}|)
-+
-4.0 \cdot \operatorname{mean}(|\alpha_{slip}|)
-\right)
-}{T}
-$$
-
-左右差速代价：
-
-$$
-reward_{diff\_turn} =
--1.0 \cdot
-\frac{
-turn\_penalty\_scale \cdot
-\operatorname{mean}\left(|\tau_{left} - \tau_{right}|\right)
-}{T}
-$$
-
-其中当前实现对三组左右轮对求平均：
-
-- `body_left/right`
-- `head_left/right`
-- `tail_left/right`
-
-### 9.4 审查 reward 时必须知道的事实
-
-- 当前 reward 已不再直接惩罚高层 8 维动作变化
-- 当前 reward 已经开始直接约束：
-  - 当前 active waypoint 的方向对齐
-  - 当前段与下一段共同定义的 turn-demand
-  - 转向时的过高前进速度
-  - 纵滑率
-  - 侧滑角
-  - 左右轮差速扭矩
-- 当前 reward 仍然**没有直接约束**：
-  - far-from-target 越界
-  - 接触权重
-  - 扭矩大小
-  - 球铰极限使用率
-  - 轮速参考误差
-- 当前 `far_from_target` 已不再是 reward 项，而只作为 termination 护栏存在。
-- 因此当前 low-slip allocator 的好坏既会通过显式滑移项和差速代价影响 reward，也会通过是否更容易完成 waypoint 跟踪来间接体现
-
-## 10. 终止条件
-
-### 10.1 当前 active done terms
-
-当前 active done term 共有 5 个：
-
-- `waypoint_hit`
-- `is_success`
-- `far_from_target`
-- `ball_joint_out_of_bounds`
-- `time_out`
-
-对应公式：
-
-$$
-waypoint\_hit = d < 2.0
-$$
-
-$$
-is\_success = waypoint\_hit \land (active\_waypoint\_index \ge num\_waypoints\_per\_episode - 1)
-$$
-
-$$
-time\_out = (episode\_length\_buf \ge max\_episode\_length - 1) \land \neg is\_success
-$$
-
-$$
-far\_from\_target = d > (goal\_distance + 6.0)
-$$
-
-$$
-ball\_joint\_out\_of\_bounds = \exists i,\; q_i < q_i^{low} \;\text{or}\; q_i > q_i^{up}
-$$
-
-注意：
-
-- 中间 waypoint 被命中时，只会触发 `waypoint_hit`
-- 环境随后会把 active waypoint 切到下一个
-- 只有最后一个 waypoint 被命中时，`is_success` 才会为真并结束 episode
-
-### 10.2 当前球铰终止边界
-
-- 下限：`(-0.6, -1.0, -0.5, -0.6, -1.0, -0.5)`
-- 上限：`(0.6, 0.4, 0.5, 0.6, 0.4, 0.5)`
-
-### 10.3 配置存在但当前没有接入 done path 的字段
-
-以下字段还在配置类里，但当前 `compute_done_terms(...)` 并没有使用：
-
-- `orientation_limit_deg = 30.0`
-- `head_tail_roll_limit_deg = 35.0`
-- `head_tail_pitch_limit_deg = 20.0`
-
-因此当前 Stage0 不会因为整车侧倾、前后车体滚转或俯仰超限而终止。
-
-## 11. Reset 与随机化
-
-### 11.1 root 初值与扰动
-
-- `root_pos = (0.0, 0.0, 0.30)`
-- `root_lin_vel = (0.0, 0.0, 0.0)`
-- `root_ang_vel = (0.0, 0.0, 0.0)`
-- `root_x_range = (-1.0, 1.0)`
-- `root_y_range = (-1.0, 1.0)`
-- `root_yaw_range = (0.0, 0.0)`
-
-说明：
-
-- 初始位置在各自环境原点附近做平面随机平移
-- 初始偏航当前不随机
-
-### 11.2 关节 reset 扰动
-
-- `ball_joint_pos_range = (0.0, 0.0)`
-- `ball_joint_vel_range = (0.0, 0.0)`
-- `wheel_joint_pos_range = (0.0, 0.0)`
-- `wheel_joint_vel_range = (0.0, 0.0)`
-
-说明：
-
-- 当前 reset 时球铰与车轮都不做额外状态扰动
-
-### 11.3 随机化配置
-
-- `enable_action_randomization = False`
-- `joint_position_noise_scale = 0.0`
-- `action_noise_std = 0.0`
-- `action_bias_std = 0.0`
-
-因此当前 Stage0：
-
-- 不加动作噪声
-- 不加动作 bias
-- 不加 joint position noise
-
-## 12. 地形、课程学习与传感器
-
-### 12.1 当前地形设置
-
-- `terrain.enabled = False`
-- `terrain.mode = "plane"`
-- `static_friction = 1.0`
-- `dynamic_friction = 1.0`
-- `restitution = 0.0`
-- `measure_heights = False`
-
-这意味着当前 Stage0 使用的是平地，不启用地形生成器，也不向 critic 追加高度 patch。
-
-### 12.2 当前保留但未激活的 terrain patch 参数
-
-以下参数已经配置好，但在当前平地主线中不参与 policy 输入：
-
-- `patch_front_extent = 0.942209`
-- `patch_rear_extent = 0.942209`
-- `patch_half_width = 0.280374`
-- `patch_preview_length = 1.0`
-- `patch_rear_margin = 0.40`
-- `patch_side_margin = 1.0`
-- `patch_origin_offset_xy = (0.0, 0.0)`
-- `patch_resolution_x = 0.10`
-- `patch_resolution_y = 0.10`
-- `height_scanner_update_period = 0.02`
-- `height_scanner_offset = (0.0, 0.0, 20.0)`
-
-这些参数是为后续非平地 critic height patch 预留的，不是当前 Stage0 actor/critic 的 active 输入。
-
-### 12.3 课程学习
-
-- `curriculum.enabled = False`
-- `max_init_terrain_level = 0`
-- `default_terrain_name = "flat"`
-- `move_up_distance_ratio = 0.5`
-- `move_down_command_ratio = 0.5`
-
-因为当前地形生成器未启用且 curriculum 关闭，所以 terrain curriculum 逻辑当前不生效。
-
-### 12.4 当前显式传感器开关
-
-- `sensors.imu.enabled = False`
-- `sensors.stereo_camera.enabled = False`
-- `sensors.lidar.enabled = False`
-- `sensors.enable_height_scanner = False`
-- `sensors.height_scanner_debug_vis = False`
-
-### 12.5 虽然高层传感器全关，但接触感知仍在工作
-
-这一点非常关键。当前虽然 IMU、双目、激光雷达、height scanner 都关闭了，但：
-
-- 机器人 spawn 时启用了 `activate_contact_sensors = True`
-- `CompleteCarSensorSuiteRuntime` 仍会在运行时为 6 个轮子建立 rigid contact view
-- 环境和 allocator 仍能实时得到每个轮子的接触力合力向量
-
-因此当前 Stage0 仍然具备：
-
-- 轮地接触感知
-- 归一化法向接触力计算
-- 接触权重 $c$
-- 接触感知牵引分配
-
-换句话说，当前“传感器全关”只意味着**没有高层感知传感器**，并不意味着 allocator 失去了轮地接触信息。
-
-## 13. PPO 与训练器参数
-
-### 13.1 Runner 级参数
-
-- `seed = 1`
-- `device = "cuda:0"`
-- `num_steps_per_env = 512`
-- `max_iterations = 700`
-- `save_interval = 100`
-- `experiment_name = "complete_car_stage0"`
-- `run_name = ""`
-- `obs_groups = {"actor": ["actor"], "critic": ["critic"]}`
-- `clip_actions = None`
-- `check_for_nan = True`
-- `logger = "tensorboard"`
-- `resume = False`
-- `load_run = ".*"`
-- `load_checkpoint = "model_.*.pt"`
-
-### 13.2 Actor 网络
-
-- MLP hidden dims：`[256, 256]`
-- activation：`relu`
-- `obs_normalization = True`
-- 分布：`SquashedGaussianDistribution`
-- `init_std = 0.20`
-- `log_std_min = -4.0`
-- `log_std_max = 0.0`
-
-### 13.3 Critic 网络
-
-- MLP hidden dims：`[256, 256]`
-- activation：`relu`
-- `obs_normalization = True`
-- 无动作分布头
-
-### 13.4 PPO 算法参数
-
-- `value_loss_coef = 0.5`
-- `use_clipped_value_loss = True`
-- `clip_param = 0.2`
-- `entropy_coef = 5e-4`
-- `num_learning_epochs = 5`
-- `num_mini_batches = 16`
-- `learning_rate = 1e-4`
-- `adam_eps = 1e-5`
-- `schedule = "adaptive"`
-- `gamma = 0.99`
-- `lam = 0.95`
-- `desired_kl = 0.008`
-- `max_grad_norm = 0.5`
-
-### 13.5 训练入口可被 CLI 覆盖的参数
-
-`RL_Training/scripts/train.py` 允许通过命令行覆盖这些关键项：
-
-- `--task`
-- `--num_envs`
-- `--seed`
-- `--max_iterations`
-- `--experiment_name`
-- `--run_name`
-- `--resume`
-- `--load_run`
-- `--checkpoint`
-- `--logger`
-- `--log_project_name`
-- `--video`
-
-因此在审查训练结果时，不能只看默认配置文件，也要检查本次 run 是否通过 CLI 覆写了关键参数。
-
-## 14. 当前哪些量进入训练，哪些量只留在日志里
-
-### 14.1 当前真正进入策略学习闭环的量
-
-进入 policy 的量：
-
-- `ball_joint_pos`
-- `ball_joint_vel`
-- `base_lin_vel`
-- `base_ang_vel`
-- `wheel_joint_vel`
-- `wheel_longitudinal_slip`
-- `wheel_slip_angle`
-- `wheel_normal_contact_force`
-- `goal_relative_command`
-- `next_turn_delta`
-- `last_action`
-
-直接决定执行器的量：
-
-- 球铰：`q_cmd`
-- 车轮：`τ_cmd`
-
-直接进入 reward / termination 的量：
-
-- `relative_goal_commands`
-- `next_turn_delta`
-- `base_lin_vel_b`
-- `wheel_longitudinal_slip`
-- `wheel_slip_angle`
-- `wheel_torque_targets`
-- 当前球铰角 `q`
-- `episode_length_buf`
-
-### 14.2 当前只用于内部执行或诊断的量
-
-当前这些量很重要，但不直接进入 policy：
-
-- `wheel_contact_forces_w`
-- `desired_ball_joint_targets`
-- `wheel_normal_contact_force`
-- `contact_weights`
-- `shaped_planar_command`
-- `wheel_speed_reference`
-- `wheel_slip_angle`
-- `ball_joint_target_error`
 - `projected_gravity`
+- `ball_joint_target_error`
+- `module_roll_pitch`
+- `terrain_height_patch`
+- 外部 IMU / camera / lidar 观测
 
-### 14.3 当前日志输出面板的有效口径
+## 6. 当前奖励函数总式
 
-当前终端主链会优先打印以下高信号 tag：
+当前 reward 在 `mdp/rewards.py` 的 `compute_reward_terms()` 中计算。
+总奖励为 7 个加权分量直接求和：
 
-- `Action/policy_abs_mean`
-- `Action/policy_std`
-- `Action/wheel_speed_reference_abs_mean_raw`
-- `Action/wheel_torque_target_abs_mean_raw`
-- `Reward/total`
-- `Reward/reached_target`
-- `Reward/distance_to_target`
-- `Reward/progress_to_target`
-- `Reward/angle_diff`
-- `Reward/turn_speed_penalty`
-- `Reward/differential_turn_cost`
-- `Reward/slip_penalty`
-- `Observation/wheel_longitudinal_slip_abs_mean_raw`
-- `Observation/wheel_slip_angle_abs_mean_raw`
-- `Observation/wheel_normal_contact_force_sum_raw`
-- `Observation/tilt_deg`
-- `Observation/ball_joint_vel_abs_mean_raw`
-- `Termination/success_rate`
-- `Termination/time_out_rate`
-- `Termination/far_from_target_rate`
-- `Termination/ball_joint_limit_rate`
-- `Termination/terminated_rate`
-- `Tracking/goal_success_rate`
-- `Tracking/goal_pos_error`
-- `Tracking/goal_heading_error_abs`
-- `Tracking/goal_completion_pct`
+$$
+r =
+r_{dist}
++ r_{prog}
++ r_{hit}
++ r_{far}
++ r_{angle}
++ r_{turnspeed}
++ r_{slip}
+$$
 
-当前 TensorBoard 还会额外记录：
+当前 `only_positive_rewards = False`，所以总奖励不会被裁剪为非负数。
 
-- `episode/waypoints_completed`
-- `episode/waypoint_completion_pct`
+记号说明：
 
-其中：
+| 记号 | 含义 |
+|---|---|
+| $T$ | 最大控制步数，当前为 `2400` |
+| $t$ | 当前 episode 控制步计数 |
+| $d_t$ | 当前 active waypoint 的平面距离，$d_t=\sqrt{x_g^2+y_g^2}$ |
+| $d_{t-1}$ | 上一步记录的 active waypoint 距离 |
+| $\theta_t$ | 当前目标点在车体系下的视线方向误差，来自 `commands[:, 3]` |
+| $v_{xy}$ | 车体平面速度模长，来自 `base_lin_vel_b[:, :2]` |
+| $v_{max}$ | 当前 `base_forward_velocity_max = 2.0` |
+| $s_i$ | 第 `i` 个车轮纵向滑移率 |
+| $\alpha_i$ | 第 `i` 个车轮侧偏角 |
+| $I_{hit}$ | 当前 active waypoint 是否命中 |
+| $I_{far}$ | 当前 active waypoint 距离是否超过远离阈值 |
 
-- `Tracking/goal_success_rate` 当前来自 reset 批次 episode log，与 `Termination/success_rate` 使用同一批 env、同一时刻 done 判定
-- `Tracking/goal_heading_error_abs` 在当前 Stage0 里的实际物理含义是：
-  - **车体系下对当前 active waypoint 的 bearing 误差**
-  - 不是旧版单目标终点捕获任务里的“最终目标朝向误差”
+## 7. Reward 分项明细
 
-已经从 active logging path 删除的 step metrics 包括：
+### 7.1 `distance_to_target`
 
-- `Observation/turn_radius_raw`
-- step 级 `Command/goal_target_x_world`
-- step 级 `Command/goal_target_y_world`
-- step 级 `Command/goal_target_z_world`
-- step 级 `Command/goal_target_heading_world`
-- `Observation/head_roll_pitch_abs_mean_raw`
-- `Observation/tail_roll_pitch_abs_mean_raw`
-- `Observation/goal_rel_x_raw`
-- `Observation/goal_rel_y_raw`
-- `Observation/goal_rel_z_raw`
-- `Observation/goal_rel_heading_raw`
-- `Observation/last_action_abs_mean_raw`
-- `Critic/height_patch_mean`
-- `Critic/height_patch_max`
+源码形式：
 
-### 14.4 当前最容易在审查中混淆的点
+$$
+r_{dist}
+=
+6.0 \cdot
+\frac{1}{1+0.01 d_t^2}
+\cdot
+\frac{1}{T}
+$$
 
-- policy 输出不是 $\Omega_{ref}$，也不是 $\tau_{cmd}$
-- allocator 输出虽然包含 $\Omega_{ref}$，但车轮最终执行的是 $\tau_{cmd}$
-- reward 已不再惩罚高层动作变化
-- 当前 Stage0 的 low-slip 机制已经同时通过：
-  - 滑移相关 observation
-  - 显式 `slip_penalty`
-  - 转向减速项
-  - 动力学执行结果
- 共同影响 learning signal
-- `Termination/terminated_rate` 当前只保留终端打印，不再写 TensorBoard
-- 配置类里还保留了一些未接入 active path 的字段，审查时必须区分“配置存在”和“运行时实际使用”
+配置来源：
 
-## 15. 建议的逐环节审查顺序
+| 参数 | 当前值 |
+|---|---:|
+| `distance_to_target_denominator_scale` | `0.01` |
+| `distance_to_target_weight` | `6.0` |
 
-如果要对当前 RL 环境做系统审查，建议按下面顺序看：
+工程含义：
 
-1. 先确认双 waypoint 平地几何是否合理
-2. 再确认 `55` 维观测是否已经覆盖你想约束的行为质量
-3. 再看 8 维动作如何通过 planner 和 allocator 变成 $q_{cmd}$ 与 $\tau_{cmd}$
-4. 再核对 reward 是否真的在鼓励你希望的“连续通过 + 低滑移转向”，而不是仅仅鼓励“接近当前点即可”
-5. 再核对 termination 是否过宽或过窄
-6. 最后再看 PPO 超参数，因为当前很多训练现象可能首先来自任务闭环本身，而不是来自 PPO 数值设置
+- 这是一个持续型接近目标奖励。
+- 距离越小，单步奖励越大。
+- 除以 $T$ 后，单步量级被压低，避免持续奖励压过 waypoint 命中奖励。
 
-按这个顺序，你能更快区分：
+### 7.2 `progress_to_target`
 
-- 是 policy 输入不够
-- 还是 reward 在引导错误行为
-- 还是 low-slip allocator 没被显式利用
-- 还是 PPO 只是把一个本来就弱监督的任务学到了局部坏平衡
+先计算距离进步量：
+
+$$
+\Delta d_t = d_{t-1}-d_t
+$$
+
+再裁剪：
+
+$$
+\Delta d_t^{clip}
+=
+\mathrm{clip}(\Delta d_t,-0.25,0.25)
+$$
+
+若已经进入 `4.0 m` 近目标区域，则不再惩罚距离短时变大：
+
+$$
+d_t \le 4.0
+\Rightarrow
+\Delta d_t^{clip}=\max(\Delta d_t^{clip},0)
+$$
+
+最终奖励：
+
+$$
+r_{prog}
+=
+8.0 \cdot
+\frac{\Delta d_t^{clip}}{10.0}
+$$
+
+配置来源：
+
+| 参数 | 当前值 |
+|---|---:|
+| `progress_to_target_clip_m` | `0.25 m` |
+| `progress_to_target_relax_radius_m` | `4.0 m` |
+| `progress_to_target_weight` | `8.0` |
+| `goal_distance` | `10.0 m` |
+
+工程含义：
+
+- 这是当前最直接的“每步向目标推进”奖励。
+- 向目标靠近为正，远离目标为负。
+- 近目标 `4.0 m` 内取消负进度，目的是减少末端调整时的抖动惩罚。
+
+### 7.3 `reached_target`
+
+命中条件：
+
+$$
+d_t < 2.0
+$$
+
+剩余时间缩放：
+
+$$
+\eta_t=\frac{T-t}{T}
+$$
+
+奖励：
+
+$$
+r_{hit}
+=
+6.0 \cdot 2.0 \cdot I_{hit} \cdot \eta_t
+$$
+
+配置来源：
+
+| 参数 | 当前值 |
+|---|---:|
+| `target_position_tolerance` | `2.0 m` |
+| `reached_target_base_reward` | `2.0` |
+| `reached_target_weight` | `6.0` |
+
+工程含义：
+
+- 单次 waypoint 命中最高奖励为 `12.0`，随剩余时间线性衰减。
+- 中间 waypoint 和最后 waypoint 都会触发该奖励。
+- 命中中间 waypoint 后，环境会切换到下一个 active waypoint。
+- 命中最后 waypoint 才算 episode 成功终止。
+
+### 7.4 `far_from_target`
+
+远离阈值：
+
+$$
+d_{far}=10.0+6.0=16.0
+$$
+
+奖励：
+
+$$
+r_{far}
+=
+-2.0 \cdot I(d_t>16.0)
+$$
+
+配置来源：
+
+| 参数 | 当前值 |
+|---|---:|
+| `goal_distance` | `10.0 m` |
+| `far_from_target_margin` | `6.0 m` |
+| `far_from_target_weight` | `-2.0` |
+
+工程含义：
+
+- 这是远离目标惩罚，同时与终止条件共用同一个阈值。
+- 一旦 `d_t > 16.0 m`，该项为 `-2.0`，并且 episode 会以 `far_from_target` 失败终止。
+
+### 7.5 `angle_diff`
+
+源码中的角度误差：
+
+$$
+\theta_t=\mathrm{wrap}(commands[:,3])
+$$
+
+奖励：
+
+$$
+r_{angle}
+=
+6.0 \cdot
+\frac{1}{1+|\theta_t|}
+\cdot
+\frac{1}{T}
+$$
+
+配置来源：
+
+| 参数 | 当前值 |
+|---|---:|
+| `angle_diff_weight` | `6.0` |
+
+工程含义：
+
+- 该项鼓励车体朝向当前目标点的方向。
+- $\theta_t$ 越接近 `0`，奖励越高。
+- 它不是强制终止项，只是持续型方向引导。
+
+### 7.6 `turn_speed_penalty`
+
+转向强度归一化：
+
+$$
+\rho_t
+=
+\mathrm{clip}
+\left(
+\frac{|\theta_t|}{30^\circ},
+0,
+1
+\right)
+$$
+
+平面速度归一化：
+
+$$
+\nu_t
+=
+\frac{\|v_{xy}\|}{2.0}
+$$
+
+惩罚项：
+
+$$
+r_{turnspeed}
+=
+-2.0 \cdot
+\frac{\rho_t \nu_t}{T}
+$$
+
+配置来源：
+
+| 参数 | 当前值 |
+|---|---:|
+| `goal_direction_max_deg` | `30.0°` |
+| `base_forward_velocity_max` | `2.0 m/s` |
+| `turn_speed_penalty_weight` | `-2.0` |
+
+工程含义：
+
+- 当目标方向偏差大、车速又高时，该项惩罚更大。
+- 它约束“大角度转向时高速冲过去”的行为。
+- 当前没有使用 `next_turn_delta` 或 preview turn-demand 来缩放该项。
+
+### 7.7 `slip_penalty`
+
+先计算 6 个车轮的平均纵向滑移和平均侧偏角：
+
+$$
+\bar{s}
+=
+\frac{1}{6}
+\sum_{i=1}^{6}|s_i|
+$$
+
+$$
+\bar{\alpha}
+=
+\frac{1}{6}
+\sum_{i=1}^{6}|\alpha_i|
+$$
+
+未加权 slip 量：
+
+$$
+c_{slip}
+=
+\frac{\bar{s}+4.0\bar{\alpha}}{T}
+$$
+
+奖励分量：
+
+$$
+r_{slip}
+=
+-2.0 \cdot c_{slip}
+$$
+
+配置来源：
+
+| 参数 | 当前值 |
+|---|---:|
+| `slip_penalty_weight` | `-2.0` |
+| `slip_angle_penalty_ratio` | `4.0` |
+| `wheel_slip_epsilon` | `0.1` |
+| `wheel_slip_angle_clip_rad` | `pi / 2` |
+
+工程含义：
+
+- 纵向滑移和侧偏都会被惩罚。
+- 侧偏角权重为纵向滑移的 `4` 倍。
+- 当前最佳 run 虽然能学起来，但完成方式偏高侧滑，说明这个 slip 惩罚还没有把行为完全约束到低滑移协同转向。
+
+## 8. 当前奖励函数回答
+
+如果只用一句话概括，现在的奖励函数是：
+
+$$
+r =
+6\frac{1}{1+0.01d_t^2}\frac{1}{T}
++
+8\frac{\mathrm{clip}(d_{t-1}-d_t,-0.25,0.25)}{10}
++
+12I_{hit}\frac{T-t}{T}
+-
+2I(d_t>16)
++
+6\frac{1}{1+|\theta_t|}\frac{1}{T}
+-
+2\frac{\rho_t\nu_t}{T}
+-
+2\frac{\bar{s}+4\bar{\alpha}}{T}
+$$
+
+其中近目标区域有一个额外规则：
+
+$$
+d_t \le 4.0
+\Rightarrow
+\mathrm{clip}(d_{t-1}-d_t,-0.25,0.25)
+\text{ 的负值会被置为 }0
+$$
+
+这就是当前 Stage0 active baseline 的实际奖励函数。
+
+## 9. 终止条件
+
+| 终止项 | 条件 | 是否 counted as terminated | 说明 |
+|---|---|---:|---|
+| `is_success` | 当前 waypoint 命中，且 active waypoint 已是最后一个 | 是 | 最后一个 waypoint 距离 `< 2.0 m` |
+| `far_from_target` | `d_t > 16.0 m` | 是 | 与 reward 中 `far_from_target` 共用阈值 |
+| `ball_joint_out_of_bounds` | 任一球铰超出配置上下限 | 是 | 保护球铰动作不越界 |
+| `time_out` | `episode_length_buf >= max_episode_length - 1` 且未成功 | 否，作为 timeout | 达到 `40 s` 控制步上限 |
+
+当前球铰终止上下限：
+
+| 关节组 | lower | upper |
+|---|---|---|
+| 6 个球铰 | `(-0.6, -1.0, -0.5, -0.6, -1.0, -0.5)` | `(0.6, 0.4, 0.5, 0.6, 0.4, 0.5)` |
+
+## 10. Reset 与随机化
+
+| 参数 | 当前值 |
+|---|---:|
+| `root_pos` | `(0.0, 0.0, 0.30)` |
+| `root_lin_vel` | `(0.0, 0.0, 0.0)` |
+| `root_ang_vel` | `(0.0, 0.0, 0.0)` |
+| `root_x_range` | `(-1.0, 1.0)` |
+| `root_y_range` | `(-1.0, 1.0)` |
+| `root_yaw_range` | `(0.0, 0.0)` |
+| `ball_joint_pos_range` | `(0.0, 0.0)` |
+| `ball_joint_vel_range` | `(0.0, 0.0)` |
+| `wheel_joint_pos_range` | `(0.0, 0.0)` |
+| `wheel_joint_vel_range` | `(0.0, 0.0)` |
+| `enable_action_randomization` | `False` |
+| `joint_position_noise_scale` | `0.0` |
+| `action_noise_std` | `0.0` |
+| `action_bias_std` | `0.0` |
+
+## 11. PPO 配置
+
+| 参数 | 当前值 |
+|---|---:|
+| `runner.class_name` | `OnPolicyRunner` |
+| `seed` | `1` |
+| `device` | `cuda:0` |
+| `num_steps_per_env` | `512` |
+| `max_iterations` | `700` |
+| `save_interval` | `100` |
+| `experiment_name` | `complete_car_stage0` |
+| `logger` | `tensorboard` |
+| `obs_groups` | `{"actor": ["actor"], "critic": ["critic"]}` |
+| `clip_actions` | `None` |
+| `check_for_nan` | `True` |
+| `resume` | `False` |
+| `load_run` | `.*` |
+| `load_checkpoint` | `model_.*.pt` |
+
+Actor 网络：
+
+| 参数 | 当前值 |
+|---|---:|
+| `hidden_dims` | `[256, 256]` |
+| `activation` | `relu` |
+| `obs_normalization` | `True` |
+| `distribution` | `SquashedGaussianDistribution` |
+| `init_std` | `0.20` |
+| `log_std_min` | `-4.0` |
+| `log_std_max` | `0.0` |
+
+Critic 网络：
+
+| 参数 | 当前值 |
+|---|---:|
+| `hidden_dims` | `[256, 256]` |
+| `activation` | `relu` |
+| `obs_normalization` | `True` |
+| `distribution` | `None` |
+
+PPO 算法：
+
+| 参数 | 当前值 |
+|---|---:|
+| `num_learning_epochs` | `5` |
+| `num_mini_batches` | `16` |
+| `learning_rate` | `1.0e-4` |
+| `adam_eps` | `1.0e-5` |
+| `schedule` | `adaptive` |
+| `gamma` | `0.99` |
+| `lam` | `0.95` |
+| `entropy_coef` | `5.0e-4` |
+| `desired_kl` | `0.008` |
+| `max_grad_norm` | `0.5` |
+| `value_loss_coef` | `0.5` |
+| `use_clipped_value_loss` | `True` |
+| `clip_param` | `0.2` |
+
+## 12. TensorBoard 重点观测量
+
+当前环境会记录以下与 reward 和任务进度直接相关的指标：
+
+| 类别 | 指标 |
+|---|---|
+| Reward | `Reward/total` |
+| Reward | `Reward/distance_to_target` |
+| Reward | `Reward/progress_to_target` |
+| Reward | `Reward/reached_target` |
+| Reward | `Reward/far_from_target` |
+| Reward | `Reward/angle_diff` |
+| Reward | `Reward/turn_speed_penalty` |
+| Reward | `Reward/slip_penalty` |
+| Tracking | `Tracking/goal_pos_error` |
+| Tracking | `Tracking/goal_heading_error_abs` |
+| Tracking | `Tracking/goal_completion_pct` |
+| Tracking | `Tracking/goal_success_rate` |
+| Episode | `episode/waypoints_completed` |
+| Episode | `episode/waypoint_completion_pct` |
+| Termination | `Termination/success_rate` |
+| Termination | `Termination/time_out_rate` |
+| Termination | `Termination/far_from_target_rate` |
+| Termination | `Termination/ball_joint_limit_rate` |
+| Action | `Action/policy_abs_mean` |
+| Action | `Action/wheel_speed_reference_abs_mean_raw` |
+| Action | `Action/wheel_torque_target_abs_mean_raw` |
+| Action | `Action/shaped_planar_command_abs_mean_raw` |
+| Action | `Action/contact_weight_mean_raw` |
+
+## 13. 当前结论与使用边界
+
+当前这套配置已经由真实训练 run 证明“能学起来”，但它只能作为当前平地双 waypoint baseline，不能直接当作最终论文结论版。
+
+已知边界：
+
+- 成功率后段有脉冲，但末轮不稳定。
+- 完成方式偏高侧滑。
+- 当前 reward 中有 slip 惩罚，但还不足以证明“协同转向已经稳定学成”。
+- 当前没有地形传感器、课程学习、高度 patch 或复杂地形输入。
+- 当前没有 `next_turn_delta`，策略看不到下一段转向预告。
+- 当前没有 `differential_turn_cost`，也没有 preview-based penalty scaling。
+
+后续推进原则：
+
+- 先用当前 `54 / 54`、`8` 维动作 Stage0 主线补跑 smoke。
+- 再复现与最佳 run 同口径的真实训练。
+- 只有 baseline 重新复现后，才把 `next_turn preview`、`differential_turn_cost`、更强低滑移约束等作为新分支推进。

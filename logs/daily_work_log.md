@@ -12028,3 +12028,439 @@
 
 下一步：
 - 等用户确认该 Stage1 任务定义后，再修改 `terrain_runtime.py`、`mdp/resets.py`、`mdp/commands.py`、`mdp/terminations.py`、`mdp/curriculum.py` 和 `base/env.py`。
+
+## 2026-04-26
+
+已完成：
+- 按用户授权启动一轮 Stage0 low-slip progress gate v2 + 低层参数修改后的正式 GPU 训练。
+- 训练命令使用：
+  - task：`CompleteCar-Stage0`
+  - device：`cuda:0`
+  - num_envs：`64`
+  - max_iterations：`800`
+  - run_name：`stage0_lowslip_gate_v2_min_lowlevel_800iter`
+- 用户在训练进行到 iteration `522/800` 后要求停止，已用中断信号让训练进程正常退出。
+- 导出该 run 的 TensorBoard 标量并完成停止版诊断报告。
+
+修改文件：
+- `results/stage0_lowslip_gate_v2_min_lowlevel_522iter_diagnosis_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-26_10-32-46_stage0_lowslip_gate_v2_min_lowlevel_800iter`
+- 最后自动保存 checkpoint：`model_500.pt`
+- 后 25 轮 `success_rate = 1.0`、`time_out_rate = 0.0`。
+- 后 25 轮 `waypoints_completed_mean ≈ 0.481`、`episode_completion_pct ≈ 24.07%`，与 `success_rate` 存在严重语义冲突。
+- 后 25 轮纵向滑移约 `3.066`，侧滑角约 `0.709 rad`，低滑移综合达标率约 `2.0%`，未达到低滑移目标。
+- v2 gate 没有压死学习，但也没有阻止高滑移命中策略；`reached_target` 奖励仍主导后段学习。
+- 已按用户要求补充 per-wheel 诊断：
+  - 六轮纵滑均偏高，不是单个左侧轮独有。
+  - 中左轮后 25 轮 `wheel_joint_vel ≈ 8.72`，不是完全不转。
+  - 后右轮负载和力矩最高；中车两轮法向力最低。
+  - 当前 per-wheel `slip_angle` 为 signed mean，会被正负侧滑抵消，后续若要定位每个轮子的真实绝对侧滑，需要新增 per-wheel abs 指标。
+
+下一步：
+- 优先核对并修正 `success_rate`、`waypoints_completed_mean`、`episode_completion_pct` 的统计语义，再决定下一轮 reward / 成功条件调整。
+
+## 2026-04-26
+
+已完成：
+- 按用户要求输出 Stage0 底层控制器公式核对文档，重点展开面向低滑移的接触感知轮级牵引分配。
+- 核对内容包括：
+  - policy 动作到平面命令和球铰期望姿态的映射
+  - 球铰位置/速度规划
+  - 接触权重计算
+  - 低侧滑平面命令整形
+  - 轮速参考生成
+  - 纵向滑移与侧滑角定义
+  - 轮级 torque target 牵引分配
+- 使用本轮 run 后 25 个 TensorBoard 记录点逐轮代入计算 `tracking项`、`slip项`、`bracket` 和近似力矩。
+
+修改文件：
+- `docs/stage0_low_level_traction_allocation_formula_check_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前车轮执行链确认为 torque target 链，`wheel_speed_reference` 只是力矩公式内部参考，不是 Isaac 速度控制。
+- 接触权重使用 `法向接触合力 / 整车重量` 的无量纲比例，`0.01/0.08` 不是牛顿阈值。
+- 本轮后 25 点六轮均为 `Omega_act > Omega_ref` 且 signed `kappa < 0`。
+- 当前力矩公式中的速度跟踪项为负，但 `-K_slip*kappa` 为大正数并主导力矩方向。
+- 若正力矩会使车轮正向角速度继续增加，则当前纵滑反馈符号与抑制正向滑转目标相反；在单轮力矩符号测试前，不能严格认定底层纵滑牵引分配公式没有问题。
+
+下一步：
+- 在继续低滑移调参或训练前，优先做单轮正/负力矩符号测试，确认车轮关节力矩方向与纵滑反馈符号是否匹配。
+
+## 2026-04-26
+
+已完成：
+- 按用户要求继续补充 Stage0 底层公式核对文档中的球铰位置/速度规划部分。
+- 新增 Isaac/PhysX `ImplicitActuator` 实际 PD drive 说明，并明确 `qdot_cmd` 与 Isaac 速度目标不是同一个量。
+- 增加 4 个具体数字例子，逐步计算 `q^d -> qdot_cmd -> q_cmd -> tau_pd -> tau_applied`。
+
+修改文件：
+- `docs/stage0_low_level_traction_allocation_formula_check_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前球铰 planner 的 `qdot_cmd` 只用于生成下一步 `q_cmd`，项目没有把它下发为 Isaac 的速度目标。
+- Isaac/PhysX 球铰 PD 近似为 `tau = Kp*(q_cmd-q) - Kd*qdot_actual`，再受 `±20 Nm` effort limit 约束。
+- 在 `Kp=8000`、`Kd=1000` 的配置下，球铰执行更像限力矩的位置伺服；小位置误差也可能使原始 PD 力矩饱和。
+
+## 2026-04-26
+
+已完成：
+- 按用户确认的最终链路修改 Stage0 球铰控制器和轮速分配接口。
+- 新球铰链路为：
+  - policy 后 `6` 维动作映射为最终目标姿态 `q^d`
+  - 环境内部轨迹生成器维护 `q_ref` 和上一控制步 `qdot_cmd`
+  - 轨迹生成器输出同一套 `q_cmd/qdot_cmd`
+  - Isaac/PhysX 同时接收 `set_joint_position_target(q_cmd)` 与 `set_joint_velocity_target(qdot_cmd)`
+  - 轮速分配器使用实际球铰姿态 `q_actual` 计算几何量，并复用同一个 `qdot_cmd`
+- 将球铰轨迹/执行参数更新为：
+  - `K_q=8.0`
+  - `qdot_max=1.5 rad/s`
+  - `qddot_max=12.0 rad/s^2`
+  - `track_error_max=0.10 rad`
+  - `stiffness=1000`
+  - `damping=10`
+  - `effort_limit_sim=20`
+  - `velocity_limit_sim=2.0`
+- 同步更新 Stage0 训练参数表和底层公式核对文档。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/stage0_low_level_traction_allocation_formula_check_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过。
+- `validate_wheel_speed_allocator.py --run-smoke-cases` 通过。
+- Numpy / Torch allocator 的 `planned_ball_joint_pos/planned_ball_joint_rate` 透传检查通过。
+- Markdown 数学分隔符检查通过。
+- `git diff --check` 通过。
+
+产出/结论：
+- 旧结论“`qdot_cmd` 不是 Isaac 速度目标”已经失效；当前 Stage0 实现中 `qdot_des_sim = qdot_cmd`。
+- 本次是执行链路改造，不是训练结论；此前 `stage0_lowslip_gate_v2_min_lowlevel_800iter` 的数据不能代表新链路效果。
+- 纵滑反馈符号风险仍未通过单轮力矩方向实验排除，后续低滑移训练前仍建议优先验证。
+
+## 2026-04-26
+
+已完成：
+- 按用户给定公式修改 Stage0 底层车轮力矩控制器。
+- 新控制器链路为：
+  - `tau0 = K_omega * (omega_ref - omega)`
+  - 用实际纵向速度 `V_parallel` 和车轮圆周速度计算 signed 纵滑
+  - 只有当 `DeltaV * tau0 > 0` 时，才用 `g_kappa` 衰减基础力矩
+  - 用实际侧滑角计算 `g_alpha`
+  - 最终力矩为 `clip(contact_weight * g_alpha * tau1, -tau_max, tau_max)`
+- 同步改动观测/奖励使用的 signed 纵滑定义：
+  - 新定义为 `kappa = (r * omega - V_parallel) / max(|V_parallel|, epsilon)`
+  - 正向滑转对应 `kappa > 0`
+- 环境侧新增实际侧向速度输入 `lateral_speed_actual`，用于底层侧滑衰减。
+- 移除当前控制链中的旧 `wheel_slip_feedback_gain` / `-K_slip*kappa` 附加力矩项。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/stage0_low_level_traction_allocation_formula_check_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过。
+- `validate_wheel_speed_allocator.py --run-smoke-cases` 通过。
+- 新 smoke case 已检查：正向滑转且基础力矩加剧滑移时，力矩按 `g_min=0.3` 衰减；基础力矩为制动方向时不被纵滑 gate 削弱。
+
+产出/结论：
+- 旧的纵滑反馈符号风险已从公式结构上移除。
+- 新控制器尚未经过 Isaac 回放或正式训练验证，下一步需要 runtime 验证。
+
+## 2026-04-26
+
+已完成：
+- 按用户要求新增 Stage0 当前底层控制链路详解文档。
+- 文档系统展开：
+  - RL 动作到平面命令和球铰目标姿态的映射
+  - 球铰轨迹生成器 `q^d -> q_cmd/qdot_cmd`
+  - Isaac/PhysX 球铰隐式 PD 执行公式和数值例子
+  - 接触权重计算
+  - 低侧滑平面命令整形
+  - 运动学轮速参考生成
+  - 实际纵滑率、侧滑角定义
+  - 接触感知低滑移车轮力矩控制器
+
+修改文件：
+- `docs/stage0_current_low_level_control_chain_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- Markdown 公式分隔符检查通过，未使用禁用的反斜杠圆括号或方括号公式分隔符。
+- `git diff --check -- docs/stage0_current_low_level_control_chain_2026-04-26.md` 通过。
+
+产出/结论：
+- 当前文档明确：球铰执行器和轮速分配器复用同一套 `qdot_cmd`；轮速分配几何使用 `q_actual`；车轮最终仍为 torque target，`Omega_ref` 只是力矩控制内部参考。
+
+## 2026-04-26
+
+已完成：
+- 按用户要求停止当前 Stage0 正式训练，并对训练结果做完整诊断。
+- 本轮 run 为 `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-26_18-17-37_stage0_lowlevel_diagnostics_metrics_v2_800iter`。
+- 原计划 `800` iterations，实际在 iteration `209/800` 停止；最后保存 checkpoint 为 `model_200.pt`。
+- 导出并分析 TensorBoard 标量，覆盖任务完成度、low-slip、progress gate、动作整形、低层力矩链路和 per-wheel 状态。
+
+修改文件：
+- `results/stage0_lowlevel_diagnostics_metrics_v2_209iter_diagnosis_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `docs/RL阶段训练参数一览表.md`
+
+产出/结论：
+- 本轮不是成功训练结果：后 25 轮 `success_rate=0`、`time_out_rate=1`、`waypoints_completed_mean=0`。
+- 低滑移指标显著改善：后 25 轮纵滑约 `0.301`，侧滑角约 `0.132 rad`，综合 low-slip 达标率约 `0.986`。
+- 当前失败不是 progress gate 下限压死导致；后 25 轮 `ProgressGate/multiplier≈1.251`。
+- 直接问题是低层整形将前进速度压得过低：policy desired `vx≈0.966 m/s`，shaped `vx≈0.100 m/s`，实际轮心纵向速度约 `0.016 m/s`。
+- 中左轮后段无有效接触，`contact_weight=0`、`normal_force=0`、最终 torque target 为 `0`；中右轮负载也偏低。
+- 新 TensorBoard 诊断指标已验证可用，旧 `Observation/tilt_deg` 与 `Observation/pitch_abs_deg` 未出现在本轮导出的 tag 列表中。
+- 已按用户要求把当前实际 reward 函数、reward 参数、low-slip progress gate 参数和本轮 reward 失效点追加写入诊断报告。
+
+下一步：
+- 回放 `model_200.pt`，重点观察中车轮组接触/载荷、车辆近停滞、红绿箭头和 pitch/roll。
+- 在下一轮训练前，先决定 low-slip 在 Stage0 中是评价目标、奖励偏好，还是成功条件的一部分。
+
+## 2026-04-26
+
+已完成：
+- 按用户要求将 Stage0 加权最小二乘整形侧滑惩罚参数 `low_slip_lambda_lateral` 从 `10.0` 改为 `2.0`。
+- 同步更新 `docs/RL阶段训练参数一览表.md` 中的当前参数值。
+- 启动并全程监控一轮短训练：
+  - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-26_19-38-39_stage0_lateral2_short150_verify`
+  - `150` iterations 正常跑完
+  - 最终 checkpoint：`model_149.pt`
+- 导出 TensorBoard 标量并生成诊断报告。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/RL阶段训练参数一览表.md`
+- `results/stage0_lateral2_short150_verify_diagnosis_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `lambda=2` 有效缓解了上一轮 `lambda=10` 的速度过度压制：后 25 轮 `shaped vx≈0.542 m/s`、`V_parallel≈0.158 m/s`，而上一轮后 25 轮约为 `0.100 m/s` 和 `0.016 m/s`。
+- 但 `lambda=2` 不是合格的低滑移完成方案：后 25 轮无 waypoint 完成，`time_out_rate=1.0`，纵滑约 `1.496`，侧滑角约 `0.530 rad`，综合低滑移通过率约 `0.085`。
+- 当前可以确认 `2.0` 与 `10.0` 分别代表“能动但滑移高”和“低滑移但近停滞”的两个边界点。
+
+下一步：
+- 如果继续沿参数搜索，应测试中间区间；如果改变目标，应先明确 low-slip 是评价目标、奖励主项还是成功条件。
+
+## 2026-04-26
+
+已完成：
+- 根据用户回放观察，调整底层车轮力矩控制器的侧滑衰减阈值。
+- 用户观察到 `stage0_lateral2_short150_verify/model_149.pt` 回放中小车运动异常：六个轮子基本不转动，车辆在地面上蠕动。
+- 已将轮级侧滑力矩衰减参数修改为：
+  - `wheel_slip_angle_safe_rad: 5 deg -> 25 deg`
+  - `wheel_slip_angle_max_rad: 30 deg -> 35 deg`
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/stage0_current_low_level_control_chain_2026-04-26.md`
+- `docs/stage0_low_level_traction_allocation_formula_check_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 本次只放宽轮级力矩控制器里的侧滑衰减 `g_alpha`，不改变 progress gate 和 low-slip 评价阈值。
+- 当前正在运行的回放不会热更新配置；需要重启回放或重新训练后才能验证新参数效果。
+
+## 2026-04-26
+
+已完成：
+- 按用户回放观察，对“中车被拱起、两个中轮基本不接地”进行跨 run 数据复核。
+- 汇总 `gate_v2`、`lambda=10`、`lambda=2` 三轮 per-wheel 诊断数据中的法向力、接触权重、力矩、姿态和球铰状态。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `lambda=10` 近停滞 run 后 25 轮中车轮组只承担约 `2.8%` 总法向力，其中中左轮 `normal_force=0 N`、`contact_weight=0`、最终力矩为 `0`。
+- `lambda=2` 最新短训练后 25 轮中车轮组只承担约 `11.5%` 总法向力，前车和后车各约 `44%`，说明中车低载荷是稳定问题。
+- 最新短训练中中车两轮接触权重约 `0.245/0.244`，最终力矩约 `0.048/0.135`，明显低于前后轮。
+- 当前首要问题判断为载荷分配/构型问题；“轮子不转”主要是低接触权重和侧滑衰减后的结果。
+
+下一步：
+- 若继续修复该问题，应优先新增或检查中车轮心离地高度、三段车体高度、球铰实际/目标姿态和每轮绝对滑移日志，确认低载荷来自策略拱起、机械几何碰撞，还是低层整形间接造成。
+
+## 2026-04-26
+
+已完成：
+- 按用户要求将 Stage0 底层车轮力矩控制器恢复到 `stage0_lowslip_gate_v2_min_lowlevel_522iter` 版本。
+- 恢复旧版力矩公式：
+  - `tau = contact_weight * (K_track * (Omega_ref - Omega) - K_slip * kappa)`
+  - `wheel_slip_feedback_gain = 8.0`
+  - signed 纵滑恢复为 `kappa = (V_parallel - r * Omega) / max(|V_parallel|, epsilon)`
+- 保留当前球铰 `q_cmd/qdot_cmd` 联合跟踪链路，没有回滚球铰执行器和轮速分配接口。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/stage0_current_low_level_control_chain_2026-04-26.md`
+- `docs/stage0_low_level_traction_allocation_formula_check_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过。
+- `validate_wheel_speed_allocator.py --run-smoke-cases` 通过。
+
+产出/结论：
+- 新的纵滑方向判断衰减和侧滑角力矩衰减已经撤回。
+- TensorBoard 中 `g_kappa/g_alpha` 字段作为兼容诊断保留，当前固定为 `1.0`。
+- 下一步需要通过回放或短训练验证旧版力矩公式是否恢复车轮有效转动，以及是否重新引入高纵滑问题。
+
+## 2026-04-26
+
+已完成：
+- 按用户指出的旧版滑移率方向问题，修正 Stage0 当前 signed 纵滑定义。
+- 当前定义统一为 `kappa = (r*Omega - V_parallel) / max(|V_parallel|, epsilon)`，车轮圆周速度大于实际纵向速度时 `kappa > 0`。
+- 保持当前车轮力矩公式结构不变：`tau = clip(Cw * (K_track * (Omega_ref - Omega) - K_slip * kappa), -15, 15)`。
+- 用 `stage0_lowslip_gate_v2_min_lowlevel_522iter` 代表轮数据复算当前公式输出方向。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/stage0_current_low_level_control_chain_2026-04-26.md`
+- `docs/stage0_low_level_traction_allocation_formula_check_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过。
+- `validate_wheel_speed_allocator.py --run-smoke-cases` 通过。
+- `git diff --check` 通过。
+
+产出/结论：
+- 前左轮示例：`Omega=9.311`、`Omega_ref=6.490`、`kappa=+2.869`、`Cw=0.351` 时，`tau0=-4.231 Nm`、纵滑反馈 `-22.952 Nm`、最终力矩约 `-9.541 Nm`。
+- 中左轮和后右轮复算也得到负向制动力矩，说明当前公式方向能抑制正向滑转。
+- 当前符号方向已正确；后续若回放仍出现车轮转不动，应优先检查 `K_slip=8.0`、`epsilon=0.1` 和接触权重导致的反馈强度，而不是再怀疑 signed 纵滑方向。
+
+## 2026-04-26
+
+已完成：
+- 按用户要求将 Stage0 车轮力矩控制器参数改为：
+  - `wheel_torque_tracking_gain = 2.0`
+  - `wheel_slip_feedback_gain = 1.5`
+- 保持当前力矩公式结构不变：`tau = clip(Cw * (K_track * (Omega_ref - Omega) - K_slip * kappa), -15, 15)`。
+- 同步更新 Stage0 训练参数表、底层控制链文档、公式核对文档和项目当前状态。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/stage0_current_low_level_control_chain_2026-04-26.md`
+- `docs/stage0_low_level_traction_allocation_formula_check_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 新参数让代表轮数据中的纵滑反馈项约 `4.0-4.6 Nm`，轮速跟踪项约 `4.4-5.6 Nm`，二者同量级。
+- 相比 `K_slip=8.0`，当前配置应显著降低低速正滑转时反馈过强、轮子被压住的风险。
+
+## 2026-04-26
+
+已完成：
+- 按用户要求中断当前 `stage0_ktrack2_kslip1p5_300iter` 训练，终端最后打印到 iteration `12/300`。
+- 将 Stage0 `low_slip_lambda_lateral` 从 `2.0` 改回 `10.0`。
+- 保持 `wheel_torque_tracking_gain=2.0`、`wheel_slip_feedback_gain=1.5` 不变。
+- 同步更新 Stage0 训练参数表、底层控制链文档、公式核对文档、当前状态和对话记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/stage0_current_low_level_control_chain_2026-04-26.md`
+- `docs/stage0_low_level_traction_allocation_formula_check_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+下一步：
+- 重新启动 `300` iteration 训练，验证 `lambda_lat=10.0` 与较弱纵滑反馈 `K_slip=1.5` 的组合是否仍会近停滞。
+
+## 2026-04-26
+
+已完成：
+- 按用户要求停止 `stage0_lambda10_ktrack2_kslip1p5_300iter` 训练。
+- 训练原计划 `300` iterations，实际在终端打印到 iteration `118/300` 后停止。
+- 导出本轮 TensorBoard 标量并完成诊断分析。
+
+修改文件：
+- `results/stage0_lambda10_ktrack2_kslip1p5_118iter_diagnosis_2026-04-26.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 最后自动保存 checkpoint 为 `model_100.pt`。
+- 后 25 轮 `time_out_rate=1.0`、`waypoints_completed_mean=0.0`、`episode_completion_pct=0.0`，任务失败。
+- 后 25 轮低滑移明显改善：纵滑约 `0.638`、侧滑角约 `0.202 rad`、`LowSlip/combined_pass_rate≈0.842`。
+- 但后 25 轮 `shaped vx≈0.113 m/s`、`V_parallel≈0.024 m/s`，说明低滑移主要通过近停滞实现。
+- 当前 `g_kappa/g_alpha=1.0`，确认不是新衰减式力矩控制器导致轮子不转。
+- 后 25 轮中车两轮总法向力约 `0.525 N`，约占六轮总法向力 `0.14%`，中车轮组几乎完全卸载。
+- 当前问题判断为强 `lambda_lat=10` 命令整形、中车卸载、corrected signed slip 和新球铰链路共同造成的低滑移近停滞局部解。
+
+下一步：
+- 先隔离验证 `lambda_lat` 对 shaped `vx` 和 `V_parallel` 的压制边界，并同步定位中车轮组卸载根因，再决定是否进入下一轮长训练。
+
+## 2026-04-26
+
+已完成：
+- 按用户要求，用最近几轮训练数据复算球铰 drive 若改回 `ball_joint_stiffness=8000.0`、`ball_joint_damping=1000.0` 的影响。
+- 计算使用最近三轮新球铰链路 run 后 25 个 TensorBoard 点：
+  - `2026-04-26_18-17-37_stage0_lowlevel_diagnostics_metrics_v2_800iter`
+  - `2026-04-26_19-38-39_stage0_lateral2_short150_verify`
+  - `2026-04-26_21-37-15_stage0_lambda10_ktrack2_kslip1p5_300iter`
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 后 25 轮平均球铰位置误差约为 `0.0253 / 0.0189 / 0.00957 rad`。
+- 若 `Kp=8000`，仅位置项就约为 `203 / 151 / 76.5 Nm`，远超当前球铰 `20 Nm` 力矩上限。
+- 若 `Kd=1000`，速度误差只需 `0.020 rad/s` 即触发 `20 Nm` 阈值；最近三轮实际球铰速度均值约为 `0.110 / 0.392 / 0.146 rad/s`。
+- 判断：改回 `8000/1000` 会让球铰 drive 长期进入力矩限幅，表现为更硬、更不顺从，不应作为解决当前近停滞或中车低载荷问题的优先方向。

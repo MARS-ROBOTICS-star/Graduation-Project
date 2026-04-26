@@ -45,15 +45,17 @@ class ControlCfg:
 
     ball_joint_names: tuple[str, ...] = tuple(BALL_JOINT_NAMES)
     wheel_joint_names: tuple[str, ...] = tuple(WHEEL_JOINT_NAMES)
-    ball_joint_planner_gains: tuple[float, ...] = (10.0, 10.0, 10.0, 10.0, 10.0, 10.0)
-    ball_joint_planner_qdot_limits: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+    ball_joint_planner_gains: tuple[float, ...] = (8.0, 8.0, 8.0, 8.0, 8.0, 8.0)
+    ball_joint_planner_qdot_limits: tuple[float, ...] = (1.5, 1.5, 1.5, 1.5, 1.5, 1.5)
+    ball_joint_planner_qddot_limits: tuple[float, ...] = (12.0, 12.0, 12.0, 12.0, 12.0, 12.0)
+    ball_joint_planner_track_error_limit: float = 0.10
     base_forward_velocity_max: float = 1.2  # 中模块期望纵向速度上限，单位：m/s。
     base_yaw_rate_max: float = 0.6  # 中模块期望偏航角速度上限，单位：rad/s。
     base_allow_reverse: bool = False  # 为 False 时，高层只输出前进命令，不输出倒车命令。
-    ball_joint_stiffness: float = 8000.0  # 球铰位置控制刚度，单位：N*m/rad。
-    ball_joint_damping: float = 1000.0  # 球铰位置控制阻尼，单位：N*m*s/rad。
+    ball_joint_stiffness: float = 1000.0  # 球铰位置控制刚度，单位：N*m/rad。
+    ball_joint_damping: float = 10.0  # 球铰位置控制阻尼，单位：N*m*s/rad。
     ball_joint_effort_limit_sim: float = 20.0  # 球铰驱动器力矩上限，单位：N*m。
-    ball_joint_velocity_limit_sim: float = 1.0  # 球铰驱动器速度上限，单位：rad/s。
+    ball_joint_velocity_limit_sim: float = 2.0  # 球铰驱动器速度上限，单位：rad/s。
 
     wheel_joint_stiffness: float = 0.0  # 车轮位置刚度，单位：N*m/rad。
     wheel_joint_damping: float = 0.0  # 车轮阻尼；当前低滑移主线使用力矩控制。

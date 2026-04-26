@@ -19,15 +19,16 @@ ALLOCATOR_SPEC.loader.exec_module(ALLOCATOR_MODULE)
 
 NumpyWheelSpeedAllocator = ALLOCATOR_MODULE.NumpyWheelSpeedAllocator
 
-DEFAULT_PLANNER_GAINS = (10.0, 10.0, 10.0, 10.0, 10.0, 10.0)
-DEFAULT_PLANNER_QDOT_LIMITS = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
-DEFAULT_Q_LOWER_LIMITS = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)
-DEFAULT_Q_UPPER_LIMITS = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
+DEFAULT_PLANNER_GAINS = (8.0, 8.0, 8.0, 8.0, 8.0, 8.0)
+DEFAULT_PLANNER_QDOT_LIMITS = (1.5, 1.5, 1.5, 1.5, 1.5, 1.5)
+DEFAULT_Q_LOWER_LIMITS = (-0.6, -1.0, -0.5, -0.6, -1.0, -0.5)
+DEFAULT_Q_UPPER_LIMITS = (0.6, 0.4, 0.5, 0.6, 0.4, 0.5)
 DEFAULT_CONTROL_DT = 1.0 / 60.0
 DEFAULT_PLANAR_LIMITS = (2.0, 2.0)
 DEFAULT_CONTACT_FORCES = (1.0 / 6.0,) * 6
 DEFAULT_WHEEL_JOINT_VEL = (0.0,) * 6
 DEFAULT_ROLLING_SPEED_ACTUAL = (0.0,) * 6
+DEFAULT_LATERAL_SPEED_ACTUAL = (0.0,) * 6
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -55,14 +56,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--wheel-normal-contact-force", nargs=6, type=float, default=DEFAULT_CONTACT_FORCES)
     parser.add_argument("--wheel-joint-vel", nargs=6, type=float, default=DEFAULT_WHEEL_JOINT_VEL)
     parser.add_argument("--rolling-speed-actual", nargs=6, type=float, default=DEFAULT_ROLLING_SPEED_ACTUAL)
+    parser.add_argument("--lateral-speed-actual", nargs=6, type=float, default=DEFAULT_LATERAL_SPEED_ACTUAL)
     parser.add_argument("--lambda-tracking", type=float, default=1.0)
     parser.add_argument("--lambda-lateral", type=float, default=5.0)
     parser.add_argument("--planar-command-limits", nargs=2, type=float, default=DEFAULT_PLANAR_LIMITS)
     parser.add_argument("--contact-force-off-threshold", type=float, default=0.01)
     parser.add_argument("--contact-force-on-threshold", type=float, default=0.08)
-    parser.add_argument("--torque-tracking-gain", type=float, default=2.0)
-    parser.add_argument("--slip-feedback-gain", type=float, default=4.0)
-    parser.add_argument("--wheel-torque-limit", type=float, default=20.0)
+    parser.add_argument("--torque-tracking-gain", type=float, default=1.5)
+    parser.add_argument("--slip-feedback-gain", type=float, default=8.0)
+    parser.add_argument("--wheel-torque-limit", type=float, default=15.0)
     parser.add_argument("--slip-velocity-epsilon", type=float, default=0.1)
     parser.add_argument("--show-jacobian", action="store_true")
     parser.add_argument("--run-smoke-cases", action="store_true")
@@ -94,6 +96,7 @@ def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
     full_contact = np.full(6, 1.0 / 6.0, dtype=np.float64)
     wheel_joint_vel = np.zeros(6, dtype=np.float64)
     rolling_speed_actual = np.zeros(6, dtype=np.float64)
+    lateral_speed_actual = np.zeros(6, dtype=np.float64)
 
     zero_outputs = allocator.compute_low_slip_control_targets(
         ball_joint_pos=q,
@@ -102,6 +105,7 @@ def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
         wheel_normal_contact_force=full_contact,
         wheel_joint_vel=wheel_joint_vel,
         rolling_speed_actual=rolling_speed_actual,
+        lateral_speed_actual=lateral_speed_actual,
         control_dt=DEFAULT_CONTROL_DT,
         planner_gains=DEFAULT_PLANNER_GAINS,
         planner_qdot_limits=DEFAULT_PLANNER_QDOT_LIMITS,
@@ -112,9 +116,9 @@ def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
         planar_command_limits=DEFAULT_PLANAR_LIMITS,
         contact_force_off_threshold=0.01,
         contact_force_on_threshold=0.08,
-        torque_tracking_gain=2.0,
-        slip_feedback_gain=4.0,
-        wheel_torque_limit=20.0,
+        torque_tracking_gain=1.5,
+        slip_feedback_gain=8.0,
+        wheel_torque_limit=15.0,
         slip_velocity_epsilon=0.1,
     )
     np.testing.assert_allclose(zero_outputs.ball_joint_rate_targets, np.zeros(6), atol=1.0e-10)
@@ -129,6 +133,7 @@ def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
         wheel_normal_contact_force=full_contact,
         wheel_joint_vel=wheel_joint_vel,
         rolling_speed_actual=rolling_speed_actual,
+        lateral_speed_actual=lateral_speed_actual,
         control_dt=DEFAULT_CONTROL_DT,
         planner_gains=DEFAULT_PLANNER_GAINS,
         planner_qdot_limits=DEFAULT_PLANNER_QDOT_LIMITS,
@@ -139,9 +144,9 @@ def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
         planar_command_limits=DEFAULT_PLANAR_LIMITS,
         contact_force_off_threshold=0.01,
         contact_force_on_threshold=0.08,
-        torque_tracking_gain=2.0,
-        slip_feedback_gain=4.0,
-        wheel_torque_limit=20.0,
+        torque_tracking_gain=1.5,
+        slip_feedback_gain=8.0,
+        wheel_torque_limit=15.0,
         slip_velocity_epsilon=0.1,
     )
     np.testing.assert_allclose(forward_outputs.shaped_planar_command, np.array([1.0, 0.0]), atol=1.0e-10)
@@ -155,6 +160,7 @@ def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
         wheel_normal_contact_force=np.zeros(6, dtype=np.float64),
         wheel_joint_vel=wheel_joint_vel,
         rolling_speed_actual=rolling_speed_actual,
+        lateral_speed_actual=lateral_speed_actual,
         control_dt=DEFAULT_CONTROL_DT,
         planner_gains=DEFAULT_PLANNER_GAINS,
         planner_qdot_limits=DEFAULT_PLANNER_QDOT_LIMITS,
@@ -165,13 +171,40 @@ def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
         planar_command_limits=DEFAULT_PLANAR_LIMITS,
         contact_force_off_threshold=0.01,
         contact_force_on_threshold=0.08,
-        torque_tracking_gain=2.0,
-        slip_feedback_gain=4.0,
-        wheel_torque_limit=20.0,
+        torque_tracking_gain=1.5,
+        slip_feedback_gain=8.0,
+        wheel_torque_limit=15.0,
         slip_velocity_epsilon=0.1,
     )
     np.testing.assert_allclose(no_contact_outputs.contact_weights, np.zeros(6), atol=1.0e-10)
     np.testing.assert_allclose(no_contact_outputs.wheel_torque_targets, np.zeros(6), atol=1.0e-10)
+
+    traction_outputs = allocator.compute_wheel_traction_targets(
+        wheel_speed_reference=np.full(6, 2.0, dtype=np.float64),
+        wheel_joint_vel=np.full(6, 1.0, dtype=np.float64),
+        rolling_speed_actual=np.full(6, 0.1, dtype=np.float64),
+        lateral_speed_actual=np.zeros(6, dtype=np.float64),
+        contact_weights=np.ones(6, dtype=np.float64),
+        torque_tracking_gain=1.0,
+        slip_feedback_gain=1.0,
+        wheel_torque_limit=20.0,
+        slip_velocity_epsilon=0.1,
+    )
+    np.testing.assert_allclose(traction_outputs.longitudinal_slip, np.full(6, 0.9), atol=1.0e-10)
+    np.testing.assert_allclose(traction_outputs.wheel_torque_targets, np.full(6, 0.1), atol=1.0e-10)
+
+    braking_outputs = allocator.compute_wheel_traction_targets(
+        wheel_speed_reference=np.zeros(6, dtype=np.float64),
+        wheel_joint_vel=np.full(6, 1.0, dtype=np.float64),
+        rolling_speed_actual=np.full(6, 0.1, dtype=np.float64),
+        lateral_speed_actual=np.zeros(6, dtype=np.float64),
+        contact_weights=np.ones(6, dtype=np.float64),
+        torque_tracking_gain=1.0,
+        slip_feedback_gain=1.0,
+        wheel_torque_limit=20.0,
+        slip_velocity_epsilon=0.1,
+    )
+    np.testing.assert_allclose(braking_outputs.wheel_torque_targets, np.full(6, -1.9), atol=1.0e-10)
 
     planner_test_qd = np.array([0.6, -1.0, 0.3, -0.6, 0.4, -0.3], dtype=np.float64)
     planner_outputs = allocator.compute_ball_joint_planner_outputs(
@@ -207,6 +240,7 @@ def _run_manual_case(args: argparse.Namespace, allocator: "NumpyWheelSpeedAlloca
         wheel_normal_contact_force=np.asarray(args.wheel_normal_contact_force, dtype=np.float64),
         wheel_joint_vel=np.asarray(args.wheel_joint_vel, dtype=np.float64),
         rolling_speed_actual=np.asarray(args.rolling_speed_actual, dtype=np.float64),
+        lateral_speed_actual=np.asarray(args.lateral_speed_actual, dtype=np.float64),
         control_dt=args.control_dt,
         planner_gains=np.asarray(args.planner_gains, dtype=np.float64),
         planner_qdot_limits=np.asarray(args.planner_qdot_limits, dtype=np.float64),

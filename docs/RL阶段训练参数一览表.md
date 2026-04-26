@@ -99,7 +99,7 @@
 |---|---:|
 | `base_forward_velocity_max` | `2.0 m/s` |
 | `base_yaw_rate_max` | `2.0 rad/s` |
-| `base_allow_reverse` | `True` |
+| `base_allow_reverse` | `False` |
 
 当 `base_allow_reverse = True` 时，第一维归一化动作 `a_v` 直接映射为：
 
@@ -107,7 +107,13 @@ $$
 v_x^{cmd}=a_v \cdot v_{max}
 $$
 
-当 `base_allow_reverse = False` 时才会使用前进-only 映射；当前 Stage0 不使用该模式。
+当 `base_allow_reverse = False` 时，第一维归一化动作 `a_v` 使用前进-only 映射：
+
+$$
+v_x^{cmd}=0.5(a_v+1)v_{max}
+$$
+
+当前 Stage0 使用该模式，因此 policy 不能直接输出倒车命令。
 
 当前 policy 输出 `yaw_rate_cmd`。环境传给低层 allocator 的期望平面命令为：
 
@@ -122,20 +128,22 @@ $$
 1. policy 输出 `8` 维动作。
 2. 前 `2` 维映射为底盘平面命令 `[vx_cmd, yaw_rate_cmd]`。
 3. 后 `6` 维映射为球铰期望姿态 `q^d`。
-4. 环境内部球铰姿态规划器根据当前球铰状态与 `q^d` 生成 `q_cmd`。
-5. 低滑移 allocator 根据平面命令、球铰状态、轮地接触与滑移信息生成 `Omega_ref` 与 `tau_cmd`。
-6. 球铰执行位置控制，车轮执行力矩控制。
+4. 环境内部球铰轨迹生成器根据 `q^d`、内部参考 `q_ref` 和上一控制步速度生成同一套 `q_cmd/qdot_cmd`。
+5. 低滑移 allocator 使用当前实际球铰姿态 `q_actual` 计算几何量，并复用同一个 `qdot_cmd` 生成 `Omega_ref` 与 `tau_cmd`。
+6. 球铰同时下发位置目标 `q_cmd` 和速度目标 `qdot_cmd`，车轮执行力矩控制。
 
 关键低层参数：
 
 | 参数 | 当前值 | 含义 |
 |---|---:|---|
-| `ball_joint_planner_gains` | `(10, 10, 10, 10, 10, 10)` | 球铰姿态规划比例增益 |
-| `ball_joint_planner_qdot_limits` | `(1, 1, 1, 1, 1, 1) rad/s` | 球铰规划速度限制 |
-| `ball_joint_stiffness` | `8000.0` | 球铰位置驱动刚度 |
-| `ball_joint_damping` | `1000.0` | 球铰位置驱动阻尼 |
+| `ball_joint_planner_gains` | `(8, 8, 8, 8, 8, 8)` | 球铰目标误差到速度命令的比例增益 |
+| `ball_joint_planner_qdot_limits` | `(1.5, 1.5, 1.5, 1.5, 1.5, 1.5) rad/s` | 球铰规划速度限制 |
+| `ball_joint_planner_qddot_limits` | `(12, 12, 12, 12, 12, 12) rad/s^2` | 球铰规划加速度限制 |
+| `ball_joint_planner_track_error_limit` | `0.10 rad` | 内部参考 `q_ref` 相对实际球铰 `q_actual` 的最大领先量 |
+| `ball_joint_stiffness` | `1000.0` | 球铰位置驱动刚度 |
+| `ball_joint_damping` | `10.0` | 球铰速度驱动阻尼 |
 | `ball_joint_effort_limit_sim` | `20.0 N*m` | 球铰仿真力矩限制 |
-| `ball_joint_velocity_limit_sim` | `1.0 rad/s` | 球铰仿真速度限制 |
+| `ball_joint_velocity_limit_sim` | `2.0 rad/s` | 球铰仿真速度限制 |
 | `wheel_joint_stiffness` | `0.0` | 车轮不走位置刚度 |
 | `wheel_joint_damping` | `0.0` | 车轮不靠阻尼驱动 |
 | `wheel_joint_effort_limit_sim` | `15.0 N*m` | 车轮力矩限制 |
@@ -144,9 +152,41 @@ $$
 | `low_slip_lambda_lateral` | `10.0` | 低滑移分配器的横向滑移抑制权重 |
 | `contact_force_off_threshold` | `0.01` | 接触权重关闭阈值 |
 | `contact_force_on_threshold` | `0.08` | 接触权重开启阈值 |
-| `wheel_torque_tracking_gain` | `1.5` | 轮速跟踪力矩增益 |
-| `wheel_slip_feedback_gain` | `8.0` | 纵向滑移反馈抑制增益 |
+| `wheel_torque_tracking_gain` | `2.0` | 轮速跟踪力矩增益 |
+| `wheel_slip_feedback_gain` | `1.5` | 旧版纵滑反馈力矩增益；已从 `8.0` 降低以避免低速正滑转时反馈过强 |
 | `wheel_slip_velocity_epsilon` | `0.1` | 纵向滑移计算中的速度小量 |
+
+当前 signed 纵滑定义为：
+
+$$
+\kappa_j
+=
+\frac{
+r\Omega_j
+-
+V_{j,\parallel}
+}{
+\max(|V_{j,\parallel}|,\epsilon)
+}
+$$
+
+其中车轮圆周速度大于实际纵向速度时 $\kappa_j>0$。当前车轮力矩结构为：
+
+$$
+\tau_j
+=
+\mathrm{clip}
+\left(
+C_{w,j}
+\left[
+K_\Omega(\Omega_j^{ref}-\Omega_j)
+-
+K_\kappa\kappa_j
+\right],
+-\tau_{\max},
+\tau_{\max}
+\right)
+$$
 
 ## 5. 观测空间
 
@@ -757,11 +797,25 @@ PPO 算法：
 | Action | `Action/policy_abs_mean` |
 | Action | `Action/wheel_speed_reference_abs_mean_raw` |
 | Action | `Action/wheel_torque_target_abs_mean_raw` |
+| Action | `Action/desired_planar_command_abs_mean_raw` |
 | Action | `Action/shaped_planar_command_abs_mean_raw` |
+| Action | `Action/planar_command_shaping_delta_abs_mean_raw` |
+| Action | `Action/desired_planar_vx_raw` |
+| Action | `Action/desired_planar_wz_raw` |
+| Action | `Action/shaped_planar_vx_raw` |
+| Action | `Action/shaped_planar_wz_raw` |
+| Action | `Action/planar_command_delta_vx_raw` |
+| Action | `Action/planar_command_delta_wz_raw` |
 | Action | `Action/contact_weight_mean_raw` |
+| LowLevel | `LowLevel/v_parallel_abs_mean_raw` |
+| LowLevel | `LowLevel/v_perp_abs_mean_raw` |
+| LowLevel | `LowLevel/delta_v_abs_mean_raw` |
+| LowLevel | `LowLevel/tau0_abs_mean_raw` |
+| LowLevel | `LowLevel/g_kappa_mean_raw` |
+| LowLevel | `LowLevel/tau1_abs_mean_raw` |
+| LowLevel | `LowLevel/g_alpha_mean_raw` |
 | Observation | `Observation/roll_deg` |
 | Observation | `Observation/pitch_deg` |
-| Observation | `Observation/pitch_abs_deg` |
 | Observation | `Observation/wheel_joint_vel_abs_mean_raw` |
 | Observation | `Observation/wheel_longitudinal_slip_abs_mean_raw` |
 | Observation | `Observation/wheel_slip_angle_abs_mean_raw` |
@@ -787,6 +841,13 @@ PPO 算法：
 | `PerWheel/<wheel>/normal_force` | 该车轮实际接触合力模长，单位为 N |
 | `PerWheel/<wheel>/longitudinal_slip` | 该车轮纵向滑移率 |
 | `PerWheel/<wheel>/slip_angle` | 该车轮侧偏角 |
+| `PerWheel/<wheel>/v_parallel` | 该车轮轮心实际纵向速度 |
+| `PerWheel/<wheel>/v_perp` | 该车轮轮心实际侧向速度 |
+| `PerWheel/<wheel>/delta_v` | 车轮圆周速度与实际纵向速度的差值 |
+| `PerWheel/<wheel>/tau0` | 基础轮速跟踪力矩 |
+| `PerWheel/<wheel>/g_kappa` | 兼容旧日志字段；当前恢复旧力矩控制器后固定为 `1.0` |
+| `PerWheel/<wheel>/tau1` | 当前为 `tau0 - K_slip * kappa` 后、乘接触权重前的力矩 |
+| `PerWheel/<wheel>/g_alpha` | 兼容旧日志字段；当前恢复旧力矩控制器后固定为 `1.0` |
 
 ## 13. 当前结论与使用边界
 
@@ -798,14 +859,19 @@ PPO 算法：
 - 第 2 段更大偏角会增强转向需求，可能降低早期成功率。
 - 当前 reward 中有 slip 惩罚，但还不足以证明“协同转向已经稳定学成”。
 - 当前 low-slip progress gate 可以保住高成功率并略降纵滑，但没有把侧滑角压到 `0.5 rad` 或 `30°` 以下。
+- 2026-04-26 的新底层链路训练验证表明，当前低层整形和新车轮力矩控制器可以把后段纵滑降到约 `0.301`、侧滑角降到约 `0.132 rad`，但会把 shaped `vx` 压到 desired `vx` 的约 `10%`，导致 `success_rate=0`、`waypoints_completed_mean=0`。
+- 2026-04-26 的 `low_slip_lambda_lateral=2.0` 短训练表明，降低侧滑整形权重可以解除近停滞：后 25 轮 shaped `vx≈0.542 m/s`、`V_parallel≈0.158 m/s`；但低滑移约束明显不足，后 25 轮纵滑约 `1.496`、侧滑角约 `0.530 rad`、综合达标率约 `0.085`，仍没有完成 waypoint。
+- 2026-04-26 用户回放 `stage0_lateral2_short150_verify/model_149.pt` 后观察到六个轮子基本不转、车辆在地面上蠕动；随后用户要求将底层车轮力矩控制器恢复到 `stage0_lowslip_gate_v2_min_lowlevel_522iter` 版本，当前已恢复为旧版 `contact_weight * (K_track * (Omega_ref - Omega) - K_slip * kappa)` 公式结构，并将 signed 纵滑方向修正为 `kappa=(r*Omega-V_parallel)/max(|V_parallel|, epsilon)`。
+- 因此当前不能只追求更低滑移；下一轮必须把低滑移与实际 waypoint progress 或非零前进速度绑定，避免“原地低滑移”成为局部最优。
 - 当前没有地形传感器、课程学习、高度 patch 或复杂地形输入。
 - 当前没有 `next_turn_delta`，策略看不到下一段转向预告。
 - 当前没有 `differential_turn_cost`，也没有 preview-based penalty scaling。
 - 旧指标 `Tracking/goal_success_rate`、`Tracking/goal_pos_error`、`Tracking/goal_heading_error_abs`、`Tracking/goal_completion_pct` 已移除，避免把 active waypoint 指标误读为最终目标指标。
-- 旧 `Observation/tilt_deg` 实际记录中车 roll 绝对值；当前已新增 `Observation/pitch_deg` 和 `Observation/pitch_abs_deg`，用于量化中车前俯/后仰。
+- 旧 `Observation/tilt_deg` 实际记录中车 roll 绝对值；当前重点保留 `Observation/roll_deg` 和 `Observation/pitch_deg`，不再使用 `Observation/tilt_deg` 或 `Observation/pitch_abs_deg` 作为 TensorBoard 重点指标。
 
 后续推进原则：
 
-- 若继续分析本轮 low-slip gate v1，应先用 per-wheel 日志确认左侧轮不转、接触权重、法向力和纵滑之间的关系。
+- 若继续分析本轮 lowlevel diagnostics metrics v2，应先回放 `model_200.pt`，确认中左轮无接触、中右轮低负载、车辆近停滞与低层整形之间的关系。
+- 若继续沿 `low_slip_lambda_lateral` 调参，`10.0` 与 `2.0` 应作为两个边界点，而不是最终配置。
 - 若继续低滑移优化，应先决定 low-slip 是评价指标、奖励偏好，还是成功条件的一部分。
 - 在确认 per-wheel 诊断后，再讨论是否修改 gate、低层 allocator、终止条件或训练课程。

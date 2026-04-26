@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1800" height="1180" viewBox="0 0 1800 1180" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L14,7 L0,14 z" fill="#222"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L14,7 L0,14 z" fill="#1f4e79"/>
+    </marker>
+    <style>
+      text { font-family: "Noto Sans CJK SC", "Microsoft YaHei", "SimHei", "PingFang SC", Arial, sans-serif; fill: #111; }
+      .title { font-size: 34px; font-weight: 700; }
+      .subtitle { font-size: 20px; fill: #444; }
+      .box-title { font-size: 23px; font-weight: 700; }
+      .box-text { font-size: 18px; }
+      .small { font-size: 16px; fill: #333; }
+      .eq { font-size: 18px; font-family: "Times New Roman", "Noto Serif CJK SC", serif; }
+      .block { fill: #ffffff; stroke: #1f4e79; stroke-width: 2.4; rx: 18; }
+      .block2 { fill: #f7fbff; stroke: #1f4e79; stroke-width: 2.4; rx: 18; }
+      .dyn { fill: #fffaf2; stroke: #b55a00; stroke-width: 2.4; rx: 18; }
+      .obs { fill: #f4fff6; stroke: #2e7d32; stroke-width: 2.4; rx: 18; }
+      .warn { fill: #fff3f3; stroke: #b00020; stroke-width: 2.2; rx: 16; }
+      .arrow { stroke: #222; stroke-width: 2.6; fill: none; marker-end: url(#arrow); }
+      .arrowB { stroke: #1f4e79; stroke-width: 2.8; fill: none; marker-end: url(#arrowBlue); }
+      .dash { stroke-dasharray: 8 6; }
+      .label { font-size: 16px; fill: #222; }
+      .section { font-size: 20px; font-weight: 700; fill: #1f4e79; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1800" height="1180" fill="#fbfcfe"/>
+  <text x="900" y="58" text-anchor="middle" class="title">RL 高层输出—运动学参考层—动力学响应层结合示意图</text>
+  <text x="900" y="92" text-anchor="middle" class="subtitle">核心思想：RL 决定运动意图；运动学模型生成理想几何参考；动力学模型根据轮胎接触、滑移和执行器动态生成真实响应</text>
+
+  <!-- Left: RL -->
+  <rect x="60" y="190" width="330" height="250" class="block2"/>
+  <text x="225" y="225" text-anchor="middle" class="box-title">强化学习策略 π</text>
+  <text x="90" y="265" class="box-text">输入观测 oₜ：</text>
+  <text x="105" y="295" class="small">• 中车速度、角速度、重力投影</text>
+  <text x="105" y="323" class="small">• 球铰角 q、角速度 q̇</text>
+  <text x="105" y="351" class="small">• 轮速、滑移 κ、侧偏 α、法向力 Fz</text>
+  <text x="105" y="379" class="small">• 目标相对位置/航向、上一时刻动作</text>
+  <text x="90" y="418" class="eq">输出 u = [Vₓᵈ, Ωzᵈ, qᵈ]</text>
+
+  <!-- Kinematics -->
+  <rect x="490" y="150" width="500" height="360" class="block"/>
+  <text x="740" y="187" text-anchor="middle" class="box-title">名义运动学参考层</text>
+  <text x="520" y="228" class="box-text">输入：</text>
+  <text x="540" y="258" class="eq">uᵥᵈ = [Vₓᵈ, Ωzᵈ]ᵀ</text>
+  <text x="540" y="288" class="eq">qᵈ = [ψfᵈ, θfᵈ, φfᵈ, ψrᵈ, θrᵈ, φrᵈ]ᵀ</text>
+  <text x="540" y="318" class="eq">当前实际构型 q 与几何参数 P</text>
+
+  <line x1="525" y1="342" x2="955" y2="342" stroke="#d0d7e2" stroke-width="1.5"/>
+
+  <text x="520" y="380" class="box-text">计算：</text>
+  <text x="540" y="411" class="eq">Ωᵈ = Jw(q) uᵥᵈ + Jq(q) q̇ᵈ</text>
+  <text x="540" y="441" class="small">Jw(q)：由当前轮心位置、模块姿态、滚动方向得到的轮速分配矩阵</text>
+  <text x="540" y="469" class="small">Jq(q)：构型变化率修正项，用于补偿前后模块主动摆动带来的轮速变化</text>
+  <text x="540" y="497" class="eq">qaᵣᵉᶠ = reorder(qᵈ)</text>
+
+  <!-- Interface -->
+  <rect x="1065" y="205" width="290" height="210" class="block2"/>
+  <text x="1210" y="240" text-anchor="middle" class="box-title">层间接口</text>
+  <text x="1095" y="282" class="eq">ωᵣᵉᶠ = Ωᵈ</text>
+  <text x="1095" y="315" class="eq">qaᵣᵉᶠ = [φfᵈ, θfᵈ, ψfᵈ, φrᵈ, θrᵈ, ψrᵈ]ᵀ</text>
+  <text x="1095" y="360" class="small">运动学层不直接产生力；</text>
+  <text x="1095" y="388" class="small">它只给动力学层“应转多快、应摆到哪里”。</text>
+
+  <!-- Dynamics big block -->
+  <rect x="520" y="610" width="1200" height="430" class="dyn"/>
+  <text x="1120" y="650" text-anchor="middle" class="box-title">动力学响应层：把参考量转化为真实运动</text>
+
+  <!-- Dynamics subblocks -->
+  <rect x="560" y="695" width="250" height="260" class="dyn"/>
+  <text x="685" y="730" text-anchor="middle" class="box-title">轮速跟踪与轮系动力学</text>
+  <text x="585" y="770" class="eq">τω,i = sat(Kω(ωᵣᵉᶠ,i−ωi) − Kκκi)</text>
+  <text x="585" y="805" class="eq">Jw,i ω̇i = τw,i − RwFx,i − RwFrr,i − bw,iωi</text>
+  <text x="585" y="852" class="small">作用：</text>
+  <text x="600" y="880" class="small">• 将参考转速变为轮端力矩</text>
+  <text x="600" y="908" class="small">• 抑制纵滑，不让轮子只空转</text>
+
+  <rect x="845" y="695" width="280" height="260" class="dyn"/>
+  <text x="985" y="730" text-anchor="middle" class="box-title">轮胎 / 接触模型</text>
+  <text x="870" y="770" class="eq">κi = (Rwωi − vx,i) / max(|Rwωi|, |vx,i|, ε)</text>
+  <text x="870" y="805" class="eq">αi = atan2(vy,i, |vx,i|+ε)</text>
+  <text x="870" y="840" class="eq">√(Fx,i²+Fy,i²) ≤ μi Fz,i</text>
+  <text x="870" y="888" class="small">作用：</text>
+  <text x="885" y="916" class="small">• 计算纵向力 Fx 与侧向力 Fy</text>
+  <text x="885" y="944" class="small">• 描述附着极限与纵/侧向力竞争</text>
+
+  <rect x="1160" y="695" width="250" height="260" class="dyn"/>
+  <text x="1285" y="730" text-anchor="middle" class="box-title">整车平面动力学</text>
+  <text x="1185" y="770" class="eq">m(u̇ − vr) = Σ Fx,b</text>
+  <text x="1185" y="805" class="eq">m(v̇ + ur) = Σ Fy,b</text>
+  <text x="1185" y="840" class="eq">Iz ṙ = Σ(xi Fy,b − yi Fx,b)</text>
+  <text x="1185" y="888" class="small">作用：</text>
+  <text x="1200" y="916" class="small">• 得到真实 u, v, r</text>
+  <text x="1200" y="944" class="small">• 由轮胎力决定推进、侧滑和转向</text>
+
+  <rect x="1445" y="695" width="235" height="260" class="dyn"/>
+  <text x="1562" y="730" text-anchor="middle" class="box-title">球铰执行动力学</text>
+  <text x="1465" y="770" class="eq">Ja q̈a + Ba q̇a = τa + da</text>
+  <text x="1465" y="805" class="eq">τa = Kp(qaᵣᵉᶠ−qa) + Kd(q̇aᵣᵉᶠ−q̇a)</text>
+  <text x="1465" y="852" class="small">作用：</text>
+  <text x="1480" y="880" class="small">• qa 不会瞬时等于 qaᵣᵉᶠ</text>
+  <text x="1480" y="908" class="small">• 实际构型改变轮位形、轮朝向、Fz 分布</text>
+
+  <!-- Sim/robot -->
+  <rect x="1385" y="150" width="340" height="300" class="obs"/>
+  <text x="1555" y="187" text-anchor="middle" class="box-title">Isaac Sim / 真实车辆状态</text>
+  <text x="1415" y="230" class="box-text">真实输出：</text>
+  <text x="1435" y="260" class="small">• 车体状态：u, v, r, 姿态</text>
+  <text x="1435" y="288" class="small">• 轮速：ωi</text>
+  <text x="1435" y="316" class="small">• 球铰实际角：qa, q̇a</text>
+  <text x="1435" y="344" class="small">• 接触状态：Fz,i</text>
+  <text x="1435" y="372" class="small">• 滑移与侧偏：κi, αi</text>
+  <text x="1415" y="418" class="small">这些量回到观测、奖励和日志诊断。</text>
+
+  <!-- Bottom reward -->
+  <rect x="60" y="690" width="360" height="235" class="warn"/>
+  <text x="240" y="727" text-anchor="middle" class="box-title">奖励 / 约束 / 诊断</text>
+  <text x="90" y="772" class="small">目标：到达目标、航向对齐、稳定推进</text>
+  <text x="90" y="804" class="small">惩罚：纵滑 κ、侧偏 α、横滚/俯仰过大</text>
+  <text x="90" y="836" class="small">约束：球铰限位、轮端力矩、附着极限 μFz</text>
+  <text x="90" y="880" class="small">作用：训练 RL，但不直接替代动力学执行层</text>
+
+  <!-- arrows -->
+  <path d="M390 315 C430 315, 450 315, 490 315" class="arrowB"/>
+  <text x="424" y="298" class="label">高层动作 u</text>
+
+  <path d="M990 315 C1020 315, 1035 315, 1065 315" class="arrowB"/>
+  <text x="1005" y="292" class="label">Ωᵈ, qaᵣᵉᶠ</text>
+
+  <path d="M1210 415 C1210 485, 1040 575, 1040 610" class="arrowB"/>
+  <text x="1125" y="552" class="label">动力学输入</text>
+
+  <path d="M1385 300 C1358 300, 1370 553, 1460 610" class="arrow"/>
+  <text x="1410" y="538" class="label">当前状态 / 接触反馈</text>
+
+  <path d="M810 825 C830 825, 825 825, 845 825" class="arrow"/>
+  <path d="M1125 825 C1142 825, 1142 825, 1160 825" class="arrow"/>
+  <path d="M1410 825 C1428 825, 1428 825, 1445 825" class="arrow"/>
+
+  <path d="M1285 695 C1285 585, 1460 500, 1535 450" class="arrow"/>
+  <text x="1378" y="590" class="label">真实运动响应</text>
+
+  <path d="M1555 450 C1555 555, 1635 610, 1635 695" class="arrow"/>
+  <text x="1600" y="575" class="label">qa, q̇a 影响几何与载荷</text>
+
+  <path d="M1385 390 C950 555, 520 585, 390 440" class="arrow dash"/>
+  <text x="790" y="555" class="label">状态反馈到下一时刻观测 oₜ₊₁</text>
+
+  <path d="M1385 410 C950 640, 520 735, 420 790" class="arrow dash"/>
+  <text x="650" y="690" class="label">κ, α, Fz, 姿态等进入奖励/诊断</text>
+
+  <path d="M240 690 C240 580, 220 520, 220 440" class="arrow dash"/>
+  <text x="96" y="585" class="label">训练时更新策略参数</text>
+
+  <!-- Key conclusion -->
+  <rect x="60" y="980" width="1660" height="110" fill="#eef4fb" stroke="#8aaed0" stroke-width="2" rx="18"/>
+  <text x="90" y="1022" class="section">读图结论</text>
+  <text x="210" y="1022" class="box-text">运动学模型解决“理想情况下六个轮子该转多快、球铰该给什么参考角”；动力学模型解决“这些参考量在真实接触、滑移、载荷和执行器滞后下会产生什么真实运动”。</text>
+  <text x="210" y="1062" class="box-text">因此，纵滑/侧滑问题不能只靠奖励惩罚解决，最好让动力学层或后续牵引控制显式使用 κi、αi、Fz,i、μiFz,i 等接触变量。</text>
+</svg>

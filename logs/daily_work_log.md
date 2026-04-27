@@ -1021,7 +1021,7 @@
   - `AGENTS.md` 已新增 Markdown 公式规则：
     - 行内公式使用 `$...$`
     - 独立公式使用 `$$...$$`
-    - 仓库 Markdown 文档不再使用 `\(...\)` 或 `\[...\]`
+    - 仓库 Markdown 文档不再使用旧式圆括号或方括号 LaTeX 数学定界符
 - 同步更新：
   - `docs/current_status.md`
   - `docs/conversation_history.md`
@@ -3421,10 +3421,7 @@
 
 已完成：
 - 对 `docs/RL阶段训练参数一览表.md` 做了一轮数学公式统一整理。
-- 当前该文档不再混用：
-  - `\[\]`
-  - `\(\)`
-  两套 LaTeX 分隔符。
+- 当前该文档不再混用旧式方括号和圆括号两套 LaTeX 分隔符。
 - 现统一为：
   - 显示公式使用 `$$ ... $$`
   - 行内公式使用 `$ ... $`
@@ -3436,7 +3433,7 @@
   - reward 公式
   - termination 公式
   - PPO / GAE 公式
-- 使用 `rg -n '\\\\\\[|\\\\\\]|\\\\\\(|\\\\\\)' docs/RL阶段训练参数一览表.md` 做残留检查，已无旧公式分隔符残留。
+- 使用固定字符串搜索做残留检查，已无旧公式分隔符残留。
 
 修改文件：
 - `docs/RL阶段训练参数一览表.md`
@@ -3968,10 +3965,7 @@
 - 清理并重写 `docs/RL环境设计.md` 中的 LaTeX 公式与符号渲染格式。
 - 删除文档内残留的私有区引用乱码字符：
   - `filecite...`
-- 将原来的：
-  - `\\(...\\)`
-  - `\\[...\\]`
-  数学写法统一改为更适合 Markdown 渲染器的：
+- 将原来的旧式圆括号和方括号 LaTeX 数学写法统一改为更适合 Markdown 渲染器的：
   - `$...$`
   - `$$...$$`
 - 同步修正了公式内少量文本符号写法，例如：
@@ -5248,7 +5242,7 @@
     - 不再单独向上查找 `AGENTS.md`
     - 改为复用统一的 `COMPLETE_CAR_USD` 与 `RESULTS_DIR`
 - 实际执行校验：
-  - `rg -n "_THIS_FILE|PROJECT_ROOT = next\\(|AGENTS.md\\)\\.exists\\(" src/rl_lab/complete_car_rl_training -S`
+  - 使用 `rg` 检查旧路径探测逻辑是否残留。
   - `python3 -m py_compile src/rl_lab/complete_car_rl_training/complete_car_rl_training/paths.py src/rl_lab/complete_car_rl_training/complete_car_rl_training/tasks/manager_based/complete_car_env_cfg.py src/rl_lab/complete_car_rl_training/tools/ik/test_ik_keyboard.py`
 - 结果：
   - 当前活跃训练项目中的路径逻辑已集中到一个模块维护
@@ -10992,10 +10986,7 @@
   - 行内公式使用 `$...$`
   - 块级公式使用 `$$...$$`
 - 已保留原文件的章节结构与符号内容主旨，仅重写公式与排版，不额外改变文档讨论主题。
-- 已检查并确认该文件中不再残留：
-  - `\(...\)`
-  - `\[...\]`
-  这类不符合仓库 Markdown 规则的数学写法。
+- 已检查并确认该文件中不再残留旧式圆括号或方括号 LaTeX 数学定界符。
 
 修改文件：
 - `docs/RL运动学，动力学参数符号定义.md`
@@ -12464,3 +12455,52 @@
 - 若 `Kp=8000`，仅位置项就约为 `203 / 151 / 76.5 Nm`，远超当前球铰 `20 Nm` 力矩上限。
 - 若 `Kd=1000`，速度误差只需 `0.020 rad/s` 即触发 `20 Nm` 阈值；最近三轮实际球铰速度均值约为 `0.110 / 0.392 / 0.146 rad/s`。
 - 判断：改回 `8000/1000` 会让球铰 drive 长期进入力矩限幅，表现为更硬、更不顺从，不应作为解决当前近停滞或中车低载荷问题的优先方向。
+
+## 2026-04-26
+
+已完成：
+- 按用户要求更新 `docs/RL阶段训练参数一览表.md`，使其与当前 Stage0 RL 环境配置和低层控制链一致。
+- 从当前源码核对并补全：
+  - RL 环境配置、动作空间、观测空间、reward、termination、PPO 参数
+  - 底层运动学几何参数
+  - 球铰 `q_cmd/qdot_cmd` 轨迹生成公式
+  - Isaac/PhysX 球铰隐式 PD 等效公式和参数
+  - 接触权重公式
+  - 低侧滑平面命令整形目标函数与闭式求解形式
+  - 轮速参考公式
+  - signed 纵滑、侧偏角和当前旧版直接纵滑反馈车轮力矩公式
+- 同步更新当前状态和对话记忆。
+
+修改文件：
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `git diff --check -- docs/RL阶段训练参数一览表.md` 通过。
+- 新增/修改 Markdown 未使用仓库禁止的圆括号或方括号 LaTeX 数学定界格式。
+
+产出/结论：
+- 当前训练参数表明确记录 Stage0 生效低层参数为 `low_slip_lambda_lateral=10.0`、`K_track=2.0`、`K_slip=1.5`、`wheel_joint_effort_limit_sim=15.0`。
+- 文档明确当前车轮控制器不是已撤回的纵滑/侧滑衰减式控制器；`g_kappa/g_alpha` 仅为兼容日志字段，当前固定为 `1.0`。
+
+## 2026-04-26
+
+已完成：
+- 复核中车被拱起、纵滑方向修正后任务失败和车轮力矩上限是否过低的问题。
+- 对比 `gate_v2` 旧高滑移 run 与 `lambda10_K2_K1.5` 最新失败 run 的 per-wheel 法向力、接触权重和 torque target。
+- 同步修正训练参数表与当前状态中 `low_slip_lambda_lateral` 的源码当前值。
+
+修改文件：
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 中车被拱起对应真实载荷卸载：最新失败 run 后 25 轮中车两轮总法向力约 `0.525 N`，只占六轮总法向力约 `0.14%`。
+- 旧 `gate_v2` 高滑移 run 后 25 轮中车两轮仍有约 `49.6/50.4 N` 法向力，说明此前没有完全失载。
+- 旧 run 实际记录六轮 torque target 约 `2.128-3.335 N*m`，平均约 `2.513 N*m`；当前失败 run 负载轮约 `0.226-1.451 N*m`，中轮约为 `0`。
+- 两轮训练的实际 torque target 都远低于 `15 N*m` 上限，因此当前首要瓶颈不是车轮扭矩限幅太低，而是中车卸载、接触权重接近 `0`、`lambda_lat=10` 下 shaped 速度过低，以及 corrected signed slip 不再提供错误正反馈推进。
+- 当前源码 Stage0 `low_slip_lambda_lateral=4.0`，但该配置尚未完成新训练验证。

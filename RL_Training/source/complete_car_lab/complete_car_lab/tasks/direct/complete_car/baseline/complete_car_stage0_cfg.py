@@ -54,7 +54,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.control.wheel_joint_effort_limit_sim = 15.0
         self.control.wheel_joint_velocity_limit_sim = 20.0
         self.control.low_slip_lambda_tracking = 1.0
-        self.control.low_slip_lambda_lateral = 10.0
+        self.control.low_slip_lambda_lateral = 4.0
         self.control.contact_force_off_threshold = 0.01
         self.control.contact_force_on_threshold = 0.08
         self.control.wheel_torque_tracking_gain = 2.0

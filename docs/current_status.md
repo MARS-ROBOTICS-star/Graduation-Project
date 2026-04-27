@@ -91,6 +91,11 @@
     - 内容覆盖当前实际运行链路：RL 动作映射、球铰轨迹生成器、Isaac/PhysX 球铰隐式 PD、接触权重、低侧滑平面命令整形、运动学轮速参考、纵滑/侧滑定义、接触感知低滑移车轮力矩控制
     - 文档明确当前 allocator 用 `q_actual` 计算几何构型，并复用球铰执行器同一套 `qdot_cmd` 计算轮心构型速度项
     - 文档明确当前车轮最终仍下发 torque target，`Omega_ref` 只作为力矩控制内部参考
+  - 2026-04-26 已同步更新 Stage0 训练参数总表：
+    - 文档：`docs/RL阶段训练参数一览表.md`
+    - 已按当前源码补全 RL 环境配置、底层运动学几何参数、球铰 `q_cmd/qdot_cmd` 轨迹生成公式、Isaac/PhysX 隐式 PD 参数、接触权重公式、低侧滑平面命令整形公式、轮速参考公式、signed 纵滑/侧偏角定义和当前旧版直接纵滑反馈车轮力矩公式
+    - 当前训练参数总表明确记录 Stage0 源码生效参数：`low_slip_lambda_lateral=4.0`、`K_track=2.0`、`K_slip=1.5`、`wheel_joint_effort_limit_sim=15.0`
+    - 最近一轮已诊断失败训练仍是 `lambda_lat=10.0`，当前源码 `lambda_lat=4.0` 尚未完成新训练验证
   - 2026-04-26 已按用户最终链路修改球铰控制器和轮速分配接口：
     - RL 后 6 维动作仍映射为最终球铰目标姿态 `q^d`
     - 环境侧新增内部参考 `q_ref` 和上一控制步 `qdot_cmd_prev`
@@ -137,6 +142,7 @@
     - 后 25 轮中车两轮总法向力仅约 `0.525 N`，约占六轮总法向力 `0.14%`，中车轮组几乎完全卸载
     - 当前 `g_kappa/g_alpha = 1.0`，确认本轮不是新衰减式力矩控制器导致轮子不转；当前仍是旧版直接纵滑反馈公式
     - 结论：当前系统不是“旧成功版本只改纵滑方向”的单变量实验；球铰 `q_cmd/qdot_cmd` 链路、强 `lambda_lat=10` 整形、正确纵滑方向和中车卸载共同造成“低滑移近停滞”局部解
+    - 补充扭矩诊断：`gate_v2` 旧反号纵滑 run 后 25 轮六轮实际 torque target 约 `2.128-3.335 N*m`，平均约 `2.513 N*m`；当前 `lambda10_K2_K1.5` 失败 run 负载轮 torque target 约 `0.226-1.451 N*m`，中轮约为 `0`，两者都远低于 `15 N*m` 上限，因此当前首要瓶颈不是扭矩上限太低
     - 诊断报告：`results/stage0_lambda10_ktrack2_kslip1p5_118iter_diagnosis_2026-04-26.md`
   - 2026-04-26 已用最近几轮训练数据复算球铰 drive 若改回 `stiffness=8000`、`damping=1000` 的影响：
     - 计算使用最近三轮新球铰链路 run 后 25 个 TensorBoard 点：`stage0_lowlevel_diagnostics_metrics_v2_800iter`、`stage0_lateral2_short150_verify`、`stage0_lambda10_ktrack2_kslip1p5_300iter`
@@ -271,9 +277,9 @@
     - `wheel_joint_effort_limit_sim = 15.0`
     - `wheel_torque_tracking_gain = 2.0`
     - `wheel_slip_feedback_gain = 1.5`
-    - `low_slip_lambda_lateral = 10.0`
+    - `low_slip_lambda_lateral = 4.0`
   - 当前低层待核验点：
-    - `low_slip_lambda_lateral=10.0` 可以显著降低纵滑和侧滑，但历史上会把车辆推入近停滞局部解；当前正在与 `K_track=2.0`、`K_slip=1.5` 组合重新验证
+    - `low_slip_lambda_lateral=10.0` 可以显著降低纵滑和侧滑，但历史上会把车辆推入近停滞局部解；当前源码已处在 `4.0` 中间候选值，尚需新训练验证
     - `low_slip_lambda_lateral=2.0` 可以恢复推进速度，但低滑移约束明显不足
     - 新衰减式力矩控制器已撤回；当前需要通过回放或训练验证旧版 `-K_slip*kappa` 公式在新球铰 `q_cmd/qdot_cmd` 链路下能否恢复车轮有效转动
     - 当前 `K_track=2.0`、`K_slip=1.5` 是基于代表轮数据重新平衡后的参数：目标是让纵滑反馈与轮速跟踪项同量级，避免 `K_slip=8.0` 在低速正滑转时反馈过强

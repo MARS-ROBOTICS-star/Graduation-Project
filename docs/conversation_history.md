@@ -4,6 +4,43 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-26
 
+### Stage0 中车卸载与车轮扭矩上限复核：首要瓶颈不是 `15 Nm` 限幅
+- User request:
+  - 分析中车为什么会被拱起、当前力矩控制器输出是否正常、纵滑方向修正后为什么反而不能完成目标，并复核旧方向未改前轮端扭矩大小。
+- Data source:
+  - `results/stage0_lowslip_gate_v2_min_lowlevel_522iter_diagnosis_2026-04-26.md`
+  - `results/stage0_lambda10_ktrack2_kslip1p5_118iter_diagnosis_2026-04-26.md`
+  - 当前源码 `complete_car_stage0_cfg.py` 与 `wheel_speed_allocator.py`
+- Durable conclusion:
+  - 中车被拱起对应的是实际载荷问题，不只是视觉问题。最新 `lambda10_K2_K1.5` 失败 run 后 25 轮中车两轮总法向力仅约 `0.525 N`，约占六轮总法向力 `0.14%`，接触权重约 `0.002/0.003`。
+  - 旧 `gate_v2` 高滑移 run 后 25 轮中车两轮仍有约 `49.6/50.4 N` 法向力，接触权重约 `0.311/0.301`，因此“以前没明显拱起、现在明显拱起”与数据一致。
+  - 当前轮级力矩控制器公式输出逻辑与源码一致：`tau = clip(Cw * (K_track*(Omega_ref-Omega)-K_slip*kappa), -15, 15)`，`g_kappa/g_alpha` 在当前旧版公式中固定为 `1.0`，不是衰减式控制器在继续压扭矩。
+  - 旧反号纵滑下，正向滑转会被记录成负 `kappa`，在 `-K_slip*kappa` 中变成正向助推项；修正后正向滑转为正，反馈项变为制动项。这说明旧高滑移完成目标可能部分依赖了错误符号带来的正反馈推进。
+  - 旧 `gate_v2` run 实际记录的六轮 torque target 后 25 轮约为 `2.128-3.335 N*m`，平均约 `2.513 N*m`，未接近 `15 N*m` 上限。
+  - 当前 `lambda10_K2_K1.5` run 负载轮 torque target 约 `0.226-1.451 N*m`，中轮 torque target 约 `0`，主要因为中轮接触权重接近 `0` 且 shaped `vx` / `Omega_ref` 已被压低；单纯提高 `wheel_joint_effort_limit_sim` 不会自动增加实际下发扭矩。
+  - 当前工作区源码已把 Stage0 `low_slip_lambda_lateral` 改为 `4.0`，但最近完成诊断的失败 run 仍是 `lambda_lat=10.0`；`lambda_lat=4.0` 是待验证中间配置，不是已有训练结论。
+- Status:
+  - analysis completed; no control code changed in this step
+
+### `docs/RL阶段训练参数一览表.md` 已按当前 Stage0 环境与低层控制链详细同步
+- User request:
+  - 根据当前 RL 环境配置、底层运动学模型、球铰控制器和力矩控制器更新 `docs/RL阶段训练参数一览表.md`，要求公式和参数写清楚。
+- Updated:
+  - `docs/RL阶段训练参数一览表.md`
+  - `docs/current_status.md`
+  - `docs/conversation_history.md`
+  - `logs/daily_work_log.md`
+- Durable conclusion:
+  - 当前训练参数总表以源码为准，覆盖 Stage0 RL 环境配置、动作/观测/reward/termination/PPO 参数，以及底层执行链。
+  - 文档已补全当前底层运动学几何参数、球铰 `q_cmd/qdot_cmd` 轨迹生成公式、Isaac/PhysX 隐式 PD 等效公式与参数、接触权重公式、低侧滑平面命令整形目标函数和闭式求解形式、轮速参考公式、signed 纵滑与侧偏角定义、旧版直接纵滑反馈 torque target 公式。
+  - 该轮文档更新时 Stage0 低层参数记录为：`low_slip_lambda_lateral=10.0`、`K_track=2.0`、`K_slip=1.5`、`wheel_joint_effort_limit_sim=15.0`、球铰 drive `stiffness=1000`、`damping=10`、`effort_limit_sim=20`；当前源码值以后续条目为准。
+  - 文档明确当前车轮控制器不是已撤回的纵滑/侧滑衰减式控制器；`g_kappa/g_alpha` 仅为兼容日志字段，当前固定为 `1.0`。
+- Verification:
+  - `git diff --check -- docs/RL阶段训练参数一览表.md` passed.
+  - 新增/修改 Markdown 未使用仓库禁止的圆括号或方括号 LaTeX 数学定界格式。
+- Status:
+  - documentation updated; no runtime code changed
+
 ### 球铰 drive 改回 `stiffness=8000, damping=1000` 的复算结论：会长期力矩饱和
 - User request:
   - 用最近几轮训练数据计算，如果将球铰控制器参数改回 `ball_joint_stiffness=8000.0`、`ball_joint_damping=1000.0`，球铰控制会如何。
@@ -2513,7 +2550,7 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Status:
   - candidate derivation promoted to durable project memory
 
-### Repository Markdown math syntax is now standardized to Obsidian-compatible `$...$` / `$$...$$`; future repository `.md` outputs should not use `\(...\)` or `\[...\]`
+### Repository Markdown math syntax is now standardized to Obsidian-compatible `$...$` / `$$...$$`
 - Updated:
   - `AGENTS.md`
   - `docs/current_status.md`
@@ -2524,9 +2561,7 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - repository-tracked Markdown documents now follow one math-markup rule:
     - inline math uses `$...$`
     - display math uses `$$...$$`
-  - future repository Markdown outputs should not use:
-    - `\(...\)`
-    - `\[...\]`
+  - future repository Markdown outputs should not use old-style parenthesized or bracketed LaTeX math delimiters
   - this rule is intended for direct compilation/rendering in Obsidian without extra preprocessing
   - this rule applies to Markdown files such as:
     - `docs/`
@@ -6870,10 +6905,7 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Updated:
   - `docs/RL阶段训练参数一览表.md`
 - Durable documentation conclusion:
-  - the Stage0 handbook no longer mixes:
-    - `\[\]`
-    - `\(\)`
-    styles with other math markers
+  - the Stage0 handbook no longer mixes old-style bracketed or parenthesized LaTeX math delimiters with other math markers
   - the active convention is now:
     - display math uses `$$ ... $$`
     - inline math uses `$ ... $`
@@ -6890,7 +6922,7 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Impact:
   - future edits to this handbook should follow the same `$$ / $` convention instead of reintroducing mixed LaTeX delimiters
 - Status:
-  - no remaining `\[\]` or `\(\)` delimiters in the file after the cleanup
+  - no remaining old-style bracketed or parenthesized LaTeX math delimiters in the file after the cleanup
 
 ### Ball-joint action mapping now uses per-joint lower/upper bounds instead of one shared action scale
 - Updated:

@@ -1,5 +1,155 @@
 # 当前状态
 
+## 2026-04-27 最新 active Stage0 代码状态
+- 已按用户最新决定修改 Stage0 reward 主线：
+  - 新增 `action_rate_penalty`：`-(0.05 * mean(Delta a_base^2) + 0.02 * mean(Delta a_joint^2)) / T`。
+  - 新增 `timeout_penalty`：episode 因未成功达到时间上限时触发一次，公式为 `-1 * (12.0 + 0.5 * d_t)`，其中 `d_t` 为当前 active waypoint 剩余距离。
+  - 直接 `slip_penalty` 已从 active reward 中移除。
+  - 直接 `turn_speed_penalty` 已从 active reward 中移除。
+  - low-slip progress gate 仍保留，因此滑移仍会间接影响正向 progress multiplier；纵滑/侧滑指标也继续作为观测和日志。
+  - `load_equalization_weight=0.0`，仍只作为负载不均匀诊断项。
+- 该 active 配置尚未重新训练验证；最近完整 700 轮训练 `2026-04-27_18-17-40_stage0_current_full_watch_700iter` 属于修改前配置。
+- 2026-04-27 对当前 active reward 完成源码层 reward hacking 检查，结论是存在高风险：
+  - `distance_to_target` 和 `angle_diff` 都是每步正奖励，原地不动也能累计正回报；在初始 `10 m` 目标距离、目标角约 `20°-30°` 时，timeout 一整局仍可获得约 `6.9-7.4` 的 dense return。
+  - `time_out` 没有直接负奖励，也不算 terminated；因此“不完成但稳定活到超时”不是明确坏行为。
+  - `progress_to_target_relax_radius_m=3.0` 会把近目标区域内的负进度裁成 `0`，存在靠近目标后在命中半径外徘徊/振荡的风险。
+  - `action_rate_penalty` 只惩罚相邻动作变化，不惩罚动作幅值；第一步跳到大动作后保持常值的代价极小，不能替代物理执行层的速度/命令斜坡限制。
+  - low-slip gate 仍保留 `0.25` 的 progress floor，且 `reached_target` 不受滑移、速度、接触或姿态约束；若 policy 能跑起来，仍可能通过高滑移/侧漂/中车弱承载完成 waypoint。
+  - `target_yaw_tolerance_deg`、`orientation_limit_deg`、`head_tail_roll_limit_deg`、`head_tail_pitch_limit_deg` 当前没有实际接入 `mdp/terminations.py`，成功只看位置半径和 waypoint 序号。
+- 上述 timeout 漏洞已按用户要求用 `timeout_penalty` 处理；但高滑移命中、近目标徘徊、姿态/接触未作为成功约束等风险仍未完全解决。
+
+## 2026-04-27 最新完整训练结论
+- 已按用户要求完整跑满当前 active Stage0 配置训练：
+  - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-27_18-17-40_stage0_current_full_watch_700iter`
+  - 原计划 `700` iterations，实际完整到终端 iteration `699/700`，进程退出码 `0`
+  - 训练耗时约 `8033.14 s`
+  - 最终 checkpoint：`model_699.pt`
+  - TensorBoard 标量已导出到 run 内 `tensorboard_export/`
+  - 诊断报告：`results/stage0_current_full_watch_700iter_diagnosis_2026-04-27.md`
+- 本轮关键结果：
+  - 最终 `success_rate=0.0`、`time_out_rate=1.0`
+  - 后 25 轮 `waypoints_completed_mean=0.0`、`episode_completion_pct=0.0`
+  - 后 25 轮 `active_segment_completion_pct≈3.29%`，最后约 `2.98%`
+  - 后 25 轮纵滑约 `0.765`，最后约 `0.563`
+  - 后 25 轮侧滑角约 `0.0945 rad`，最后约 `0.0749 rad`
+  - 后 25 轮 `LowSlip/combined_pass_rate≈0.788`，最后约 `0.846`
+  - 后 25 轮 `v_parallel_abs≈0.0135 m/s`，最后约 `0.0102 m/s`
+- 当前判断：
+  - 当前 active 配置能把纵滑和侧滑角压低，但主要方式是把速度和驱动压到近停滞。
+  - 它没有恢复 waypoint 完成，不能作为低滑移协同控制成功证据。
+  - 下一步不应继续盲目长训同一配置；需要先明确 Stage0 成功标准是否必须同时包含 waypoint 完成、非零有效推进和低滑移，再决定是否改奖励主结构或成功条件。
+- 2026-04-27 对 `model_699.pt` 回放“小车完全不动”现象完成排查：
+  - headless 回放 `num_envs=1` 得到 `v_parallel_abs_mean≈0.0051 m/s`、`v_perp_abs_mean≈0.0063 m/s`、尾段 active segment completion 约 `4.11%`。
+  - 接触不是主因：六轮总法向力约 `366 N`，中车载荷占比约 `23%`。
+  - 球铰不是主因：`ball_joint_vel_abs_mean≈0.0091`，`ball_joint_target_error_abs_mean≈0.0046`。
+  - policy 已学成近零前进命令：训练后 25 轮 `desired_planar_vx_raw≈0.0018 m/s`，最后一步约 `-0.0095 m/s`。
+  - 当前轮级低速纵滑反馈会把小轮速参考进一步压低；在 `K_track=2.0`、`K_slip=4.0`、`r=0.19`、`epsilon=0.1` 下，近零车体速度时实际平衡轮速约为参考轮速的 `21%`。
+  - 诊断报告：`results/stage0_model699_replay_stall_diagnosis_2026-04-27.md`
+
+## 当前已验证配置
+- 2026-04-27 严格核对 `2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter` 后确认：当前只恢复了旧球铰规划器调用链和 Stage0 数值参数，奖励源码没有完全恢复到旧 run：
+  - 代码链路：`env.py` 不再向 `compute_low_slip_control_targets()` 传入 env 层 `planned_ball_joint_pos/rate`，球铰目标重新由 allocator 内部旧一阶规划器生成。
+  - 旧一阶规划器：`qdot_cmd=clip(K*(q_des-q), ±1.0)`，`q_cmd=clip(q+dt*qdot_cmd, q_min, q_max)`；不使用 env 层 `q_ref`、`track_error_limit` 和 `qddot` 整形。
+  - Stage0 控制参数：`ball_joint_stiffness=8000.0`、`ball_joint_damping=1000.0`、`ball_joint_effort_limit_sim=20.0`、`ball_joint_velocity_limit_sim=1.0`、`low_slip_lambda_lateral=5.0`、`K_track=2.0`、`K_slip=4.0`、`base_allow_reverse=True`。
+  - 当前 Stage0 奖励参数：`distance_to_target_weight=6.0`、`progress_to_target_weight=8.0`、`reached_target_weight=6.0`、`action_rate_base_weight=0.05`、`action_rate_joint_weight=0.02`、`timeout_fixed_penalty=12.0`、`timeout_distance_penalty_scale=0.5`、`progress_gate_min/max=0.25/1.5`、`low_slip_angle_threshold_rad=0.35`、`load_equalization_weight=0.0`；直接 `slip_penalty` 与直接 `turn_speed_penalty` 已移除。
+  - 关键未恢复项：`2026-04-25_18-26-58` 的 `progress_gate` 组合公式是 `0.5*(Gκ+Gα)`，当前源码仍是后续 v2 的 `min(Gκ,Gα)`。这是行为生效差异，不是日志差异。
+  - 纵滑方向仍按用户要求保留当前修正定义：`kappa=(rΩ-V_parallel)/max(|V_parallel|, epsilon)`，未恢复旧 run 的反向定义。
+  - 仅存在但当前不参与奖励的新增项：`load_equalization_weight=0.0`；它只产生诊断日志，不改变 `total_reward`。
+  - 已启动新训练并按用户要求停止，run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-27_17-35-28_stage0_old_gatev1_correct_slip_watch_700iter`。
+  - 原计划 `700` iterations，实际终端打印到 iteration `98/700` 后停止；已保存 `model_0.pt`、`model_25.pt`、`model_50.pt`、`model_75.pt`。
+  - 停止前仍为 `success_rate=0.0`、`waypoints_completed_mean=0.0`、`active_segment_completion_pct≈2.30%`。
+  - 停止前 `v_parallel_abs≈0.0365 m/s`、`delta_v_abs≈0.636 m/s`、纵滑约 `6.276`、侧滑角约 `0.278 rad`、车轮力矩绝对值约 `11.19 N*m`。
+  - 判断：本轮不能被视为严格复现实验；它混合了旧球铰规划器/旧参数、正确纵滑方向、以及后续 v2 的 `min` gate。
+
+## 最新训练结论
+- 2026-04-27 已重新核对历史 Stage0 训练并确定当前比较口径：
+  - 若按“严格双 waypoint 任务完成”排序，`2026-04-25_13-37-33_stage0_tol05_turn2_gt_turn1_700iter` 最干净：`0.5 m` 成功半径、后段连续满成功、episode 级 `waypoints_completed=2`、`waypoint_completion_pct=100%`；缺点是 plateau 末端 checkpoint 未保存，且当时没有 per-wheel 中车载荷日志。
+  - 若按“可回放 checkpoint + 高完成率 + 相对较低滑移”排序，`2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter/model_699.pt` 是最好的历史可用 checkpoint：后 25 轮 `success_rate≈0.986`、`waypoints_completed≈1.984`、纵滑约 `2.739`、侧滑角约 `0.691 rad`；缺点是仍高滑移，且当时没有 per-wheel 中车载荷定量日志。
+  - 若按“任务完成 + 已记录中车载荷”排序，`2026-04-26_10-32-46_stage0_lowslip_gate_v2_min_lowlevel_800iter/model_500.pt` 数据最接近：episode 级后段 `waypoints_completed=2`、`waypoint_completion_pct=100%`，中车载荷占比约 `26%`；但该轮使用旧纵滑符号，不能作为物理正确低滑移控制证据。
+  - 当前严格结论：历史上没有一轮同时满足“物理正确纵滑符号 + 稳定完成双 waypoint + 中车载荷正常 + 低纵滑/低侧滑”。后续恢复主线时，应优先复用旧球铰规划器链路，但保留当前正确纵滑符号重新验证。
+- 2026-04-27 已按用户要求启动并监督 `stage0_slip_angle_maxden_current_reward_watch_700iter`，在稳定成功率平台出现后停止：
+  - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-27_15-30-59_stage0_slip_angle_maxden_current_reward_watch_700iter`
+  - 原计划 `700` iterations，实际终端打印到 iteration `505/700` 后停止
+  - 最新 checkpoint：`model_500.pt`
+  - 本轮实际参数：`ball_joint_stiffness=1000.0`、`ball_joint_damping=10.0`、`low_slip_lambda_lateral=0.0`、`slip_penalty_weight=-2.0`、`slip_angle_penalty_ratio=2`、`load_equalization_weight=0.0`
+  - TensorBoard step `495-505` 连续 `11` 轮 `success_rate >= 0.90`，均值约 `0.9606`，最后一步 `1.0`
+  - 平台窗口纵滑均值约 `2.497`，侧滑角均值约 `0.767 rad`，`LowSlip/combined_pass_rate≈0.0938`
+  - 平台窗口 `v_parallel_abs≈0.646 m/s`、`v_perp_abs≈0.701 m/s`，横向速度仍大于纵向速度
+  - 平台窗口 pitch 均值约 `4.71°`，最高约 `5.19°`
+  - 平台窗口中车左右轮法向力均值约 `32.05 N / 25.85 N`，中车合计约 `57.91 N`，占六轮总法向力约 `16.0%`
+  - 判断：本轮形成的是稳定成功率平台，不是低滑移平台，也不是六轮均载平台；中车有接触但仍明显弱承载
+  - 诊断报告：`results/stage0_slip_angle_maxden_current_reward_watch_505iter_diagnosis_2026-04-27.md`
+- 2026-04-27 已停止并诊断 `load_equalization_weight=-0.5` 负载不均匀惩罚短训练：
+  - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-27_14-42-42_stage0_load_imbalance_penalty_m05_watch_700iter`
+  - 原计划 `700` iterations，实际终端打印到 iteration `100/700` 后停止
+  - 已保存 `model_0.pt`、`model_25.pt`、`model_50.pt`、`model_75.pt`、`model_100.pt`
+  - 最后 `success_rate=0.0`，全程最大瞬时值约 `0.123`，全程均值约 `0.0021`
+  - 最后 `active_segment_completion_pct≈41.94%`，`episode_completion_pct≈5.28%`，`waypoints_completed_mean≈0.106`
+  - 最后纵滑约 `2.221`，侧滑角约 `0.660 rad`，`v_parallel_abs≈0.268 m/s`，`v_perp_abs≈0.292 m/s`
+  - `LoadEqualization/error` 从首步约 `0.1659` 升到最后约 `0.1856`，说明负载不均匀没有被优化
+  - 最后中车左右轮法向力约 `31.7 N / 21.1 N`，中车载荷占比约 `14.4%`；全程均值估算约 `17.7%`
+  - 判断：弱负载不均匀惩罚没有恢复目标完成，也没有改善中车载荷；滑移下降主要伴随速度下降，不是更好的滚动推进
+  - 诊断报告：`results/stage0_load_imbalance_penalty_m05_watch_100iter_diagnosis_2026-04-27.md`
+- 2026-04-27 已按用户要求停止 `stage0_reward_rebalance_completion_quality_watch_700iter` 短训练：
+  - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-27_14-27-16_stage0_reward_rebalance_completion_quality_watch_700iter`
+  - 实际打印到 iteration `32/700` 后停止，已保存 `model_0.pt`、`model_25.pt`
+  - 最后 `success_rate=0.0`，`active_segment_completion_pct≈28.0%`，`waypoints_completed_mean≈0.05`
+  - 最后纵滑约 `2.379`，侧滑角约 `0.717 rad`，`v_parallel_abs≈0.344 m/s`，`v_perp_abs≈0.372 m/s`
+  - 最后中车左右轮法向力约 `21.4 N / 29.4 N`，中车合计约总载荷 `13.9%`，属于有接触但弱承载
+  - 判断：本轮短训还没有恢复目标完成，也没有改善运动质量；中车接地比近悬空好，但仍明显弱接地
+- 2026-04-27 已按用户要求停止并诊断 `load_equalization_weight=1.0` 新训练：
+  - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-27_12-59-37_stage0_lateral0_load_eq_ball1000_qdot08_qddot15_contact_watch_700iter`
+  - 实际 TensorBoard 写入到 step `256`，最后 checkpoint 为 `model_250.pt`
+  - 后 25 步 `success_rate≈0.015`，最后一步 `0.0`，未恢复稳定目标完成
+  - 后 25 步 `active_segment_completion_pct≈61.24%`，最高约 `68.23%`，但 episode 级 `waypoints_completed≈0.268/2`、`waypoint_completion_pct≈13.38%`
+  - 后 25 步纵滑约 `2.026`、侧滑角约 `0.530 rad`、`v_parallel_abs≈0.209 m/s`、`v_perp_abs≈0.226 m/s`
+  - 中车双轮接地比上一轮近悬空 run 改善，后 25 步中车载荷占比约 `20.72%`，但仍低于理想均分 `33.33%`
+  - `LoadEqualization/error` 后 25 步约 `0.1811`，比首步 `0.1668` 更差，说明负载均衡奖励没有真正优化成功
+  - 诊断报告：`results/stage0_lateral0_load_eq_ball1000_qdot08_qddot15_contact_watch_256iter_diagnosis_2026-04-27.md`
+- 当前直接判断：
+  - 当前 active 源码下 `load_equalization_weight=0.0`，负载均衡只作为诊断指标，不参与奖励。
+  - 侧滑角低速保护修正后，Stage0 能重新形成成功率平台，但完成方式仍是高纵滑、高侧滑和中车弱承载。
+  - always-on 六轮均载正奖励不应继续作为当前主线成功方向。
+  - `load_equalization_weight=-0.5` 的弱负载不均匀惩罚也没有在短训练中改善中车载荷或恢复目标完成。
+  - 当前不应继续只靠独立小权重载荷项解决中车弱接地；下一步应先明确六轮接地在 Stage0 中是评价指标、奖励偏好，还是成功条件。
+
+## 最新代码变更
+- 2026-04-27 已按用户要求加入动作变化惩罚并移除直接滑移/转向惩罚：
+  - 新公式：`action_rate_penalty = -(0.05 * mean(Delta a_base^2) + 0.02 * mean(Delta a_joint^2)) / T`。
+  - 直接 `slip_penalty` 不再参与 active reward。
+  - 直接 `turn_speed_penalty` 不再参与 active reward。
+  - 新增日志：`Reward/action_rate_penalty`、`Action/base_action_delta_abs_mean_raw`、`Action/joint_action_delta_abs_mean_raw`、`Action/action_rate_base_cost_raw`、`Action/action_rate_joint_cost_raw`。
+  - `docs/RL阶段训练参数一览表.md` 已同步到当前 active 配置。
+- 2026-04-27 已按用户要求加入 timeout 惩罚：
+  - 若 episode 在未成功到达最终 waypoint 前达到时间上限，则最后一步触发 `timeout_penalty = -(12.0 + 0.5 * d_t)`。
+  - `d_t` 为当前 active waypoint 剩余距离；若已完成第一个 waypoint，则惩罚第二个 active waypoint 的剩余距离。
+  - 新增日志：`Reward/timeout_penalty`、`Timeout/remaining_distance_on_timeout`。
+  - 该项用于让“不完成但活到超时”明确变差，已通过静态编译和 `git diff --check`；当前尚未重新训练验证。
+- 2026-04-27 已按用户要求将 `load_equalization` 从六轮均载正奖励改为负载不均匀惩罚项：
+  - 旧形式：`exp(-k * load_error) / T`，配合正权重奖励均载。
+  - 新形式：`(1 - exp(-k * load_error)) / T`，配合负权重惩罚不均载。
+  - 该惩罚形式已完成短训练验证但效果不佳；当前 active Stage0 已将 `load_equalization_weight=0.0`，只保留 `LoadEqualization/error` 和 `LoadEqualization/raw` 作为诊断指标。
+  - 该项仍是独立 reward term，不是 progress gate，也不是终止条件。
+- 2026-04-27 已按用户指出修正侧滑角低速保护：
+  - 旧口径：`atan2(V_perp, abs(V_parallel) + epsilon)`。
+  - 新口径：`atan2(V_perp, max(abs(V_parallel), epsilon))`。
+  - 已同步修改观测/reward/LowSlip 路径和 wheel allocator 诊断路径。
+  - 该改动会使低速侧漂时的侧滑角更大；历史侧滑角训练曲线不应与新口径直接混合比较。
+- 2026-04-27 已按用户确认修改球铰执行链：
+  - 保留内部球铰轨迹生成器的 `q_cmd/qdot_cmd` 计算。
+  - 保留轮速分配器继续使用同一套 `qdot_cmd` 计算构型速度项。
+  - `_apply_action()` 不再对球铰调用 `set_joint_velocity_target(qdot_cmd)`。
+  - PhysX 球铰 drive 当前只接收位置目标 `q_cmd`；`qdot_cmd` 不再作为球铰速度目标下发。
+  - 目的：验证此前球铰速度目标主动跟踪是否导致中车被拱起、球铰左右高频摆动和前后车小幅摆动。
+- 2026-04-27 已用当前新执行链回放 `model_250.pt` 做定量检查：
+  - 报告：`results/stage0_model250_no_physx_qdot_target_replay_diagnosis_2026-04-27.md`
+  - 回放设置：`num_envs=8`、`steps=2400`、`warmup_steps=120`
+  - 中车载荷占比约 `16.75%`，低于上一轮训练诊断参考的 `20.72%`，因此中车接地没有改善
+  - 中车左右法向力约 `33.13 N / 28.14 N`，尾段约 `29.87 N / 12.85 N`，右中轮仍明显弱接地
+  - 纵滑从参考约 `2.026` 降到 `1.599`，侧滑角从约 `0.530 rad` 降到 `0.471 rad`
+  - `v_parallel_abs` 从参考约 `0.209 m/s` 降到 `0.177 m/s`，`v_perp_abs` 从约 `0.226 m/s` 降到 `0.190 m/s`
+  - 判断：去掉 PhysX 球铰速度目标可以降低滑移，但没有解决中车载荷共享；该 checkpoint 是旧执行链训练出来的，必须重新训练才能验证新执行链是否可学出更好接地
+
 ## 当前总目标
 - 将 `RL_Training/` 下的 Stage0 固化为一条可复现、可解释的平地双 waypoint 纯 RL baseline。
 - 先稳住一条已经被真实训练证明“能学起来”的环境主线，再在此基础上继续讨论更高质量的协同转向改造。
@@ -27,10 +177,10 @@
       - 纵滑 gate：六轮 `exp[-0.5 * (kappa_i / 3.0)^2]` 乘积
       - 侧滑 gate：六轮 `0.5*cos(clip(pi*abs(alpha_i)/1.5, 0, pi)) + 0.5` 乘积
       - 综合 gate：`G = min(Gκ, Gα)`
-      - progress multiplier：`M = 0.10 + 1.40G`
+      - progress multiplier：当前 active 参数为 `M = 0.25 + 1.25G`
       - 只门控正向 progress，负向 progress 不削弱
     - Stage0 `slip_penalty_weight: -4.0 -> -2.0`，使滑移惩罚退回背景约束
-    - Stage0 `slip_angle_penalty_ratio: 4.0 -> 6.0`
+    - 当前 direct `slip_penalty` 内部权重：纵滑 `5.0`，侧滑角 `1.0`
     - low-slip 评价阈值：纵向滑移均值 `< 1.0`，侧滑角均值 `< 0.35 rad`
     - PPO `save_interval: 100 -> 25`，避免再次早停时丢失平台期 checkpoint
   - 2026-04-25 已完成一轮 low-slip penalty v1 正式 GPU 训练：
@@ -81,8 +231,8 @@
     - 文档：`docs/stage0_low_level_traction_allocation_formula_check_2026-04-26.md`
     - 结论：当前车轮确实是 torque target 链，`wheel_speed_reference` 只是力矩公式内部参考，不是 Isaac 速度控制
     - 接触权重使用 `法向接触合力 / 整车重量` 的无量纲载荷比例，`0.01/0.08` 不是牛顿阈值
-    - 已按用户确认的新链路更新球铰实际执行链：轨迹生成器输出同一套 `q_cmd/qdot_cmd`，Isaac/PhysX 同时跟踪位置目标和速度目标，轮速分配器复用同一个 `qdot_cmd`
-    - 当前球铰参数：`K_q=8.0`、`qdot_max=1.5 rad/s`、`qddot_max=12.0 rad/s^2`、`track_error_max=0.10 rad`、`stiffness=1000`、`damping=10`、`effort_limit_sim=20`、`velocity_limit_sim=2.0`
+    - 当时按用户确认的新链路更新球铰实际执行链：轨迹生成器输出同一套 `q_cmd/qdot_cmd`，Isaac/PhysX 同时跟踪位置目标和速度目标，轮速分配器复用同一个 `qdot_cmd`
+    - 当时球铰参数：`K_q=8.0`、`qdot_max=1.5 rad/s`、`qddot_max=12.0 rad/s^2`、`track_error_max=0.10 rad`、`stiffness=1000`、`damping=10`、`effort_limit_sim=20`、`velocity_limit_sim=2.0`
     - 2026-04-26 已按用户最新要求将车轮力矩控制器恢复到 `stage0_lowslip_gate_v2_min_lowlevel_522iter` 版本：`contact_weight * (K_track*(Omega_ref-Omega) - K_slip*kappa)`
     - 当前 signed 纵滑定义已修正为 `kappa = (rΩ_act - V_parallel) / max(|V_parallel|, epsilon)`，车轮圆周速度大于实际纵向速度时 `kappa > 0`
     - 后续单轮正/负力矩符号测试仍有价值，但现在主要用于确认 actuator 关节轴正方向与 `wheel_joint_vel` 正方向一致
@@ -94,13 +244,74 @@
   - 2026-04-26 已同步更新 Stage0 训练参数总表：
     - 文档：`docs/RL阶段训练参数一览表.md`
     - 已按当前源码补全 RL 环境配置、底层运动学几何参数、球铰 `q_cmd/qdot_cmd` 轨迹生成公式、Isaac/PhysX 隐式 PD 参数、接触权重公式、低侧滑平面命令整形公式、轮速参考公式、signed 纵滑/侧偏角定义和当前旧版直接纵滑反馈车轮力矩公式
-    - 当前训练参数总表明确记录 Stage0 源码生效参数：`low_slip_lambda_lateral=4.0`、`K_track=2.0`、`K_slip=1.5`、`wheel_joint_effort_limit_sim=15.0`
-    - 最近一轮已诊断失败训练仍是 `lambda_lat=10.0`，当前源码 `lambda_lat=4.0` 尚未完成新训练验证
+    - 当时训练参数总表记录的 Stage0 源码生效参数：`low_slip_lambda_lateral=0.0`、`slip_penalty_weight=0.0`、`K_track=2.0`、`K_slip=1.5`、`wheel_joint_effort_limit_sim=15.0`、球铰 drive `stiffness=1500.0`、`damping=30.0`
+  - 2026-04-27 已完成一轮 `low_slip_lambda_lateral=4.0` 当前配置的 GPU 训练并按用户要求中断诊断：
+    - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-27_09-14-07_stage0_lambda4_current_700iter`
+    - 原计划 `700` iterations，实际 TensorBoard 写入到 step `81` 后停止
+    - 最后自动保存 checkpoint：`model_75.pt`
+    - 本轮 run 内 `params/env.yaml` 与 Isaac log 确认实际球铰 drive 仍为 `stiffness=1000`、`damping=10`
+    - 后 25 轮 `time_out_rate = 1.0`、`far_from_target_rate = 0.0`，说明策略能撑满 episode，但没有命中目标
+    - 后 25 轮 `active_segment_completion_pct ≈ 36.99%`、`waypoints_completed_mean ≈ 0.017`、`episode_completion_pct ≈ 0.86%`
+    - 后 25 轮纵滑约 `1.586`、侧滑角约 `0.503 rad`、`LowSlip/combined_pass_rate ≈ 0.086`
+    - 后 25 轮 `v_parallel_abs ≈ 0.133 m/s`、`v_perp_abs ≈ 0.140 m/s`，速度已明显偏低且侧向速度仍与纵向同量级
+    - 后 10 轮中车两轮法向力约 `4.06 N / 1.47 N`，接触权重约 `0.082 / 0.023`，中轮 torque target 约 `0.009 / 0.003 Nm`
+    - 后 25 轮中车 pitch 约 `2.80°`，最后一轮约 `3.61°`
+    - 结论：`lambda_lat=4.0` 比 `10.0` 更能推进，且比训练初期明显降低滑移，但仍没有形成稳定 waypoint 完成；当前主要表现为低速、前后轮承载、中车弱接触的局部行为
+    - 诊断报告：`results/stage0_lambda4_current_81iter_diagnosis_2026-04-27.md`
+  - 2026-04-27 已完成一轮 `ball_joint_stiffness=1500`、`ball_joint_damping=30`、`low_slip_lambda_lateral=4.0` 的 GPU 训练，并按用户要求停止分析：
+    - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-27_09-35-03_stage0_lambda4_ball1500_damp30_watch_700iter`
+    - 原计划 `700` iterations，实际 TensorBoard 写入到 step `98` 后停止
+    - 最后自动保存 checkpoint：`model_75.pt`
+    - 本轮 run 内 `params/env.yaml` 确认实际球铰 drive 为 `stiffness=1500`、`damping=30`
+    - 后 25 轮 `time_out_rate = 1.0`、`far_from_target_rate = 0.0`、`success_rate = 0.0`，没有完成 waypoint
+    - 后 25 轮 `active_segment_completion_pct ≈ 9.71%`、`waypoints_completed_mean = 0.0`、`active_waypoint_pos_error ≈ 9.03 m`
+    - 后 25 轮纵滑约 `0.746`、侧滑角约 `0.282 rad`、`LowSlip/combined_pass_rate ≈ 0.645`
+    - 后 25 轮 `v_parallel_abs ≈ 0.041 m/s`、`v_perp_abs ≈ 0.047 m/s`，最后一步 `v_parallel_abs ≈ 0.0235 m/s`
+    - 后 25 轮中车两轮法向力约 `0.019 N / 0.019 N`，接触权重约 `0.00028 / 0.00021`，中轮 torque target 约 `0.00028 / 0.00019 Nm`
+    - 最后一步中车两轮法向力约 `0.00089 N / 0.00000 N`，基本无有效接地
+    - 后 25 轮中车 `pitch ≈ 1.32°`、`roll ≈ -4.69°`；最后一步约 `pitch ≈ 1.21°`、`roll ≈ -5.59°`
+    - 结论：`1500/30` 可以进一步降低滑移指标，但代价是明显近停滞和更严重的中车轮组失载；不能作为当前 Stage0 的成功训练方向
+    - 诊断报告：`results/stage0_lambda4_ball1500_damp30_watch_98iter_diagnosis_2026-04-27.md`
+  - 2026-04-27 已按用户要求准备下一轮对照训练：
+    - 仅将 `low_slip_lambda_lateral: 4.0 -> 0.0`，关闭低层平面命令中的横向滑移整形项
+    - `stage0_lateral0_reward_kept_ball1500_d30_700iter` 已按用户要求停止，最后打印到 iteration `64`
+    - 该轮确认 `shaped=desired`，低层整形已关闭；但 policy 仍主动降速，`v_parallel_abs` 从约 `0.35 m/s` 降到约 `0.18-0.19 m/s`，`success_rate=0`
+    - 当时按用户要求将直接 `slip_penalty_weight: -2.0 -> 0.0`，用于优先恢复“跑起来”和目标完成
+    - low-slip progress gate 暂时保留，因此滑移仍会间接影响正向 progress multiplier
+    - 当时工作区球铰 drive 保留为 `stiffness=1500.0`、`damping=30.0`
+  - 2026-04-27 已完成 `low_slip_lambda_lateral=0.0`、`slip_penalty_weight=0.0` 的 GPU 对照训练，并按成功率平台期早停：
+    - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-27_10-11-39_stage0_lateral0_no_slip_penalty_ball1500_d30_700iter`
+    - 原计划 `700` iterations，实际终端打印到 iteration `393/700` 后停止
+    - 最后自动保存 checkpoint：`model_375.pt`
+    - 后 25 轮 `success_rate ≈ 0.965`，后 10 轮约 `0.989`，最后一步 `1.0`
+    - episode 级后 25 轮 `waypoint_completion_pct ≈ 97.41%`、`waypoints_completed ≈ 1.948`
+    - `Tracking/episode_completion_pct` 是当前并行环境瞬时已完成 waypoint 比例，不是 episode-final 成功率；本轮后 25 轮约 `24.97%`，不应与 `success_rate` 直接对比
+    - 后 25 轮 `v_parallel_abs ≈ 0.453 m/s`、`v_perp_abs ≈ 0.473 m/s`，车辆仍有明显侧向漂移
+    - 后 25 轮纵滑约 `2.308`、侧滑角约 `0.714 rad`、`LowSlip/combined_pass_rate ≈ 0.006`
+    - 后 25 轮 `ProgressGate/multiplier ≈ 0.135`，仍接近 floor，但 `reached_target` 足以驱动高成功率学习
+    - 后 25 轮中车两轮法向力约 `2.44 N / 5.19 N`，合计仅约六轮总法向力 `2.08%`；最后一步中车载荷占比约 `1.05%`
+    - 结论：去掉直接 `slip_penalty` 后目标完成能力恢复，但完成方式是高纵滑、高侧漂、前后轮主承载和中车弱接地，不能作为低滑移协同转向成功结果
+    - 诊断报告：`results/stage0_lateral0_no_slip_penalty_ball1500_d30_393iter_diagnosis_2026-04-27.md`
+	  - 2026-04-27 已按用户要求通过 headless 回放扫描球铰控制参数，优先解决中车接地：
+    - 新增评估脚本：`RL_Training/scripts/evaluate_contact_replay.py`
+    - 使用 `model_375.pt` 扫描多组参数后确认：仅降低 `Kp/Kd/qdot/qddot` 最多只能把中车载荷占比提升到约 `5.0%`，仍不算正常接地
+    - 将全部球铰近似锁定后，中车载荷占比恢复到约 `34%`，证明中车悬空主要来自球铰姿态自由度导致的载荷转移
+    - 曾验证的接地配置为：yaw 保留 `±0.6 rad`，pitch/roll 近似锁定为 `±0.01 rad`
+    - 曾验证的球铰控制参数为：`ball_joint_stiffness=300.0`、`ball_joint_damping=5.0`、`ball_joint_effort_limit_sim=30.0`、`qdot_max=0.6 rad/s`、`qddot_max=0.8 rad/s^2`
+	    - 无覆盖回放复查结果：中车两轮法向力均值约 `70.8 N / 62.8 N`，中车载荷占比约 `27.5%`，中车接地已恢复正常
+	    - 代价：旧 `model_375.pt` 在该约束下 waypoint 进度基本坍缩，不能继续把旧 checkpoint 的成功率当作该约束下的当前配置结论
+	    - 该接地修正已按用户后续要求从 active 源码撤回；当前 active 源码已再次恢复到 18-26-58 旧球铰规划器和 `8000/1000` 球铰 drive 参数
+  - 2026-04-27 曾按用户要求新增归一化六轮负载均衡奖励项：
+	    - 新增 reward term：`load_equalization`
+	    - 公式口径：先用六轮归一化法向力计算负载占比 `f_i`，再计算 `exp(-10.0 * sum((f_i - 1/6)^2)) / T`
+	    - 该历史正奖励训练已验证不适合作为当前主线；后续 `-0.5` 负载不均匀惩罚短训练也未改善中车载荷
+	    - 当前 active 源码中 `load_equalization_weight=0.0`，该项只保留诊断日志，不参与奖励
+	    - 已加入 TensorBoard：`Reward/load_equalization`、`LoadEqualization/error`、`LoadEqualization/raw`
   - 2026-04-26 已按用户最终链路修改球铰控制器和轮速分配接口：
     - RL 后 6 维动作仍映射为最终球铰目标姿态 `q^d`
     - 环境侧新增内部参考 `q_ref` 和上一控制步 `qdot_cmd_prev`
     - 轨迹生成器使用 `q^d-q_ref` 生成 `qdot_raw`，再经过速度限幅、加速度限幅、积分、关节限位和跟踪误差保护得到 `q_cmd/qdot_cmd`
-    - `_apply_action()` 现在同时调用 `set_joint_position_target(q_cmd)` 和 `set_joint_velocity_target(qdot_cmd)`
+    - `_apply_action()` 当时同时调用 `set_joint_position_target(q_cmd)` 和 `set_joint_velocity_target(qdot_cmd)`；该速度目标下发已在 2026-04-27 后续修改中取消
     - `wheel_speed_allocator.compute_low_slip_control_targets()` 支持传入已规划的 `planned_ball_joint_pos/planned_ball_joint_rate`，当前环境传入同一套 `q_cmd/qdot_cmd`，allocator 不再重新计算另一套球铰速度
   - 2026-04-26 已完成一轮新底层链路与新诊断指标的正式训练验证，并按用户要求在中途停止：
     - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-26_18-17-37_stage0_lowlevel_diagnostics_metrics_v2_800iter`
@@ -213,7 +424,8 @@
   - `far_from_target`
   - `angle_diff`
   - `turn_speed_penalty`
-  - `slip_penalty`
+  - `slip_penalty`，当前权重为 `0.0`
+  - `load_equalization`，当前为负载不均匀惩罚项，均载时接近 `0`，偏载时为负
 - 当前 low-slip 评价口径：
   - `LowSlip/longitudinal_slip_pass_rate`
   - `LowSlip/slip_angle_pass_rate`
@@ -260,29 +472,41 @@
   - 当前 `ProgressGate/combined_gate` 表示 `min(Gκ,Gα)`，不再表示平均 gate
 - `RL_Training/` 源码当前低层执行链：
   - 高层策略输出 `u_v^d=[vx_cmd, yaw_rate_cmd]` 与最终球铰目标姿态 `q^d`
-  - 环境内部球铰轨迹生成器维护 `q_ref` 和 `qdot_cmd_prev`，输出同一套 `q_cmd/qdot_cmd`
-  - 球铰执行器同时下发 `set_joint_position_target(q_cmd)` 与 `set_joint_velocity_target(qdot_cmd)`
-  - 轮速分配器使用实际球铰姿态 `q_actual` 计算几何量，并复用同一个 `qdot_cmd` 计算 `Omega_ref`
+  - 环境当前不再使用 env 层 `q_ref/qddot` 轨迹整形器；球铰目标由 allocator 内部旧一阶规划器生成
+  - 球铰执行器只下发 `set_joint_position_target(q_cmd)`，不再下发 `set_joint_velocity_target(qdot_cmd)`
+  - 轮速分配器使用实际球铰姿态 `q_actual` 计算几何量，并使用 allocator 内部得到的 `qdot_cmd` 计算 `Omega_ref`
   - 车轮仍走 torque target 链，最终下发 `tau_cmd`
   - 当前球铰轨迹/执行参数：
-    - `ball_joint_planner_gains = (8.0, ..., 8.0)`
-    - `ball_joint_planner_qdot_limits = (1.5, ..., 1.5) rad/s`
-    - `ball_joint_planner_qddot_limits = (12.0, ..., 12.0) rad/s^2`
-    - `ball_joint_planner_track_error_limit = 0.10 rad`
-    - `ball_joint_stiffness = 1000.0`
-    - `ball_joint_damping = 10.0`
+    - `ball_joint_planner_gains = (10.0, ..., 10.0)`
+    - `ball_joint_planner_qdot_limits = (1.0, ..., 1.0) rad/s`
+    - `ball_joint_planner_qddot_limits = (12.0, ..., 12.0) rad/s^2`，当前旧一阶路径不使用
+    - `ball_joint_planner_track_error_limit = 0.10 rad`，当前旧一阶路径不使用
+    - `ball_joint_stiffness = 8000.0`
+    - `ball_joint_damping = 1000.0`
     - `ball_joint_effort_limit_sim = 20.0`
-    - `ball_joint_velocity_limit_sim = 2.0`
+    - `ball_joint_velocity_limit_sim = 1.0`
+    - `ball_joint_pos_lower_limits = (-0.6, -1.0, -0.5, -0.6, -1.0, -0.5)`
+    - `ball_joint_pos_upper_limits = (0.6, 0.4, 0.5, 0.6, 0.4, 0.5)`
   - 当前车轮/低滑移参数：
-    - `wheel_joint_effort_limit_sim = 15.0`
+    - `wheel_joint_effort_limit_sim = 20.0`
     - `wheel_torque_tracking_gain = 2.0`
-    - `wheel_slip_feedback_gain = 1.5`
-    - `low_slip_lambda_lateral = 4.0`
+    - `wheel_slip_feedback_gain = 4.0`
+    - `low_slip_lambda_lateral = 5.0`
+    - `slip_penalty_weight = -2.0`
+    - `slip_longitudinal_penalty_ratio = 5.0`
+    - `slip_angle_penalty_ratio = 1.0`
+    - `load_equalization_weight = 0.0`
   - 当前低层待核验点：
-    - `low_slip_lambda_lateral=10.0` 可以显著降低纵滑和侧滑，但历史上会把车辆推入近停滞局部解；当前源码已处在 `4.0` 中间候选值，尚需新训练验证
+    - `1500.0/30.0` 球铰 drive 已完成短训练验证：滑移指标显著下降，但任务进度坍缩并加重中车轮组失载，因此不应被当作成功方向继续长训
+    - `low_slip_lambda_lateral=10.0` 可以显著降低纵滑和侧滑，但历史上会把车辆推入近停滞局部解
     - `low_slip_lambda_lateral=2.0` 可以恢复推进速度，但低滑移约束明显不足
+    - `low_slip_lambda_lateral=4.0` 已完成短段训练验证：比 `10.0` 更能推进、比训练初期更低滑移，但后段仍未完成 waypoint，且出现低速化和中车轮弱接触
+    - `low_slip_lambda_lateral=0.0` 且保留 `slip_penalty=-2.0` 的短训练表明：关闭低层整形可以恢复中车接触和一定推进，但 policy 仍会主动降速，说明直接滑移惩罚仍在压制“跑起来”
+    - `low_slip_lambda_lateral=0.0` 且 `slip_penalty_weight=0.0` 的对照训练已经恢复目标完成能力：后 25 轮 `success_rate≈0.965`、episode 级 `waypoint_completion_pct≈97.41%`
+    - 但该对照训练低滑移质量很差：后 25 轮纵滑约 `2.308`、侧滑角约 `0.714 rad`、中车载荷占比约 `2.08%`
+    - 用户回放观察到中车基本悬空、轮子不动、小车缓慢移动且球铰左右拧动频繁；当前已通过回放参数扫描确认：只降低球铰刚度/阻尼/速度/加速度不足以恢复正常接地，必须把 Stage0 pitch/roll 自由度近似锁定
     - 新衰减式力矩控制器已撤回；当前需要通过回放或训练验证旧版 `-K_slip*kappa` 公式在新球铰 `q_cmd/qdot_cmd` 链路下能否恢复车轮有效转动
-    - 当前 `K_track=2.0`、`K_slip=1.5` 是基于代表轮数据重新平衡后的参数：目标是让纵滑反馈与轮速跟踪项同量级，避免 `K_slip=8.0` 在低速正滑转时反馈过强
+    - 当前 active 源码为 `K_track=2.0`、`K_slip=4.0`；直接 `slip_penalty` 内部权重为纵滑 `5.0`、侧滑角 `1.0`
     - 当前旧版力矩控制器仍保留接触权重，所以中车轮组低载荷问题不会仅靠恢复力矩公式自动消失
     - 下一步若继续调参，应在中间区间核验；若改变研究目标，则需先确认低滑移是评价目标、奖励主项还是成功条件
 
@@ -403,7 +627,9 @@
 - 普通 `python3 scripts/train.py ...` 仍不是默认可用路线；当前可运行路线是通过 `/home/ubuntu/IsaacLab/isaaclab.sh -p scripts/train.py ...` 启动 Isaac Lab。
 - 当前 reward 评价结论：
   - 关键学习信号主要来自 `progress_to_target` 与 `reached_target`，辅以 `distance_to_target` 和 `angle_diff`。
-  - `slip_penalty` 有约束作用，但不足以稳定实现低侧滑、低纵滑和球铰协同转向。
+  - 当前源码中直接 `slip_penalty_weight=-2.0`，内部系数为纵滑 `5.0`、侧滑角 `1.0`；滑移还通过 low-slip progress gate 间接影响正向 progress。
+  - 历史 `load_equalization_weight=1.0` 正奖励训练已经验证：它没有真正优化六轮均载，且明显破坏 waypoint 完成，不应继续作为当前主线成功方向；`load_equalization_weight=-0.5` 负载不均匀惩罚短训练也没有改善中车载荷。当前 active 源码为 `load_equalization_weight=0.0`，负载均衡只做诊断。
+  - 当前侧滑角低速保护已改为 `max(abs(V_parallel), epsilon)`，历史 run 的侧滑角数值来自旧口径，和新训练日志不完全可比。
   - `far_from_target` 主要是失败护栏，`turn_speed_penalty` 量级偏弱且只基于当前目标视线角。
   - 2026-04-25 的 700 iteration run 已经证明当前 8 维动作主线可以稳定跑满并使 success / waypoint completion 饱和，但仍有三个未解决问题：
   - `goal_success_rate = 1.0`、`waypoints_completed = 2` 与 `goal_pos_error ≈ 6.77 m`、`goal_completion_pct ≈ 33%` 同时出现，说明成功终止指标与目标误差日志之间存在语义错位或记录时机差异
@@ -418,7 +644,7 @@
     - 核心思路：用纵滑 gate 和侧滑 gate 调制正向 `progress_to_target`，让低滑移前进获得更高 progress，高滑移前进只保留基础 progress
     - v1 参数：`k = 3.0`、`K = pi / 1.5`、`M = 0.25 + 1.25G_avg`
     - v1 已接入 `RL_Training/` 并完成正式训练验证
-    - 当前源码已切换为 v2：`G = min(Gκ,Gα)`，`M = 0.10 + 1.40G`
+    - 当前源码已切换为 v2：`G = min(Gκ,Gα)`，当前参数下 `M = 0.25 + 1.25G`
   - 2026-04-25 的 low-slip progress gate v1 训练进一步证明：
     - gate v1 后段 `ProgressGate/multiplier` 约 `0.392`，说明高滑移 progress 确实被削弱
     - 但高成功率仍然可以在侧滑角约 `0.69 rad` 条件下形成，说明当前 gate 是 soft shaping，不是 low-slip 约束
@@ -446,8 +672,9 @@
 ## 下一步优先级
 1. 优先定位中车轮组低载荷根因：新增或回放检查中车轮心离地高度、三段车体高度、两组球铰实际姿态/目标姿态、每轮绝对侧滑和绝对纵滑，确认是策略构型拱起、机械碰撞/几何偏置，还是底层低速整形间接造成。
 2. 低滑移下一轮改造前，应先由用户判断 low-slip 与“六轮有效接地”在 Stage0 中是“评价目标”“奖励偏好”还是“必须满足的成功条件”。
-3. 若仍作为奖励偏好，应限制低层整形对 `vx` 的削弱幅度，并增加中车轮组载荷/接地质量约束，避免低滑移通过卸载中轮或近停滞实现。
-4. 若作为成功条件，应把低滑移、六轮有效接地和非零前进进度绑定，避免“原地低滑移”或“前后轮架桥拖行”被 reward 当成好行为。
-5. 用新日志指标继续区分 episode 结束完成度、命中瞬间误差、step 级 active waypoint 进度、低层整形前后命令和 per-wheel 接触状态，不要混用统计口径。
-6. 论文侧若继续采用当前 RL 源码，应单独同步 `chapter03` 中 `7` 维动作推导与当前 `8` 维动作源码的口径冲突。
-7. 若切换到 Stage1 混合地形训练，应先实现 `docs/stage1_directional_terrain_task_design_2026-04-25.md` 中的方向通过任务，避免继续用自由 waypoint 目标把小车引导到其它地形列或地图外。
+3. 下一轮 Stage0 消融/训练不应继续只验证独立小权重载荷项；若要改善中车弱承载，应把有效接地与非零前进、waypoint 完成的关系先定义清楚。
+4. 若仍作为奖励偏好，应限制低层整形对 `vx` 的削弱幅度，并增加中车轮组载荷/接地质量约束，避免低滑移通过卸载中轮或近停滞实现。
+5. 若作为成功条件，应把低滑移、六轮有效接地和非零前进进度绑定，避免“原地低滑移”或“前后轮架桥拖行”被 reward 当成好行为。
+6. 用新日志指标继续区分 episode 结束完成度、命中瞬间误差、step 级 active waypoint 进度、低层整形前后命令和 per-wheel 接触状态，不要混用统计口径。
+7. 论文侧若继续采用当前 RL 源码，应单独同步 `chapter03` 中 `7` 维动作推导与当前 `8` 维动作源码的口径冲突。
+8. 若切换到 Stage1 混合地形训练，应先实现 `docs/stage1_directional_terrain_task_design_2026-04-25.md` 中的方向通过任务，避免继续用自由 waypoint 目标把小车引导到其它地形列或地图外。

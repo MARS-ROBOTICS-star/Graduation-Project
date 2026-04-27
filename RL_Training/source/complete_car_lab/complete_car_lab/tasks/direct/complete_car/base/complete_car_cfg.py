@@ -138,10 +138,14 @@ class RewardParamsCfg:
     reached_target_weight: float = 5.0
     far_from_target_margin: float = 3.0
     far_from_target_weight: float = -2.0
+    timeout_fixed_penalty: float = 12.0
+    timeout_distance_penalty_scale: float = 0.5
     angle_diff_weight: float = 5.0
-    turn_speed_penalty_weight: float = 0.0
-    slip_penalty_weight: float = 0.0
-    slip_angle_penalty_ratio: float = 1.0
+    action_rate_base_weight: float = 0.05
+    action_rate_joint_weight: float = 0.02
+    load_equalization_weight: float = 0.0
+    load_equalization_k: float = 10.0
+    load_equalization_target_shares: tuple[float, ...] = (1.0 / 6.0,) * 6
     progress_gate_longitudinal_k: float = 3.0
     progress_gate_slip_angle_scale_rad: float = 1.5
     progress_gate_min_multiplier: float = 0.10

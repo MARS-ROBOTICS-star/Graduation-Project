@@ -37,7 +37,8 @@ def compute_wheel_motion_observations(
     )
 
     # Describe the mismatch angle between wheel heading and actual travel direction.
-    wheel_slip_angle = torch.atan2(v_y, torch.abs(v_x) + slip_velocity_epsilon)
+    safe_v_x = torch.maximum(torch.abs(v_x), torch.full_like(v_x, slip_velocity_epsilon))
+    wheel_slip_angle = torch.atan2(v_y, safe_v_x)
 
     return wheel_longitudinal_slip, wheel_slip_angle
 

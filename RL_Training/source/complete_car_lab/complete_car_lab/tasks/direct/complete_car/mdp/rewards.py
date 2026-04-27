@@ -13,9 +13,10 @@ REWARD_TERM_NAMES = (
     "progress_to_target",
     "reached_target",
     "far_from_target",
+    "timeout_penalty",
     "angle_diff",
-    "turn_speed_penalty",
-    "slip_penalty",
+    "action_rate_penalty",
+    "load_equalization",
 )
 
 
@@ -25,10 +26,13 @@ def compute_reward_terms(
     previous_goal_distance: torch.Tensor,
     episode_length_buf: torch.Tensor,
     max_episode_length: int,
-    base_lin_vel_b: torch.Tensor,
+    actions: torch.Tensor,
+    previous_actions: torch.Tensor,
     wheel_longitudinal_slip: torch.Tensor,
     wheel_slip_angle: torch.Tensor,
+    wheel_normal_contact_force: torch.Tensor,
     waypoint_hit_mask: torch.Tensor,
+    time_out_mask: torch.Tensor,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     params = cfg.rewards.params
     max_episode_length_f = float(max(max_episode_length, 1))
@@ -53,8 +57,6 @@ def compute_reward_terms(
     goal_distance_f = max(float(cfg.commands.goal_distance), 1.0e-6)
     positive_progress = torch.clamp(progress_delta, min=0.0) / goal_distance_f
     negative_progress = torch.clamp(progress_delta, max=0.0) / goal_distance_f
-    mean_longitudinal_slip = torch.mean(torch.abs(wheel_longitudinal_slip), dim=1)
-    mean_slip_angle = torch.mean(torch.abs(wheel_slip_angle), dim=1)
     longitudinal_gate = torch.exp(
         -0.5
         * torch.sum(
@@ -82,28 +84,50 @@ def compute_reward_terms(
         torch.ones_like(current_goal_distance),
         torch.zeros_like(current_goal_distance),
     )
+    timeout_remaining_distance = time_out_mask.float() * current_goal_distance
+    timeout_penalty = -time_out_mask.float() * (
+        params.timeout_fixed_penalty
+        + params.timeout_distance_penalty_scale * current_goal_distance
+    )
     angle_diff = (
         (1.0 / (1.0 + torch.abs(goal_heading_error)))
         / max_episode_length_f
     )
-    turn_angle_scale = max(math.radians(cfg.commands.goal_direction_max_deg), 1.0e-6)
-    turn_intensity = torch.clamp(torch.abs(goal_heading_error) / turn_angle_scale, min=0.0, max=1.0)
-    planar_speed = torch.linalg.vector_norm(base_lin_vel_b[:, :2], dim=1)
-    normalized_planar_speed = planar_speed / max(float(cfg.control.base_forward_velocity_max), 1.0e-6)
-    turn_speed_penalty = turn_intensity * normalized_planar_speed / max_episode_length_f
-    slip_penalty = (
-        mean_longitudinal_slip
-        + params.slip_angle_penalty_ratio * mean_slip_angle
+    action_delta = actions - previous_actions
+    base_action_delta_cost = torch.mean(torch.square(action_delta[:, :2]), dim=1)
+    if action_delta.shape[1] > 2:
+        joint_action_delta_cost = torch.mean(torch.square(action_delta[:, 2:]), dim=1)
+    else:
+        joint_action_delta_cost = torch.zeros_like(base_action_delta_cost)
+    action_rate_penalty = -(
+        params.action_rate_base_weight * base_action_delta_cost
+        + params.action_rate_joint_weight * joint_action_delta_cost
     ) / max_episode_length_f
+    load_total = torch.sum(wheel_normal_contact_force, dim=1, keepdim=True)
+    load_shares = wheel_normal_contact_force / torch.clamp(load_total, min=1.0e-6)
+    load_targets = wheel_normal_contact_force.new_tensor(params.load_equalization_target_shares)
+    if load_targets.numel() != wheel_normal_contact_force.shape[1]:
+        raise ValueError(
+            "Reward load-equalization target shares must match the number of wheel contact-force terms."
+        )
+    load_targets = load_targets / torch.clamp(torch.sum(load_targets), min=1.0e-6)
+    load_equalization_error = torch.sum(torch.square(load_shares - load_targets.unsqueeze(0)), dim=1)
+    load_equalization_raw = torch.exp(
+        -max(float(params.load_equalization_k), 0.0) * load_equalization_error
+    )
+    # Convert the uniformity score into a penalty magnitude:
+    # uniform loads -> 0, uneven loads -> 1.
+    load_equalization = (1.0 - load_equalization_raw) / max_episode_length_f
 
     components = {
         "distance_to_target": distance_to_target * params.distance_to_target_weight,
         "progress_to_target": progress_to_target * params.progress_to_target_weight,
         "reached_target": reached_target * params.reached_target_weight,
         "far_from_target": far_from_target * params.far_from_target_weight,
+        "timeout_penalty": timeout_penalty,
         "angle_diff": angle_diff * params.angle_diff_weight,
-        "turn_speed_penalty": turn_speed_penalty * params.turn_speed_penalty_weight,
-        "slip_penalty": slip_penalty * params.slip_penalty_weight,
+        "action_rate_penalty": action_rate_penalty,
+        "load_equalization": load_equalization * params.load_equalization_weight,
     }
     total_reward = sum(components.values())
     if cfg.rewards.only_positive_rewards:
@@ -116,5 +140,10 @@ def compute_reward_terms(
         "progress_slip_angle_gate": slip_angle_gate,
         "progress_gate": progress_gate,
         "progress_multiplier": progress_multiplier,
+        "timeout_remaining_distance": timeout_remaining_distance,
+        "action_rate_base_cost": base_action_delta_cost,
+        "action_rate_joint_cost": joint_action_delta_cost,
+        "load_equalization_error": load_equalization_error,
+        "load_equalization_raw": load_equalization_raw,
     }
     return total_reward, components, diagnostics

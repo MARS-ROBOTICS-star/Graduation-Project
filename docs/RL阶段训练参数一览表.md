@@ -3,7 +3,7 @@
 本文档记录当前 `RL_Training/` 工作区内 `CompleteCar-Stage0` 的实际生效配置。
 本文档以当前源码为准，覆盖 RL 环境配置、底层运动学轮速分配、球铰控制器、车轮力矩控制器、reward、termination 与 PPO 参数。
 
-当前 Stage0 主线是平地双 waypoint active baseline；动作空间已重新加入 policy `yaw_rate_cmd`，底层执行链保留内部 `q_cmd/qdot_cmd` 球铰轨迹规划，但球铰 drive 只接收位置目标 `q_cmd`，并且车轮力矩控制器已改为仅轮速跟踪的 torque target 结构。因此本文档描述的是当前 active baseline，而不是已经撤回的衰减式力矩控制分支：
+当前 Stage0 主线是平地双 waypoint active baseline；动作空间已重新加入 policy `yaw_rate_cmd`，底层执行链保留内部 `q_cmd/qdot_cmd` 球铰轨迹规划，但球铰 drive 只接收位置目标 `q_cmd`。车轮执行链已改为直接速度驱动：底层运动学模型只提供车轮速度参考 `Omega_ref`，Isaac/PhysX 车轮 drive 跟踪该速度目标。因此本文档描述的是当前 active baseline，而不是已经撤回的衰减式力矩控制分支：
 
 - `54 / 54` actor / critic 观测
 - `8` 维动作
@@ -15,8 +15,8 @@
 - 不包含 `differential_turn_cost`
 - 不启用基于 preview turn-demand 的 penalty scaling
 - 球铰执行链：policy 给出最终姿态目标 `q^d`，环境内部轨迹生成器输出 `q_cmd/qdot_cmd`，PhysX 球铰 drive 只跟踪 `q_cmd`
-- 车轮执行链：低层分配器输出 `Omega_ref` 与 `tau_cmd`，Isaac 车轮关节最终执行 torque target
-- 当前车轮力矩公式：`contact_weight * K_track * (Omega_ref - Omega)`，再做 `±20 N*m` 限幅；纵滑率仍作为观测、日志和 progress gate 输入，但不再直接反馈到车轮力矩
+- 车轮执行链：低层分配器输出 `Omega_ref`，Isaac 车轮关节最终执行 velocity target
+- 当前车轮不再执行显式 torque target；纵滑率仍作为观测、日志和 progress gate 输入，但不再直接反馈到车轮控制
 
 ## 0. 对应源码
 
@@ -132,10 +132,10 @@ $$
 4. 低层 allocator 内部旧一阶球铰规划器根据 `q^d` 和当前实际球铰姿态 `q` 生成同一套 `q_cmd/qdot_cmd`。
 5. Isaac/PhysX 球铰隐式 actuator 只接收位置目标 `q_cmd`，不再接收 `qdot_cmd` 作为球铰速度目标。
 6. 低层 allocator 使用实际球铰姿态 `q_actual` 计算轮心几何，并复用同一个 `qdot_cmd` 计算构型速度项。
-7. allocator 先用接触感知加权最小二乘整形底盘平面命令，得到 `u_v^*=[v_x^*, \omega_z^*]^T`。
-8. allocator 根据 `q_actual`、`qdot_cmd` 和 `u_v^*` 计算每个车轮的滚动速度参考 `Omega_ref`。
-9. allocator 根据 `Omega_ref`、实际车轮角速度、实际纵向速度、实际侧向速度和接触权重生成车轮力矩目标 `tau_cmd`。
-10. 车轮关节最终执行 torque target；`Omega_ref` 只是力矩控制器内部参考，不是 Isaac 速度控制目标。
+7. 当前不再执行低侧滑平面命令整形，实际用于轮速分配的平面命令直接等于 policy 输出的 `u_v^d`。
+8. allocator 根据 `q_actual`、`qdot_cmd` 和 `u_v^d` 计算每个车轮的滚动速度参考 `Omega_ref`。
+9. 环境把 `Omega_ref` 裁剪到车轮关节速度限制内，并作为车轮 velocity target 下发给 Isaac/PhysX。
+10. 当前不再显式计算或下发车轮 torque target；纵滑率只作为观测、日志和 progress gate 输入。
 
 ### 4.1 关节顺序与底层变量
 
@@ -465,8 +465,8 @@ $$
 
 | 参数                              |              当前值 | 含义                  |
 | ------------------------------- | ---------------: | ------------------- |
-| `ball_joint_stiffness`          | `8000.0 N*m/rad` | 球铰 drive 位置刚度 $K_p$ |
-| `ball_joint_damping`            |  `1000.0 N*m*s/rad` | 球铰 drive 速度阻尼 $K_d$ |
+| `ball_joint_stiffness`          | `1000.0 N*m/rad` | 球铰 drive 位置刚度 $K_p$ |
+| `ball_joint_damping`            |  `100.0 N*m*s/rad` | 球铰 drive 速度阻尼 $K_d$ |
 | `ball_joint_effort_limit_sim`   |       `20.0 N*m` | 球铰 drive 力矩上限       |
 | `ball_joint_velocity_limit_sim` |      `1.0 rad/s` | 球铰 drive 速度上限       |
 
@@ -506,7 +506,7 @@ $$
 
 ### 4.7 低侧滑平面命令整形
 
-低层不直接使用 policy 的 `u_v^d` 生成轮速，而是先求整形后的平面命令：
+当前 active 控制链已经按用户要求去掉底层平面命令整形。低层直接使用 policy 映射后的平面命令：
 
 $$
 u_v^*
@@ -514,117 +514,33 @@ u_v^*
 \begin{bmatrix}
 v_x^*\\
 \omega_z^*
-\end{bmatrix}.
-$$
-
-轮心名义速度由三部分组成：
-
-$$
-v_j^{\mathrm{nom}}
+\end{bmatrix}
 =
-v_x e_x
-+
-\omega_z(e_z \times p_j(q))
-+
-J_{p,j}(q)\dot q_{\mathrm{cmd}}.
-$$
-
-第 $j$ 个车轮的名义侧向速度可写成：
-
-$$
-v_{j,\perp}^{\mathrm{nom}}
-=
-n_j(q)^T v_j^{\mathrm{nom}}
-=
-a_j(q)^T u_v
-+
-b_j(q,\dot q_{\mathrm{cmd}}),
-$$
-
-其中：
-
-$$
-a_j(q)
-=
-\begin{bmatrix}
-n_j(q)^T e_x\\
-n_j(q)^T(e_z \times p_j(q))
-\end{bmatrix},
-$$
-
-$$
-b_j(q,\dot q_{\mathrm{cmd}})
-=
-n_j(q)^T J_{p,j}(q)\dot q_{\mathrm{cmd}}.
-$$
-
-整形目标函数为：
-
-$$
-J(u_v)
-=
-\lambda_{\mathrm{track}}\|u_v-u_v^d\|^2
-+
-\lambda_{\mathrm{lat}}
-\sum_{j=1}^{6}
-C_j
-\left(
-a_j^T u_v+b_j
-\right)^2.
+u_v^d.
 $$
 
 当前权重：
 
 | 参数                         |   当前值 | 含义                  |
 | -------------------------- | ----: | ------------------- |
-| `low_slip_lambda_tracking` | `1.0` | 保持接近 policy 底盘命令的权重 |
-| `low_slip_lambda_lateral`  | `5.0` | 抑制名义侧向速度的权重         |
+| `low_slip_lambda_tracking` | `0.0` | 当前不参与控制 |
+| `low_slip_lambda_lateral`  | `0.0` | 当前不参与控制 |
 
-当前低层仍启用横向低滑移整形，`u_v^*` 不一定等于 policy 输出的 $u_v^d$。
-
-对应闭式线性方程为：
+因此 TensorBoard 中应满足：
 
 $$
-H u_v^* = g,
-$$
-
-$$
-H
+\mathrm{shaped\_planar\_command}
 =
-\lambda_{\mathrm{track}} I
-+
-\lambda_{\mathrm{lat}}
-\sum_{j=1}^{6}
-C_j a_j a_j^T,
-$$
-
-$$
-g
-=
-\lambda_{\mathrm{track}}u_v^d
--
-\lambda_{\mathrm{lat}}
-\sum_{j=1}^{6}
-C_j a_j b_j.
-$$
-
-求解后再按平面命令限制裁剪：
-
-$$
-v_x^*
-\in
-[-2.0,2.0]\ \mathrm{m/s},
+\mathrm{desired\_planar\_command},
 \qquad
-\omega_z^*
-\in
-[-2.0,2.0]\ \mathrm{rad/s}.
+\mathrm{planar\_command\_shaping\_delta}=0.
 $$
 
-注意：policy 的 `v_x^d` 因 `base_allow_reverse=True` 可以为负；allocator 对 `u_v^*` 的最终裁剪也是对称区间。
+注意：`wheel_speed_allocator.py` 中仍保留旧整形函数，供历史实验和工具脚本兼容；当前 `env.py` 的 active 控制路径不再调用该函数。
 
 ### 4.8 轮速参考
 
-用整形后的 `u_v^*` 重新计算轮心名义速度：
+用当前平面命令 `u_v^*=u_v^d` 计算轮心名义速度：
 
 $$
 v_j^{\mathrm{nom}}
@@ -742,59 +658,34 @@ $$
 \alpha_j\in[-\pi/2,\pi/2].
 $$
 
-### 4.10 车轮力矩控制器
+### 4.10 车轮速度驱动器
 
-当前车轮控制器只使用轮速跟踪和接触权重。纵滑率仍计算并保留为观测、日志和 progress gate 输入，但不再直接反馈到车轮力矩。
+当前车轮控制器直接使用速度目标。纵滑率仍计算并保留为观测、日志和 progress gate 输入，但不再直接反馈到车轮控制。
 
-基础轮速跟踪力矩：
+车轮速度目标：
 
 $$
-\tau_{0,j}
+\Omega_j^{target}
 =
-K_{\Omega}
-\left(
-\Omega_j^{\mathrm{ref}}-\Omega_j
-\right).
+\Omega_j^{\mathrm{ref}}
 $$
 
-预接触权重力矩：
+实际由 Isaac/PhysX 隐式 velocity drive 跟踪：
 
 $$
-\tau_{1,j}
+\tau_j^{drive}
+\approx
+K_v(\Omega_j^{\mathrm{ref}}-\Omega_j),
+\qquad
+K_v=100.0.
+$$
+
+源码不再显式计算或下发 `tau_cmd`。TensorBoard 中的 `tau0/tau1/wheel_torque_target` 仅作为按 velocity drive damping 估算的诊断量，不是实际下发的 torque target。
+
+$$
+\tau_j^{diagnostic}
 =
-\tau_{0,j}.
-$$
-
-乘接触权重并限幅后的最终车轮力矩目标：
-
-$$
-\tau_j^{\mathrm{cmd}}
-=
-\operatorname{clip}
-\left(
-C_j\tau_{1,j},
--\tau_{\max},
-\tau_{\max}
-\right).
-$$
-
-代入当前参数：
-
-$$
-\tau_j^{\mathrm{cmd}}
-=
-\operatorname{clip}
-\left(
-C_j
-\left[
-2.0
-\left(
-\Omega_j^{\mathrm{ref}}-\Omega_j
-\right)
-\right],
--20.0,
-20.0
-\right).
+\operatorname{clip}(100.0(\Omega_j^{\mathrm{ref}}-\Omega_j), -20.0, 20.0).
 $$
 
 当前车轮 actuator 参数：
@@ -802,10 +693,10 @@ $$
 | 参数 | 当前值 | 含义 |
 |---|---:|---|
 | `wheel_joint_stiffness` | `0.0` | 车轮不使用位置刚度驱动 |
-| `wheel_joint_damping` | `0.0` | 车轮不靠 actuator damping 驱动 |
-| `wheel_joint_effort_limit_sim` | `20.0 N*m` | 车轮 torque target 限幅 |
+| `wheel_joint_damping` | `100.0` | 车轮 velocity drive 阻尼 |
+| `wheel_joint_effort_limit_sim` | `20.0 N*m` | 车轮 velocity drive 的力矩上限 |
 | `wheel_joint_velocity_limit_sim` | `20.0 rad/s` | 车轮关节速度限制 |
-| `wheel_torque_tracking_gain` | `2.0` | $K_{\Omega}$，轮速跟踪增益 |
+| `wheel_torque_tracking_gain` | `0.0` | 当前不参与车轮控制，仅保留配置兼容 |
 | `wheel_slip_feedback_gain` | `0.0` | 当前不参与车轮力矩，仅保留配置兼容 |
 | `wheel_slip_velocity_epsilon` | `0.1 m/s` | 纵滑和侧偏角计算中的低速分母保护 |
 
@@ -815,8 +706,8 @@ $$
 |---|---|
 | `g_kappa` | 固定为 `1.0`，仅保留旧日志兼容性 |
 | `g_alpha` | 固定为 `1.0`，仅保留旧日志兼容性 |
-| `tau0` | $\tau_{0,j}$，基础轮速跟踪力矩 |
-| `tau1` | $\tau_{1,j}$，当前等于基础轮速跟踪力矩 `tau0` |
+| `tau0` | 按 velocity drive damping 估算的诊断力矩，不是显式下发 torque |
+| `tau1` | 当前等于 `tau0`，同样只是诊断量 |
 
 ### 4.11 低层参数总表
 
@@ -834,20 +725,20 @@ $$
 | `ball_joint_planner_track_error_limit` |                             `0.10 rad` | 当前旧一阶路径不使用 |
 | `ball_joint_pos_lower_limits`          | `(-0.6, -1.0, -0.5, -0.6, -1.0, -0.5) rad` | Stage0 球铰动作映射与终止下限 |
 | `ball_joint_pos_upper_limits`          | `(0.6, 0.4, 0.5, 0.6, 0.4, 0.5) rad` | Stage0 球铰动作映射与终止上限 |
-| `ball_joint_stiffness`                 |                      `8000.0 N*m/rad` | Isaac 球铰 drive 刚度                |
-| `ball_joint_damping`                   |                       `1000.0 N*m*s/rad` | Isaac 球铰 drive 阻尼                |
+| `ball_joint_stiffness`                 |                      `1000.0 N*m/rad` | Isaac 球铰 drive 刚度                |
+| `ball_joint_damping`                   |                       `100.0 N*m*s/rad` | Isaac 球铰 drive 阻尼                |
 | `ball_joint_effort_limit_sim`          |                             `20.0 N*m` | Isaac 球铰 drive 力矩上限              |
 | `ball_joint_velocity_limit_sim`        |                            `1.0 rad/s` | Isaac 球铰 drive 速度上限              |
 | `wheel_radius`                         |                               `0.19 m` | 轮速参考和滑移率计算                       |
 | `wheel_joint_stiffness`                |                                  `0.0` | 车轮 actuator 位置刚度                 |
-| `wheel_joint_damping`                  |                                  `0.0` | 车轮 actuator 阻尼                   |
-| `wheel_joint_effort_limit_sim`         |                             `20.0 N*m` | 车轮 torque target 限幅              |
+| `wheel_joint_damping`                  |                                 `100.0` | 车轮 velocity drive 阻尼                   |
+| `wheel_joint_effort_limit_sim`         |                             `20.0 N*m` | 车轮 velocity drive 的力矩上限              |
 | `wheel_joint_velocity_limit_sim`       |                           `20.0 rad/s` | 车轮关节速度限制                         |
-| `low_slip_lambda_tracking`             |                                  `1.0` | 平面命令整形跟踪项权重                      |
-| `low_slip_lambda_lateral`              |                                  `5.0` | 平面命令整形侧滑项权重                      |
+| `low_slip_lambda_tracking`             |                                  `0.0` | 当前不使用低侧滑平面命令整形                      |
+| `low_slip_lambda_lateral`              |                                  `0.0` | 当前不使用低侧滑平面命令整形                      |
 | `contact_force_off_threshold`          |                                 `0.01` | 接触权重 ramp 下限                     |
 | `contact_force_on_threshold`           |                                 `0.08` | 接触权重 ramp 上限                     |
-| `wheel_torque_tracking_gain`           |                                  `2.0` | $K_{\Omega}$                     |
+| `wheel_torque_tracking_gain`           |                                  `0.0` | 当前不参与车轮控制，仅保留配置兼容                     |
 | `wheel_slip_feedback_gain`             |                                  `0.0` | 当前不参与车轮力矩，仅保留配置兼容                     |
 | `wheel_slip_velocity_epsilon`          |                                  `0.1` | $\epsilon$                       |
 
@@ -1571,7 +1462,7 @@ PPO 算法：
 |---|---|
 | `PerWheel/<wheel>/wheel_joint_vel` | 该车轮实际关节角速度 |
 | `PerWheel/<wheel>/wheel_speed_reference` | 该车轮低层分配得到的轮速参考 |
-| `PerWheel/<wheel>/wheel_torque_target` | 该车轮下发的力矩目标 |
+| `PerWheel/<wheel>/wheel_torque_target` | 按 velocity drive damping 估算的诊断力矩，不是显式下发 torque |
 | `PerWheel/<wheel>/contact_weight` | 由法向接触力映射得到的接触权重 |
 | `PerWheel/<wheel>/normal_force` | 该车轮实际接触合力模长，单位为 N |
 | `PerWheel/<wheel>/longitudinal_slip` | 该车轮纵向滑移率 |
@@ -1579,10 +1470,10 @@ PPO 算法：
 | `PerWheel/<wheel>/v_parallel` | 该车轮轮心实际纵向速度 |
 | `PerWheel/<wheel>/v_perp` | 该车轮轮心实际侧向速度 |
 | `PerWheel/<wheel>/delta_v` | 车轮圆周速度与实际纵向速度的差值 |
-| `PerWheel/<wheel>/tau0` | 基础轮速跟踪力矩 |
-| `PerWheel/<wheel>/g_kappa` | 兼容旧日志字段；当前恢复旧力矩控制器后固定为 `1.0` |
-| `PerWheel/<wheel>/tau1` | 当前等于 `tau0`，为乘接触权重前的轮速跟踪力矩 |
-| `PerWheel/<wheel>/g_alpha` | 兼容旧日志字段；当前恢复旧力矩控制器后固定为 `1.0` |
+| `PerWheel/<wheel>/tau0` | 按 velocity drive damping 估算的诊断力矩，不是显式下发 torque |
+| `PerWheel/<wheel>/g_kappa` | 兼容旧日志字段；当前直接速度驱动下固定为 `1.0` |
+| `PerWheel/<wheel>/tau1` | 当前等于 `tau0`，为 velocity drive 诊断力矩，不是显式下发 torque |
+| `PerWheel/<wheel>/g_alpha` | 兼容旧日志字段；当前直接速度驱动下固定为 `1.0` |
 
 ## 13. 当前结论与使用边界
 
@@ -1596,14 +1487,14 @@ PPO 算法：
 - 当前 low-slip progress gate 可以保住高成功率并略降纵滑，但没有把侧滑角压到 `0.5 rad` 或 `30°` 以下。
 - 2026-04-26 的新球铰 `q_cmd/qdot_cmd` 联合跟踪链路和低侧滑命令整形训练验证表明，强低侧滑整形可以把后段纵滑降到约 `0.301`、侧滑角降到约 `0.132 rad`，但会把 shaped `vx` 压到 desired `vx` 的约 `10%`，导致 `success_rate=0`、`waypoints_completed_mean=0`。
 - 2026-04-26 的 `low_slip_lambda_lateral=2.0` 短训练表明，降低侧滑整形权重可以解除近停滞：后 25 轮 shaped `vx≈0.542 m/s`、`V_parallel≈0.158 m/s`；但低滑移约束明显不足，后 25 轮纵滑约 `1.496`、侧滑角约 `0.530 rad`、综合达标率约 `0.085`，仍没有完成 waypoint。
-- 2026-04-26 用户回放 `stage0_lateral2_short150_verify/model_149.pt` 后观察到六个轮子基本不转、车辆在地面上蠕动；后续多轮排查表明直接纵滑反馈可能在低速区压制轮速。当前已按用户要求去掉轮级 `-K_slip*kappa` 附加力矩，仅保留 `contact_weight * K_track * (Omega_ref - Omega)` 公式结构；signed 纵滑方向仍为 `kappa=(r*Omega-V_parallel)/max(|V_parallel|, epsilon)`，但只作为观测、日志和 progress gate 输入。
+- 2026-04-26 用户回放 `stage0_lateral2_short150_verify/model_149.pt` 后观察到六个轮子基本不转、车辆在地面上蠕动；后续多轮排查表明低侧滑命令整形和直接纵滑反馈都可能压制推进。当前已按用户要求去掉低侧滑平面命令整形和轮级 `-K_slip*kappa` 附加力矩，车轮直接执行速度目标 `Omega_ref`；signed 纵滑方向仍为 `kappa=(r*Omega-V_parallel)/max(|V_parallel|, epsilon)`，但只作为观测、日志和 progress gate 输入。
 - 2026-04-27 的 `low_slip_lambda_lateral=4.0, ball=1500/30` 短训练表明，该组合能把后 25 轮纵滑降到约 `0.746`、侧滑角降到约 `0.282 rad`，但同时把 `v_parallel_abs` 压到约 `0.041 m/s`，`active_segment_completion_pct` 降到约 `9.71%`，且中车两轮法向力仅约 `0.019 N / 0.019 N`，因此不能作为成功训练方向。
-- 当前源码 Stage0 已按用户要求恢复到 `2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter` 的旧球铰规划器和主要数值参数，但不恢复旧纵滑符号。当前 active reward 进一步改为移除直接 `slip_penalty` 与直接 `turn_speed_penalty`，并加入 `action_rate_base_weight=0.05`、`action_rate_joint_weight=0.02`、`timeout_fixed_penalty=8.0`、`timeout_distance_penalty_scale=0.3`。其他关键生效参数为 `low_slip_lambda_lateral=5.0`、`load_equalization_weight=0.0`、`K_track=2.0`、`K_slip=0.0`、`wheel_joint_effort_limit_sim=20.0`、`ball_joint_stiffness=8000.0`、`ball_joint_damping=1000.0`、`ball_joint_effort_limit_sim=20.0`。球铰规划器回到 allocator 内部旧一阶链路：`qdot_cmd=clip(K*(q_des-q), ±1.0)`，`q_cmd=clip(q+dt*qdot_cmd, q_min, q_max)`；不再使用 env 层 `q_ref/qddot` 轨迹整形。PhysX 球铰 drive 仍只接收 `q_cmd` 位置目标；`qdot_cmd` 只供轮速分配使用。Stage0 球铰姿态边界为 yaw `±0.6 rad`、pitch 下限/上限 `-1.0/0.4 rad`、roll `±0.5 rad`。
+- 当前源码 Stage0 已按用户要求恢复到旧一阶球铰规划器，但不恢复旧纵滑符号。当前 active reward 进一步改为移除直接 `slip_penalty` 与直接 `turn_speed_penalty`，并加入 `action_rate_base_weight=0.05`、`action_rate_joint_weight=0.02`、`timeout_fixed_penalty=8.0`、`timeout_distance_penalty_scale=0.3`。其他关键生效参数为 `low_slip_lambda_lateral=0.0`、`load_equalization_weight=0.0`、`K_track=0.0`、`K_slip=0.0`、`wheel_joint_damping=100.0`、`wheel_joint_effort_limit_sim=20.0`、`ball_joint_stiffness=1000.0`、`ball_joint_damping=100.0`、`ball_joint_effort_limit_sim=20.0`。球铰规划器回到 allocator 内部旧一阶链路：`qdot_cmd=clip(K*(q_des-q), ±1.0)`，`q_cmd=clip(q+dt*qdot_cmd, q_min, q_max)`；不再使用 env 层 `q_ref/qddot` 轨迹整形。PhysX 球铰 drive 仍只接收 `q_cmd` 位置目标；车轮 drive 接收 `Omega_ref` 速度目标。Stage0 球铰姿态边界为 yaw `±0.6 rad`、pitch 下限/上限 `-1.0/0.4 rad`、roll `±0.5 rad`。
 - 2026-04-27 严格核对发现：当前 `progress_gate` 组合公式仍是后续 v2 的 $\min(G_\kappa,G_\alpha)$，而 `2026-04-25_18-26-58` 旧 run 使用的是 $0.5(G_\kappa+G_\alpha)$。因此当前源码不是对 `2026-04-25_18-26-58` 的奖励结构严格复现。
 - 2026-04-27 针对 `model_375.pt` 的 headless 回放参数扫描表明：只降低 `Kp/Kd/qdot/qddot` 最多只能把中车载荷占比提升到约 `5.0%`；将 pitch/roll 近似锁定后，中车载荷占比可恢复到约 `27.5%-33.3%`，双中轮法向力约 `63-94 N`，但旧 checkpoint 的 waypoint 进度基本坍缩。该接地修正已按用户后续要求从 active 源码撤回，作为历史诊断结论保留。
 - 2026-04-27 的 `low_slip_lambda_lateral=0.0, slip_penalty_weight=0.0, ball=1500/30` 对照训练在 iteration `393/700` 按成功率平台期早停，确认目标完成能力恢复：后 25 轮 `success_rate≈0.965`、episode 级 `waypoint_completion_pct≈97.41%`；但后 25 轮纵滑约 `2.308`、侧滑角约 `0.714 rad`、`LowSlip/combined_pass_rate≈0.0064`，且中车载荷占六轮总法向力仅约 `2.08%`。因此该配置是“恢复跑起来”的对照结果，不是低滑移完成方案。
 - 最近一轮已完成诊断的 `lambda_lat=10.0, K_track=2.0, K_slip=1.5` 短训练仍表现为低滑移近停滞：后段低滑移指标改善，但 `waypoints_completed_mean=0.0`，中车轮组接近卸载；因此该参数组合尚不能作为成功训练结果。
-- 历史对照中的 `lambda_lat=0.0` 已验证可以在去掉直接 `slip_penalty` 后恢复 waypoint 完成能力；当前 active 源码已经回到 `lambda_lat=5.0`，不是关闭低层横向滑移整形的对照配置。
+- 历史对照中的 `lambda_lat=0.0` 已验证可以在去掉直接 `slip_penalty` 后恢复 waypoint 完成能力；当前 active 源码已经回到 `lambda_lat=0.0`，并进一步把车轮执行改为直接 velocity target，正在重新训练验证。
 - 因此当前不能只追求更低滑移；下一轮必须把低滑移与实际 waypoint progress 或非零前进速度绑定，避免“原地低滑移”成为局部最优。
 - 当前没有地形传感器、课程学习、高度 patch 或复杂地形输入。
 - 当前没有 `next_turn_delta`，策略看不到下一段转向预告。
@@ -1614,6 +1505,6 @@ PPO 算法：
 后续推进原则：
 
 - 若继续分析当前低层链路，应优先回放最近的短训练 checkpoint，确认中车轮组低载荷、车辆近停滞与低层整形之间的关系。
-- 若继续沿 `low_slip_lambda_lateral` 调参，`10.0`、`5.0`、`2.0` 和 `0.0` 应作为已有边界点；当前源码 `5.0` 是恢复旧参数后的 active 配置。
+- 若继续沿 `low_slip_lambda_lateral` 调参，`10.0`、`5.0`、`2.0` 和 `0.0` 应作为已有边界点；当前源码 `0.0` 是按用户要求关闭底层整形后的 active 配置。
 - 若继续低滑移优化，应先决定 low-slip 是评价指标、奖励偏好，还是成功条件的一部分。
 - 在确认 per-wheel 诊断后，再讨论是否修改 gate、低层 allocator、终止条件或训练课程。

@@ -4,6 +4,18 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-27
 
+### Stage0 已去掉底层整形，车轮改为直接速度驱动并准备重训
+- User request:
+  - 停止上一轮训练，去掉底层整形，车轮直接采用速度驱动，由速度分配模型提供速度，然后重新启动训练。
+- Implementation:
+  - 已停止 `2026-04-27_22-28-39_stage0_no_slip_feedback_timeout_watch_700iter`，停止前约 iteration `25/700`，仍为 `success_rate=0.0`、`time_out_rate=1.0`，active segment completion 约 `7.7%`。
+  - `env.py` 不再调用 `compute_low_slip_control_targets()`；当前链路为 policy `u_v^d/q^d` -> allocator 旧一阶球铰规划器 -> `compute_wheel_speed_references()` -> 车轮 velocity target。
+  - `low_slip_lambda_tracking=0.0`、`low_slip_lambda_lateral=0.0`，`shaped_planar_command` 直接等于 `desired_planar_command`，`planar_command_shaping_delta` 应为 `0`。
+  - 车轮不再显式下发 torque target；`wheel_torque_target/tau0/tau1` 仅作为按 velocity drive damping 估算的诊断量。
+  - Stage0 车轮 drive 使用 `wheel_joint_damping=100.0`、`wheel_joint_effort_limit_sim=20.0`、`wheel_joint_velocity_limit_sim=20.0`。
+- Status:
+  - implemented; next step is a new GPU training run with the direct wheel velocity controller.
+
 ### Stage0 轮级牵引已去掉直接纵滑反馈，并重启训练验证
 - User request:
   - 停止刚启动的 timeout reward 验证训练，底层去掉纵滑反馈后重新启动训练。

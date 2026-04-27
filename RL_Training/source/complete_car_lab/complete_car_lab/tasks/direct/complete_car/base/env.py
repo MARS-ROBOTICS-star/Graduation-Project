@@ -77,6 +77,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._previous_goal_distance = torch.zeros(self.num_envs, device=self.device)
 
         self._joint_pos_targets = self.robot.data.default_joint_pos.clone()
+        self._joint_vel_targets = torch.zeros_like(self.robot.data.default_joint_vel)
         self._joint_effort_targets = torch.zeros_like(self.robot.data.default_joint_vel)
         self._last_ball_joint_desired_targets = torch.zeros((self.num_envs, len(BALL_JOINT_NAMES)), device=self.device)
         self._ball_joint_reference_targets = self.robot.data.default_joint_pos[:, self._ball_joint_ids].clone()
@@ -297,61 +298,65 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self.cfg.control.base_yaw_rate_max,
             allow_reverse=self.cfg.control.base_allow_reverse,
         )
-        low_level_outputs = self._wheel_speed_allocator.compute_low_slip_control_targets(
-            ball_joint_pos=self.robot.data.joint_pos[:, self._ball_joint_ids],
-            desired_ball_joint_pos=desired_ball_joint_targets,
-            desired_planar_command=planar_command,
-            wheel_normal_contact_force=wheel_normal_contact_force,
-            wheel_joint_vel=self.robot.data.joint_vel[:, self._wheel_joint_ids],
-            rolling_speed_actual=rolling_speed_actual,
-            lateral_speed_actual=lateral_speed_actual,
-            control_dt=self.cfg.control.control_dt,
-            planner_gains=self.cfg.control.ball_joint_planner_gains,
-            planner_qdot_limits=self.cfg.control.ball_joint_planner_qdot_limits,
-            q_lower_limits=ball_joint_lower_limits,
-            q_upper_limits=ball_joint_upper_limits,
-            lambda_tracking=self.cfg.control.low_slip_lambda_tracking,
-            lambda_lateral=self.cfg.control.low_slip_lambda_lateral,
-            planar_command_limits=(
-                self.cfg.control.base_forward_velocity_max,
-                self.cfg.control.base_yaw_rate_max,
-            ),
-            contact_force_off_threshold=self.cfg.control.contact_force_off_threshold,
-            contact_force_on_threshold=self.cfg.control.contact_force_on_threshold,
-            torque_tracking_gain=self.cfg.control.wheel_torque_tracking_gain,
-            slip_feedback_gain=self.cfg.control.wheel_slip_feedback_gain,
-            wheel_torque_limit=self.cfg.control.wheel_joint_effort_limit_sim,
-            slip_velocity_epsilon=self.cfg.control.wheel_slip_velocity_epsilon,
+        ball_joint_pos = self.robot.data.joint_pos[:, self._ball_joint_ids]
+        wheel_joint_vel = self.robot.data.joint_vel[:, self._wheel_joint_ids]
+        planner_outputs = self._wheel_speed_allocator.compute_ball_joint_planner_outputs(
+            ball_joint_pos,
+            desired_ball_joint_targets,
+            self.cfg.control.control_dt,
+            self.cfg.control.ball_joint_planner_gains,
+            self.cfg.control.ball_joint_planner_qdot_limits,
+            ball_joint_lower_limits,
+            ball_joint_upper_limits,
         )
-        self._last_ball_joint_rate_targets.copy_(low_level_outputs.ball_joint_rate_targets)
-        self._last_desired_planar_command.copy_(low_level_outputs.desired_planar_command)
-        self._last_shaped_planar_command.copy_(low_level_outputs.shaped_planar_command)
-        self._last_contact_weights.copy_(low_level_outputs.contact_weights)
-        self._last_wheel_v_parallel.copy_(low_level_outputs.rolling_speed_actual)
-        self._last_wheel_v_perp.copy_(low_level_outputs.lateral_speed_actual)
-        self._last_wheel_delta_v.copy_(low_level_outputs.wheel_delta_speed)
-        self._last_wheel_tau0.copy_(low_level_outputs.base_torque_targets)
-        self._last_wheel_g_kappa.copy_(low_level_outputs.longitudinal_decay)
-        self._last_wheel_tau1.copy_(low_level_outputs.conditioned_torque_targets)
-        self._last_wheel_g_alpha.copy_(low_level_outputs.slip_angle_decay)
+        wheel_state = self._wheel_speed_allocator.compute_wheel_kinematic_state(ball_joint_pos)
+        reference_outputs = self._wheel_speed_allocator.compute_wheel_speed_references(
+            wheel_state=wheel_state,
+            shaped_planar_command=planar_command,
+            ball_joint_rate_targets=planner_outputs.ball_joint_rate_targets,
+        )
+        wheel_speed_reference = torch.clamp(
+            reference_outputs.wheel_speed_reference,
+            min=-self.cfg.control.wheel_joint_velocity_limit_sim,
+            max=self.cfg.control.wheel_joint_velocity_limit_sim,
+        )
+        contact_weights = self._wheel_speed_allocator.compute_contact_weights(
+            wheel_normal_contact_force,
+            self.cfg.control.contact_force_off_threshold,
+            self.cfg.control.contact_force_on_threshold,
+        )
+        wheel_delta_speed = self.cfg.control.wheel_radius * wheel_joint_vel - rolling_speed_actual
+        implied_velocity_drive_torque = torch.clamp(
+            self.cfg.control.wheel_joint_damping * (wheel_speed_reference - wheel_joint_vel),
+            min=-self.cfg.control.wheel_joint_effort_limit_sim,
+            max=self.cfg.control.wheel_joint_effort_limit_sim,
+        )
+        self._last_ball_joint_rate_targets.copy_(planner_outputs.ball_joint_rate_targets)
+        self._last_desired_planar_command.copy_(planar_command)
+        self._last_shaped_planar_command.copy_(planar_command)
+        self._last_contact_weights.copy_(contact_weights)
+        self._last_wheel_v_parallel.copy_(rolling_speed_actual)
+        self._last_wheel_v_perp.copy_(lateral_speed_actual)
+        self._last_wheel_delta_v.copy_(wheel_delta_speed)
+        self._last_wheel_tau0.copy_(implied_velocity_drive_torque)
+        self._last_wheel_g_kappa.fill_(1.0)
+        self._last_wheel_tau1.copy_(implied_velocity_drive_torque)
+        self._last_wheel_g_alpha.fill_(1.0)
         self._joint_pos_targets = mdp_actions.apply_ball_joint_position_targets(
             self._joint_pos_targets,
             self._ball_joint_ids,
-            low_level_outputs.ball_joint_position_targets,
+            planner_outputs.ball_joint_position_targets,
         )
-        self._last_wheel_speed_reference.copy_(low_level_outputs.wheel_speed_reference)
-        self._last_wheel_torque_targets.copy_(low_level_outputs.wheel_torque_targets)
+        self._last_wheel_speed_reference.copy_(wheel_speed_reference)
+        self._last_wheel_torque_targets.copy_(implied_velocity_drive_torque)
+        self._joint_vel_targets.zero_()
+        self._joint_vel_targets[:, self._wheel_joint_ids] = wheel_speed_reference
         self._joint_effort_targets.zero_()
-        self._joint_effort_targets = mdp_actions.apply_wheel_effort_targets(
-            self._joint_effort_targets,
-            self._wheel_joint_ids,
-            low_level_outputs.wheel_torque_targets,
-            self.cfg.control.wheel_joint_effort_limit_sim,
-        )
 
-    # 球铰只下发位置目标；qdot_cmd 仍保留给内部规划器和轮速分配器使用。
+    # 球铰下发位置目标；车轮直接下发速度目标。
     def _apply_action(self) -> None:
         self.robot.set_joint_position_target(self._joint_pos_targets[:, self._ball_joint_ids], joint_ids=self._ball_joint_ids)
+        self.robot.set_joint_velocity_target(self._joint_vel_targets[:, self._wheel_joint_ids], joint_ids=self._wheel_joint_ids)
         self.robot.set_joint_effort_target(self._joint_effort_targets[:, self._wheel_joint_ids], joint_ids=self._wheel_joint_ids)
 
     def _compute_relative_goal_commands(self, env_ids: torch.Tensor | None = None) -> torch.Tensor:
@@ -909,6 +914,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self.actions[env_ids] = 0.0
         self.last_actions[env_ids] = 0.0
         self._joint_pos_targets[env_ids] = joint_pos
+        self._joint_vel_targets[env_ids] = 0.0
         self._joint_effort_targets[env_ids] = 0.0
         self._last_ball_joint_desired_targets[env_ids] = joint_pos[:, self._ball_joint_ids]
         self._ball_joint_reference_targets[env_ids] = joint_pos[:, self._ball_joint_ids]

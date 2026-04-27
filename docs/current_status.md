@@ -6,10 +6,15 @@
   - 新增 `timeout_penalty`：episode 因未成功达到时间上限时触发一次，公式为 `-1 * (8.0 + 0.3 * d_t)`，其中 `d_t` 为当前 active waypoint 剩余距离。
   - 直接 `slip_penalty` 已从 active reward 中移除。
   - 直接 `turn_speed_penalty` 已从 active reward 中移除。
-  - 轮级牵引已按用户要求去掉直接纵滑反馈：车轮力矩只用 `contact_weight * K_track * (Omega_ref - Omega)`，再做 `±20 N*m` 限幅；纵滑率继续作为观测、日志和 progress gate 输入。
+  - 底层整形已按用户要求去掉：`env.py` 不再调用 `compute_low_slip_control_targets()`，也不再执行低侧滑平面命令整形或轮级牵引力矩控制。
+  - 当前车轮直接采用 velocity target：allocator 只提供 `Omega_ref`，环境将其裁剪后下发给 Isaac/PhysX 车轮 velocity drive。
+  - 当前关键低层参数：`ball_joint_stiffness=1000.0`、`ball_joint_damping=100.0`、`low_slip_lambda_tracking=0.0`、`low_slip_lambda_lateral=0.0`、`wheel_torque_tracking_gain=0.0`、`wheel_slip_feedback_gain=0.0`、`wheel_joint_damping=100.0`、`wheel_joint_effort_limit_sim=20.0`。
   - low-slip progress gate 仍保留，因此滑移仍会间接影响正向 progress multiplier；纵滑/侧滑指标也继续作为观测和日志。
   - `load_equalization_weight=0.0`，仍只作为负载不均匀诊断项。
-- 该 active 配置正在重新训练验证；`2026-04-27_22-19-39_stage0_timeout_penalty_moderate_watch_700iter` 已在 iteration `23/700` 附近按用户要求中断，早期仍为 `success_rate=0.0`、`time_out_rate=1.0`，尚未出现有效推进。
+- 该 active 配置正在重新训练验证：
+  - `2026-04-27_22-19-39_stage0_timeout_penalty_moderate_watch_700iter` 已在 iteration `23/700` 附近按用户要求中断，早期仍为 `success_rate=0.0`、`time_out_rate=1.0`，尚未出现有效推进。
+  - `2026-04-27_22-28-39_stage0_no_slip_feedback_timeout_watch_700iter` 已在 iteration `25/700` 附近按用户要求中断；去掉纵滑反馈后纵滑降到约 `1.8`，但仍 `success_rate=0.0`、`time_out_rate=1.0`，只出现约 `7.7%` active segment completion。
+  - 最新源码已进一步切到直接车轮速度驱动，下一轮训练用于验证是否解除底层整形/力矩链路对推进的抑制。
 - 2026-04-27 对当前 active reward 完成源码层 reward hacking 检查，结论是存在高风险：
   - `distance_to_target` 和 `angle_diff` 都是每步正奖励，原地不动也能累计正回报；在初始 `10 m` 目标距离、目标角约 `20°-30°` 时，timeout 一整局仍可获得约 `6.9-7.4` 的 dense return。
   - `time_out` 没有直接负奖励，也不算 terminated；因此“不完成但稳定活到超时”不是明确坏行为。
@@ -48,10 +53,10 @@
   - 诊断报告：`results/stage0_model699_replay_stall_diagnosis_2026-04-27.md`
 
 ## 当前已验证配置
-- 2026-04-27 严格核对 `2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter` 后确认：当前只恢复了旧球铰规划器调用链和 Stage0 数值参数，奖励源码没有完全恢复到旧 run：
+- 2026-04-27 严格核对 `2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter` 后确认：当前保留旧球铰规划器调用链，但底层整形与车轮力矩链路已退出，奖励源码也没有严格恢复到旧 run：
   - 代码链路：`env.py` 不再向 `compute_low_slip_control_targets()` 传入 env 层 `planned_ball_joint_pos/rate`，球铰目标重新由 allocator 内部旧一阶规划器生成。
   - 旧一阶规划器：`qdot_cmd=clip(K*(q_des-q), ±1.0)`，`q_cmd=clip(q+dt*qdot_cmd, q_min, q_max)`；不使用 env 层 `q_ref`、`track_error_limit` 和 `qddot` 整形。
-  - Stage0 控制参数：`ball_joint_stiffness=8000.0`、`ball_joint_damping=1000.0`、`ball_joint_effort_limit_sim=20.0`、`ball_joint_velocity_limit_sim=1.0`、`low_slip_lambda_lateral=5.0`、`K_track=2.0`、`K_slip=0.0`、`base_allow_reverse=True`。
+  - Stage0 控制参数：`ball_joint_stiffness=1000.0`、`ball_joint_damping=100.0`、`ball_joint_effort_limit_sim=20.0`、`ball_joint_velocity_limit_sim=1.0`、`low_slip_lambda_lateral=0.0`、`K_track=0.0`、`K_slip=0.0`、`wheel_joint_damping=100.0`、`base_allow_reverse=True`。
   - 当前 Stage0 奖励参数：`distance_to_target_weight=6.0`、`progress_to_target_weight=8.0`、`reached_target_weight=6.0`、`action_rate_base_weight=0.05`、`action_rate_joint_weight=0.02`、`timeout_fixed_penalty=8.0`、`timeout_distance_penalty_scale=0.3`、`progress_gate_min/max=0.25/1.5`、`low_slip_angle_threshold_rad=0.35`、`load_equalization_weight=0.0`；直接 `slip_penalty` 与直接 `turn_speed_penalty` 已移除。
   - 关键未恢复项：`2026-04-25_18-26-58` 的 `progress_gate` 组合公式是 `0.5*(Gκ+Gα)`，当前源码仍是后续 v2 的 `min(Gκ,Gα)`。这是行为生效差异，不是日志差异。
   - 纵滑方向仍按用户要求保留当前修正定义：`kappa=(rΩ-V_parallel)/max(|V_parallel|, epsilon)`，未恢复旧 run 的反向定义。
@@ -301,7 +306,7 @@
     - 曾验证的球铰控制参数为：`ball_joint_stiffness=300.0`、`ball_joint_damping=5.0`、`ball_joint_effort_limit_sim=30.0`、`qdot_max=0.6 rad/s`、`qddot_max=0.8 rad/s^2`
 	    - 无覆盖回放复查结果：中车两轮法向力均值约 `70.8 N / 62.8 N`，中车载荷占比约 `27.5%`，中车接地已恢复正常
 	    - 代价：旧 `model_375.pt` 在该约束下 waypoint 进度基本坍缩，不能继续把旧 checkpoint 的成功率当作该约束下的当前配置结论
-	    - 该接地修正已按用户后续要求从 active 源码撤回；当前 active 源码已再次恢复到 18-26-58 旧球铰规划器和 `8000/1000` 球铰 drive 参数
+		    - 该接地修正已按用户后续要求从 active 源码撤回；当前 active 源码保留旧一阶球铰规划器，但球铰 drive 为 `1000/100`
   - 2026-04-27 曾按用户要求新增归一化六轮负载均衡奖励项：
 	    - 新增 reward term：`load_equalization`
 	    - 公式口径：先用六轮归一化法向力计算负载占比 `f_i`，再计算 `exp(-10.0 * sum((f_i - 1/6)^2)) / T`
@@ -475,27 +480,27 @@
   - 高层策略输出 `u_v^d=[vx_cmd, yaw_rate_cmd]` 与最终球铰目标姿态 `q^d`
   - 环境当前不再使用 env 层 `q_ref/qddot` 轨迹整形器；球铰目标由 allocator 内部旧一阶规划器生成
   - 球铰执行器只下发 `set_joint_position_target(q_cmd)`，不再下发 `set_joint_velocity_target(qdot_cmd)`
-  - 轮速分配器使用实际球铰姿态 `q_actual` 计算几何量，并使用 allocator 内部得到的 `qdot_cmd` 计算 `Omega_ref`
-  - 车轮仍走 torque target 链，最终下发 `tau_cmd`
+  - 轮速分配器使用实际球铰姿态 `q_actual` 计算几何量，并使用 allocator 内部得到的 `qdot_cmd` 和未整形的 `u_v^d` 计算 `Omega_ref`
+  - 车轮直接下发 `set_joint_velocity_target(Omega_ref)`；不再显式下发 torque target
   - 当前球铰轨迹/执行参数：
     - `ball_joint_planner_gains = (10.0, ..., 10.0)`
     - `ball_joint_planner_qdot_limits = (1.0, ..., 1.0) rad/s`
     - `ball_joint_planner_qddot_limits = (12.0, ..., 12.0) rad/s^2`，当前旧一阶路径不使用
     - `ball_joint_planner_track_error_limit = 0.10 rad`，当前旧一阶路径不使用
-    - `ball_joint_stiffness = 8000.0`
-    - `ball_joint_damping = 1000.0`
+    - `ball_joint_stiffness = 1000.0`
+    - `ball_joint_damping = 100.0`
     - `ball_joint_effort_limit_sim = 20.0`
     - `ball_joint_velocity_limit_sim = 1.0`
     - `ball_joint_pos_lower_limits = (-0.6, -1.0, -0.5, -0.6, -1.0, -0.5)`
     - `ball_joint_pos_upper_limits = (0.6, 0.4, 0.5, 0.6, 0.4, 0.5)`
   - 当前车轮/低滑移参数：
     - `wheel_joint_effort_limit_sim = 20.0`
-    - `wheel_torque_tracking_gain = 2.0`
-    - `wheel_slip_feedback_gain = 4.0`
-    - `low_slip_lambda_lateral = 5.0`
-    - `slip_penalty_weight = -2.0`
-    - `slip_longitudinal_penalty_ratio = 5.0`
-    - `slip_angle_penalty_ratio = 1.0`
+    - `wheel_joint_damping = 100.0`
+    - `wheel_torque_tracking_gain = 0.0`
+    - `wheel_slip_feedback_gain = 0.0`
+    - `low_slip_lambda_tracking = 0.0`
+    - `low_slip_lambda_lateral = 0.0`
+    - `slip_penalty_weight = 0.0`
     - `load_equalization_weight = 0.0`
   - 当前低层待核验点：
     - `1500.0/30.0` 球铰 drive 已完成短训练验证：滑移指标显著下降，但任务进度坍缩并加重中车轮组失载，因此不应被当作成功方向继续长训
@@ -506,10 +511,10 @@
     - `low_slip_lambda_lateral=0.0` 且 `slip_penalty_weight=0.0` 的对照训练已经恢复目标完成能力：后 25 轮 `success_rate≈0.965`、episode 级 `waypoint_completion_pct≈97.41%`
     - 但该对照训练低滑移质量很差：后 25 轮纵滑约 `2.308`、侧滑角约 `0.714 rad`、中车载荷占比约 `2.08%`
     - 用户回放观察到中车基本悬空、轮子不动、小车缓慢移动且球铰左右拧动频繁；当前已通过回放参数扫描确认：只降低球铰刚度/阻尼/速度/加速度不足以恢复正常接地，必须把 Stage0 pitch/roll 自由度近似锁定
-    - 新衰减式力矩控制器已撤回；当前需要通过回放或训练验证旧版 `-K_slip*kappa` 公式在新球铰 `q_cmd/qdot_cmd` 链路下能否恢复车轮有效转动
-    - 当前 active 源码为 `K_track=2.0`、`K_slip=4.0`；直接 `slip_penalty` 内部权重为纵滑 `5.0`、侧滑角 `1.0`
-    - 当前旧版力矩控制器仍保留接触权重，所以中车轮组低载荷问题不会仅靠恢复力矩公式自动消失
-    - 下一步若继续调参，应在中间区间核验；若改变研究目标，则需先确认低滑移是评价目标、奖励主项还是成功条件
+    - 新衰减式力矩控制器与旧版 `-K_slip*kappa` 公式均已从 active 车轮执行链退出；当前需要通过重新训练验证直接速度驱动是否恢复有效推进
+    - 当前 active 源码为 `K_track=0.0`、`K_slip=0.0`，直接 `slip_penalty` 已从 active reward 移除
+    - 直接速度驱动不会自动解决中车轮组低载荷问题；中车接触仍需作为训练日志重点观察
+    - 下一步若继续改低滑移目标，应先确认低滑移是评价目标、奖励主项还是成功条件
 
 ## 已完成里程碑
 - 已有最佳真实 run：

@@ -3,6 +3,30 @@
 ## 2026-04-27
 
 已完成：
+- 按用户要求停止 `stage0_no_slip_feedback_timeout_watch_700iter` 训练。
+- 该 run 在 iteration `25/700` 附近中断，仍为 `success_rate=0.0`、`time_out_rate=1.0`；去掉纵滑反馈后纵滑降到约 `1.8`，但有效推进仍不足，active segment completion 约 `7.7%`。
+- 按用户要求去掉当前 Stage0 底层整形：
+  - `env.py` 不再调用 `compute_low_slip_control_targets()`。
+  - 低层不再执行低侧滑平面命令整形，`shaped_planar_command = desired_planar_command`。
+  - 车轮不再显式下发 torque target，改为直接下发 allocator 输出的 `Omega_ref` velocity target。
+  - `wheel_torque_target/tau0/tau1` 仅作为 velocity drive damping 估算的诊断量。
+- 当前关键低层参数为 `ball_joint_stiffness=1000.0`、`ball_joint_damping=100.0`、`low_slip_lambda_tracking=0.0`、`low_slip_lambda_lateral=0.0`、`wheel_torque_tracking_gain=0.0`、`wheel_slip_feedback_gain=0.0`、`wheel_joint_damping=100.0`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+下一步：
+- 重新启动 Stage0 直接车轮速度驱动训练，重点观察 `planar_command_shaping_delta=0`、轮速跟踪、`v_parallel_abs`、active segment completion、timeout rate 和 success rate。
+
+## 2026-04-27
+
+已完成：
 - 按用户要求停止 `stage0_timeout_penalty_moderate_watch_700iter` 训练。
 - 该 run 在 iteration `23/700` 附近中断，早期仍为 `success_rate=0.0`、`time_out_rate=1.0`，`active_segment_completion_pct` 最高约 `1.6%` 后回落，尚未恢复有效推进。
 - 按用户要求去掉底层轮级牵引中的直接纵滑反馈：

@@ -45,19 +45,19 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.control.base_forward_velocity_max = 2.0
         self.control.base_yaw_rate_max = 2.0
         self.control.base_allow_reverse = True
-        self.control.ball_joint_stiffness = 8000.0
-        self.control.ball_joint_damping = 1000.0
+        self.control.ball_joint_stiffness = 1000.0
+        self.control.ball_joint_damping = 100.0
         self.control.ball_joint_effort_limit_sim = 20.0
         self.control.ball_joint_velocity_limit_sim = 1.0
         self.control.wheel_joint_stiffness = 0.0
-        self.control.wheel_joint_damping = 0.0
+        self.control.wheel_joint_damping = 100.0
         self.control.wheel_joint_effort_limit_sim = 20.0
         self.control.wheel_joint_velocity_limit_sim = 20.0
-        self.control.low_slip_lambda_tracking = 1.0
-        self.control.low_slip_lambda_lateral = 5.0
+        self.control.low_slip_lambda_tracking = 0.0
+        self.control.low_slip_lambda_lateral = 0.0
         self.control.contact_force_off_threshold = 0.01
         self.control.contact_force_on_threshold = 0.08
-        self.control.wheel_torque_tracking_gain = 2.0
+        self.control.wheel_torque_tracking_gain = 0.0
         self.control.wheel_slip_feedback_gain = 0.0
         self.control.wheel_slip_velocity_epsilon = 0.1
 

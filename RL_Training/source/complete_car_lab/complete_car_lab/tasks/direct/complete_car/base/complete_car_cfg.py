@@ -58,7 +58,7 @@ class ControlCfg:
     ball_joint_velocity_limit_sim: float = 2.0  # 球铰驱动器速度上限，单位：rad/s。
 
     wheel_joint_stiffness: float = 0.0  # 车轮位置刚度，单位：N*m/rad。
-    wheel_joint_damping: float = 0.0  # 车轮阻尼；当前低滑移主线使用力矩控制。
+    wheel_joint_damping: float = 0.0  # 车轮速度驱动阻尼；速度目标模式下必须为非零才会产生 drive 力矩。
     wheel_joint_effort_limit_sim: float = 20.0  # 车轮驱动器力矩上限，单位：N*m。
     wheel_joint_velocity_limit_sim: float = 20.0  # 车轮驱动器速度上限，单位：rad/s。
     wheel_radius: float = WHEEL_RADIUS

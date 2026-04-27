@@ -3,7 +3,7 @@
 本文档记录当前 `RL_Training/` 工作区内 `CompleteCar-Stage0` 的实际生效配置。
 本文档以当前源码为准，覆盖 RL 环境配置、底层运动学轮速分配、球铰控制器、车轮力矩控制器、reward、termination 与 PPO 参数。
 
-当前 Stage0 主线是平地双 waypoint active baseline；动作空间已重新加入 policy `yaw_rate_cmd`，底层执行链保留内部 `q_cmd/qdot_cmd` 球铰轨迹规划，但球铰 drive 只接收位置目标 `q_cmd`，并且车轮力矩控制器已恢复为旧版直接纵滑反馈 torque target 结构。因此本文档描述的是当前 active baseline，而不是已经撤回的衰减式力矩控制分支：
+当前 Stage0 主线是平地双 waypoint active baseline；动作空间已重新加入 policy `yaw_rate_cmd`，底层执行链保留内部 `q_cmd/qdot_cmd` 球铰轨迹规划，但球铰 drive 只接收位置目标 `q_cmd`，并且车轮力矩控制器已改为仅轮速跟踪的 torque target 结构。因此本文档描述的是当前 active baseline，而不是已经撤回的衰减式力矩控制分支：
 
 - `54 / 54` actor / critic 观测
 - `8` 维动作
@@ -16,7 +16,7 @@
 - 不启用基于 preview turn-demand 的 penalty scaling
 - 球铰执行链：policy 给出最终姿态目标 `q^d`，环境内部轨迹生成器输出 `q_cmd/qdot_cmd`，PhysX 球铰 drive 只跟踪 `q_cmd`
 - 车轮执行链：低层分配器输出 `Omega_ref` 与 `tau_cmd`，Isaac 车轮关节最终执行 torque target
-- 当前车轮力矩公式：`contact_weight * (K_track * (Omega_ref - Omega) - K_slip * kappa)`，再做 `±20 N*m` 限幅
+- 当前车轮力矩公式：`contact_weight * K_track * (Omega_ref - Omega)`，再做 `±20 N*m` 限幅；纵滑率仍作为观测、日志和 progress gate 输入，但不再直接反馈到车轮力矩
 
 ## 0. 对应源码
 
@@ -744,7 +744,7 @@ $$
 
 ### 4.10 车轮力矩控制器
 
-当前车轮控制器是旧版直接纵滑反馈 torque target，不是已经撤回的纵滑/侧滑衰减式控制器。
+当前车轮控制器只使用轮速跟踪和接触权重。纵滑率仍计算并保留为观测、日志和 progress gate 输入，但不再直接反馈到车轮力矩。
 
 基础轮速跟踪力矩：
 
@@ -757,14 +757,12 @@ K_{\Omega}
 \right).
 $$
 
-加入 signed 纵滑反馈后的预接触权重力矩：
+预接触权重力矩：
 
 $$
 \tau_{1,j}
 =
-\tau_{0,j}
--
-K_{\kappa}\kappa_j.
+\tau_{0,j}.
 $$
 
 乘接触权重并限幅后的最终车轮力矩目标：
@@ -793,8 +791,6 @@ C_j
 \left(
 \Omega_j^{\mathrm{ref}}-\Omega_j
 \right)
--
-4.0\kappa_j
 \right],
 -20.0,
 20.0
@@ -810,7 +806,7 @@ $$
 | `wheel_joint_effort_limit_sim` | `20.0 N*m` | 车轮 torque target 限幅 |
 | `wheel_joint_velocity_limit_sim` | `20.0 rad/s` | 车轮关节速度限制 |
 | `wheel_torque_tracking_gain` | `2.0` | $K_{\Omega}$，轮速跟踪增益 |
-| `wheel_slip_feedback_gain` | `4.0` | $K_{\kappa}$，纵滑反馈增益 |
+| `wheel_slip_feedback_gain` | `0.0` | 当前不参与车轮力矩，仅保留配置兼容 |
 | `wheel_slip_velocity_epsilon` | `0.1 m/s` | 纵滑和侧偏角计算中的低速分母保护 |
 
 当前兼容日志字段：
@@ -820,7 +816,7 @@ $$
 | `g_kappa` | 固定为 `1.0`，仅保留旧日志兼容性 |
 | `g_alpha` | 固定为 `1.0`，仅保留旧日志兼容性 |
 | `tau0` | $\tau_{0,j}$，基础轮速跟踪力矩 |
-| `tau1` | $\tau_{1,j}$，加入纵滑反馈、乘接触权重前的力矩 |
+| `tau1` | $\tau_{1,j}$，当前等于基础轮速跟踪力矩 `tau0` |
 
 ### 4.11 低层参数总表
 
@@ -852,7 +848,7 @@ $$
 | `contact_force_off_threshold`          |                                 `0.01` | 接触权重 ramp 下限                     |
 | `contact_force_on_threshold`           |                                 `0.08` | 接触权重 ramp 上限                     |
 | `wheel_torque_tracking_gain`           |                                  `2.0` | $K_{\Omega}$                     |
-| `wheel_slip_feedback_gain`             |                                  `4.0` | $K_{\kappa}$                     |
+| `wheel_slip_feedback_gain`             |                                  `0.0` | 当前不参与车轮力矩，仅保留配置兼容                     |
 | `wheel_slip_velocity_epsilon`          |                                  `0.1` | $\epsilon$                       |
 
 ## 5. 观测空间
@@ -1170,7 +1166,7 @@ r_{timeout}
 =
 -I_{timeout}
 \left(
-12.0 + 0.5d_t
+8.0 + 0.3d_t
 \right)
 $$
 
@@ -1178,15 +1174,15 @@ $$
 
 | 参数 | 当前值 |
 |---|---:|
-| `timeout_fixed_penalty` | `12.0` |
-| `timeout_distance_penalty_scale` | `0.5` |
+| `timeout_fixed_penalty` | `8.0` |
+| `timeout_distance_penalty_scale` | `0.3` |
 
 工程含义：
 
 - 该项只在 episode 因未成功达到时间上限而 timeout 的最后一步触发一次。
 - 固定项用于让“未完成但活到超时”明确变差。
 - 距离项使用当前 active waypoint 的剩余距离；如果已完成第一个 waypoint，则自动针对第二个 active waypoint 的剩余距离。
-- 当前初始 `10 m` 距离下，未推进 timeout 会额外得到约 `-17.0` 惩罚，可压过原地存活从 `distance_to_target` 和 `angle_diff` 累积到的正回报。
+- 当前初始 `10 m` 距离下，未推进 timeout 会额外得到约 `-11.0` 惩罚，用于压过原地存活从 `distance_to_target` 和 `angle_diff` 累积到的正回报。
 
 ### 7.6 `angle_diff`
 
@@ -1348,7 +1344,7 @@ r =
 -
 2I(d_t>16)
 +
--I_{timeout}(12.0+0.5d_t)
+-I_{timeout}(8.0+0.3d_t)
 +
 6\frac{1}{1+|\theta_t|}\frac{1}{T}
 -
@@ -1585,7 +1581,7 @@ PPO 算法：
 | `PerWheel/<wheel>/delta_v` | 车轮圆周速度与实际纵向速度的差值 |
 | `PerWheel/<wheel>/tau0` | 基础轮速跟踪力矩 |
 | `PerWheel/<wheel>/g_kappa` | 兼容旧日志字段；当前恢复旧力矩控制器后固定为 `1.0` |
-| `PerWheel/<wheel>/tau1` | 当前为 `tau0 - K_slip * kappa` 后、乘接触权重前的力矩 |
+| `PerWheel/<wheel>/tau1` | 当前等于 `tau0`，为乘接触权重前的轮速跟踪力矩 |
 | `PerWheel/<wheel>/g_alpha` | 兼容旧日志字段；当前恢复旧力矩控制器后固定为 `1.0` |
 
 ## 13. 当前结论与使用边界
@@ -1596,13 +1592,13 @@ PPO 算法：
 
 - `0.5 m` 成功半径已经可以训练到高成功率平台，但后段滑移质量仍不达标。
 - 第 2 段更大偏角会增强转向需求，可能降低早期成功率。
-- 当前直接 `slip_penalty` 与直接 `turn_speed_penalty` 已从 active reward 中移除；新增 `action_rate_penalty`，公式为 `-(0.05*mean(Delta a_base^2)+0.02*mean(Delta a_joint^2))/T`。新增 `timeout_penalty`，公式为 `-I_timeout*(12.0+0.5*d_t)`。low-slip progress gate 仍会让滑移间接影响正向 progress。
+- 当前直接 `slip_penalty` 与直接 `turn_speed_penalty` 已从 active reward 中移除；新增 `action_rate_penalty`，公式为 `-(0.05*mean(Delta a_base^2)+0.02*mean(Delta a_joint^2))/T`。新增 `timeout_penalty`，公式为 `-I_timeout*(8.0+0.3*d_t)`。low-slip progress gate 仍会让滑移间接影响正向 progress。
 - 当前 low-slip progress gate 可以保住高成功率并略降纵滑，但没有把侧滑角压到 `0.5 rad` 或 `30°` 以下。
 - 2026-04-26 的新球铰 `q_cmd/qdot_cmd` 联合跟踪链路和低侧滑命令整形训练验证表明，强低侧滑整形可以把后段纵滑降到约 `0.301`、侧滑角降到约 `0.132 rad`，但会把 shaped `vx` 压到 desired `vx` 的约 `10%`，导致 `success_rate=0`、`waypoints_completed_mean=0`。
 - 2026-04-26 的 `low_slip_lambda_lateral=2.0` 短训练表明，降低侧滑整形权重可以解除近停滞：后 25 轮 shaped `vx≈0.542 m/s`、`V_parallel≈0.158 m/s`；但低滑移约束明显不足，后 25 轮纵滑约 `1.496`、侧滑角约 `0.530 rad`、综合达标率约 `0.085`，仍没有完成 waypoint。
-- 2026-04-26 用户回放 `stage0_lateral2_short150_verify/model_149.pt` 后观察到六个轮子基本不转、车辆在地面上蠕动；随后用户要求将底层车轮力矩控制器恢复到 `stage0_lowslip_gate_v2_min_lowlevel_522iter` 版本，当前已恢复为旧版 `contact_weight * (K_track * (Omega_ref - Omega) - K_slip * kappa)` 公式结构，并将 signed 纵滑方向修正为 `kappa=(r*Omega-V_parallel)/max(|V_parallel|, epsilon)`。
+- 2026-04-26 用户回放 `stage0_lateral2_short150_verify/model_149.pt` 后观察到六个轮子基本不转、车辆在地面上蠕动；后续多轮排查表明直接纵滑反馈可能在低速区压制轮速。当前已按用户要求去掉轮级 `-K_slip*kappa` 附加力矩，仅保留 `contact_weight * K_track * (Omega_ref - Omega)` 公式结构；signed 纵滑方向仍为 `kappa=(r*Omega-V_parallel)/max(|V_parallel|, epsilon)`，但只作为观测、日志和 progress gate 输入。
 - 2026-04-27 的 `low_slip_lambda_lateral=4.0, ball=1500/30` 短训练表明，该组合能把后 25 轮纵滑降到约 `0.746`、侧滑角降到约 `0.282 rad`，但同时把 `v_parallel_abs` 压到约 `0.041 m/s`，`active_segment_completion_pct` 降到约 `9.71%`，且中车两轮法向力仅约 `0.019 N / 0.019 N`，因此不能作为成功训练方向。
-- 当前源码 Stage0 已按用户要求恢复到 `2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter` 的旧球铰规划器和主要数值参数，但不恢复旧纵滑符号。当前 active reward 进一步改为移除直接 `slip_penalty` 与直接 `turn_speed_penalty`，并加入 `action_rate_base_weight=0.05`、`action_rate_joint_weight=0.02`、`timeout_fixed_penalty=12.0`、`timeout_distance_penalty_scale=0.5`。其他关键生效参数为 `low_slip_lambda_lateral=5.0`、`load_equalization_weight=0.0`、`K_track=2.0`、`K_slip=4.0`、`wheel_joint_effort_limit_sim=20.0`、`ball_joint_stiffness=8000.0`、`ball_joint_damping=1000.0`、`ball_joint_effort_limit_sim=20.0`。球铰规划器回到 allocator 内部旧一阶链路：`qdot_cmd=clip(K*(q_des-q), ±1.0)`，`q_cmd=clip(q+dt*qdot_cmd, q_min, q_max)`；不再使用 env 层 `q_ref/qddot` 轨迹整形。PhysX 球铰 drive 仍只接收 `q_cmd` 位置目标；`qdot_cmd` 只供轮速分配使用。Stage0 球铰姿态边界为 yaw `±0.6 rad`、pitch 下限/上限 `-1.0/0.4 rad`、roll `±0.5 rad`。
+- 当前源码 Stage0 已按用户要求恢复到 `2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter` 的旧球铰规划器和主要数值参数，但不恢复旧纵滑符号。当前 active reward 进一步改为移除直接 `slip_penalty` 与直接 `turn_speed_penalty`，并加入 `action_rate_base_weight=0.05`、`action_rate_joint_weight=0.02`、`timeout_fixed_penalty=8.0`、`timeout_distance_penalty_scale=0.3`。其他关键生效参数为 `low_slip_lambda_lateral=5.0`、`load_equalization_weight=0.0`、`K_track=2.0`、`K_slip=0.0`、`wheel_joint_effort_limit_sim=20.0`、`ball_joint_stiffness=8000.0`、`ball_joint_damping=1000.0`、`ball_joint_effort_limit_sim=20.0`。球铰规划器回到 allocator 内部旧一阶链路：`qdot_cmd=clip(K*(q_des-q), ±1.0)`，`q_cmd=clip(q+dt*qdot_cmd, q_min, q_max)`；不再使用 env 层 `q_ref/qddot` 轨迹整形。PhysX 球铰 drive 仍只接收 `q_cmd` 位置目标；`qdot_cmd` 只供轮速分配使用。Stage0 球铰姿态边界为 yaw `±0.6 rad`、pitch 下限/上限 `-1.0/0.4 rad`、roll `±0.5 rad`。
 - 2026-04-27 严格核对发现：当前 `progress_gate` 组合公式仍是后续 v2 的 $\min(G_\kappa,G_\alpha)$，而 `2026-04-25_18-26-58` 旧 run 使用的是 $0.5(G_\kappa+G_\alpha)$。因此当前源码不是对 `2026-04-25_18-26-58` 的奖励结构严格复现。
 - 2026-04-27 针对 `model_375.pt` 的 headless 回放参数扫描表明：只降低 `Kp/Kd/qdot/qddot` 最多只能把中车载荷占比提升到约 `5.0%`；将 pitch/roll 近似锁定后，中车载荷占比可恢复到约 `27.5%-33.3%`，双中轮法向力约 `63-94 N`，但旧 checkpoint 的 waypoint 进度基本坍缩。该接地修正已按用户后续要求从 active 源码撤回，作为历史诊断结论保留。
 - 2026-04-27 的 `low_slip_lambda_lateral=0.0, slip_penalty_weight=0.0, ball=1500/30` 对照训练在 iteration `393/700` 按成功率平台期早停，确认目标完成能力恢复：后 25 轮 `success_rate≈0.965`、episode 级 `waypoint_completion_pct≈97.41%`；但后 25 轮纵滑约 `2.308`、侧滑角约 `0.714 rad`、`LowSlip/combined_pass_rate≈0.0064`，且中车载荷占六轮总法向力仅约 `2.08%`。因此该配置是“恢复跑起来”的对照结果，不是低滑移完成方案。

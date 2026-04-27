@@ -3,6 +3,29 @@
 ## 2026-04-27
 
 已完成：
+- 按用户要求停止 `stage0_timeout_penalty_moderate_watch_700iter` 训练。
+- 该 run 在 iteration `23/700` 附近中断，早期仍为 `success_rate=0.0`、`time_out_rate=1.0`，`active_segment_completion_pct` 最高约 `1.6%` 后回落，尚未恢复有效推进。
+- 按用户要求去掉底层轮级牵引中的直接纵滑反馈：
+  - 纵滑 `kappa` 继续计算并用于观测、日志和 progress gate。
+  - 车轮力矩不再包含 `-K_slip * kappa`。
+  - 当前公式为 `tau_cmd = clip(contact_weight * K_track * (Omega_ref - Omega), -20, 20)`。
+- Stage0 `wheel_slip_feedback_gain` 已同步设为 `0.0`。
+- 当前 timeout 惩罚实际参数同步为 `timeout_fixed_penalty=8.0`、`timeout_distance_penalty_scale=0.3`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+下一步：
+- 重新启动 Stage0 训练，重点观察去掉纵滑反馈后是否恢复有效推进、降低超时率，以及纵滑是否显著上升。
+
+## 2026-04-27
+
+已完成：
 - 按用户要求在 Stage0 active reward 中加入 timeout 惩罚：
   - 未成功到达最终 waypoint 前达到时间上限时，最后一步触发固定惩罚和剩余距离惩罚。
   - 当前公式：`timeout_penalty = -(12.0 + 0.5 * d_t)`。

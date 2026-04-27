@@ -3,12 +3,13 @@
 ## 2026-04-27 最新 active Stage0 代码状态
 - 已按用户最新决定修改 Stage0 reward 主线：
   - 新增 `action_rate_penalty`：`-(0.05 * mean(Delta a_base^2) + 0.02 * mean(Delta a_joint^2)) / T`。
-  - 新增 `timeout_penalty`：episode 因未成功达到时间上限时触发一次，公式为 `-1 * (12.0 + 0.5 * d_t)`，其中 `d_t` 为当前 active waypoint 剩余距离。
+  - 新增 `timeout_penalty`：episode 因未成功达到时间上限时触发一次，公式为 `-1 * (8.0 + 0.3 * d_t)`，其中 `d_t` 为当前 active waypoint 剩余距离。
   - 直接 `slip_penalty` 已从 active reward 中移除。
   - 直接 `turn_speed_penalty` 已从 active reward 中移除。
+  - 轮级牵引已按用户要求去掉直接纵滑反馈：车轮力矩只用 `contact_weight * K_track * (Omega_ref - Omega)`，再做 `±20 N*m` 限幅；纵滑率继续作为观测、日志和 progress gate 输入。
   - low-slip progress gate 仍保留，因此滑移仍会间接影响正向 progress multiplier；纵滑/侧滑指标也继续作为观测和日志。
   - `load_equalization_weight=0.0`，仍只作为负载不均匀诊断项。
-- 该 active 配置尚未重新训练验证；最近完整 700 轮训练 `2026-04-27_18-17-40_stage0_current_full_watch_700iter` 属于修改前配置。
+- 该 active 配置正在重新训练验证；`2026-04-27_22-19-39_stage0_timeout_penalty_moderate_watch_700iter` 已在 iteration `23/700` 附近按用户要求中断，早期仍为 `success_rate=0.0`、`time_out_rate=1.0`，尚未出现有效推进。
 - 2026-04-27 对当前 active reward 完成源码层 reward hacking 检查，结论是存在高风险：
   - `distance_to_target` 和 `angle_diff` 都是每步正奖励，原地不动也能累计正回报；在初始 `10 m` 目标距离、目标角约 `20°-30°` 时，timeout 一整局仍可获得约 `6.9-7.4` 的 dense return。
   - `time_out` 没有直接负奖励，也不算 terminated；因此“不完成但稳定活到超时”不是明确坏行为。
@@ -50,8 +51,8 @@
 - 2026-04-27 严格核对 `2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter` 后确认：当前只恢复了旧球铰规划器调用链和 Stage0 数值参数，奖励源码没有完全恢复到旧 run：
   - 代码链路：`env.py` 不再向 `compute_low_slip_control_targets()` 传入 env 层 `planned_ball_joint_pos/rate`，球铰目标重新由 allocator 内部旧一阶规划器生成。
   - 旧一阶规划器：`qdot_cmd=clip(K*(q_des-q), ±1.0)`，`q_cmd=clip(q+dt*qdot_cmd, q_min, q_max)`；不使用 env 层 `q_ref`、`track_error_limit` 和 `qddot` 整形。
-  - Stage0 控制参数：`ball_joint_stiffness=8000.0`、`ball_joint_damping=1000.0`、`ball_joint_effort_limit_sim=20.0`、`ball_joint_velocity_limit_sim=1.0`、`low_slip_lambda_lateral=5.0`、`K_track=2.0`、`K_slip=4.0`、`base_allow_reverse=True`。
-  - 当前 Stage0 奖励参数：`distance_to_target_weight=6.0`、`progress_to_target_weight=8.0`、`reached_target_weight=6.0`、`action_rate_base_weight=0.05`、`action_rate_joint_weight=0.02`、`timeout_fixed_penalty=12.0`、`timeout_distance_penalty_scale=0.5`、`progress_gate_min/max=0.25/1.5`、`low_slip_angle_threshold_rad=0.35`、`load_equalization_weight=0.0`；直接 `slip_penalty` 与直接 `turn_speed_penalty` 已移除。
+  - Stage0 控制参数：`ball_joint_stiffness=8000.0`、`ball_joint_damping=1000.0`、`ball_joint_effort_limit_sim=20.0`、`ball_joint_velocity_limit_sim=1.0`、`low_slip_lambda_lateral=5.0`、`K_track=2.0`、`K_slip=0.0`、`base_allow_reverse=True`。
+  - 当前 Stage0 奖励参数：`distance_to_target_weight=6.0`、`progress_to_target_weight=8.0`、`reached_target_weight=6.0`、`action_rate_base_weight=0.05`、`action_rate_joint_weight=0.02`、`timeout_fixed_penalty=8.0`、`timeout_distance_penalty_scale=0.3`、`progress_gate_min/max=0.25/1.5`、`low_slip_angle_threshold_rad=0.35`、`load_equalization_weight=0.0`；直接 `slip_penalty` 与直接 `turn_speed_penalty` 已移除。
   - 关键未恢复项：`2026-04-25_18-26-58` 的 `progress_gate` 组合公式是 `0.5*(Gκ+Gα)`，当前源码仍是后续 v2 的 `min(Gκ,Gα)`。这是行为生效差异，不是日志差异。
   - 纵滑方向仍按用户要求保留当前修正定义：`kappa=(rΩ-V_parallel)/max(|V_parallel|, epsilon)`，未恢复旧 run 的反向定义。
   - 仅存在但当前不参与奖励的新增项：`load_equalization_weight=0.0`；它只产生诊断日志，不改变 `total_reward`。
@@ -121,7 +122,7 @@
   - 新增日志：`Reward/action_rate_penalty`、`Action/base_action_delta_abs_mean_raw`、`Action/joint_action_delta_abs_mean_raw`、`Action/action_rate_base_cost_raw`、`Action/action_rate_joint_cost_raw`。
   - `docs/RL阶段训练参数一览表.md` 已同步到当前 active 配置。
 - 2026-04-27 已按用户要求加入 timeout 惩罚：
-  - 若 episode 在未成功到达最终 waypoint 前达到时间上限，则最后一步触发 `timeout_penalty = -(12.0 + 0.5 * d_t)`。
+  - 若 episode 在未成功到达最终 waypoint 前达到时间上限，则最后一步触发 `timeout_penalty = -(8.0 + 0.3 * d_t)`。
   - `d_t` 为当前 active waypoint 剩余距离；若已完成第一个 waypoint，则惩罚第二个 active waypoint 的剩余距离。
   - 新增日志：`Reward/timeout_penalty`、`Timeout/remaining_distance_on_timeout`。
   - 该项用于让“不完成但活到超时”明确变差，已通过静态编译和 `git diff --check`；当前尚未重新训练验证。

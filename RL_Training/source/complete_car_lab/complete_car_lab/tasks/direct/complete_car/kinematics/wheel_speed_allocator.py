@@ -746,7 +746,8 @@ class NumpyWheelSpeedAllocator:
         delta_speed = self.geometry.r_wheel * wheel_joint_vel - rolling_speed_actual
         base_torque_targets = torque_tracking_gain * (wheel_speed_reference - wheel_joint_vel)
         longitudinal_decay = np.ones_like(base_torque_targets)
-        conditioned_torque_targets = base_torque_targets - slip_feedback_gain * longitudinal_slip
+        # Longitudinal slip is kept as a diagnostic; wheel traction no longer feeds it back into torque.
+        conditioned_torque_targets = base_torque_targets
         safe_rolling_speed = np.maximum(np.abs(rolling_speed_actual), slip_velocity_epsilon)
         slip_angle = np.arctan2(lateral_speed_actual, safe_rolling_speed)
         slip_angle_decay = np.ones_like(base_torque_targets)
@@ -1555,7 +1556,8 @@ class TorchWheelSpeedAllocator:
         delta_speed = self.geometry.r_wheel * wheel_joint_vel - rolling_speed_actual
         base_torque_targets = torque_tracking_gain * (wheel_speed_reference - wheel_joint_vel)
         longitudinal_decay = self.torch.ones_like(base_torque_targets)
-        conditioned_torque_targets = base_torque_targets - slip_feedback_gain * longitudinal_slip
+        # Longitudinal slip is kept as a diagnostic; wheel traction no longer feeds it back into torque.
+        conditioned_torque_targets = base_torque_targets
         safe_rolling_speed = self.torch.maximum(
             self.torch.abs(rolling_speed_actual),
             self.torch.full_like(rolling_speed_actual, slip_velocity_epsilon),

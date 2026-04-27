@@ -58,7 +58,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.control.contact_force_off_threshold = 0.01
         self.control.contact_force_on_threshold = 0.08
         self.control.wheel_torque_tracking_gain = 2.0
-        self.control.wheel_slip_feedback_gain = 4.0
+        self.control.wheel_slip_feedback_gain = 0.0
         self.control.wheel_slip_velocity_epsilon = 0.1
 
         self.observations.use_history = False

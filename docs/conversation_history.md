@@ -4,6 +4,21 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-04-27
 
+### Stage0 轮级牵引已去掉直接纵滑反馈，并重启训练验证
+- User request:
+  - 停止刚启动的 timeout reward 验证训练，底层去掉纵滑反馈后重新启动训练。
+- Implementation:
+  - 已停止 `2026-04-27_22-19-39_stage0_timeout_penalty_moderate_watch_700iter`，该 run 在 iteration `23/700` 附近中断，未到 `model_25.pt` 保存点；早期仍为 `success_rate=0.0`、`time_out_rate=1.0`，未观察到有效推进恢复。
+  - `wheel_speed_allocator.py` 中 numpy 与 torch 两套牵引路径均已改为：
+    - `tau0 = K_track * (Omega_ref - Omega)`
+    - `tau1 = tau0`
+    - `tau_cmd = clip(contact_weight * tau1, -tau_max, tau_max)`
+  - 纵滑率 `kappa` 仍继续计算，用于观测、日志和 progress gate，但不再作为 `-K_slip*kappa` 直接反馈到车轮力矩。
+  - Stage0 `wheel_slip_feedback_gain` 已改为 `0.0`，避免配置与实际控制链含义冲突。
+  - 当前 timeout 惩罚实际参数为 `timeout_fixed_penalty=8.0`、`timeout_distance_penalty_scale=0.3`。
+- Status:
+  - implemented; restarting training under the no-longitudinal-slip-feedback low-level controller.
+
 ### Stage0 已加入 timeout 惩罚，修补“不完成但活到超时”漏洞
 - User request:
   - 在当前 reward 中增加超时惩罚项：如果每个回合机器人在到达目标之前达到时间限制，对超时施加固定惩罚，并根据与目标剩余距离施加额外惩罚。

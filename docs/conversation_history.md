@@ -12550,3 +12550,21 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Impact:
   - Stage0 已明确要求上传的 `best_baseline_2` 训练数据和 checkpoint 保持已上传状态。
   - Stage1 当前产物继续保留在本机，但不作为默认同步范围。
+
+### Stage0 best_baseline_2 chase 回放视频
+- Date: 2026-04-28
+- User request:
+  - 回放 `best_baseline_2` 最终模型，开启目标点 marker 和 view，使用 chase 跟踪视角，录制 2 分钟视频。
+- Implementation:
+  - `RL_Training/scripts/play.py` 增加 `--record_chase_view`，录制时将 viewer camera 绑定到 `/view/env_0/chase_camera`。
+  - `play.py` 增加 `--hide_goal_heading`，允许保留目标点 marker 但关闭目标方向箭头。
+  - `play.py` 增加 `--stream_video` 和 `--video_output_name`，使用 `imageio` 边渲染边写入 mp4。
+  - 采用流式写入的原因是默认 Gymnasium `RecordVideo` 会缓存完整视频帧，2 分钟 60 fps 回放时内存占用接近上限。
+- Output:
+  - checkpoint：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2/model_699.pt`
+  - video：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2/videos/play/best_baseline_2_chase_120s.mp4`
+  - frame check：`results/best_baseline_2_chase_120s_frame10.jpg`
+- Verification:
+  - `ffprobe` 确认视频为 `1280x720`、`60 fps`、`120.000000 s`、`7200` 帧。
+  - `ffmpeg -v error -i ... -f null -` 解码检查通过。
+  - 抽帧确认 chase 视角和红色目标点 marker 可见。

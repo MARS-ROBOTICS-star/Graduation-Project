@@ -13706,3 +13706,23 @@
 产出/结论：
 - Stage0 `best_baseline_2` 已上传结果不受影响。
 - Stage1 当前训练产物保留本地并处于 Git 忽略范围。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求回放 Stage0 `best_baseline_2/model_699.pt`。
+- 开启目标点红色 marker 和 `env_0` chase follow view。
+- 录制 2 分钟 chase 跟踪视角视频。
+- 为 `play.py` 增加长视频流式写入能力，避免默认 `RecordVideo` 长视频缓存导致内存占用过高。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 视频：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2/videos/play/best_baseline_2_chase_120s.mp4`
+- 抽帧：`results/best_baseline_2_chase_120s_frame10.jpg`
+- 视频规格为 `1280x720`、`60 fps`、`120 s`、`7200` 帧。
+- 抽帧确认 chase 视角和目标点 marker 可见；完整视频解码检查通过。

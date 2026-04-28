@@ -27,6 +27,13 @@ TASK_CHOICES = ["CompleteCar-Stage0", "CompleteCar-Stage1", "CompleteCar-Stage2"
 parser = argparse.ArgumentParser(description="Play complete-car checkpoint with RSL-RL.")
 parser.add_argument("--video", action="store_true", default=False)
 parser.add_argument("--video_length", type=int, default=200)
+parser.add_argument(
+    "--stream_video",
+    action="store_true",
+    default=False,
+    help="Write replay frames directly to mp4 instead of buffering them through Gymnasium RecordVideo.",
+)
+parser.add_argument("--video_output_name", type=str, default=None)
 parser.add_argument("--num_envs", type=int, default=None)
 parser.add_argument("--task", type=str, default="CompleteCar-Stage0", choices=TASK_CHOICES)
 parser.add_argument("--agent", type=str, default="rsl_rl_cfg_entry_point")
@@ -215,7 +222,16 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     env_cfg.log_dir = log_dir
 
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
-    if args_cli.video:
+    stream_video_path = None
+    if args_cli.video and args_cli.stream_video:
+        video_folder = os.path.join(log_dir, "videos", "play")
+        os.makedirs(video_folder, exist_ok=True)
+        video_name = args_cli.video_output_name or f"{Path(resume_path).stem}_replay.mp4"
+        if not video_name.endswith(".mp4"):
+            video_name += ".mp4"
+        stream_video_path = os.path.join(video_folder, video_name)
+        print(f"[INFO] Streaming video to: {stream_video_path}")
+    elif args_cli.video:
         video_kwargs = {
             "video_folder": os.path.join(log_dir, "videos", "play"),
             "step_trigger": lambda step: step == 0,
@@ -244,24 +260,47 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
 
     dt = env.unwrapped.step_dt
+    video_writer = None
+    if stream_video_path is not None:
+        import imageio.v2 as imageio
+
+        video_writer = imageio.get_writer(
+            stream_video_path,
+            fps=round(1.0 / dt),
+            codec="libx264",
+            macro_block_size=None,
+        )
     obs = env.get_observations()
     timestep = 0
-    while simulation_app.is_running():
-        start_time = time.time()
-        with torch.inference_mode():
-            actions = policy(obs)
-            obs, _, dones, _ = env.step(actions)
-            if parsed_rsl_rl_version >= version.parse("4.0.0"):
-                policy.reset(dones)
-            elif policy_nn is not None:
-                policy_nn.reset(dones)
-        if args_cli.video:
-            timestep += 1
-            if timestep == args_cli.video_length:
-                break
-        sleep_time = dt - (time.time() - start_time)
-        if args_cli.real_time and sleep_time > 0:
-            time.sleep(sleep_time)
+    try:
+        while simulation_app.is_running():
+            start_time = time.time()
+            with torch.inference_mode():
+                actions = policy(obs)
+                obs, _, dones, _ = env.step(actions)
+                if parsed_rsl_rl_version >= version.parse("4.0.0"):
+                    policy.reset(dones)
+                elif policy_nn is not None:
+                    policy_nn.reset(dones)
+            if video_writer is not None:
+                frame = env.unwrapped.render(recompute=False)
+                if frame is not None:
+                    video_writer.append_data(frame)
+                timestep += 1
+                if timestep % 600 == 0:
+                    print(f"[INFO] Streamed {timestep}/{args_cli.video_length} video frames", flush=True)
+                if timestep >= args_cli.video_length:
+                    break
+            elif args_cli.video:
+                timestep += 1
+                if timestep == args_cli.video_length:
+                    break
+            sleep_time = dt - (time.time() - start_time)
+            if args_cli.real_time and sleep_time > 0:
+                time.sleep(sleep_time)
+    finally:
+        if video_writer is not None:
+            video_writer.close()
     env.close()
 
 

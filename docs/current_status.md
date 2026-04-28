@@ -65,6 +65,17 @@
   - `seed = 1`
 - 当前 Stage0 baseline 参数详情表：`docs/stage0_baseline参数详情表.md`。
 
+## 当前 Stage0 回放视频
+
+- 已按用户要求回放 `best_baseline_2/model_699.pt` 并录制 2 分钟 chase 跟踪视角视频。
+- 视频文件：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2/videos/play/best_baseline_2_chase_120s.mp4`。
+- 视频规格：`1280x720`、`60 fps`、`120 s`、`7200` 帧。
+- 回放设置：
+  - 使用 `env_0` chase follow view：`/view/env_0/chase_camera`。
+  - 开启目标点红色 marker。
+  - 目标方向箭头关闭，避免此前 Fabric point-instancer warning。
+- 抽帧检查：`results/best_baseline_2_chase_120s_frame10.jpg`，确认 chase 视角和目标点 marker 可见。
+
 ## 当前 reward 结构
 
 active reward 项：

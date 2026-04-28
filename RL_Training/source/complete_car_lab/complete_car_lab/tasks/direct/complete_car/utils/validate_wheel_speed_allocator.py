@@ -190,8 +190,8 @@ def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
         wheel_torque_limit=20.0,
         slip_velocity_epsilon=0.1,
     )
-    np.testing.assert_allclose(traction_outputs.longitudinal_slip, np.full(6, 0.9), atol=1.0e-10)
-    np.testing.assert_allclose(traction_outputs.wheel_torque_targets, np.full(6, 0.1), atol=1.0e-10)
+    np.testing.assert_allclose(traction_outputs.longitudinal_slip, np.full(6, -0.9), atol=1.0e-10)
+    np.testing.assert_allclose(traction_outputs.wheel_torque_targets, np.full(6, 1.9), atol=1.0e-10)
 
     braking_outputs = allocator.compute_wheel_traction_targets(
         wheel_speed_reference=np.zeros(6, dtype=np.float64),
@@ -204,7 +204,7 @@ def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
         wheel_torque_limit=20.0,
         slip_velocity_epsilon=0.1,
     )
-    np.testing.assert_allclose(braking_outputs.wheel_torque_targets, np.full(6, -1.9), atol=1.0e-10)
+    np.testing.assert_allclose(braking_outputs.wheel_torque_targets, np.full(6, -0.1), atol=1.0e-10)
 
     planner_test_qd = np.array([0.6, -1.0, 0.3, -0.6, 0.4, -0.3], dtype=np.float64)
     planner_outputs = allocator.compute_ball_joint_planner_outputs(

@@ -19,11 +19,11 @@ def compute_wheel_motion_observations(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     x_axis_local = torch.zeros_like(wheel_body_lin_vel_w)
     x_axis_local[..., 0] = 1.0
-    y_axis_local = torch.zeros_like(wheel_body_lin_vel_w)
-    y_axis_local[..., 1] = 1.0
+    z_axis_local = torch.zeros_like(wheel_body_lin_vel_w)
+    z_axis_local[..., 2] = 1.0
 
     wheel_forward_axis_w = quat_rotate(wheel_body_quat_w, x_axis_local)
-    wheel_lateral_axis_w = quat_rotate(wheel_body_quat_w, y_axis_local)
+    wheel_lateral_axis_w = quat_rotate(wheel_body_quat_w, z_axis_local)
 
     v_x = torch.sum(wheel_body_lin_vel_w * wheel_forward_axis_w, dim=-1)
     v_y = torch.sum(wheel_body_lin_vel_w * wheel_lateral_axis_w, dim=-1)
@@ -116,25 +116,29 @@ def collect_raw_observation_terms(
     }
 
 
-def compute_actor_observation_from_raw_terms(cfg, raw_terms: dict[str, torch.Tensor]) -> torch.Tensor:
+def compute_actor_observation_from_raw_terms(
+    cfg,
+    raw_terms: dict[str, torch.Tensor],
+    height_patch: torch.Tensor | None = None,
+) -> torch.Tensor:
     """Construct the actor observation from already collected raw observation terms."""
 
     scales = cfg.observations.scales
-    return torch.cat(
-        [
-            raw_terms["ball_joint_pos"] * scales.ball_joint_pos,
-            raw_terms["ball_joint_vel"] * scales.ball_joint_vel,
-            raw_terms["base_lin_vel"] * scales.base_lin_vel,
-            raw_terms["base_ang_vel"] * scales.base_ang_vel,
-            raw_terms["wheel_joint_vel"] * scales.wheel_joint_vel,
-            raw_terms["wheel_longitudinal_slip"] * scales.wheel_longitudinal_slip,
-            raw_terms["wheel_slip_angle"] * scales.wheel_slip_angle,
-            raw_terms["wheel_normal_contact_force"] * scales.wheel_normal_contact_force,
-            raw_terms["relative_goal_commands"] * scales.commands,
-            raw_terms["last_actions"] * scales.last_action,
-        ],
-        dim=-1,
-    )
+    terms = [
+        raw_terms["ball_joint_pos"] * scales.ball_joint_pos,
+        raw_terms["ball_joint_vel"] * scales.ball_joint_vel,
+        raw_terms["base_lin_vel"] * scales.base_lin_vel,
+        raw_terms["base_ang_vel"] * scales.base_ang_vel,
+        raw_terms["wheel_joint_vel"] * scales.wheel_joint_vel,
+        raw_terms["wheel_longitudinal_slip"] * scales.wheel_longitudinal_slip,
+        raw_terms["wheel_slip_angle"] * scales.wheel_slip_angle,
+        raw_terms["wheel_normal_contact_force"] * scales.wheel_normal_contact_force,
+        raw_terms["relative_goal_commands"] * scales.commands,
+        raw_terms["last_actions"] * scales.last_action,
+    ]
+    if height_patch is not None:
+        terms.append(height_patch)
+    return torch.cat(terms, dim=-1)
 
 
 def compute_actor_observation(
@@ -148,8 +152,9 @@ def compute_actor_observation(
     ball_joint_targets: torch.Tensor,
     relative_goal_commands: torch.Tensor,
     last_actions: torch.Tensor,
+    height_patch: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """构造 Actor 观测；当前 Critic 观测与其保持一致。"""
+    """构造 Actor 观测。"""
 
     raw_terms = collect_raw_observation_terms(
         cfg,
@@ -163,15 +168,13 @@ def compute_actor_observation(
         relative_goal_commands,
         last_actions,
     )
-    return compute_actor_observation_from_raw_terms(cfg, raw_terms)
+    return compute_actor_observation_from_raw_terms(cfg, raw_terms, height_patch)
 
 
-def compute_critic_observation(actor_obs: torch.Tensor, height_patch: torch.Tensor | None) -> torch.Tensor:
-    """构造 Critic 观测；当前只在 Actor 基础上追加显式地形高度 patch。"""
+def compute_critic_observation(actor_obs: torch.Tensor) -> torch.Tensor:
+    """构造 Critic 观测；当前与 Actor 使用同一份观测。"""
 
-    if height_patch is None:
-        return actor_obs
-    return torch.cat((actor_obs, height_patch), dim=-1)
+    return actor_obs
 
 
 # 传感器噪声注入

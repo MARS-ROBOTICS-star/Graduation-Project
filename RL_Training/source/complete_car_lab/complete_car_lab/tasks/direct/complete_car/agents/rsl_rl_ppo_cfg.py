@@ -113,6 +113,7 @@ class CompleteCarBasePPORunnerCfg(LocalOnPolicyRunnerCfg):
 @configclass
 class CompleteCarStage0PPORunnerCfg(CompleteCarBasePPORunnerCfg):
     experiment_name = "complete_car_stage0"
+    run_name = "best_baseline"
 
 
 @configclass

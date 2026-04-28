@@ -1,0 +1,190 @@
+[USD] /home/ubuntu/Graduation-Project/USD/complete_car.usd
+  default_prim: /World
+  meters_per_unit: 1.0
+  up_axis: Z
+
+[WHEEL] body_car_wheel_left
+  wheel_prim_valid: True path=/World/complete_car_alternative/body_car_wheel_left
+  joint_prim_valid: True path=/World/complete_car_alternative/joints/body_car_wheel_left_joint type=PhysicsRevoluteJoint
+  wheel_world_pos: ( 0.000000,  0.269530,  0.274092)
+  wheel_local_X_world: ( 1.000000,  0.000000, -0.000000)
+  wheel_local_Y_world: (-0.000000,  0.000000, -1.000000)
+  wheel_local_Z_world: (-0.000000,  1.000000,  0.000000)
+  joint_axis_token: Z
+  body0: /World/complete_car_alternative/body_car_chassis
+  body1: /World/complete_car_alternative/body_car_wheel_left
+  localPos0: (0, 0.26953, 0.045)
+  localPos1: (0, 0, 0)
+  localRot0: (0.70710677, -0.70710677, 0, 0)
+  localRot1: (1, 0, 0, 0)
+  joint_axis_in_wheel_body: ( 0.000000,  0.000000,  1.000000) dominant=+Z
+  joint_axis_world_from_wheel: (-0.000000,  1.000000,  0.000000)
+  dot(axis, wheel_local_axes): X=-0.000000, Y= 0.000000, Z= 1.000000
+  collision_mesh_count: 2
+    mesh: /World/complete_car_alternative/body_car_wheel_left/collisions/body_car_wheel_left/node_STL_BINARY_/mesh
+      collision_api: False
+      bbox_min_wheel: (-0.189991, -0.190000, -0.102150)
+      bbox_max_wheel: ( 0.189946,  0.189958,  0.010470)
+      bbox_extent_wheel: ( 0.379937,  0.379958,  0.112620)
+      radius_estimate_from_joint_axis: min=0.189969, max=0.189979, width_along_axis=0.112620
+    mesh: /World/complete_car_alternative/body_car_wheel_left/collisions/body_car_wheel_left/node_STL_BINARY_/Cylinder
+      collision_api: True
+      bbox_min_wheel: (-0.190000, -0.190000, -0.104992)
+      bbox_max_wheel: ( 0.190000,  0.190000,  0.015008)
+      bbox_extent_wheel: ( 0.380000,  0.380000,  0.120000)
+      radius_estimate_from_joint_axis: min=0.190000, max=0.190000, width_along_axis=0.120000
+
+[WHEEL] body_car_wheel_right
+  wheel_prim_valid: True path=/World/complete_car_alternative/body_car_wheel_right
+  joint_prim_valid: True path=/World/complete_car_alternative/joints/body_car_wheel_right_joint type=PhysicsRevoluteJoint
+  wheel_world_pos: (-0.000000, -0.268690,  0.274092)
+  wheel_local_X_world: ( 1.000000, -0.000000, -0.000000)
+  wheel_local_Y_world: (-0.000000,  0.000000, -1.000000)
+  wheel_local_Z_world: ( 0.000000,  1.000000,  0.000000)
+  joint_axis_token: Z
+  body0: /World/complete_car_alternative/body_car_chassis
+  body1: /World/complete_car_alternative/body_car_wheel_right
+  localPos0: (0, -0.26869, 0.045)
+  localPos1: (0, 0, 0)
+  localRot0: (0.70710677, -0.70710677, 0, 0)
+  localRot1: (1, 0, 0, 0)
+  joint_axis_in_wheel_body: ( 0.000000,  0.000000,  1.000000) dominant=+Z
+  joint_axis_world_from_wheel: ( 0.000000,  1.000000,  0.000000)
+  dot(axis, wheel_local_axes): X=-0.000000, Y=-0.000000, Z= 1.000000
+  collision_mesh_count: 2
+    mesh: /World/complete_car_alternative/body_car_wheel_right/collisions/body_car_wheel_right/node_STL_BINARY_/mesh
+      collision_api: False
+      bbox_min_wheel: (-0.189991, -0.190000, -0.011310)
+      bbox_max_wheel: ( 0.189946,  0.189958,  0.101310)
+      bbox_extent_wheel: ( 0.379937,  0.379958,  0.112620)
+      radius_estimate_from_joint_axis: min=0.189969, max=0.189979, width_along_axis=0.112620
+    mesh: /World/complete_car_alternative/body_car_wheel_right/collisions/body_car_wheel_right/node_STL_BINARY_/Cylinder
+      collision_api: True
+      bbox_min_wheel: (-0.190000, -0.190000, -0.015010)
+      bbox_max_wheel: ( 0.190000,  0.190000,  0.104990)
+      bbox_extent_wheel: ( 0.380000,  0.380000,  0.120000)
+      radius_estimate_from_joint_axis: min=0.190000, max=0.190000, width_along_axis=0.120000
+
+[WHEEL] head_car_wheel_left
+  wheel_prim_valid: True path=/World/complete_car_alternative/head_car_wheel_left
+  joint_prim_valid: True path=/World/complete_car_alternative/joints/head_car_wheel_left_joint type=PhysicsRevoluteJoint
+  wheel_world_pos: ( 0.552977,  0.269454,  0.273544)
+  wheel_local_X_world: ( 1.000000,  0.000000,  0.000000)
+  wheel_local_Y_world: ( 0.000000, -0.002032, -0.999998)
+  wheel_local_Z_world: (-0.000000,  0.999998, -0.002032)
+  joint_axis_token: Z
+  body0: /World/complete_car_alternative/head_car_chassis
+  body1: /World/complete_car_alternative/head_car_wheel_left
+  localPos0: (0.2764885, 0.26953, -0.036999997)
+  localPos1: (0, 0, 0)
+  localRot0: (0.70710677, -0.70710677, 0, 0)
+  localRot1: (1, 0, 0, 0)
+  joint_axis_in_wheel_body: ( 0.000000,  0.000000,  1.000000) dominant=+Z
+  joint_axis_world_from_wheel: (-0.000000,  0.999998, -0.002032)
+  dot(axis, wheel_local_axes): X= 0.000000, Y=-0.000000, Z= 1.000000
+  collision_mesh_count: 2
+    mesh: /World/complete_car_alternative/head_car_wheel_left/collisions/head_car_wheel_left/node_STL_BINARY_/mesh
+      collision_api: False
+      bbox_min_wheel: (-0.189991, -0.190000, -0.102150)
+      bbox_max_wheel: ( 0.189946,  0.189958,  0.010470)
+      bbox_extent_wheel: ( 0.379937,  0.379958,  0.112620)
+      radius_estimate_from_joint_axis: min=0.189969, max=0.189979, width_along_axis=0.112620
+    mesh: /World/complete_car_alternative/head_car_wheel_left/collisions/head_car_wheel_left/node_STL_BINARY_/Cylinder
+      collision_api: True
+      bbox_min_wheel: (-0.190000, -0.190000, -0.104990)
+      bbox_max_wheel: ( 0.190000,  0.190000,  0.015010)
+      bbox_extent_wheel: ( 0.380000,  0.380000,  0.120000)
+      radius_estimate_from_joint_axis: min=0.190000, max=0.190000, width_along_axis=0.120000
+
+[WHEEL] head_car_wheel_right
+  wheel_prim_valid: True path=/World/complete_car_alternative/head_car_wheel_right
+  joint_prim_valid: True path=/World/complete_car_alternative/joints/head_car_wheel_right_joint type=PhysicsRevoluteJoint
+  wheel_world_pos: ( 0.552977, -0.269605,  0.274640)
+  wheel_local_X_world: ( 1.000000, -0.000000,  0.000000)
+  wheel_local_Y_world: ( 0.000000, -0.002032, -0.999998)
+  wheel_local_Z_world: ( 0.000000,  0.999998, -0.002032)
+  joint_axis_token: Z
+  body0: /World/complete_car_alternative/head_car_chassis
+  body1: /World/complete_car_alternative/head_car_wheel_right
+  localPos0: (0.2764885, -0.26953, -0.036999997)
+  localPos1: (0, 0, 0)
+  localRot0: (0.70710677, -0.70710677, 0, 0)
+  localRot1: (1, 0, 0, 0)
+  joint_axis_in_wheel_body: ( 0.000000,  0.000000,  1.000000) dominant=+Z
+  joint_axis_world_from_wheel: ( 0.000000,  0.999998, -0.002032)
+  dot(axis, wheel_local_axes): X=-0.000000, Y=-0.000000, Z= 1.000000
+  collision_mesh_count: 2
+    mesh: /World/complete_car_alternative/head_car_wheel_right/collisions/head_car_wheel_right/node_STL_BINARY_/mesh
+      collision_api: False
+      bbox_min_wheel: (-0.189991, -0.190000, -0.010470)
+      bbox_max_wheel: ( 0.189946,  0.189958,  0.102150)
+      bbox_extent_wheel: ( 0.379937,  0.379958,  0.112620)
+      radius_estimate_from_joint_axis: min=0.189969, max=0.189979, width_along_axis=0.112620
+    mesh: /World/complete_car_alternative/head_car_wheel_right/collisions/head_car_wheel_right/node_STL_BINARY_/Cylinder
+      collision_api: True
+      bbox_min_wheel: (-0.190000, -0.190000, -0.015010)
+      bbox_max_wheel: ( 0.190000,  0.190000,  0.104990)
+      bbox_extent_wheel: ( 0.380000,  0.380000,  0.120000)
+      radius_estimate_from_joint_axis: min=0.190000, max=0.190000, width_along_axis=0.120000
+
+[WHEEL] tail_car_wheel_left
+  wheel_prim_valid: True path=/World/complete_car_alternative/tail_car_wheel_left
+  joint_prim_valid: True path=/World/complete_car_alternative/joints/tail_car_wheel_left_joint type=PhysicsRevoluteJoint
+  wheel_world_pos: (-0.552977,  0.269605,  0.274640)
+  wheel_local_X_world: ( 1.000000,  0.000000, -0.000000)
+  wheel_local_Y_world: (-0.000000,  0.002032, -0.999998)
+  wheel_local_Z_world: (-0.000000,  0.999998,  0.002032)
+  joint_axis_token: Z
+  body0: /World/complete_car_alternative/tail_car_chassis
+  body1: /World/complete_car_alternative/tail_car_wheel_left
+  localPos0: (-0.2764885, 0.26960462, -0.036452267)
+  localPos1: (0, 0, 0)
+  localRot0: (0.70782477, -0.70638806, 0, 0)
+  localRot1: (1, 0, 0, 0)
+  joint_axis_in_wheel_body: ( 0.000000,  0.000000,  1.000000) dominant=+Z
+  joint_axis_world_from_wheel: (-0.000000,  0.999998,  0.002032)
+  dot(axis, wheel_local_axes): X= 0.000000, Y=-0.000000, Z= 1.000000
+  collision_mesh_count: 2
+    mesh: /World/complete_car_alternative/tail_car_wheel_left/collisions/tail_car_wheel_left/node_STL_BINARY_/mesh
+      collision_api: False
+      bbox_min_wheel: (-0.189991, -0.190000, -0.102150)
+      bbox_max_wheel: ( 0.189946,  0.189958,  0.010470)
+      bbox_extent_wheel: ( 0.379937,  0.379958,  0.112620)
+      radius_estimate_from_joint_axis: min=0.189969, max=0.189979, width_along_axis=0.112620
+    mesh: /World/complete_car_alternative/tail_car_wheel_left/collisions/tail_car_wheel_left/node_STL_BINARY_/Cylinder
+      collision_api: True
+      bbox_min_wheel: (-0.190000, -0.190000, -0.104990)
+      bbox_max_wheel: ( 0.190000,  0.190000,  0.015010)
+      bbox_extent_wheel: ( 0.380000,  0.380000,  0.120000)
+      radius_estimate_from_joint_axis: min=0.190000, max=0.190000, width_along_axis=0.120000
+
+[WHEEL] tail_car_wheel_right
+  wheel_prim_valid: True path=/World/complete_car_alternative/tail_car_wheel_right
+  joint_prim_valid: True path=/World/complete_car_alternative/joints/tail_car_wheel_right_joint type=PhysicsRevoluteJoint
+  wheel_world_pos: (-0.552977, -0.269454,  0.273545)
+  wheel_local_X_world: ( 1.000000, -0.000000, -0.000000)
+  wheel_local_Y_world: (-0.000000,  0.002032, -0.999998)
+  wheel_local_Z_world: ( 0.000000,  0.999998,  0.002032)
+  joint_axis_token: Z
+  body0: /World/complete_car_alternative/tail_car_chassis
+  body1: /World/complete_car_alternative/tail_car_wheel_right
+  localPos0: (-0.2764885, -0.26945427, -0.03754757)
+  localPos1: (0, 0, 0)
+  localRot0: (0.70782477, -0.70638806, 0, 0)
+  localRot1: (1, 0, 0, 0)
+  joint_axis_in_wheel_body: ( 0.000000,  0.000000,  1.000000) dominant=+Z
+  joint_axis_world_from_wheel: ( 0.000000,  0.999998,  0.002032)
+  dot(axis, wheel_local_axes): X=-0.000000, Y= 0.000000, Z= 1.000000
+  collision_mesh_count: 2
+    mesh: /World/complete_car_alternative/tail_car_wheel_right/collisions/tail_car_wheel_right/node_STL_BINARY_/mesh
+      collision_api: False
+      bbox_min_wheel: (-0.189991, -0.190000, -0.010470)
+      bbox_max_wheel: ( 0.189946,  0.189958,  0.102150)
+      bbox_extent_wheel: ( 0.379937,  0.379958,  0.112620)
+      radius_estimate_from_joint_axis: min=0.189969, max=0.189979, width_along_axis=0.112620
+    mesh: /World/complete_car_alternative/tail_car_wheel_right/collisions/tail_car_wheel_right/node_STL_BINARY_/Cylinder
+      collision_api: True
+      bbox_min_wheel: (-0.190000, -0.190000, -0.015010)
+      bbox_max_wheel: ( 0.190000,  0.190000,  0.104990)
+      bbox_extent_wheel: ( 0.380000,  0.380000,  0.120000)
+      radius_estimate_from_joint_axis: min=0.190000, max=0.190000, width_along_axis=0.120000

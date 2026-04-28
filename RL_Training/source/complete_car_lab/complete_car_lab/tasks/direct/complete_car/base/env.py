@@ -40,7 +40,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
     def __init__(self, cfg: CompleteCarEnvCfg, render_mode: str | None = None, **kwargs):
         self._terrain_runtime: CompleteCarTerrainRuntime | None = None
         self._sensor_runtime: CompleteCarSensorSuiteRuntime | None = None
-        self._debug_draw = CompleteCarDebugDraw(cfg.debug.enable_debug_draw)
+        self._debug_draw = CompleteCarDebugDraw(
+            cfg.debug.enable_debug_draw,
+            visualize_goal_heading=cfg.debug.visualize_goal_heading,
+        )
         super().__init__(cfg, render_mode, **kwargs)
 
         self._ball_joint_ids, _ = self.robot.find_joints(BALL_JOINT_NAMES)
@@ -77,10 +80,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._previous_goal_distance = torch.zeros(self.num_envs, device=self.device)
 
         self._joint_pos_targets = self.robot.data.default_joint_pos.clone()
-        self._joint_vel_targets = torch.zeros_like(self.robot.data.default_joint_vel)
         self._joint_effort_targets = torch.zeros_like(self.robot.data.default_joint_vel)
         self._last_ball_joint_desired_targets = torch.zeros((self.num_envs, len(BALL_JOINT_NAMES)), device=self.device)
-        self._ball_joint_reference_targets = self.robot.data.default_joint_pos[:, self._ball_joint_ids].clone()
         self._last_ball_joint_rate_targets = torch.zeros_like(self._last_ball_joint_desired_targets)
         self._last_wheel_speed_reference = torch.zeros((self.num_envs, len(WHEEL_JOINT_NAMES)), device=self.device)
         self._last_wheel_torque_targets = torch.zeros_like(self._last_wheel_speed_reference)
@@ -91,9 +92,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._last_wheel_v_perp = torch.zeros_like(self._last_wheel_speed_reference)
         self._last_wheel_delta_v = torch.zeros_like(self._last_wheel_speed_reference)
         self._last_wheel_tau0 = torch.zeros_like(self._last_wheel_speed_reference)
-        self._last_wheel_g_kappa = torch.ones_like(self._last_wheel_speed_reference)
         self._last_wheel_tau1 = torch.zeros_like(self._last_wheel_speed_reference)
-        self._last_wheel_g_alpha = torch.ones_like(self._last_wheel_speed_reference)
         self._episode_sums = {name: torch.zeros(self.num_envs, device=self.device) for name in REWARD_TERM_NAMES}
         self._last_reward_components = {name: torch.zeros(self.num_envs, device=self.device) for name in REWARD_TERM_NAMES}
         self._last_reward_diagnostics = {
@@ -104,11 +103,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "progress_slip_angle_gate": torch.zeros(self.num_envs, device=self.device),
             "progress_gate": torch.zeros(self.num_envs, device=self.device),
             "progress_multiplier": torch.zeros(self.num_envs, device=self.device),
-            "timeout_remaining_distance": torch.zeros(self.num_envs, device=self.device),
-            "action_rate_base_cost": torch.zeros(self.num_envs, device=self.device),
-            "action_rate_joint_cost": torch.zeros(self.num_envs, device=self.device),
-            "load_equalization_error": torch.zeros(self.num_envs, device=self.device),
-            "load_equalization_raw": torch.zeros(self.num_envs, device=self.device),
         }
         self._last_total_reward = torch.zeros(self.num_envs, device=self.device)
         self._episode_total_reward_sum = torch.zeros(self.num_envs, device=self.device)
@@ -193,50 +187,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
 
-    def _compute_ball_joint_trajectory_targets(
-        self,
-        desired_ball_joint_targets: torch.Tensor,
-        lower_limits: tuple[float, ...],
-        upper_limits: tuple[float, ...],
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        q_actual = self.robot.data.joint_pos[:, self._ball_joint_ids]
-        q_lower = q_actual.new_tensor(lower_limits).unsqueeze(0)
-        q_upper = q_actual.new_tensor(upper_limits).unsqueeze(0)
-
-        q_goal = torch.clamp(desired_ball_joint_targets, min=q_lower, max=q_upper)
-        track_error_limit = float(self.cfg.control.ball_joint_planner_track_error_limit)
-        q_ref = self._ball_joint_reference_targets
-        if track_error_limit >= 0.0:
-            q_ref = q_actual + torch.clamp(
-                q_ref - q_actual,
-                min=-track_error_limit,
-                max=track_error_limit,
-            )
-        q_ref = torch.clamp(q_ref, min=q_lower, max=q_upper)
-
-        gains = q_actual.new_tensor(self.cfg.control.ball_joint_planner_gains).unsqueeze(0)
-        qdot_limits = q_actual.new_tensor(self.cfg.control.ball_joint_planner_qdot_limits).unsqueeze(0)
-        qddot_limits = q_actual.new_tensor(self.cfg.control.ball_joint_planner_qddot_limits).unsqueeze(0)
-        control_dt = float(self.cfg.control.control_dt)
-
-        qdot_raw = gains * (q_goal - q_ref)
-        qdot_sat = torch.clamp(qdot_raw, min=-qdot_limits, max=qdot_limits)
-
-        max_qdot_delta = qddot_limits * control_dt
-        qdot_delta = torch.clamp(
-            qdot_sat - self._last_ball_joint_rate_targets,
-            min=-max_qdot_delta,
-            max=max_qdot_delta,
-        )
-        qdot_cmd = self._last_ball_joint_rate_targets + qdot_delta
-
-        q_cmd = torch.clamp(q_ref + control_dt * qdot_cmd, min=q_lower, max=q_upper)
-        qdot_cmd = (q_cmd - q_ref) / control_dt
-
-        self._ball_joint_reference_targets.copy_(q_cmd)
-        self._last_ball_joint_rate_targets.copy_(qdot_cmd)
-        return q_cmd, qdot_cmd
-
     # 执行动作预处理，刷新目标，运输动作输出到关节目标
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self.last_actions.copy_(self.actions)
@@ -277,10 +227,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
         wheel_body_quat_w = self.robot.data.body_quat_w[:, self._wheel_body_ids]
         x_axis_local = torch.zeros_like(wheel_body_lin_vel_w)
         x_axis_local[..., 0] = 1.0
-        y_axis_local = torch.zeros_like(wheel_body_lin_vel_w)
-        y_axis_local[..., 1] = 1.0
+        z_axis_local = torch.zeros_like(wheel_body_lin_vel_w)
+        z_axis_local[..., 2] = 1.0
         wheel_forward_axis_w = quat_rotate(wheel_body_quat_w, x_axis_local)
-        wheel_lateral_axis_w = quat_rotate(wheel_body_quat_w, y_axis_local)
+        wheel_lateral_axis_w = quat_rotate(wheel_body_quat_w, z_axis_local)
         rolling_speed_actual = torch.sum(wheel_body_lin_vel_w * wheel_forward_axis_w, dim=-1)
         lateral_speed_actual = torch.sum(wheel_body_lin_vel_w * wheel_lateral_axis_w, dim=-1)
 
@@ -300,63 +250,59 @@ class CompleteCarDirectEnv(DirectRLEnv):
         )
         ball_joint_pos = self.robot.data.joint_pos[:, self._ball_joint_ids]
         wheel_joint_vel = self.robot.data.joint_vel[:, self._wheel_joint_ids]
-        planner_outputs = self._wheel_speed_allocator.compute_ball_joint_planner_outputs(
-            ball_joint_pos,
-            desired_ball_joint_targets,
-            self.cfg.control.control_dt,
-            self.cfg.control.ball_joint_planner_gains,
-            self.cfg.control.ball_joint_planner_qdot_limits,
-            ball_joint_lower_limits,
-            ball_joint_upper_limits,
+        low_level_outputs = self._wheel_speed_allocator.compute_low_slip_control_targets(
+            ball_joint_pos=ball_joint_pos,
+            desired_ball_joint_pos=desired_ball_joint_targets,
+            desired_planar_command=planar_command,
+            wheel_normal_contact_force=wheel_normal_contact_force,
+            wheel_joint_vel=wheel_joint_vel,
+            rolling_speed_actual=rolling_speed_actual,
+            lateral_speed_actual=lateral_speed_actual,
+            control_dt=self.cfg.control.control_dt,
+            planner_gains=self.cfg.control.ball_joint_planner_gains,
+            planner_qdot_limits=self.cfg.control.ball_joint_planner_qdot_limits,
+            q_lower_limits=ball_joint_lower_limits,
+            q_upper_limits=ball_joint_upper_limits,
+            lambda_tracking=self.cfg.control.low_slip_lambda_tracking,
+            lambda_lateral=self.cfg.control.low_slip_lambda_lateral,
+            planar_command_limits=(
+                self.cfg.control.base_forward_velocity_max,
+                self.cfg.control.base_yaw_rate_max,
+            ),
+            contact_force_off_threshold=self.cfg.control.contact_force_off_threshold,
+            contact_force_on_threshold=self.cfg.control.contact_force_on_threshold,
+            torque_tracking_gain=self.cfg.control.wheel_torque_tracking_gain,
+            slip_feedback_gain=self.cfg.control.wheel_slip_feedback_gain,
+            wheel_torque_limit=self.cfg.control.wheel_joint_effort_limit_sim,
+            slip_velocity_epsilon=self.cfg.control.wheel_slip_velocity_epsilon,
         )
-        wheel_state = self._wheel_speed_allocator.compute_wheel_kinematic_state(ball_joint_pos)
-        reference_outputs = self._wheel_speed_allocator.compute_wheel_speed_references(
-            wheel_state=wheel_state,
-            shaped_planar_command=planar_command,
-            ball_joint_rate_targets=planner_outputs.ball_joint_rate_targets,
-        )
-        wheel_speed_reference = torch.clamp(
-            reference_outputs.wheel_speed_reference,
-            min=-self.cfg.control.wheel_joint_velocity_limit_sim,
-            max=self.cfg.control.wheel_joint_velocity_limit_sim,
-        )
-        contact_weights = self._wheel_speed_allocator.compute_contact_weights(
-            wheel_normal_contact_force,
-            self.cfg.control.contact_force_off_threshold,
-            self.cfg.control.contact_force_on_threshold,
-        )
-        wheel_delta_speed = self.cfg.control.wheel_radius * wheel_joint_vel - rolling_speed_actual
-        implied_velocity_drive_torque = torch.clamp(
-            self.cfg.control.wheel_joint_damping * (wheel_speed_reference - wheel_joint_vel),
-            min=-self.cfg.control.wheel_joint_effort_limit_sim,
-            max=self.cfg.control.wheel_joint_effort_limit_sim,
-        )
-        self._last_ball_joint_rate_targets.copy_(planner_outputs.ball_joint_rate_targets)
         self._last_desired_planar_command.copy_(planar_command)
-        self._last_shaped_planar_command.copy_(planar_command)
-        self._last_contact_weights.copy_(contact_weights)
-        self._last_wheel_v_parallel.copy_(rolling_speed_actual)
-        self._last_wheel_v_perp.copy_(lateral_speed_actual)
-        self._last_wheel_delta_v.copy_(wheel_delta_speed)
-        self._last_wheel_tau0.copy_(implied_velocity_drive_torque)
-        self._last_wheel_g_kappa.fill_(1.0)
-        self._last_wheel_tau1.copy_(implied_velocity_drive_torque)
-        self._last_wheel_g_alpha.fill_(1.0)
+        self._last_ball_joint_rate_targets.copy_(low_level_outputs.ball_joint_rate_targets)
+        self._last_shaped_planar_command.copy_(low_level_outputs.shaped_planar_command)
+        self._last_contact_weights.copy_(low_level_outputs.contact_weights)
+        self._last_wheel_v_parallel.copy_(low_level_outputs.rolling_speed_actual)
+        self._last_wheel_v_perp.copy_(low_level_outputs.lateral_speed_actual)
+        self._last_wheel_delta_v.copy_(low_level_outputs.wheel_delta_speed)
+        self._last_wheel_tau0.copy_(low_level_outputs.base_torque_targets)
+        self._last_wheel_tau1.copy_(low_level_outputs.conditioned_torque_targets)
         self._joint_pos_targets = mdp_actions.apply_ball_joint_position_targets(
             self._joint_pos_targets,
             self._ball_joint_ids,
-            planner_outputs.ball_joint_position_targets,
+            low_level_outputs.ball_joint_position_targets,
         )
-        self._last_wheel_speed_reference.copy_(wheel_speed_reference)
-        self._last_wheel_torque_targets.copy_(implied_velocity_drive_torque)
-        self._joint_vel_targets.zero_()
-        self._joint_vel_targets[:, self._wheel_joint_ids] = wheel_speed_reference
+        self._last_wheel_speed_reference.copy_(low_level_outputs.wheel_speed_reference)
+        self._last_wheel_torque_targets.copy_(low_level_outputs.wheel_torque_targets)
         self._joint_effort_targets.zero_()
+        self._joint_effort_targets = mdp_actions.apply_wheel_effort_targets(
+            self._joint_effort_targets,
+            self._wheel_joint_ids,
+            low_level_outputs.wheel_torque_targets,
+            self.cfg.control.wheel_joint_effort_limit_sim,
+        )
 
-    # 球铰下发位置目标；车轮直接下发速度目标。
+    # 球铰下发位置目标；车轮下发低层力矩目标。
     def _apply_action(self) -> None:
         self.robot.set_joint_position_target(self._joint_pos_targets[:, self._ball_joint_ids], joint_ids=self._ball_joint_ids)
-        self.robot.set_joint_velocity_target(self._joint_vel_targets[:, self._wheel_joint_ids], joint_ids=self._wheel_joint_ids)
         self.robot.set_joint_effort_target(self._joint_effort_targets[:, self._wheel_joint_ids], joint_ids=self._wheel_joint_ids)
 
     def _compute_relative_goal_commands(self, env_ids: torch.Tensor | None = None) -> torch.Tensor:
@@ -393,14 +339,25 @@ class CompleteCarDirectEnv(DirectRLEnv):
         start_pos_xy_w: torch.Tensor,
         start_heading_w: torch.Tensor,
     ) -> None:
-        direction_offsets, heading_offsets = mdp_commands.sample_waypoint_command_sequences(
-            self._waypoint_targets_w,
-            env_ids,
-            start_pos_xy_w,
-            start_heading_w,
-            self.cfg.commands,
-            self._sample_goal_target_heights,
-        )
+        if self.cfg.commands.use_terrain_column_targets:
+            direction_offsets, heading_offsets = mdp_commands.sample_terrain_column_waypoint_command_sequences(
+                self._waypoint_targets_w,
+                env_ids,
+                start_pos_xy_w,
+                start_heading_w,
+                self.cfg.commands,
+                self._terrain_runtime,
+                self._sample_goal_target_heights,
+            )
+        else:
+            direction_offsets, heading_offsets = mdp_commands.sample_waypoint_command_sequences(
+                self._waypoint_targets_w,
+                env_ids,
+                start_pos_xy_w,
+                start_heading_w,
+                self.cfg.commands,
+                self._sample_goal_target_heights,
+            )
         self._waypoint_direction_offsets[env_ids] = direction_offsets
         self._waypoint_heading_offsets[env_ids] = heading_offsets
         self._command_time_left[env_ids] = self.cfg.commands.resampling_time
@@ -439,11 +396,11 @@ class CompleteCarDirectEnv(DirectRLEnv):
         )
         self._cached_step_relative_goal_commands = relative_goal_commands
         self._cached_step_raw_obs_terms = raw_obs_terms
-        current_actor_obs = compute_actor_observation_from_raw_terms(self.cfg, raw_obs_terms)
+        terrain_height_patch = self._compute_critic_height_patch()
+        self._last_critic_height_patch = terrain_height_patch
+        current_actor_obs = compute_actor_observation_from_raw_terms(self.cfg, raw_obs_terms, terrain_height_patch)
         actor_obs = update_history(self._obs_history, current_actor_obs)
-        critic_height_patch = self._compute_critic_height_patch()
-        self._last_critic_height_patch = critic_height_patch
-        critic_obs = compute_critic_observation(actor_obs, critic_height_patch)
+        critic_obs = compute_critic_observation(actor_obs)
         if self._sensor_runtime is not None and self.cfg.debug.log_sensor_outputs:
             self.extras["sensors"] = self._sensor_runtime.get_raw_output()
         return {"actor": actor_obs, "critic": critic_obs}
@@ -487,28 +444,16 @@ class CompleteCarDirectEnv(DirectRLEnv):
             min=-self.cfg.observations.wheel_slip_angle_clip_rad,
             max=self.cfg.observations.wheel_slip_angle_clip_rad,
         )
-        if self._sensor_runtime is not None:
-            wheel_contact_forces_w = self._sensor_runtime.get_wheel_contact_forces_w(WHEEL_BODY_NAMES)
-        else:
-            wheel_contact_forces_w = torch.zeros(
-                (self.num_envs, len(self._wheel_body_ids), 3),
-                device=self.device,
-                dtype=self.robot.data.root_link_pos_w.dtype,
-            )
-        wheel_normal_contact_force = torch.linalg.vector_norm(wheel_contact_forces_w, dim=-1) / self._total_vehicle_weight
         total_reward, components, diagnostics = compute_reward_terms(
             self.cfg,
             relative_goal_commands,
             self._previous_goal_distance,
             self.episode_length_buf,
             self.max_episode_length,
-            self.actions,
-            self.last_actions,
+            self.robot.data.root_com_lin_vel_b,
             wheel_longitudinal_slip,
             wheel_slip_angle,
-            wheel_normal_contact_force,
             self._last_done_terms["waypoint_hit"],
-            self._last_done_terms["time_out"],
         )
         self._previous_goal_distance.copy_(torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1))
         for name, value in components.items():
@@ -692,7 +637,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
         # cross-env mean so the curve reflects one concrete command trajectory.
         command_env_id = 0
         planar_command_delta = self._last_shaped_planar_command - self._last_desired_planar_command
-        action_delta = self.actions - self.last_actions
 
         metrics = {
             "Reward/total": float(torch.mean(self._last_total_reward).item()),
@@ -700,21 +644,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Reward/progress_to_target": float(torch.mean(self._last_reward_components["progress_to_target"]).item()),
             "Reward/reached_target": float(torch.mean(self._last_reward_components["reached_target"]).item()),
             "Reward/far_from_target": float(torch.mean(self._last_reward_components["far_from_target"]).item()),
-            "Reward/timeout_penalty": float(torch.mean(self._last_reward_components["timeout_penalty"]).item()),
             "Reward/angle_diff": float(torch.mean(self._last_reward_components["angle_diff"]).item()),
-            "Reward/action_rate_penalty": float(torch.mean(self._last_reward_components["action_rate_penalty"]).item()),
-            "Reward/load_equalization": float(torch.mean(self._last_reward_components["load_equalization"]).item()),
-            "Timeout/remaining_distance_on_timeout": float(
-                torch.mean(self._last_reward_diagnostics["timeout_remaining_distance"]).item()
-            ),
-            "Action/base_action_delta_abs_mean_raw": float(torch.mean(torch.abs(action_delta[:, :2])).item()),
-            "Action/joint_action_delta_abs_mean_raw": float(torch.mean(torch.abs(action_delta[:, 2:])).item()),
-            "Action/action_rate_base_cost_raw": float(
-                torch.mean(self._last_reward_diagnostics["action_rate_base_cost"]).item()
-            ),
-            "Action/action_rate_joint_cost_raw": float(
-                torch.mean(self._last_reward_diagnostics["action_rate_joint_cost"]).item()
-            ),
+            "Reward/turn_speed_penalty": float(torch.mean(self._last_reward_components["turn_speed_penalty"]).item()),
+            "Reward/slip_penalty": float(torch.mean(self._last_reward_components["slip_penalty"]).item()),
             "ProgressGate/ungated_progress_raw": float(
                 torch.mean(self._last_reward_diagnostics["progress_ungated"]).item()
             ),
@@ -732,12 +664,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
             ),
             "ProgressGate/combined_gate": float(torch.mean(self._last_reward_diagnostics["progress_gate"]).item()),
             "ProgressGate/multiplier": float(torch.mean(self._last_reward_diagnostics["progress_multiplier"]).item()),
-            "LoadEqualization/error": float(
-                torch.mean(self._last_reward_diagnostics["load_equalization_error"]).item()
-            ),
-            "LoadEqualization/raw": float(
-                torch.mean(self._last_reward_diagnostics["load_equalization_raw"]).item()
-            ),
             "Tracking/active_waypoint_pos_error": float(torch.mean(active_waypoint_pos_error).item()),
             "Tracking/active_waypoint_bearing_abs": float(torch.mean(active_waypoint_bearing_abs).item()),
             "Tracking/active_segment_completion_pct": float(torch.mean(active_segment_completion_pct).item()),
@@ -820,9 +746,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "LowLevel/v_perp_abs_mean_raw": float(torch.mean(torch.abs(self._last_wheel_v_perp)).item()),
             "LowLevel/delta_v_abs_mean_raw": float(torch.mean(torch.abs(self._last_wheel_delta_v)).item()),
             "LowLevel/tau0_abs_mean_raw": float(torch.mean(torch.abs(self._last_wheel_tau0)).item()),
-            "LowLevel/g_kappa_mean_raw": float(torch.mean(self._last_wheel_g_kappa).item()),
             "LowLevel/tau1_abs_mean_raw": float(torch.mean(torch.abs(self._last_wheel_tau1)).item()),
-            "LowLevel/g_alpha_mean_raw": float(torch.mean(self._last_wheel_g_alpha).item()),
         }
         per_wheel_metric_sources = {
             "wheel_joint_vel": raw_obs_terms["wheel_joint_vel"],
@@ -834,9 +758,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "v_perp": self._last_wheel_v_perp,
             "delta_v": self._last_wheel_delta_v,
             "tau0": self._last_wheel_tau0,
-            "g_kappa": self._last_wheel_g_kappa,
             "tau1": self._last_wheel_tau1,
-            "g_alpha": self._last_wheel_g_alpha,
             "longitudinal_slip": raw_obs_terms["wheel_longitudinal_slip"],
             "slip_angle": raw_obs_terms["wheel_slip_angle"],
         }
@@ -914,10 +836,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self.actions[env_ids] = 0.0
         self.last_actions[env_ids] = 0.0
         self._joint_pos_targets[env_ids] = joint_pos
-        self._joint_vel_targets[env_ids] = 0.0
         self._joint_effort_targets[env_ids] = 0.0
         self._last_ball_joint_desired_targets[env_ids] = joint_pos[:, self._ball_joint_ids]
-        self._ball_joint_reference_targets[env_ids] = joint_pos[:, self._ball_joint_ids]
         self._last_ball_joint_rate_targets[env_ids] = 0.0
         self._last_wheel_speed_reference[env_ids] = 0.0
         self._last_wheel_torque_targets[env_ids] = 0.0
@@ -928,9 +848,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._last_wheel_v_perp[env_ids] = 0.0
         self._last_wheel_delta_v[env_ids] = 0.0
         self._last_wheel_tau0[env_ids] = 0.0
-        self._last_wheel_g_kappa[env_ids] = 1.0
         self._last_wheel_tau1[env_ids] = 0.0
-        self._last_wheel_g_alpha[env_ids] = 1.0
         for key in self._last_done_terms:
             self._last_done_terms[key][env_ids] = False
 

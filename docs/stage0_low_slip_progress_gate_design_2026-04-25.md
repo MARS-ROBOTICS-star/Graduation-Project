@@ -12,7 +12,12 @@
 - 低滑移前进可以获得完整甚至更高 progress。
 - 高纵滑或高侧滑都会降低 progress 的有效收益。
 
-本文件记录 reward 设计方案、数值分析和当前实现状态。该方案已在 `RL_Training/` 的 Stage0 reward 计算中接入。
+本文件记录 reward 设计方案、数值分析和实现状态。该方案已在 `RL_Training/` 的 Stage0 reward 计算中接入。
+
+2026-04-28 更新：
+
+- active Stage0 已按用户要求将 combined gate 从 $G_{\min}=\min(G_\kappa,G_\alpha)$ 改回平均 gate：$G_{\mathrm{avg}}=0.5(G_\kappa+G_\alpha)$。
+- 当前 active 参数以 `docs/stage0_baseline参数详情表.md` 为准。
 
 ## 2. 纵滑 Gate
 
@@ -571,8 +576,8 @@ $$
 
 - 只门控正向 progress。
 - 负向 progress 不受 gate 削弱。
-- 当前参数为 `k = 3.0`、`K = pi / 1.5`、`M = 0.10 + 1.40G`。
-- 当前源码中的 $G$ 已从 $G_{\mathrm{avg}}$ 改为 $G_{\min}=\min(G_\kappa,G_\alpha)$。
+- 该段记录的是 2026-04-25 设计接入时的历史参数；当前 active 参数以 `docs/stage0_baseline参数详情表.md` 为准。
+- 2026-04-28 active 源码中的 $G$ 已按用户要求改回 $G_{\mathrm{avg}}=0.5(G_\kappa+G_\alpha)$。
 - `slip_penalty_weight` 已从 `-4.0` 降到 `-2.0`，作为背景约束保留。
 
 新增训练日志指标：

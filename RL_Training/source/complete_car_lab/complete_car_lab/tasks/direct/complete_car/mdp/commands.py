@@ -143,7 +143,7 @@ def sample_waypoint_command_sequences(
         if sample_height_fn is None:
             target_z_w = torch.zeros(num_envs, device=device, dtype=dtype)
         else:
-            target_z_w = sample_height_fn(target_xy_w)
+            target_z_w = sample_height_fn(target_xy_w).to(device=device, dtype=dtype)
 
         if standing_mask is not None and torch.any(standing_mask):
             target_xy_w = torch.where(standing_mask.unsqueeze(-1), anchor_xy_w, target_xy_w)
@@ -162,6 +162,88 @@ def sample_waypoint_command_sequences(
         waypoint_targets_w[env_ids, waypoint_index, 3] = target_heading_w
         direction_offsets[:, waypoint_index] = phi
 
+        anchor_xy_w = target_xy_w
+        anchor_heading_w = target_heading_w
+
+    return direction_offsets, heading_offsets
+
+
+def sample_terrain_column_waypoint_command_sequences(
+    waypoint_targets_w: torch.Tensor,
+    env_ids: torch.Tensor,
+    start_pos_xy_w: torch.Tensor,
+    start_heading_w: torch.Tensor,
+    cfg,
+    terrain_runtime,
+    sample_height_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Sample Stage1 targets in the same terrain column and ahead along world +x."""
+
+    if env_ids.numel() == 0:
+        empty = torch.empty((0, 0), device=waypoint_targets_w.device, dtype=waypoint_targets_w.dtype)
+        return empty, empty
+
+    if (
+        terrain_runtime is None
+        or not terrain_runtime.generator_enabled
+        or terrain_runtime.terrain_levels is None
+        or terrain_runtime.terrain_types is None
+    ):
+        raise RuntimeError("Terrain-column targets require an initialized generated terrain runtime.")
+
+    device = waypoint_targets_w.device
+    dtype = waypoint_targets_w.dtype
+    num_envs = env_ids.numel()
+    num_waypoints = waypoint_targets_w.shape[1]
+
+    min_row_offset = max(int(getattr(cfg, "terrain_goal_min_row_offset", 1)), 1)
+    max_row_offset = max(int(getattr(cfg, "terrain_goal_max_row_offset", 2)), min_row_offset)
+    max_target_level = max(int(terrain_runtime.max_terrain_level) - 1, 0)
+
+    terrain_types = terrain_runtime.terrain_types[env_ids].to(torch.long)
+    anchor_levels = terrain_runtime.terrain_levels[env_ids].to(torch.long)
+    anchor_xy_w = start_pos_xy_w
+    anchor_heading_w = start_heading_w
+
+    tile_half_width = 0.5 * float(terrain_runtime._terrain_cfg.terrain_width)
+    lateral_range = min(max(float(getattr(cfg, "terrain_goal_lateral_range_m", 3.0)), 0.0), max(tile_half_width, 0.0))
+
+    direction_offsets = torch.zeros((num_envs, num_waypoints), device=device, dtype=dtype)
+    heading_offsets = torch.zeros_like(direction_offsets)
+
+    for waypoint_index in range(num_waypoints):
+        row_offsets = torch.randint(
+            min_row_offset,
+            max_row_offset + 1,
+            (num_envs,),
+            device=device,
+            dtype=torch.long,
+        )
+        target_levels = torch.clamp(anchor_levels + row_offsets, max=max_target_level)
+        target_origins = terrain_runtime.get_tile_origins(target_levels, terrain_types).to(device=device, dtype=dtype)
+        target_xy_w = target_origins[:, :2].clone()
+        if lateral_range > 0.0:
+            target_xy_w[:, 1] += torch.empty(num_envs, device=device, dtype=dtype).uniform_(
+                -lateral_range,
+                lateral_range,
+            )
+
+        if sample_height_fn is None:
+            target_z_w = torch.zeros(num_envs, device=device, dtype=dtype)
+        else:
+            target_z_w = sample_height_fn(target_xy_w).to(device=device, dtype=dtype)
+
+        target_heading_w = torch.zeros(num_envs, device=device, dtype=dtype)
+        target_delta_xy_w = target_xy_w - anchor_xy_w
+        theta_los = torch.atan2(target_delta_xy_w[:, 1], target_delta_xy_w[:, 0])
+        direction_offsets[:, waypoint_index] = wrap_to_pi_tensor(theta_los - anchor_heading_w)
+        heading_offsets[:, waypoint_index] = wrap_to_pi_tensor(target_heading_w - anchor_heading_w)
+
+        waypoint_targets_w[env_ids, waypoint_index, 0:2] = target_xy_w
+        waypoint_targets_w[env_ids, waypoint_index, 2] = target_z_w
+        waypoint_targets_w[env_ids, waypoint_index, 3] = target_heading_w
+
+        anchor_levels = target_levels
         anchor_xy_w = target_xy_w
         anchor_heading_w = target_heading_w
 

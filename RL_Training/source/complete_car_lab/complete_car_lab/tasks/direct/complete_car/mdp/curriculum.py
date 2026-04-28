@@ -40,9 +40,13 @@ def update_terrain_curriculum(curriculum_cfg, terrain_runtime, scene, robot, env
 
     root_pos = robot.data.root_link_pos_w[env_ids]
     env_origins = scene.env_origins[env_ids]
-    distance = torch.norm(root_pos[:, :2] - env_origins[:, :2], dim=1)
+    if getattr(curriculum_cfg, "move_up_uses_forward_x", False):
+        distance = root_pos[:, 0] - env_origins[:, 0]
+        required_distance = terrain_runtime._terrain_cfg.terrain_length * curriculum_cfg.move_down_command_ratio
+    else:
+        distance = torch.norm(root_pos[:, :2] - env_origins[:, :2], dim=1)
+        required_distance = torch.norm(commands[env_ids, :2], dim=1) * curriculum_cfg.move_down_command_ratio
     del episode_length_s
-    required_distance = torch.norm(commands[env_ids, :2], dim=1) * curriculum_cfg.move_down_command_ratio
 
     move_up = distance > terrain_runtime._terrain_cfg.terrain_length * curriculum_cfg.move_up_distance_ratio
     move_down = (distance < required_distance) & ~move_up

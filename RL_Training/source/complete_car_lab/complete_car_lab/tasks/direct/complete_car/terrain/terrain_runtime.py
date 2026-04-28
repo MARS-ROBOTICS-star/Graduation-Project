@@ -117,6 +117,11 @@ class CompleteCarTerrainRuntime:
         self.terrain_classes[env_ids] = self._terrain_class_map[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
         scene.env_origins[env_ids] = self._terrain_origins[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
 
+    def get_tile_origins(self, terrain_levels: torch.Tensor, terrain_types: torch.Tensor) -> torch.Tensor:
+        if self._terrain_origins is None:
+            raise RuntimeError("Terrain origins are not initialized.")
+        return self._terrain_origins[terrain_levels, terrain_types]
+
     def apply_spawn_offsets(self, root_state: torch.Tensor, env_ids: torch.Tensor) -> torch.Tensor:
         if not self.generator_enabled or env_ids.numel() == 0:
             return root_state

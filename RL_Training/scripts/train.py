@@ -36,6 +36,7 @@ parser.add_argument("--max_iterations", type=int, default=None)
 parser.add_argument("--experiment_name", type=str, default=None)
 parser.add_argument("--run_name", type=str, default=None)
 parser.add_argument("--resume", action="store_true", default=False)
+parser.add_argument("--warmstart", action="store_true", default=False)
 parser.add_argument("--load_run", type=str, default=None)
 parser.add_argument("--checkpoint", type=str, default=None)
 parser.add_argument("--logger", type=str, default=None, choices={"wandb", "tensorboard", "neptune"})
@@ -141,7 +142,13 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
 
     if resume_path is not None:
         print(f"[INFO] Loading checkpoint from: {resume_path}")
-        runner.load(resume_path)
+        if args_cli.warmstart:
+            runner.load(
+                resume_path,
+                load_cfg={"actor": True, "critic": True, "optimizer": False, "iteration": False, "rnd": False},
+            )
+        else:
+            runner.load(resume_path)
 
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)

@@ -1,5 +1,231 @@
 # 每日工作日志
 
+## 2026-04-28
+
+已完成：
+- 按用户要求不计入当前这波训练，只对过去已完成并有诊断/TensorBoard 导出的 Stage0 历史训练做前五综合排序。
+- 核对 episode 级完成指标、纵滑、旧侧滑角、low-slip pass rate、轮速参考、有效推进速度和中车载荷。
+- 将排序结论同步到当前状态和长期结论记忆。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 综合第一：`2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter/model_699.pt`，当前最好可回放历史 checkpoint。
+- 严格任务完成最干净：`2026-04-25_13-37-33_stage0_tol05_turn2_gt_turn1_700iter`，但 plateau checkpoint 未保存。
+- 任务完成加中车载荷记录较好：`2026-04-26_10-32-46_stage0_lowslip_gate_v2_min_lowlevel_800iter/model_500.pt`，但旧滑移口径限制其物理低滑移结论。
+- 截至目前没有历史 run 同时满足稳定完成、低滑移、正常中车载荷和可回放 checkpoint。
+
+下一步：
+- 若需要论文实验表，应基于该排序进一步拆分为“任务完成表”和“运动质量表”，避免把高成功率误写成低滑移成功。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求全面分析 `stage0_progress_main_no_progress_v1_watch_700iter` 训练数据。
+- 核对训练配置、checkpoint、TensorBoard 导出标量、Isaac Kit 启动日志和回放产物。
+- 计算核心指标的首末值、后 25/50 step 均值、阶段窗口均值、成功率峰值、关键相关性和 per-wheel 接触状态。
+- 生成训练诊断报告。
+
+修改文件：
+- `results/stage0_progress_main_no_progress_v1_watch_342iter_diagnosis_2026-04-28.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 本轮训练从低速近停滞转为明显运动：后 25 step `v_parallel_abs≈0.550 m/s`，轮速参考约 `6.477 rad/s`。
+- 成功率不稳定：最高约 `0.316`，末步为 `0.0`，后 25 step 约 `0.0337`，timeout 仍主导。
+- 高纵滑成为主问题：后 25 step 纵滑约 `4.23`，low-slip combined pass rate 约 `3.9%`。
+- 当前 reward 修改证明能让车动起来，但没有形成稳定朝目标方向低滑移推进。
+
+下一步：
+- 需要先确认 Stage0 是否把低滑移/低纵滑与有效朝目标推进纳入成功条件或强约束，再继续修改 reward 主结构。
+
+## 2026-04-28
+
+已完成：
+- 按用户确认修改 Stage0 progress 主导奖励结构。
+- 将 `distance_to_target_weight` 和 `angle_diff_weight` 从 `6.0` 降为 `2.0`。
+- 新增 `no_progress_penalty`：当前步未命中 waypoint 且 `d_prev - d_now < 0.005 m` 时按缺口扣分。
+- 新增 `progress_negative_scale=2.0`，加重负 progress。
+- 同步新增 TensorBoard 指标和 Stage0 训练参数总表说明。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage0 不奖励 raw `vx`，而是通过目标距离变化强化每步有效推进。
+- no-progress 惩罚为早期学习提供即时局部信号，避免只靠 timeout 或 reached target 的远期稀疏反馈。
+
+验证：
+- `python3 -m py_compile` 通过。
+- `git diff --check` 通过。
+
+## 2026-04-28
+
+已完成：
+- 按用户确认的 Stage1 地形列目标逻辑接入代码：目标点保持同一 terrain column，采样在当前 row 前方 `+1/+2` 行。
+- 目标点横向 `y` 允许在同列 tile origin 附近左右 `3 m` 扰动，目标 heading 设为世界系 `+x`。
+- Stage1 reset yaw 固定为 `+x` 方向；命令不再按 `5 s` 中途重采样，而是随 reset / curriculum row 更新。
+- Stage1 课程升级改为按世界系 `+x` 前进距离计算，`move_up_distance_ratio=0.70`，约等于 `5.6 m`。
+- Stage1 将到达目标奖励和 timeout 距离惩罚置零，保持“目标点只是方向引导，不要求必须命中”的语义。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_runtime.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 目标点现在由当前 `terrain_levels` / `terrain_types` 决定，始终留在同一地形列并朝 `+x` 前方引导。
+- Stage0 未开启 `use_terrain_column_targets`，不受本次 Stage1 目标点逻辑影响。
+
+验证：
+- `python3 -m py_compile` 通过。
+- `git diff --check` 通过。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求在 `docs/RL阶段训练参数一览表.md` 中补充当前纵滑率和侧滑角定义公式。
+- 明确写入 wheel local `X` 为滚动方向、wheel local `Z` 为水平侧向方向。
+- 补充 `V_parallel`、`V_perp`、`epsilon`、`r_w`、`Omega_i`、`kappa_i`、`alpha_i` 等参数含义，并说明侧滑角裁剪到 `[-pi/2, pi/2]`。
+
+修改文件：
+- `docs/RL阶段训练参数一览表.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 参数表现在可以直接解释 `wheel_longitudinal_slip` 和 `wheel_slip_angle` 的计算来源、单位/量纲和符号含义。
+
+验证：
+- `git diff --check` 通过。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求将 Stage0 reward 中的 low-slip progress gate 从最小值组合改为平均组合。
+- 保持 `progress_gate_min_multiplier=0.25`、`progress_gate_max_multiplier=1.5` 不变。
+- 同步更新 Stage0 训练参数总表和项目记忆文件。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/stage0_low_slip_progress_gate_design_2026-04-25.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `ProgressGate/combined_gate` 表示 `0.5*(Gκ+Gα)`，不再表示 `min(Gκ,Gα)`。
+- 正向 progress 仍由该 gate 调制，负向 progress 仍完整保留。
+
+验证：
+- `python3 -m py_compile` 通过。
+- `git diff --check` 通过。
+
+## 2026-04-28
+
+已完成：
+- 按用户确认的 reward/PPO 语义，将 Stage0 timeout 定义为失败终止。
+- 在 Stage0 配置中设置 `is_finite_horizon = True`，避免 RSL-RL wrapper 向 PPO 传入 `extras["time_outs"]`。
+- 保留现有 `time_out` 统计和 `timeout_penalty`，因此 timeout 仍会 reset、记录日志并触发最后一步失败惩罚。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage0 中未完成 waypoint 且达到 `40 s` 上限的 episode 现在在 PPO return 语义上按失败结束处理。
+- PPO 不再对 timeout 最后一步追加 value bootstrap。
+
+验证：
+- `python3 -m py_compile` 通过。
+- `git diff --check` 通过。
+
+## 2026-04-28
+
+已完成：
+- 按用户确认的 Stage1 方案，将当前局部高度图同一份 `height_patch` 接入 actor 观测。
+- 保持高度图尺寸不变，保持原始米制相对高度值，不额外 clip，不额外乘 scale。
+- critic 观测改为直接复用 actor 观测，避免 Stage1 中高度图重复拼接。
+- 观测 descriptor 和 observation noise 维度 helper 已同步更新。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 中 `cfg.terrain.measure_heights=True` 时，actor / critic 都包含同一份高度图观测。
+- Stage0 仍为 `terrain.measure_heights=False`，观测维度和张量拼接不变。
+
+验证：
+- `python3 -m py_compile` 通过。
+- `git diff --check` 通过。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求排查当前 active Stage0 的底层运动学模型、奖励函数结构、实际训练调用链和 inactive 代码影响。
+- 核对训练入口、Stage0 配置、`env.py`、`mdp/actions.py`、`mdp/rewards.py`、`mdp/terminations.py`、allocator、PPO actor 分布和 Isaac Lab/RSL-RL step 顺序。
+- 用 allocator 最小数值验证确认：零球铰姿态下 `vx=1 m/s` 会给六轮约 `5.26 rad/s` 轮速参考。
+
+产出/结论：
+- 当前 active 执行链只调用 `compute_wheel_speed_references()` 并向车轮下发 velocity target；`compute_low_slip_control_targets()`、低滑移平面整形、轮级牵引力矩分配和 env 层 qddot 球铰轨迹函数均未参与当前训练。
+- 未发现 inactive 低层代码直接干扰 policy 输出或车轮命令。
+- 当前低速/不动更可能来自 active reward/PPO 语义：dense 正奖励仍较大、progress gate 不要求非零有效速度、timeout 会被 RSL-RL 按 truncated 做 value bootstrap、姿态/yaw 成功约束未实际接入 done。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+下一步：
+- 若用户确认 timeout 应作为失败终止语义，下一轮应优先处理 timeout bootstrap 和 reward 主结构，而不是继续排查 inactive 低层整形代码。
+
+## 2026-04-27
+
+已完成：
+- 按用户要求停止 `stage0_direct_velocity_no_shaping_watch_700iter` 训练。
+- run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-27_22-42-33_stage0_direct_velocity_no_shaping_watch_700iter`
+- 终端打印到 iteration `77/700` 后中断；训练进程已退出，GPU 训练占用已释放。
+- 最新自动保存 checkpoint 为 `model_75.pt`。
+- TensorBoard 标量已重新导出到 run 内 `tensorboard_export/`。
+
+产出/结论：
+- 直接速度驱动链路生效：`planar_command_shaping_delta=0`，`desired_planar_command == shaped_planar_command`。
+- 最后 `wheel_speed_reference_abs≈2.84 rad/s`、`wheel_joint_vel_abs≈2.73 rad/s`，车轮关节本身不是完全没跟踪。
+- 最后 `v_parallel_abs≈0.266 m/s`、`v_perp_abs≈0.269 m/s`、`delta_v_abs≈0.551 m/s`、纵滑约 `2.62`、侧滑角约 `0.73 rad`。
+- 最后仍 `success_rate=0.0`，最高 `active_segment_completion_pct≈35.8%`，最后约 `30.3%`；直接速度驱动恢复了一定推进，但仍主要表现为高滑移、偏航/侧滑和低效前进。
+
+下一步：
+- 明天继续训练时从 `model_75.pt` resume；若目标是补足原计划总 `700` iterations，应追加约 `625` iterations。
+
 ## 2026-04-27
 
 已完成：
@@ -12629,6 +12855,56 @@
 - `validate_wheel_speed_allocator.py --run-smoke-cases` 通过。
 - `git diff --check` 通过。
 
+## 2026-04-28
+
+已完成：
+- 按用户要求删除当前 `best_baseline` 中不活跃代码和非 active 配置字段。
+- 删除不参与当前 reward 的旧实验参数：`timeout_*`、`progress_negative_scale`、`no_progress_*`、`action_rate_*`、`load_equalization_*`。
+- 删除 env 层已停用的 qddot 球铰轨迹器、`_joint_vel_targets`、`_ball_joint_reference_targets` 和固定 `g_kappa/g_alpha` 诊断缓存。
+- 删除 allocator 中未再使用的 `planned_ball_joint_pos/planned_ball_joint_rate` 兼容入口、decay gain helper、`longitudinal_decay/slip_angle_decay` 输出。
+- 删除 logger 中 `LowLevel/g_kappa_mean_raw`、`LowLevel/g_alpha_mean_raw` 的别名、console priority 和 TensorBoard extra tags。
+- 同步更新参数表、当前状态和长期记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过。
+- `validate_wheel_speed_allocator.py --run-smoke-cases` 通过。
+- active 源码反向搜索确认旧字段和旧函数无残留引用。
+- `git diff --check` 通过。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求逐项复核 `best_baseline` 是否已严格恢复到历史 `model_699` 版本。
+- 对照历史 `params/env.yaml`、`params/agent.yaml`、run 内 git diff 和当前 active 源码调用链。
+- 发现并修正一个日志口径差异：`env.py` 不再对 `_last_wheel_speed_reference` 做额外 clip，而是恢复为直接记录 allocator 输出。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage0 关键环境参数、PPO 参数、reward 结构、termination、动作映射、纵滑率方向和底层 torque 控制链路已与历史版本对齐。
+- 唯一按用户要求保留的主动差异是侧滑角口径：wheel local `Z` 与 `max(abs(v_parallel), epsilon)`。
+- 后续实验残留字段不在当前 active reward 和动作下发路径中，没有发现对 `best_baseline` 的运行干扰。
+
+验证：
+- `python3 -m py_compile` 通过。
+- `validate_wheel_speed_allocator.py --run-smoke-cases` 通过。
+- `git diff --check` 通过。
+
 产出/结论：
 - 前左轮示例：`Omega=9.311`、`Omega_ref=6.490`、`kappa=+2.869`、`Cw=0.351` 时，`tau0=-4.231 Nm`、纵滑反馈 `-22.952 Nm`、最终力矩约 `-9.541 Nm`。
 - 中左轮和后右轮复算也得到负向制动力矩，说明当前公式方向能抑制正向滑转。
@@ -13128,3 +13404,249 @@
 
 下一步：
 - 不应继续长训当前配置；先确认 Stage0 成功标准是否必须绑定 waypoint 完成、非零有效推进、低滑移和中车有效承载。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求分析 `stage0_direct_velocity_no_shaping_resume_from75_625iter` 训练结果和 `model_200.pt` 回放中小车基本不动的问题。
+- 使用 TensorBoard 导出标量整理 policy 输出、底盘速度命令、轮速参考、实际车轮速度、轮地滚动速度、滑移、progress gate、timeout 和 waypoint 完成情况。
+- 新增 headless 回放探针 `RL_Training/scripts/replay_probe.py`，用于打印 checkpoint 回放时的 policy action、映射后的 `[vx_cmd, wz_cmd]`、每轮 `Omega_ref`、实际轮速和轮地速度。
+- 清理残留 Isaac 回放 GPU 进程，释放显存。
+- 生成诊断报告并同步项目记忆文件。
+
+修改文件：
+- `RL_Training/scripts/replay_probe.py`
+- `results/stage0_direct_velocity_resume_model200_replay_diagnosis_2026-04-28.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_08-24-09_stage0_direct_velocity_no_shaping_resume_from75_625iter`
+- 最新有效 checkpoint：`model_200.pt`
+- 训练后 25 step：`desired_vx≈0.083 m/s`、`desired_wz≈0.133 rad/s`、`wheel_speed_reference_abs≈2.242 rad/s`、`wheel_joint_vel_abs≈2.097 rad/s`、`v_parallel_abs≈0.096 m/s`、`v_perp_abs≈0.099 m/s`。
+- 训练后 25 step 仍 `waypoints_completed=0`、`time_out_rate=1.0`，说明策略没有学会完成 waypoint。
+- 单环境回放探针显示：policy 底盘动作很小，映射后 `vx_cmd≈-0.001 m/s`、`wz_cmd≈0.113 rad/s`；轮速参考正负混合，120 步总位移约 `0.134 m`。
+- 判断：回放小车不动不是车轮 velocity target 没下发；当前 checkpoint 基本不给前进速度，同时训练中轮速到滚动推进的转化效率也很低。
+
+下一步：
+- 不建议继续盲目延长同一配置训练；应先明确 Stage0 是否把“非零有效前进 + 完成 waypoint”作为硬成功语义，再修改 reward / termination / progress gate。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求检查 `USD/complete_car.usd` 中六个车轮的坐标系、关节轴和圆柱碰撞体半径。
+- 新增只读检查脚本，使用 Isaac/pxr USD API 读取 wheel prim、`PhysicsRevoluteJoint`、collision mesh 包围盒和半径估算。
+- 生成完整检查报告。
+
+修改文件：
+- `scripts/isaac_sim/inspect_wheel_usd_geometry.py`
+- `results/wheel_usd_geometry_inspection_2026-04-28.txt`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 六个车轮 joint axis 均为 `Z`，在 wheel body 中对齐 local `+Z`，在世界系中约为车辆横向 `+Y`，符合轮轴方向。
+- 六个车轮 local `X` 在世界系中约为车辆前进方向 `+X`，因此当前 `v_parallel` 的 rolling axis 口径是合理的。
+- 六个车轮 local `Y` 在世界系中约为竖直方向 `-Z`，不是水平侧向方向；wheel local `Z` 才是轮轴/水平侧向方向。
+- 六个车轮 `Cylinder` 碰撞体均带 `CollisionAPI=True`，半径均为 `0.190 m`，轴向宽度约 `0.120 m`，与 Stage0 `wheel_radius=0.19` 一致。
+- 发现当前代码坐标约定 bug：`env.py` 与 `mdp/observations.py` 使用 wheel local `Y` 计算 `v_perp` 和 `wheel_slip_angle`，但该轴实际是竖直方向；受影响的是侧滑指标、low-slip angle gate 和相关日志。
+
+下一步：
+- 暂不处理速度斜坡和球铰加速度限制；若用户确认，应先修正侧向轴计算为 wheel local `Z` 或 joint axis 方向，再重新解释侧滑相关日志和训练结果。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求将 Stage0 运行时和观测中的 wheel lateral axis 从 wheel local `Y` 改为 wheel local `Z`。
+- 使用 `model_200.pt` 重新做 headless 回放探针，检查修正后的 `v_perp`、侧滑角、progress gate 和位移。
+- 同步更新当前状态、长期结论记忆和 Stage0 训练参数总表。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `results/stage0_model200_lateral_axis_z_replay_check_2026-04-28.md`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- USD 检查确认 wheel local `X` 为滚动前进方向，wheel local `Z` 为轮轴/水平侧向方向，wheel local `Y` 近似竖直方向。
+- 修正后同一 `model_200.pt` 回放得到 `v_perp_abs≈0.0153 m/s`、侧滑角约 `0.145 rad`；修正前旧口径约为 `v_perp_abs≈0.0716 m/s`、侧滑角约 `0.443 rad`。
+- 2026-04-28 之前的侧滑相关日志混入竖直速度，不能作为真实水平侧滑证据；纵滑、轮速参考、实际轮速和滚动方向速度仍可继续用于分析推进效率。
+- 修正轴向口径后，该旧 checkpoint 仍只有约 `0.112 m` 位移，`progress_multiplier≈0.25`，说明“不想动”问题没有被侧向轴修正直接解决。
+
+下一步：
+- 基于修正后的侧滑口径重新短训，优先观察 `ProgressGate/longitudinal_gate`、`ProgressGate/slip_angle_gate`、`ProgressGate/combined_gate`、`LowLevel/v_parallel_abs_mean_raw` 和 waypoint 完成情况。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求继续排查 `model_200.pt` policy 输出前进速度低的本质原因。
+- 对 `2026-04-27_22-42-33_stage0_direct_velocity_no_shaping_watch_700iter` 和 `2026-04-28_08-24-09_stage0_direct_velocity_no_shaping_resume_from75_625iter` 的 TensorBoard 导出标量做窗口均值、趋势和相关性分析。
+- 对比历史能跑通的 `2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter` 与当前 direct velocity run 的 progress gate 参数和 progress reward 量级。
+- 生成根因诊断报告，并同步当前状态与长期结论记忆。
+
+修改文件：
+- `results/stage0_policy_low_vx_root_cause_2026-04-28.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `resume200` 中 `desired_planar_vx_raw` 从前 10 step 约 `0.358 m/s` 降到后 25 step 约 `0.083 m/s`，但 `Train/mean_reward` 从约 `-6.64` 改善到 `-3.10`。
+- 同一 run 内 `vx` 与 `Train/mean_reward` 相关系数约 `-0.78`，与 `episode/return` 约 `-0.75`，说明奖励信号实际鼓励 policy 降低前进速度。
+- 当前 direct velocity run 的 `progress_gate_longitudinal_k=0.5` 明显严于历史 `18-26-58` 的 `3.0`，导致纵滑 gate 基本把正向 progress multiplier 压在 `0.25` 下限附近。
+- `resume200` 后 25 step 的 `Reward/progress_to_target≈0.000096`，而历史 `18-26-58` 后 25 step 约 `0.00675`，有效前进学习信号约差 `70` 倍。
+- `gamma=0.99` 按 `1/60 s` 控制步折扣时，40 s timeout penalty 对 episode 前段动作折扣约 `3.3e-11`，不能替代每步“不前进变差”的局部信号。
+
+下一步：
+- 修改前需要先由用户确认 Stage0 是否把每步有效前进作为硬训练语义；技术上应优先让低速/无进度在每个控制阶段变差，而不是继续依赖远期 timeout。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求重新启动并监控 Stage0 `progress/no-progress v1` 完整训练。
+- 训练期间按每 30 iteration 汇报一次状态，覆盖 `90` 到 `690` 的关键边界。
+- 训练完整跑满 `700` iterations，终端到 `699/700`，进程退出码 `0`。
+- 导出 TensorBoard 标量，并基于完整曲线分析任务完成、推进速度、滑移、姿态、动作幅度和 reward gate。
+- 生成本轮诊断报告并同步当前状态与长期结论记忆。
+
+修改文件：
+- `results/stage0_progress_main_no_progress_v1_quality_watch_700iter_diagnosis_2026-04-28.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_12-09-46_stage0_progress_main_no_progress_v1_quality_watch_700iter`
+- 最终 checkpoint：`model_699.pt`
+- 训练耗时约 `7295.66 s`
+- 后 100 step `success_rate≈0.077`，最终约 `0.068`；后 100 step `time_out_rate≈0.923`，最终约 `0.932`。
+- 后 100 step `v_parallel_abs≈0.586 m/s`，最终约 `0.583 m/s`，说明不是近停滞。
+- 后 100 step 纵滑约 `4.65`，最终约 `4.88`；后 100 step `LowSlip/combined_pass_rate≈3.84%`，最终约 `3.24%`。
+- 后 100 step `episode_completion_pct≈13.79%`，最终约 `10.31%`，仍未形成稳定 waypoint 完成。
+- 判断：当前 reward 能让车动起来，但学到的是高轮速、高滑移、低稳定命中的推进行为，不能作为成功策略。
+
+下一步：
+- 不建议继续盲目延长同一配置训练；需要先确认 Stage0 是否把低滑移、姿态、有效推进量或 waypoint 完成质量纳入成功条件/强约束。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求为历史 run `2026-04-25_13-37-33_stage0_tol05_turn2_gt_turn1_700iter` 生成详细 Markdown 报告。
+- 重新读取该 run 的 `params/env.yaml`、`params/agent.yaml`、Hydra 输出、TensorBoard 导出和 run 内保存的 git diff。
+- 重新核算关键 TensorBoard 指标，整理训练结果、PPO/RL 配置、观测动作定义、奖励函数和 2026-04-25 当时实际生效的底层运动模型。
+- 同步更新当前状态和长期结论记忆。
+
+修改文件：
+- `results/stage0_tol05_turn2_gt_turn1_700iter_detailed_result_config_motion_model_2026-04-28.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 该 run 实际到 iteration `294`，`269-294` 连续 `26` 轮满成功；后 20 step `success_rate=1.0`、`time_out_rate=0.0`、episode 级双 waypoint 完成率 `100%`。
+- 该 run 的 plateau 末端 checkpoint 未保存，已保存 checkpoint 只有 `model_0.pt`、`model_100.pt`、`model_200.pt`。
+- 该 run 使用当时的低层力矩控制链路：policy 动作经过球铰规划、低侧滑整形、轮速分配后向车轮下发 effort target；不能按后续直接速度 target 配置解释。
+- 该 run 可作为 Stage0 平地双 waypoint 可学习性证据，但不能作为低滑移协同控制成功证据。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求为历史 run `2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter/model_699.pt` 生成详细 Markdown 报告。
+- 重新读取该 run 的 `params/env.yaml`、`params/agent.yaml`、TensorBoard 导出、已有诊断报告和 run 内保存的 git diff。
+- 使用 run 对应 commit `67e7d85173999cbf5916e6d52734b2d235170e1c` 加 run diff 还原 2026-04-25 当时实际生效的底层运动模型，避免误用当前已修改后的 active 代码解释历史 checkpoint。
+- 同步更新当前状态和长期结论记忆。
+
+修改文件：
+- `results/stage0_lowslip_gate_v1_model699_detailed_result_config_motion_model_2026-04-28.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `model_699.pt` 后 25 轮 `success_rate≈0.9863`、episode 级 waypoint 完成率约 `99.21%`，是目前最佳可回放历史 Stage0 checkpoint 之一。
+- 该 run 使用 2026-04-25 低层力矩控制链路：policy action -> 平面命令/球铰期望姿态 -> 低侧滑整形 -> 轮速参考 -> 纵滑反馈车轮 effort target；不是后续直接 wheel velocity target 配置。
+- 该 run 的 `is_finite_horizon=false`，timeout 在当时 PPO 语义下仍会按 time-limit bootstrap 处理，不能混同于当前 active 的 timeout 失败终止语义。
+- 该 run 的原始侧滑角使用 wheel local `Y` 旧口径，不能作为真实水平侧滑证据。
+- 结论定位：可作为 Stage0 平地双 waypoint 可学习和工程链路闭环证据，但不能作为低纵滑/低水平侧滑协同控制成功证据。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求将当前 active Stage0 恢复为 `best_baseline`。
+- 恢复目标为 `stage0_lowslip_gate_v1_model699_detailed_result_config_motion_model_2026-04-28` 对应版本。
+- 恢复 reward、PPO timeout 语义、底层 low-slip torque 控制链路、纵滑率方向和日志重点标签。
+- 保留当前侧滑角口径：wheel local `Z` 作为水平侧向轴，低速分母使用 `max(abs(v_parallel), epsilon)`。
+- 重写 `docs/RL阶段训练参数一览表.md`，同步当前 `best_baseline` 的参数、公式和 inactive 字段边界。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+- `docs/RL阶段训练参数一览表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage0 `run_name` 默认设为 `best_baseline`。
+- Stage0 `is_finite_horizon=False`，timeout 恢复为 RSL-RL time-limit bootstrap 语义。
+- active reward 恢复为 7 项：`distance_to_target`、`progress_to_target`、`reached_target`、`far_from_target`、`angle_diff`、`turn_speed_penalty`、`slip_penalty`。
+- active 底层控制恢复为 low-slip allocator + 车轮 effort target；不再使用 direct wheel velocity target。
+- 纵滑率恢复为 `kappa = (v_parallel - r * omega) / max(abs(v_parallel), epsilon)`。
+- 侧滑角仍使用当前修正后的 wheel local `Z` 口径，不恢复历史 local `Y`。
+
+验证：
+- `python3 -m py_compile` 通过。
+- `validate_wheel_speed_allocator.py --run-smoke-cases` 通过。
+- `git diff --check` 通过。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求启动并全程监控 Stage0 训练 `best_baseline_2`。
+- 训练跑满 `700` iterations，终端输出到 `699/700`，进程正常退出。
+- 按用户最新要求，监控重点从完整路径百分比转为任务完成和运动行为质量。
+- 确认最终 checkpoint `model_699.pt` 已保存。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2`
+- 末段任务完成稳定，最后可见阶段基本为 `success_rate=1.0`、`time_out_rate=0.0`，无远离目标或球铰限位终止。
+- 末段前向速度约 `1.18-1.19 m/s`，侧向速度约 `0.036-0.040 m/s`，当前口径侧滑角约 `0.054-0.061 rad`，姿态 pitch 约 `-0.5 deg` 到 `-0.7 deg`。
+- 主要缺陷是纵滑率仍高，约 `3.06-3.13`，低滑综合通过率约 `0.087-0.092`。
+- 判断：该训练能说明 `best_baseline` 可以学出有效前向运动和高任务完成率，但不能说明低纵滑控制已经成功。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求将原 `docs/RL阶段训练参数一览表.md` 重命名为 `docs/stage0_baseline参数详情表.md`。
+- 将 `best_baseline_2` 的 run 身份、训练命令、参数快照来源、PPO 配置和末段训练结果写入新文档。
+- 补充当前 Stage0 baseline 的底层运动学细节，包括 low-slip 平面命令整形、轮心名义速度、车轮参考角速度、纵滑率、侧滑角和车轮 torque target。
+- 同步更新 active 引用和长期记忆。
+
+修改文件：
+- `docs/stage0_baseline参数详情表.md`
+- `AGENTS.md`
+- `README.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `docs/stage0_low_slip_progress_gate_design_2026-04-25.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage0 baseline 参数总表的新规范路径为 `docs/stage0_baseline参数详情表.md`。
+- 后续 Stage0 RL 环境设计或训练参数发生实质变化时，应同步更新该新文件名对应的文档。

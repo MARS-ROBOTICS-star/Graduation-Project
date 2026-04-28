@@ -19,6 +19,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         # stay inside this file without bouncing back to the base template.
         self.stage_name = "stage0"
         self.episode_length_s = 40.0
+        self.is_finite_horizon = False
         self.decimation = 2
 
         self.scene.num_envs = 64
@@ -40,25 +41,23 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.control.control_dt = 1.0 / 60.0
         self.control.ball_joint_planner_gains = (10.0, 10.0, 10.0, 10.0, 10.0, 10.0)
         self.control.ball_joint_planner_qdot_limits = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
-        self.control.ball_joint_planner_qddot_limits = (12.0, 12.0, 12.0, 12.0, 12.0, 12.0)
-        self.control.ball_joint_planner_track_error_limit = 0.10
         self.control.base_forward_velocity_max = 2.0
         self.control.base_yaw_rate_max = 2.0
         self.control.base_allow_reverse = True
-        self.control.ball_joint_stiffness = 1000.0
-        self.control.ball_joint_damping = 100.0
+        self.control.ball_joint_stiffness = 8000.0
+        self.control.ball_joint_damping = 1000.0
         self.control.ball_joint_effort_limit_sim = 20.0
         self.control.ball_joint_velocity_limit_sim = 1.0
         self.control.wheel_joint_stiffness = 0.0
-        self.control.wheel_joint_damping = 100.0
+        self.control.wheel_joint_damping = 0.0
         self.control.wheel_joint_effort_limit_sim = 20.0
         self.control.wheel_joint_velocity_limit_sim = 20.0
-        self.control.low_slip_lambda_tracking = 0.0
-        self.control.low_slip_lambda_lateral = 0.0
+        self.control.low_slip_lambda_tracking = 1.0
+        self.control.low_slip_lambda_lateral = 5.0
         self.control.contact_force_off_threshold = 0.01
         self.control.contact_force_on_threshold = 0.08
-        self.control.wheel_torque_tracking_gain = 0.0
-        self.control.wheel_slip_feedback_gain = 0.0
+        self.control.wheel_torque_tracking_gain = 2.0
+        self.control.wheel_slip_feedback_gain = 4.0
         self.control.wheel_slip_velocity_epsilon = 0.1
 
         self.observations.use_history = False
@@ -99,21 +98,17 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.rewards.params.distance_to_target_denominator_scale = 0.01
         self.rewards.params.distance_to_target_weight = 6.0
         self.rewards.params.progress_to_target_clip_m = 0.25
-        self.rewards.params.progress_to_target_relax_radius_m = 3.0
+        self.rewards.params.progress_to_target_relax_radius_m = 4.0
         self.rewards.params.progress_to_target_weight = 8.0
         self.rewards.params.reached_target_base_reward = 2.0
         self.rewards.params.reached_target_weight = 6.0
         self.rewards.params.far_from_target_margin = 6.0
         self.rewards.params.far_from_target_weight = -2.0
-        self.rewards.params.timeout_fixed_penalty = 8.0
-        self.rewards.params.timeout_distance_penalty_scale = 0.3
         self.rewards.params.angle_diff_weight = 6.0
-        self.rewards.params.action_rate_base_weight = 0.05
-        self.rewards.params.action_rate_joint_weight = 0.02
-        self.rewards.params.load_equalization_weight = 0.0
-        self.rewards.params.load_equalization_k = 10.0
-        self.rewards.params.load_equalization_target_shares = (1.0 / 6.0,) * 6
-        self.rewards.params.progress_gate_longitudinal_k = 0.5
+        self.rewards.params.turn_speed_penalty_weight = -2.0
+        self.rewards.params.slip_penalty_weight = -2.0
+        self.rewards.params.slip_angle_penalty_ratio = 6.0
+        self.rewards.params.progress_gate_longitudinal_k = 3.0
         self.rewards.params.progress_gate_slip_angle_scale_rad = 1.5
         self.rewards.params.progress_gate_min_multiplier = 0.25
         self.rewards.params.progress_gate_max_multiplier = 1.5

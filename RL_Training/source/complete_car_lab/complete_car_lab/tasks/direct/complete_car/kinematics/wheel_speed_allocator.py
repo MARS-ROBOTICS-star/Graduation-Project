@@ -106,10 +106,7 @@ class WheelTractionOutputs:
     lateral_speed_actual: Any
     wheel_delta_speed: Any
     base_torque_targets: Any
-    longitudinal_decay: Any
     conditioned_torque_targets: Any
-    slip_angle: Any
-    slip_angle_decay: Any
     longitudinal_slip: Any
     wheel_torque_targets: Any
 
@@ -129,10 +126,7 @@ class LowSlipControlOutputs(BallJointPlannerOutputs):
     lateral_speed_actual: Any
     wheel_delta_speed: Any
     base_torque_targets: Any
-    longitudinal_decay: Any
     conditioned_torque_targets: Any
-    slip_angle: Any
-    slip_angle_decay: Any
     lateral_velocity_nominal: Any
     lateral_cost: Any
     longitudinal_slip: Any
@@ -175,7 +169,7 @@ def compute_longitudinal_slip_torch(
         torch.abs(rolling_speed_actual),
         torch.full_like(rolling_speed_actual, slip_velocity_epsilon),
     )
-    longitudinal_slip = (wheel_radius_tensor * wheel_joint_vel - rolling_speed_actual) / safe_speed
+    longitudinal_slip = (rolling_speed_actual - wheel_radius_tensor * wheel_joint_vel) / safe_speed
     if clip is not None:
         longitudinal_slip = torch.clamp(longitudinal_slip, min=-clip, max=clip)
     return longitudinal_slip
@@ -245,21 +239,6 @@ class NumpyWheelSpeedAllocator:
     @staticmethod
     def _sat(values: np.ndarray, lower: np.ndarray, upper: np.ndarray) -> np.ndarray:
         return np.minimum(np.maximum(values, lower), upper)
-
-    @staticmethod
-    def _compute_decay_gain(
-        abs_value: np.ndarray,
-        safe_value: float,
-        max_value: float,
-        min_gain: float,
-    ) -> np.ndarray:
-        denominator = max(float(max_value) - float(safe_value), 1.0e-8)
-        ramp = float(min_gain) + (1.0 - float(min_gain)) * (float(max_value) - abs_value) / denominator
-        return np.where(
-            abs_value <= float(safe_value),
-            1.0,
-            np.where(abs_value >= float(max_value), float(min_gain), ramp),
-        )
 
     @staticmethod
     def _build_rotation_and_derivatives(module_angles: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -698,7 +677,7 @@ class NumpyWheelSpeedAllocator:
         wheel_joint_vel, squeeze_joint_vel = self._ensure_2d(wheel_joint_vel, 6, "wheel_joint_vel")
         (rolling_speed_actual, wheel_joint_vel), _ = self._broadcast_batch(rolling_speed_actual, wheel_joint_vel)
         safe_speed = np.maximum(np.abs(rolling_speed_actual), slip_velocity_epsilon)
-        longitudinal_slip = (self.geometry.r_wheel * wheel_joint_vel - rolling_speed_actual) / safe_speed
+        longitudinal_slip = (rolling_speed_actual - self.geometry.r_wheel * wheel_joint_vel) / safe_speed
         return self._squeeze_if_needed(longitudinal_slip, squeeze_speed and squeeze_joint_vel)
 
     def compute_wheel_traction_targets(
@@ -745,12 +724,7 @@ class NumpyWheelSpeedAllocator:
 
         delta_speed = self.geometry.r_wheel * wheel_joint_vel - rolling_speed_actual
         base_torque_targets = torque_tracking_gain * (wheel_speed_reference - wheel_joint_vel)
-        longitudinal_decay = np.ones_like(base_torque_targets)
-        # Longitudinal slip is kept as a diagnostic; wheel traction no longer feeds it back into torque.
-        conditioned_torque_targets = base_torque_targets
-        safe_rolling_speed = np.maximum(np.abs(rolling_speed_actual), slip_velocity_epsilon)
-        slip_angle = np.arctan2(lateral_speed_actual, safe_rolling_speed)
-        slip_angle_decay = np.ones_like(base_torque_targets)
+        conditioned_torque_targets = base_torque_targets - slip_feedback_gain * longitudinal_slip
         wheel_torque_targets = contact_weights * conditioned_torque_targets
         wheel_torque_targets = self._sat(wheel_torque_targets, -wheel_torque_limit, wheel_torque_limit)
         squeeze_output = (
@@ -761,10 +735,7 @@ class NumpyWheelSpeedAllocator:
             lateral_speed_actual=self._squeeze_if_needed(lateral_speed_actual, squeeze_output),
             wheel_delta_speed=self._squeeze_if_needed(delta_speed, squeeze_output),
             base_torque_targets=self._squeeze_if_needed(base_torque_targets, squeeze_output),
-            longitudinal_decay=self._squeeze_if_needed(longitudinal_decay, squeeze_output),
             conditioned_torque_targets=self._squeeze_if_needed(conditioned_torque_targets, squeeze_output),
-            slip_angle=self._squeeze_if_needed(slip_angle, squeeze_output),
-            slip_angle_decay=self._squeeze_if_needed(slip_angle_decay, squeeze_output),
             longitudinal_slip=self._squeeze_if_needed(longitudinal_slip, squeeze_output),
             wheel_torque_targets=self._squeeze_if_needed(wheel_torque_targets, squeeze_output),
         )
@@ -792,8 +763,6 @@ class NumpyWheelSpeedAllocator:
         slip_feedback_gain: float,
         wheel_torque_limit: float,
         slip_velocity_epsilon: float,
-        planned_ball_joint_pos=None,
-        planned_ball_joint_rate=None,
     ) -> LowSlipControlOutputs:
         ball_joint_pos, squeeze_pos = self._ensure_2d(ball_joint_pos, 6, "ball_joint_pos")
         desired_ball_joint_pos, squeeze_desired = self._ensure_2d(desired_ball_joint_pos, 6, "desired_ball_joint_pos")
@@ -810,72 +779,35 @@ class NumpyWheelSpeedAllocator:
             6,
             "lateral_speed_actual",
         )
-        if (planned_ball_joint_pos is None) != (planned_ball_joint_rate is None):
-            raise ValueError("planned_ball_joint_pos and planned_ball_joint_rate must be provided together.")
-        if planned_ball_joint_pos is None:
-            (
-                ball_joint_pos,
-                desired_ball_joint_pos,
-                desired_planar_command,
-                wheel_normal_contact_force,
-                wheel_joint_vel,
-                rolling_speed_actual,
-                lateral_speed_actual,
-            ), _ = self._broadcast_batch(
-                ball_joint_pos,
-                desired_ball_joint_pos,
-                desired_planar_command,
-                wheel_normal_contact_force,
-                wheel_joint_vel,
-                rolling_speed_actual,
-                lateral_speed_actual,
-            )
+        (
+            ball_joint_pos,
+            desired_ball_joint_pos,
+            desired_planar_command,
+            wheel_normal_contact_force,
+            wheel_joint_vel,
+            rolling_speed_actual,
+            lateral_speed_actual,
+        ), _ = self._broadcast_batch(
+            ball_joint_pos,
+            desired_ball_joint_pos,
+            desired_planar_command,
+            wheel_normal_contact_force,
+            wheel_joint_vel,
+            rolling_speed_actual,
+            lateral_speed_actual,
+        )
 
-            planner_outputs = self.compute_ball_joint_planner_outputs(
-                ball_joint_pos,
-                desired_ball_joint_pos,
-                control_dt,
-                planner_gains,
-                planner_qdot_limits,
-                q_lower_limits,
-                q_upper_limits,
-            )
-            q_cmd = planner_outputs.ball_joint_position_targets
-            qdot_cmd = planner_outputs.ball_joint_rate_targets
-            squeeze_planned = True
-        else:
-            planned_ball_joint_pos, squeeze_planned_pos = self._ensure_2d(
-                planned_ball_joint_pos,
-                6,
-                "planned_ball_joint_pos",
-            )
-            planned_ball_joint_rate, squeeze_planned_rate = self._ensure_2d(
-                planned_ball_joint_rate,
-                6,
-                "planned_ball_joint_rate",
-            )
-            (
-                ball_joint_pos,
-                desired_ball_joint_pos,
-                desired_planar_command,
-                wheel_normal_contact_force,
-                wheel_joint_vel,
-                rolling_speed_actual,
-                lateral_speed_actual,
-                q_cmd,
-                qdot_cmd,
-            ), _ = self._broadcast_batch(
-                ball_joint_pos,
-                desired_ball_joint_pos,
-                desired_planar_command,
-                wheel_normal_contact_force,
-                wheel_joint_vel,
-                rolling_speed_actual,
-                lateral_speed_actual,
-                planned_ball_joint_pos,
-                planned_ball_joint_rate,
-            )
-            squeeze_planned = squeeze_planned_pos and squeeze_planned_rate
+        planner_outputs = self.compute_ball_joint_planner_outputs(
+            ball_joint_pos,
+            desired_ball_joint_pos,
+            control_dt,
+            planner_gains,
+            planner_qdot_limits,
+            q_lower_limits,
+            q_upper_limits,
+        )
+        q_cmd = planner_outputs.ball_joint_position_targets
+        qdot_cmd = planner_outputs.ball_joint_rate_targets
         if np.asarray(q_cmd).ndim == 1:
             q_cmd = q_cmd.reshape(1, 6)
             qdot_cmd = qdot_cmd.reshape(1, 6)
@@ -935,7 +867,6 @@ class NumpyWheelSpeedAllocator:
             and squeeze_joint_vel
             and squeeze_speed
             and squeeze_lateral_speed
-            and squeeze_planned
         )
         wheel_speed_jacobian = self.compute_wheel_speed_jacobian(ball_joint_pos)
         posture_rate_jacobian = self.compute_posture_rate_jacobian(ball_joint_pos)
@@ -953,10 +884,7 @@ class NumpyWheelSpeedAllocator:
             lateral_speed_actual=self._squeeze_if_needed(traction_outputs.lateral_speed_actual, squeeze_output),
             wheel_delta_speed=self._squeeze_if_needed(traction_outputs.wheel_delta_speed, squeeze_output),
             base_torque_targets=self._squeeze_if_needed(traction_outputs.base_torque_targets, squeeze_output),
-            longitudinal_decay=self._squeeze_if_needed(traction_outputs.longitudinal_decay, squeeze_output),
             conditioned_torque_targets=self._squeeze_if_needed(traction_outputs.conditioned_torque_targets, squeeze_output),
-            slip_angle=self._squeeze_if_needed(traction_outputs.slip_angle, squeeze_output),
-            slip_angle_decay=self._squeeze_if_needed(traction_outputs.slip_angle_decay, squeeze_output),
             lateral_velocity_nominal=self._squeeze_if_needed(shaped_outputs.lateral_velocity_nominal, squeeze_output),
             lateral_cost=self._squeeze_if_needed(shaped_outputs.lateral_cost, squeeze_output),
             longitudinal_slip=self._squeeze_if_needed(traction_outputs.longitudinal_slip, squeeze_output),
@@ -1045,19 +973,6 @@ class TorchWheelSpeedAllocator:
         lower = torch.as_tensor(lower, device=values.device, dtype=values.dtype)
         upper = torch.as_tensor(upper, device=values.device, dtype=values.dtype)
         return torch.minimum(torch.maximum(values, lower), upper)
-
-    def _compute_decay_gain(self, abs_value, safe_value: float, max_value: float, min_gain: float):
-        torch = self.torch
-        safe_tensor = torch.as_tensor(safe_value, device=abs_value.device, dtype=abs_value.dtype)
-        max_tensor = torch.as_tensor(max_value, device=abs_value.device, dtype=abs_value.dtype)
-        min_gain_tensor = torch.as_tensor(min_gain, device=abs_value.device, dtype=abs_value.dtype)
-        denominator = torch.clamp(max_tensor - safe_tensor, min=1.0e-8)
-        ramp = min_gain_tensor + (1.0 - min_gain_tensor) * (max_tensor - abs_value) / denominator
-        return torch.where(
-            abs_value <= safe_tensor,
-            torch.ones_like(abs_value),
-            torch.where(abs_value >= max_tensor, min_gain_tensor.expand_as(abs_value), ramp),
-        )
 
     def _build_rotation_and_derivatives(self, module_angles):
         torch = self.torch
@@ -1508,7 +1423,7 @@ class TorchWheelSpeedAllocator:
             self.torch.abs(rolling_speed_actual),
             self.torch.full_like(rolling_speed_actual, slip_velocity_epsilon),
         )
-        longitudinal_slip = (self.geometry.r_wheel * wheel_joint_vel - rolling_speed_actual) / safe_speed
+        longitudinal_slip = (rolling_speed_actual - self.geometry.r_wheel * wheel_joint_vel) / safe_speed
         return self._squeeze_if_needed(longitudinal_slip, squeeze_speed and squeeze_joint_vel)
     # 轮级扭矩分配
     def compute_wheel_traction_targets(
@@ -1555,15 +1470,7 @@ class TorchWheelSpeedAllocator:
 
         delta_speed = self.geometry.r_wheel * wheel_joint_vel - rolling_speed_actual
         base_torque_targets = torque_tracking_gain * (wheel_speed_reference - wheel_joint_vel)
-        longitudinal_decay = self.torch.ones_like(base_torque_targets)
-        # Longitudinal slip is kept as a diagnostic; wheel traction no longer feeds it back into torque.
-        conditioned_torque_targets = base_torque_targets
-        safe_rolling_speed = self.torch.maximum(
-            self.torch.abs(rolling_speed_actual),
-            self.torch.full_like(rolling_speed_actual, slip_velocity_epsilon),
-        )
-        slip_angle = self.torch.atan2(lateral_speed_actual, safe_rolling_speed)
-        slip_angle_decay = self.torch.ones_like(base_torque_targets)
+        conditioned_torque_targets = base_torque_targets - slip_feedback_gain * longitudinal_slip
         wheel_torque_targets = contact_weights * conditioned_torque_targets
         wheel_torque_targets = self._sat(wheel_torque_targets, -wheel_torque_limit, wheel_torque_limit)
         squeeze_output = (
@@ -1574,10 +1481,7 @@ class TorchWheelSpeedAllocator:
             lateral_speed_actual=self._squeeze_if_needed(lateral_speed_actual, squeeze_output),
             wheel_delta_speed=self._squeeze_if_needed(delta_speed, squeeze_output),
             base_torque_targets=self._squeeze_if_needed(base_torque_targets, squeeze_output),
-            longitudinal_decay=self._squeeze_if_needed(longitudinal_decay, squeeze_output),
             conditioned_torque_targets=self._squeeze_if_needed(conditioned_torque_targets, squeeze_output),
-            slip_angle=self._squeeze_if_needed(slip_angle, squeeze_output),
-            slip_angle_decay=self._squeeze_if_needed(slip_angle_decay, squeeze_output),
             longitudinal_slip=self._squeeze_if_needed(longitudinal_slip, squeeze_output),
             wheel_torque_targets=self._squeeze_if_needed(wheel_torque_targets, squeeze_output),
         )
@@ -1605,8 +1509,6 @@ class TorchWheelSpeedAllocator:
         slip_feedback_gain: float,
         wheel_torque_limit: float,
         slip_velocity_epsilon: float,
-        planned_ball_joint_pos=None,
-        planned_ball_joint_rate=None,
     ) -> LowSlipControlOutputs:
         ball_joint_pos, squeeze_pos = self._ensure_2d(ball_joint_pos, 6, "ball_joint_pos")
         desired_ball_joint_pos, squeeze_desired = self._ensure_2d(desired_ball_joint_pos, 6, "desired_ball_joint_pos")
@@ -1623,72 +1525,35 @@ class TorchWheelSpeedAllocator:
             6,
             "lateral_speed_actual",
         )
-        if (planned_ball_joint_pos is None) != (planned_ball_joint_rate is None):
-            raise ValueError("planned_ball_joint_pos and planned_ball_joint_rate must be provided together.")
-        if planned_ball_joint_pos is None:
-            (
-                ball_joint_pos,
-                desired_ball_joint_pos,
-                desired_planar_command,
-                wheel_normal_contact_force,
-                wheel_joint_vel,
-                rolling_speed_actual,
-                lateral_speed_actual,
-            ), _ = self._broadcast_batch(
-                ball_joint_pos,
-                desired_ball_joint_pos,
-                desired_planar_command,
-                wheel_normal_contact_force,
-                wheel_joint_vel,
-                rolling_speed_actual,
-                lateral_speed_actual,
-            )
+        (
+            ball_joint_pos,
+            desired_ball_joint_pos,
+            desired_planar_command,
+            wheel_normal_contact_force,
+            wheel_joint_vel,
+            rolling_speed_actual,
+            lateral_speed_actual,
+        ), _ = self._broadcast_batch(
+            ball_joint_pos,
+            desired_ball_joint_pos,
+            desired_planar_command,
+            wheel_normal_contact_force,
+            wheel_joint_vel,
+            rolling_speed_actual,
+            lateral_speed_actual,
+        )
 
-            planner_outputs = self.compute_ball_joint_planner_outputs(
-                ball_joint_pos,
-                desired_ball_joint_pos,
-                control_dt,
-                planner_gains,
-                planner_qdot_limits,
-                q_lower_limits,
-                q_upper_limits,
-            )
-            q_cmd = planner_outputs.ball_joint_position_targets
-            qdot_cmd = planner_outputs.ball_joint_rate_targets
-            squeeze_planned = True
-        else:
-            planned_ball_joint_pos, squeeze_planned_pos = self._ensure_2d(
-                planned_ball_joint_pos,
-                6,
-                "planned_ball_joint_pos",
-            )
-            planned_ball_joint_rate, squeeze_planned_rate = self._ensure_2d(
-                planned_ball_joint_rate,
-                6,
-                "planned_ball_joint_rate",
-            )
-            (
-                ball_joint_pos,
-                desired_ball_joint_pos,
-                desired_planar_command,
-                wheel_normal_contact_force,
-                wheel_joint_vel,
-                rolling_speed_actual,
-                lateral_speed_actual,
-                q_cmd,
-                qdot_cmd,
-            ), _ = self._broadcast_batch(
-                ball_joint_pos,
-                desired_ball_joint_pos,
-                desired_planar_command,
-                wheel_normal_contact_force,
-                wheel_joint_vel,
-                rolling_speed_actual,
-                lateral_speed_actual,
-                planned_ball_joint_pos,
-                planned_ball_joint_rate,
-            )
-            squeeze_planned = squeeze_planned_pos and squeeze_planned_rate
+        planner_outputs = self.compute_ball_joint_planner_outputs(
+            ball_joint_pos,
+            desired_ball_joint_pos,
+            control_dt,
+            planner_gains,
+            planner_qdot_limits,
+            q_lower_limits,
+            q_upper_limits,
+        )
+        q_cmd = planner_outputs.ball_joint_position_targets
+        qdot_cmd = planner_outputs.ball_joint_rate_targets
         if q_cmd.ndim == 1:
             q_cmd = q_cmd.reshape(1, 6)
             qdot_cmd = qdot_cmd.reshape(1, 6)
@@ -1748,7 +1613,6 @@ class TorchWheelSpeedAllocator:
             and squeeze_joint_vel
             and squeeze_speed
             and squeeze_lateral_speed
-            and squeeze_planned
         )
         wheel_speed_jacobian = self.compute_wheel_speed_jacobian(ball_joint_pos)
         posture_rate_jacobian = self.compute_posture_rate_jacobian(ball_joint_pos)
@@ -1766,10 +1630,7 @@ class TorchWheelSpeedAllocator:
             lateral_speed_actual=self._squeeze_if_needed(traction_outputs.lateral_speed_actual, squeeze_output),
             wheel_delta_speed=self._squeeze_if_needed(traction_outputs.wheel_delta_speed, squeeze_output),
             base_torque_targets=self._squeeze_if_needed(traction_outputs.base_torque_targets, squeeze_output),
-            longitudinal_decay=self._squeeze_if_needed(traction_outputs.longitudinal_decay, squeeze_output),
             conditioned_torque_targets=self._squeeze_if_needed(traction_outputs.conditioned_torque_targets, squeeze_output),
-            slip_angle=self._squeeze_if_needed(traction_outputs.slip_angle, squeeze_output),
-            slip_angle_decay=self._squeeze_if_needed(traction_outputs.slip_angle_decay, squeeze_output),
             lateral_velocity_nominal=self._squeeze_if_needed(shaped_outputs.lateral_velocity_nominal, squeeze_output),
             lateral_cost=self._squeeze_if_needed(shaped_outputs.lateral_cost, squeeze_output),
             longitudinal_slip=self._squeeze_if_needed(traction_outputs.longitudinal_slip, squeeze_output),

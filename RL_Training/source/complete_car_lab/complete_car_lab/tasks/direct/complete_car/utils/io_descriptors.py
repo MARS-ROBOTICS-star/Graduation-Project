@@ -25,14 +25,13 @@ def build_observation_descriptor(cfg) -> list[tuple[str, int]]:
         ("goal_relative_command", cfg.commands.num_commands),
         ("last_action", cfg.action_space),
     ]
+    if cfg.terrain.measure_heights:
+        descriptor.append(("terrain_height_patch", cfg.terrain.get_num_height_points()))
     return descriptor
 
 
 def build_critic_observation_descriptor(cfg) -> list[tuple[str, int]]:
-      descriptor = build_observation_descriptor(cfg).copy()
-      if cfg.terrain.measure_heights:
-          descriptor.append(("terrain_height_patch", cfg.terrain.get_num_height_points()))
-      return descriptor
+    return build_observation_descriptor(cfg).copy()
 
 
 def build_state_descriptor(_cfg) -> list[tuple[str, int]]:

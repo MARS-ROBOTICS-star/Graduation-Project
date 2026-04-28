@@ -23,8 +23,9 @@ GOAL_SPHERE_MARKER_CFG = VisualizationMarkersCfg(
 class CompleteCarDebugDraw:
     """集中放置可选调试可视化入口，避免 env.py 直接依赖绘图细节。"""
 
-    def __init__(self, enabled: bool = False):
+    def __init__(self, enabled: bool = False, visualize_goal_heading: bool = True):
         self.enabled = enabled
+        self.visualize_goal_heading = visualize_goal_heading
         self._goal_arrow_visualizer: VisualizationMarkers | None = None
         self._goal_sphere_visualizer: VisualizationMarkers | None = None
         self._wheel_forward_visualizer: VisualizationMarkers | None = None
@@ -34,6 +35,7 @@ class CompleteCarDebugDraw:
         self._view_root_path = "/view"
         self._follow_view_count = 0
         self._follow_view_chase_env_index = 0
+        self._follow_view_env_ids: tuple[int, ...] = ()
         if self.enabled:
             self._ensure_goal_pose_visualizers()
             self.set_visibility(True)
@@ -70,14 +72,15 @@ class CompleteCarDebugDraw:
         self._ensure_goal_pose_visualizers()
         self._goal_sphere_visualizer.visualize(translations=goal_positions_w)
 
-        zero = torch.zeros_like(goal_headings_w)
-        arrow_orientations = quat_from_euler_xyz(zero, zero, goal_headings_w)
-        arrow_positions_w = goal_positions_w.clone()
-        arrow_positions_w[:, 2] += self._goal_arrow_height_offset
-        self._goal_arrow_visualizer.visualize(
-            translations=arrow_positions_w,
-            orientations=arrow_orientations,
-        )
+        if self.visualize_goal_heading:
+            zero = torch.zeros_like(goal_headings_w)
+            arrow_orientations = quat_from_euler_xyz(zero, zero, goal_headings_w)
+            arrow_positions_w = goal_positions_w.clone()
+            arrow_positions_w[:, 2] += self._goal_arrow_height_offset
+            self._goal_arrow_visualizer.visualize(
+                translations=arrow_positions_w,
+                orientations=arrow_orientations,
+            )
 
     def draw_wheel_motion(
         self,
@@ -148,9 +151,10 @@ class CompleteCarDebugDraw:
         root_positions = root_positions_w.detach().cpu()
         root_yaws = root_yaws_w.detach().cpu()
         num_envs = int(root_positions.shape[0])
-        self._ensure_follow_view_paths(num_envs, chase_env_index)
+        view_env_ids = (chase_env_index,) if 0 <= chase_env_index < num_envs else (0,)
+        self._ensure_follow_view_paths(view_env_ids, chase_env_index)
 
-        for env_id in range(num_envs):
+        for env_id in view_env_ids:
             root_pos = root_positions[env_id]
             eye = (float(root_pos[0]), float(root_pos[1]), float(root_pos[2] + top_height))
             target = (float(root_pos[0]), float(root_pos[1]), float(root_pos[2]))
@@ -178,7 +182,7 @@ class CompleteCarDebugDraw:
             )
 
     def _ensure_goal_pose_visualizers(self) -> None:
-        if self._goal_arrow_visualizer is None:
+        if self.visualize_goal_heading and self._goal_arrow_visualizer is None:
             arrow_cfg = GREEN_ARROW_X_MARKER_CFG.copy()
             arrow_cfg.prim_path = "/Visuals/Command/goal_heading"
             arrow_cfg.markers["arrow"].scale = (0.8, 0.12, 0.12)
@@ -201,18 +205,19 @@ class CompleteCarDebugDraw:
             velocity_cfg.markers["arrow"].scale = (1.0, 0.12, 0.12)
             self._wheel_velocity_visualizer = VisualizationMarkers(velocity_cfg)
 
-    def _ensure_follow_view_paths(self, num_envs: int, chase_env_index: int) -> None:
-        if self._follow_view_count == num_envs and self._follow_view_chase_env_index == chase_env_index:
+    def _ensure_follow_view_paths(self, view_env_ids: tuple[int, ...], chase_env_index: int) -> None:
+        if self._follow_view_env_ids == view_env_ids and self._follow_view_chase_env_index == chase_env_index:
             return
         self._create_xform_if_missing(self._view_root_path)
-        for env_id in range(num_envs):
+        for env_id in view_env_ids:
             self._create_xform_if_missing(f"{self._view_root_path}/env_{env_id}")
             self._create_camera_if_missing(f"{self._view_root_path}/env_{env_id}/top_down_camera")
-        if 0 <= chase_env_index < num_envs:
+        if chase_env_index in view_env_ids:
             self._create_xform_if_missing(f"{self._view_root_path}/env_{chase_env_index}")
             self._create_camera_if_missing(f"{self._view_root_path}/env_{chase_env_index}/chase_camera")
-        self._follow_view_count = num_envs
+        self._follow_view_count = len(view_env_ids)
         self._follow_view_chase_env_index = chase_env_index
+        self._follow_view_env_ids = view_env_ids
 
     @staticmethod
     def _create_xform_if_missing(prim_path: str) -> None:

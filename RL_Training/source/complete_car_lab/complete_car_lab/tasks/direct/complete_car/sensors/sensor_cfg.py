@@ -45,6 +45,7 @@ class CompleteCarSensorSuiteCfg:
     lidar: LidarSensorCfg = LidarSensorCfg()
     enable_height_scanner: bool = False
     height_scanner_debug_vis: bool = False
+    wheel_contact_max_points_per_env: int = 16
 
     # 计算策略网络（Actor）传感器特征的总维度
     def get_policy_feature_dim(self) -> int:
@@ -144,7 +145,7 @@ class CompleteCarSensorSuiteRuntime:
             self._wheel_contact_views[wheel_body_name] = physics_sim_view.create_rigid_contact_view(
                 wheel_prim_glob,
                 filter_patterns=self._wheel_contact_filter_patterns,
-                max_contact_data_count=16 * num_envs,
+                max_contact_data_count=max(int(self.cfg.wheel_contact_max_points_per_env), 1) * num_envs,
             )
     #接触力张量聚合
     def _aggregate_contact_force_vectors(

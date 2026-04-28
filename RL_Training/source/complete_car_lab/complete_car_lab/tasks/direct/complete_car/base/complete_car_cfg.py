@@ -33,6 +33,10 @@ class CommandCfg:
     goal_heading_delta_max_deg: float = 9.215
     zero_command: bool = False  # 为 True 时，本次采样出的目标会退化为当前位置和当前朝向。
     rel_standing_envs: float = 0.0  # 每次重采样后，被随机指定为原地目标环境的比例。
+    use_terrain_column_targets: bool = False
+    terrain_goal_min_row_offset: int = 1
+    terrain_goal_max_row_offset: int = 2
+    terrain_goal_lateral_range_m: float = 3.0
 
 
 @configclass
@@ -47,8 +51,6 @@ class ControlCfg:
     wheel_joint_names: tuple[str, ...] = tuple(WHEEL_JOINT_NAMES)
     ball_joint_planner_gains: tuple[float, ...] = (8.0, 8.0, 8.0, 8.0, 8.0, 8.0)
     ball_joint_planner_qdot_limits: tuple[float, ...] = (1.5, 1.5, 1.5, 1.5, 1.5, 1.5)
-    ball_joint_planner_qddot_limits: tuple[float, ...] = (12.0, 12.0, 12.0, 12.0, 12.0, 12.0)
-    ball_joint_planner_track_error_limit: float = 0.10
     base_forward_velocity_max: float = 1.2  # 中模块期望纵向速度上限，单位：m/s。
     base_yaw_rate_max: float = 0.6  # 中模块期望偏航角速度上限，单位：rad/s。
     base_allow_reverse: bool = False  # 为 False 时，高层只输出前进命令，不输出倒车命令。
@@ -127,28 +129,24 @@ class ObservationCfg:
 class RewardParamsCfg:
     """目标导向奖励参数。"""
 
-    target_position_tolerance: float = 0.2
+    target_position_tolerance: float = 0.5
     target_yaw_tolerance_deg: float = math.degrees(0.1)
-    distance_to_target_denominator_scale: float = 0.11
-    distance_to_target_weight: float = 5.0
+    distance_to_target_denominator_scale: float = 0.01
+    distance_to_target_weight: float = 6.0
     progress_to_target_clip_m: float = 0.25
-    progress_to_target_relax_radius_m: float = 0.0
-    progress_to_target_weight: float = 0.0
+    progress_to_target_relax_radius_m: float = 4.0
+    progress_to_target_weight: float = 8.0
     reached_target_base_reward: float = 2.0
-    reached_target_weight: float = 5.0
-    far_from_target_margin: float = 3.0
+    reached_target_weight: float = 6.0
+    far_from_target_margin: float = 6.0
     far_from_target_weight: float = -2.0
-    timeout_fixed_penalty: float = 12.0
-    timeout_distance_penalty_scale: float = 0.5
-    angle_diff_weight: float = 5.0
-    action_rate_base_weight: float = 0.05
-    action_rate_joint_weight: float = 0.02
-    load_equalization_weight: float = 0.0
-    load_equalization_k: float = 10.0
-    load_equalization_target_shares: tuple[float, ...] = (1.0 / 6.0,) * 6
+    angle_diff_weight: float = 6.0
+    turn_speed_penalty_weight: float = -2.0
+    slip_penalty_weight: float = -2.0
+    slip_angle_penalty_ratio: float = 6.0
     progress_gate_longitudinal_k: float = 3.0
     progress_gate_slip_angle_scale_rad: float = 1.5
-    progress_gate_min_multiplier: float = 0.10
+    progress_gate_min_multiplier: float = 0.25
     progress_gate_max_multiplier: float = 1.5
     low_slip_longitudinal_threshold: float = 1.0
     low_slip_angle_threshold_rad: float = 0.35
@@ -214,6 +212,7 @@ class CurriculumCfg:
     default_terrain_name: str = "slope down"
     move_up_distance_ratio: float = 0.5
     move_down_command_ratio: float = 0.5
+    move_up_uses_forward_x: bool = False
 
 
 @configclass
@@ -231,6 +230,7 @@ class DebugCfg:
     """调试辅助配置。"""
 
     enable_debug_draw: bool = False
+    visualize_goal_heading: bool = True
     visualize_wheel_slip: bool = False
     create_follow_views: bool = False
     follow_view_top_height: float = 2.5
@@ -319,7 +319,7 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
             if self.observations.use_history and self.observations.history_length > 1
             else base_obs_dim
         )
-        critic_obs_dim = actor_obs_dim + (self.terrain.get_num_height_points() if self.terrain.measure_heights else 0)
+        critic_obs_dim = actor_obs_dim
         self.observation_space = {
             "actor": actor_obs_dim,
             "critic": critic_obs_dim,

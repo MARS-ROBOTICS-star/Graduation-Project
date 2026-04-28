@@ -2,6 +2,285 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-04-28
+
+### Stage0 best_baseline 非 active 代码和配置字段已清理
+- Decision:
+  - 用户要求删除不活跃代码和非 active 配置字段，避免字段仍在配置中但实际不参与训练造成语义混淆。
+- Implementation:
+  - 删除 reward 配置中的旧实验字段：`timeout_fixed_penalty`、`timeout_distance_penalty_scale`、`progress_negative_scale`、`no_progress_threshold_m`、`no_progress_weight`、`action_rate_base_weight`、`action_rate_joint_weight`、`load_equalization_weight`、`load_equalization_k`、`load_equalization_target_shares`。
+  - 删除 Stage0 / Stage1 对这些已移除字段的赋值。
+  - 删除 env 层已停用的 qddot 球铰轨迹器、`_joint_vel_targets`、`_ball_joint_reference_targets` 和 `g_kappa/g_alpha` 固定诊断缓存。
+  - 删除 allocator 中未再使用的 `planned_ball_joint_pos/planned_ball_joint_rate` 兼容入口、未使用的 decay gain helper，以及固定为 `1.0` 的 `longitudinal_decay/slip_angle_decay` 输出。
+  - 删除 logger 中 `LowLevel/g_kappa_mean_raw`、`LowLevel/g_alpha_mean_raw` 的别名、console priority 和 TensorBoard extra tags。
+- Durable conclusion:
+  - 当前 `best_baseline` 不再存在“配置字段保留但 active reward/control 不读取”的上述字段。
+  - 这次清理不改变 active reward 7 项结构，也不改变 active low-slip allocator + wheel effort target 控制链路；它只删除不参与运行的数据通道和误导性日志。
+- Status:
+  - implemented and documented.
+
+### 2026-04-25 Stage0 tol05 历史 run 详细报告已补写
+- User request:
+  - 用户要求对 `2026-04-25_13-37-33_stage0_tol05_turn2_gt_turn1_700iter` 详细说明训练结果、RL 配置和底层运动模型，并输出为 Markdown 文件。
+- Output:
+  - `results/stage0_tol05_turn2_gt_turn1_700iter_detailed_result_config_motion_model_2026-04-28.md`
+- Durable conclusion:
+  - 该 run 实际训练到 iteration `294` 后早停；TensorBoard 覆盖 step `0-294`。
+  - `269-294` 连续 `26` 轮 `success_rate=1.0` 且 `time_out_rate=0.0`；后 20 step episode 级 `waypoints_completed=2`、`waypoint_completion_pct=100%`、`success_hit_pos_error≈0.488 m`。
+  - 保存间隔为 `100`，实际 checkpoint 只有 `model_0.pt`、`model_100.pt`、`model_200.pt`，没有保存最终满成功平台 checkpoint。
+  - 该 run 的实际底层链路是 2026-04-25 的低层力矩控制：PPO 8 维动作 -> 平面命令/球铰期望姿态 -> 低侧滑平面命令整形 -> 轮速分配 -> 车轮牵引力矩 effort target；不能按 2026-04-28 后的车轮直接速度 target 配置解释。
+  - 该 run 可以作为 Stage0 平地双 waypoint、`0.5 m` 成功半径可学习性的证据，但不能作为低滑移协同控制成功证据；旧 `wheel_slip_angle` 使用修正前轴向口径，不能作为真实水平侧滑证据。
+- Status:
+  - detailed report generated.
+
+### Stage0 progress/no-progress v1 跑满 700iter：车能动但形成高滑移低稳定策略
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_12-09-46_stage0_progress_main_no_progress_v1_quality_watch_700iter`
+  - 计划 `700` iterations，终端到 `699/700`，进程退出码 `0`。
+  - 训练耗时约 `7295.66 s`，最终 checkpoint 为 `model_699.pt`。
+  - TensorBoard 已导出到 `tensorboard_export/`。
+  - 诊断报告：`results/stage0_progress_main_no_progress_v1_quality_watch_700iter_diagnosis_2026-04-28.md`
+- Result:
+  - 该轮不再是近停滞：后 100 step `v_parallel_abs≈0.586 m/s`，最终约 `0.583 m/s`。
+  - 任务仍未稳定完成：后 100 step `success_rate≈0.077`，最终约 `0.068`；后 100 step `time_out_rate≈0.923`，最终约 `0.932`。
+  - episode 完成度不足：后 100 step `episode_completion_pct≈13.79%`，最终约 `10.31%`；最佳 30-step rolling completion 也只有约 `19.67%`。
+  - 成功率有偶发峰值：单点最高 `success_rate≈0.523 @ step 611`，但最佳 30-step rolling success 仅约 `0.125`，不是稳定平台。
+  - 运动质量不合格：后 100 step 纵滑约 `4.65`，最终约 `4.88`；后 100 step low-slip combined pass rate 约 `3.84%`，最终约 `3.24%`。
+  - 后期动作更激进：后 100 step `wheel_speed_reference_abs≈7.19 rad/s`，最终约 `7.42 rad/s`；pitch 后 100 step 约 `6.63 deg`，最终约 `8.32 deg`。
+- Durable conclusion:
+  - 当前 progress/no-progress reward 能把 policy 从“基本不动”推到“明显运动”，但还没有建立稳定、低滑移、朝目标推进的成功语义。
+  - 继续延长同一配置训练不应作为优先方案；下一轮设计前需要先由用户确认是否把低滑移、姿态、有效推进量或 waypoint 完成质量纳入成功条件/强约束。
+  - `model_699.pt` 可回放，但不应被当作成功 checkpoint。
+- Status:
+  - training completed and diagnosed.
+
+### 历史完成训练前五综合排序：任务完成优先，运动质量次之
+- User request:
+  - 用户要求不计入当前这波训练，只对过去已经完成并有结果的训练，按任务完成和运动行为质量排出前五。
+- Ranking rule:
+  - 主排序使用 episode 级任务完成指标：`episode__waypoints_completed`、`episode__waypoint_completion_pct`、`success_rate`、`time_out_rate`。
+  - 同层排序使用运动质量：纵滑、侧滑旧口径、low-slip pass rate、轮速参考、有效推进速度和中车载荷。
+  - `2026-04-28` 侧向轴修正前的 `wheel_slip_angle` / `v_perp` 混入竖直方向，不作为真实水平侧滑的严格证据；但可作为历史旧口径下的相对参考。
+- Top five:
+  1. `2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter/model_699.pt`：综合最好可回放 checkpoint。后 25 轮 `success_rate≈0.986`、`episode waypoint completion≈99.21%`、纵滑约 `2.739`、旧侧滑角约 `0.691 rad`、轮速参考约 `6.343`。配置要点：low-slip average gate v1，`progress_gate_longitudinal_k=3.0`，`slip_penalty_weight=-2.0`，`slip_angle_penalty_ratio=6.0`，保存了平台 checkpoint。
+  2. `2026-04-25_13-37-33_stage0_tol05_turn2_gt_turn1_700iter`：严格任务完成最干净。后段连续满成功，episode 级双 waypoint `100%`，成功半径 `0.5 m`，第二段转向更强；但 plateau 末端 checkpoint 未保存，后段纵滑约 `3.0`、旧侧滑角约 `0.711 rad`。
+  3. `2026-04-26_10-32-46_stage0_lowslip_gate_v2_min_lowlevel_800iter/model_500.pt`：episode 级完成 `100%` 且记录到中车载荷约 `26.2%`；但使用旧纵滑/侧滑相关口径，高滑移仍明显，不能作为物理正确低滑移证据。配置要点：v2 `min(Gκ,Gα)` gate、低层诊断链路、`model_500.pt`。
+  4. `2026-04-25_15-42-10_stage0_lowslip_penalty_v1_700iter/model_699.pt`：高完成率可回放平台。后 25 轮 `success_rate≈0.976`、`episode completion≈98.33%`、纵滑约 `2.899`、旧侧滑角约 `0.685 rad`。配置要点：强化直接 `slip_penalty_weight=-4.0`、`slip_angle_penalty_ratio=6.0`、保存间隔 `25`。
+  5. `2026-04-27_15-30-59_stage0_slip_angle_maxden_current_reward_watch_700iter/model_500.pt`：恢复稳定成功率平台并记录中车载荷。平台窗口 `success_rate≈0.961`，后 25 轮 episode completion 约 `95.93%`，纵滑约 `2.49`，中车载荷约 `16%`；但轮速参考高、旧侧滑角约 `0.768 rad`，不是低滑移平台。配置要点：`ball_joint_stiffness=1000`、`ball_joint_damping=10`、`low_slip_lambda_lateral=0`、`slip_penalty_weight=-2`、`load_equalization_weight=0`。
+- Durable conclusion:
+  - 若只看严格任务完成，`2026-04-25_13-37-33` 最干净；若看可回放 checkpoint 加运动质量，`2026-04-25_18-26-58/model_699.pt` 仍是当前最好历史 checkpoint。
+  - `2026-04-27_10-11-39_lateral0_no_slip_penalty` 虽有较高完成率和较低纵滑，但中车载荷约 `2%`，几乎前后轮主导，综合运动质量排在前五之后。
+  - 截至目前，没有任何历史 run 同时满足稳定双 waypoint 完成、物理正确低纵滑/低侧滑、中车载荷正常和可回放 checkpoint。
+
+### Stage0 progress/no-progress v1 让小车动起来，但形成高滑移低稳定命中策略
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_10-37-44_stage0_progress_main_no_progress_v1_watch_700iter`
+  - 原计划 `700` iterations，实际按用户要求中断在终端 iteration `342/700`。
+  - TensorBoard step `0-342`，最新有效 checkpoint 为 `model_325.pt`。
+  - 诊断报告：`results/stage0_progress_main_no_progress_v1_watch_342iter_diagnosis_2026-04-28.md`
+- Result:
+  - 后 25 step `v_parallel_abs≈0.550 m/s`、`wheel_speed_reference_abs≈6.477 rad/s`、`desired_planar_command_abs≈0.961`，说明低速近停滞局部解已被打破。
+  - `success_rate` 最高约 `0.316 @ step 288`，但末步回到 `0.0`，后 25 step 约 `0.0337`；后 25 step `time_out_rate≈0.966`。
+  - 后 25 step `active_segment_completion_pct≈56.24%`，`waypoints_completed_mean≈0.301`，`episode_completion_pct≈15.08%`，未形成稳定完整 episode 完成。
+  - 后 25 step 纵滑约 `4.23`，侧滑角约 `0.268 rad`，`LowSlip/combined_pass_rate≈0.039`。
+  - 后 25 step `raw_delta_m≈0.00466 m/step`，仍低于 `no_progress_threshold_m=0.005`，因此 no-progress penalty 仍持续扣分。
+  - 后 25 step `ProgressGate/longitudinal_gate≈2.8e-4`，几乎由高纵滑压到零；平均 gate 的 combined 值主要由侧滑 gate 支撑。
+- Durable conclusion:
+  - 当前 progress/no-progress reward 修改方向有效：它能把 policy 从“基本不动”推到“有明显轮地速度和目标接近”。
+  - 但当前策略不是稳定朝目标方向低滑移推进，而是高命令、高轮速、高纵滑条件下的低效接近和偶发边界命中。
+  - 后续不应通过直接奖励 raw `vx` 解决；需要先明确 Stage0 是否把低滑移/低纵滑和有效朝目标推进纳入成功条件或强约束，再决定 reward 主结构。
+- Status:
+  - diagnosed; current checkpoint `model_325.pt` can be replayed, but it is not a stable-success checkpoint.
+
+### Stage0 progress 主导奖励已增强：降低 dense 正奖励，加入 no-progress 惩罚
+- User decision:
+  - 降低 `distance_to_target_weight = 2.0`、`angle_diff_weight = 2.0`。
+  - 加入惩罚函数：如果这一帧没有让目标距离减少到至少 `delta`，就扣分。
+  - 负 progress 可以加重。
+- Implementation:
+  - Stage0 设置 `distance_to_target_weight=2.0`、`angle_diff_weight=2.0`。
+  - 新增 `progress_negative_scale=2.0`，`progress_to_target` 中的负 progress 变为 `2.0 * negative_progress`。
+  - 新增 `no_progress_threshold_m=0.005`、`no_progress_weight=8.0`。
+  - `mdp/rewards.py` 新增 `no_progress_penalty` reward term：使用未裁剪的 `d_prev - d_now` 判断是否达到最小接近量；命中当前 waypoint 时该项置零。
+  - TensorBoard 新增 `Reward/no_progress_penalty`、`ProgressGate/raw_delta_m`、`ProgressGate/negative_progress_weighted`、`ProgressGate/no_progress_gap_m`。
+  - `docs/RL阶段训练参数一览表.md` 已同步公式和参数。
+- Durable conclusion:
+  - 当前 Stage0 不通过 raw `vx` 解决不动问题，而是通过目标距离变化建立推进信号。
+  - no-progress 惩罚用于提供每步局部学习信号，弥补 timeout/reached target 过晚、过稀疏的问题。
+  - 后续训练应重点观察 `Reward/no_progress_penalty` 是否下降、`ProgressGate/raw_delta_m` 是否转正、以及 `desired_planar_vx_raw` 是否随 episode return 同向改善。
+- Status:
+  - implemented; needs next Stage0 training validation.
+
+### Stage1 目标点已改为同地形列前方 row 的方向引导点
+- User decision:
+  - Stage1 地图按地形列前进，目标方向只能沿地图 `+x`。
+  - 目标点使用当前 env 的 terrain column / terrain type，不跨到其它地形列。
+  - 若小车出生在第 `r` 行第 `c` 列，目标点采样在第 `r+1` 或 `r+2` 行、同一列的 tile env 坐标附近。
+  - 目标点横向 `y` 允许相对同列 tile origin 左右变化 `3 m`，保留转弯余量。
+  - Stage1 不要求小车必须到达目标点，目标点主要用于提供前进方向。
+  - reset 时车辆默认朝地形前进方向，也就是世界系 `+x`。
+- Implementation:
+  - `CommandCfg` 新增 terrain-column target 参数，默认关闭，因此 Stage0 不启用。
+  - `CompleteCarStage1EnvCfg` 开启 `commands.use_terrain_column_targets=True`，设置 row offset 为 `1-2`、横向扰动为 `3 m`。
+  - `mdp/commands.py` 新增 `sample_terrain_column_waypoint_command_sequences()`：读取当前 `terrain_levels` 和 `terrain_types`，目标 row 取当前 row 前方 `+1/+2`，column 保持不变。
+  - `env.py` 在 `_sample_waypoint_queue()` 中按配置切换 Stage1 terrain-column target，Stage0 仍走原通用 waypoint 采样。
+  - `terrain_runtime.py` 新增 `get_tile_origins()`，用于根据 row/column 读取 tile origin。
+  - `CompleteCarStage1EnvCfg` 设置 `resampling_time=episode_length_s`，目标只随 reset / curriculum row 更新，不在 episode 中途按 `5 s` 重采样。
+  - `CompleteCarStage1EnvCfg` 设置 `root_yaw_range=(0.0, 0.0)`，reset 默认朝 `+x`。
+  - `CompleteCarStage1EnvCfg` 将 `reached_target_weight`、`timeout_fixed_penalty`、`timeout_distance_penalty_scale` 设为 `0.0`，避免把目标点解释成必须命中的终点。
+- Curriculum impact:
+  - Stage1 `move_up_distance_ratio=0.70`，即 `8 m` tile 中约 `5.6 m` 的 `+x` 前进量触发升级。
+  - `CurriculumCfg.move_up_uses_forward_x=True` 时，升级距离只看世界系 `+x` 位移；降级阈值改用 tile 长度比例，而不是随机目标距离的一半。
+- Stage0 impact:
+  - Stage0 不开启 `use_terrain_column_targets`，仍使用原有自由 waypoint 采样。
+  - Stage0 现有 timeout、reward、观测和课程设置不因本次 Stage1 目标点改动改变。
+- Verification:
+  - `python3 -m py_compile` 通过。
+  - `git diff --check` 通过。
+
+### Stage0 policy 低 `vx` 的本质原因是 reward 信用分配把低速变成更优局部解
+- User request:
+  - 用户指出 wheel lateral axis 修正只解决语义问题，policy 输出速度低仍未解决，要求继续找本质原因。
+- Diagnosis report:
+  - `results/stage0_policy_low_vx_root_cause_2026-04-28.md`
+- Evidence:
+  - 在 `2026-04-28_08-24-09_stage0_direct_velocity_no_shaping_resume_from75_625iter` 中，`desired_planar_vx_raw` 从前 10 step 均值约 `0.358 m/s` 降到后 25 step 约 `0.083 m/s`，但 `Train/mean_reward` 同期从约 `-6.64` 改善到 `-3.10`。
+  - 同一 run 内 `vx` 与 `Train/mean_reward` 相关系数约 `-0.78`，与 `episode/return` 约 `-0.75`，说明该训练信号实际把降低速度当作更高回报方向。
+  - 该 run 使用 `progress_gate_longitudinal_k=0.5`，而历史能跑通的 `2026-04-25_18-26-58` 使用 `3.0`；更严格的纵滑 gate 使正向 progress multiplier 长期贴近 `0.25` 下限。
+  - `resume200` 后 25 step `Reward/progress_to_target≈0.000096`，历史 `18-26-58` 后 25 step 约 `0.00675`，正向 progress 学习信号约差 `70` 倍。
+  - `gamma=0.99` 作用在 `1/60 s` 控制步上，40 s timeout penalty 对 episode 前段动作的折扣约 `3.3e-11`；因此 timeout 惩罚不能给早期 `vx` 提供有效信用分配。
+- Durable conclusion:
+  - policy 低前进速度不是 actuator/allocator 断链，也不是侧滑轴语义错误的直接后果。
+  - 本质原因是当前 reward / PPO 信用分配结构不成立：有效前进的即时正反馈被纵滑 gate 和运动噪声压得太弱，timeout 和 reached target 又太远、太稀疏，PPO 发现降低 `vx` 可以减少负 progress 和运动噪声，从而提高 return。
+  - 后续只要出现“`vx` 降低而 return 升高”，就说明奖励仍在鼓励低速局部解。
+
+### Stage0 low-slip progress gate 已从 `min` 改回平均 gate
+- User decision:
+  - 奖励函数中 gate 取平均，不要用最小值。
+- Implementation:
+  - `mdp/rewards.py` 中 `progress_gate = torch.minimum(longitudinal_gate, slip_angle_gate)` 已改为 `progress_gate = 0.5 * (longitudinal_gate + slip_angle_gate)`。
+  - `progress_gate_min_multiplier=0.25`、`progress_gate_max_multiplier=1.5` 保持不变。
+  - `docs/RL阶段训练参数一览表.md` 已同步当前 active reward 公式。
+- Durable conclusion:
+  - 当前 Stage0 active `ProgressGate/combined_gate` 重新表示平均 gate：`0.5*(Gκ+Gα)`。
+  - 正向 progress 仍受 low-slip gate 调制，负向 progress 仍不被 gate 削弱。
+  - 后续解释训练曲线时，不应再把当前 active `ProgressGate/combined_gate` 理解为 `min(Gκ,Gα)`。
+- Status:
+  - implemented; needs next Stage0 training validation.
+
+### Stage0 车轮侧向轴已从 local Y 修正为 local Z，旧侧滑日志需降级解释
+- User request:
+  - 用户要求把 `env.py` 和 `mdp/observations.py` 中 wheel lateral axis 从 local `Y` 改成 local `Z`，并重新解释侧滑 gate 和训练日志。
+- Implementation:
+  - `env.py` 中 `_pre_physics_step()` 的 `wheel_lateral_axis_w` 已改为由 wheel local `Z` 旋转到世界系后计算。
+  - `mdp/observations.py` 中 `compute_wheel_motion_observations()` 的侧向速度同样改为使用 wheel local `Z`。
+  - `docs/RL阶段训练参数一览表.md` 已同步记录当前侧滑观测口径和历史日志不可直接比较的限制。
+- Fixed-axis replay check:
+  - 使用同一 `model_200.pt` 进行 headless 回放探针复查。
+  - 复查报告：`results/stage0_model200_lateral_axis_z_replay_check_2026-04-28.md`
+  - 修正后 `v_perp_abs≈0.0153 m/s`、`wheel_slip_angle_abs≈0.145 rad`。
+  - 修正前同 checkpoint 旧口径约为 `v_perp_abs≈0.0716 m/s`、`wheel_slip_angle_abs≈0.443 rad`。
+  - 修正后回放仍只有约 `0.112 m` 位移，`progress_multiplier≈0.25`，没有恢复有效完成 waypoint。
+- Durable conclusion:
+  - USD 轮子 local `X` 是滚动前进方向，local `Z` 是轮轴/水平侧向方向，local `Y` 近似竖直方向。
+  - 2026-04-28 之前的 `v_perp`、`wheel_slip_angle`、`LowSlip/slip_angle_*` 和 `ProgressGate/slip_angle_gate` 混入竖直速度分量，不能作为真实水平侧滑证据，也不能与修正后的侧滑曲线做严格数值比较。
+  - 旧日志中的 `wheel_speed_reference`、`wheel_joint_vel`、`v_parallel` 和纵滑口径不由这次 lateral axis 修正直接否定，仍可用于分析轮速跟踪和有效滚动推进。
+  - 当前“不想动”问题仍然存在；修正侧向轴主要修正低滑移质量判断和 progress gate 的侧滑分量，不等价于已经解决 reward / policy 的有效前进学习问题。
+
+### USD 轮子几何检查：半径和关节轴正确，但代码侧向轴用错
+- User request:
+  - 用户指出此前键盘控制已验证小车能正常前进，并要求进入 USD 检查轮子坐标系、关节轴和圆柱碰撞体半径；速度斜坡和球铰加速度限制暂不处理。
+- Inspection:
+  - 新增只读检查脚本：`scripts/isaac_sim/inspect_wheel_usd_geometry.py`
+  - 输出报告：`results/wheel_usd_geometry_inspection_2026-04-28.txt`
+- USD conclusion:
+  - `USD/complete_car.usd` 中六个车轮的 `PhysicsRevoluteJoint` 均为 `joint_axis_token=Z`。
+  - 该 joint axis 在 wheel body 中对齐 local `+Z`，在世界系中约为车辆横向 `+Y`，符合轮轴方向。
+  - 六个车轮 local `X` 在世界系中约为车辆前进方向 `+X`，因此当前用 local `X` 计算 rolling speed / `v_parallel` 是合理的。
+  - 六个车轮 local `Y` 在世界系中约为竖直方向 `-Z`，不是水平侧向方向；wheel local `Z` 才是轮轴/水平侧向方向。
+  - 六个车轮 `Cylinder` 碰撞体均带 `CollisionAPI=True`，半径均为 `0.190 m`，轴向宽度约 `0.120 m`；与 Stage0 `wheel_radius=0.19` 一致。
+- Durable conclusion:
+  - USD 轮子半径和转轴没有发现导致不能前进的错误；键盘控制能前进与该检查一致。
+  - 当前代码中的侧向速度/侧滑角计算存在坐标约定 bug：`env.py` 和 `mdp/observations.py` 使用 wheel local `Y` 作为 lateral axis，但 USD 中 local `Y` 是竖直方向。
+  - 受影响的指标/逻辑包括 `v_perp`、`wheel_slip_angle`、`LowSlip/angle_pass_rate`、`progress_gate_slip_angle`、`combined progress gate` 以及相关 TensorBoard 日志。
+  - 该问题主要影响低滑移质量判断和侧滑 gate，不应继续用旧日志中的 `v_perp/slip_angle` 作为真实水平侧滑依据。
+
+### Stage0 timeout 已按失败终止语义处理，PPO 不再 bootstrap
+- User decision:
+  - 把 timeout 定义为失败终止，不再让 PPO bootstrap。
+- Implementation:
+  - `CompleteCarStage0EnvCfg.__post_init__()` 设置 `self.is_finite_horizon = True`。
+  - `mdp/terminations.py` 中的 `time_out` 逻辑保持不变，继续用于 timeout 统计和 `timeout_penalty`。
+  - `docs/RL阶段训练参数一览表.md` 已同步记录 timeout/PPO 语义。
+- Durable conclusion:
+  - Stage0 中未完成 waypoint 且达到 `40 s` 上限的 episode 是失败 episode 结束。
+  - RSL-RL wrapper 不再向 PPO 传入 `extras["time_outs"]`，所以 PPO `process_env_step()` 不会对 timeout 奖励追加 `gamma * V(s)`。
+  - 后续解释 Stage0 训练时，timeout 不应再被视作可 bootstrap 的普通时间截断。
+- Status:
+  - implemented; needs next Stage0 training validation.
+
+### Stage1 高度图已接入 actor，Stage0 保持不变
+- User decision:
+  - Stage1 高度图保持当前尺寸和原始米制高度值。
+  - 不额外 clip 到 `[-1, 1]`，不额外乘 scale；交给 PPO 观测归一化处理。
+  - 只需要把同一份 height patch 也送入 actor，critic 可以继续保留。
+- Implementation:
+  - `compute_actor_observation_from_raw_terms()` 新增可选 `height_patch` 输入，并在非空时拼入 actor observation。
+  - `env.py` 现在先计算 `_compute_critic_height_patch()`，再把同一份 patch 拼入当前 actor observation。
+  - `compute_critic_observation()` 改为直接复用 actor observation，避免 Stage1 critic 重复拼接高度图。
+  - `build_observation_descriptor()` 在 `cfg.terrain.measure_heights=True` 时追加 `terrain_height_patch`，actor / critic observation space 同步为同一维度。
+  - 观测噪声维度 helper 对高度 patch 追加零噪声项，避免后续启用 observation noise 时维度不匹配。
+- Stage0 impact:
+  - Stage0 仍为 `terrain.measure_heights=False`，因此 actor / critic 维度和张量拼接保持原样。
+- Verification:
+  - `python3 -m py_compile` 通过。
+  - `git diff --check` 通过。
+
+### Stage0 direct velocity resume 训练到 model_200 后仍未学会前进
+- User request:
+  - 分析当前训练结果，检查 policy 给出的速度和轮速分配后的参考速度；回放中小车基本不动。
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_08-24-09_stage0_direct_velocity_no_shaping_resume_from75_625iter`
+  - 从 `2026-04-27_22-42-33_stage0_direct_velocity_no_shaping_watch_700iter/model_75.pt` resume。
+  - 用户停止训练时 TensorBoard 到 step `208`；最新有效 checkpoint 为 `model_200.pt`。
+- Training scalar conclusion:
+  - policy 非零，但前进命令明显塌缩：后 25 step `desired_vx≈0.083 m/s`，`desired_wz≈0.133 rad/s`。
+  - allocator 和车轮 velocity drive 生效：后 25 step `wheel_speed_reference_abs≈2.242 rad/s`，`wheel_joint_vel_abs≈2.097 rad/s`。
+  - 轮地推进仍低效：后 25 step `v_parallel_abs≈0.096 m/s`，`v_perp_abs≈0.099 m/s`，`delta_v_abs≈0.408 m/s`，纵滑约 `3.328`，侧滑角约 `0.480 rad`。
+  - 任务没有完成：后 25 step `waypoints_completed=0`，`time_out_rate=1.0`，`mean_episode_length=2399`。
+- Replay probe conclusion:
+  - 新增 `RL_Training/scripts/replay_probe.py` 用于 headless 回放打印 policy action、底盘命令、轮速参考、实际轮速和轮地速度。
+  - `model_200.pt` 单环境回放中，policy 底盘动作绝对值均值约 `0.063`，映射后 `vx_cmd≈-0.001 m/s`、`wz_cmd≈0.113 rad/s`。
+  - 回放平均每轮参考速度约为：body left/right `-0.139/0.127 rad/s`，head left/right `-0.866/0.973 rad/s`，tail left/right `1.101/-0.841 rad/s`，呈正负混合，主要是转向/构型运动而不是一致前进。
+  - 120 步总位移约 `0.134 m`；视觉上“小车基本不动”与数据一致。
+- Durable conclusion:
+  - 当前失败不是回放窗口问题，也不是车轮 velocity target 没下发。
+  - 问题同时存在于策略层和轮地运动层：策略回放时基本不给前进速度；训练中即使轮速参考约 `2 rad/s`，有效滚动推进也只有约 `0.1 m/s`。
+  - 继续延长同一配置训练不应作为优先方案；下一步应先明确 Stage0 是否把“非零有效前进 + 完成 waypoint”作为硬成功语义，再修改 reward / termination / gate。
+- Report:
+  - `results/stage0_direct_velocity_resume_model200_replay_diagnosis_2026-04-28.md`
+
+### Stage0 active 底层运动学与 reward 链路排查：未发现 inactive 低层代码直接干扰
+- User request:
+  - 排查 policy 输出速度低、小车基本不动时，当前底层运动学模型、奖励函数结构、实际运行函数，以及是否有不活跃代码产生干扰。
+- Actual active call chain:
+  - `CompleteCar-Stage0` 注册到 `CompleteCarStage0EnvCfg` 与 `CompleteCarDirectEnv`。
+  - PPO actor 使用 `SquashedGaussianDistribution`，输出经过 tanh 后进入 `env.step()`。
+  - `_pre_physics_step()` 将前两维动作映射为 `[vx_cmd, yaw_rate_cmd]`，后六维映射为球铰期望姿态。
+  - 当前 active 底层调用 `compute_ball_joint_planner_outputs()`、`compute_wheel_kinematic_state()`、`compute_wheel_speed_references()`；然后只向球铰下发 position target、向车轮下发 velocity target。
+- Inactive code conclusion:
+  - `compute_low_slip_control_targets()`、`shape_planar_command_for_low_slip()`、`compute_wheel_traction_targets()`、`apply_wheel_effort_targets()` 和 `env._compute_ball_joint_trajectory_targets()` 当前不在 active `env.py` 调用链内，不会直接改变 policy 动作或车轮命令。
+  - `low_slip_lambda_tracking/lateral`、`wheel_torque_tracking_gain`、`wheel_slip_feedback_gain`、`ball_joint_planner_qddot_limits`、`ball_joint_planner_track_error_limit` 当前是残留/暂不生效配置；保留会造成阅读混淆，但不是当前低速的直接执行干扰。
+- Kinematic check:
+  - 零球铰姿态、零球铰速度下，allocator 对 `vx=1 m/s` 输出六轮约 `5.26 rad/s`，对 `wz=1 rad/s` 输出左右轮反号速度，符合直接速度分配预期。
+  - 因此当前底层运动学模型没有静态缩小前进命令；最新 direct velocity run 中 `Omega_ref≈2.84 rad/s`、实际轮速约 `2.73 rad/s` 也支持车轮速度 drive 生效。
+- Reward / PPO conclusion:
+  - 当前低速/不动更可能来自 active reward 和训练语义，而不是 inactive 低层代码。
+  - `distance_to_target` 与 `angle_diff` 仍是每步正奖励；timeout 罚项虽已加入，但失败 episode return 仍接近零，低速拖到 timeout 的学习信号不够硬。
+  - `progress_gate` 只调整正向 progress，保留 `0.25` 下限，并不会主动要求非零有效推进速度。
+  - `is_finite_horizon=false` 使 RSL-RL wrapper 给 timeout 添加 `extras["time_outs"]`，PPO 会对 timeout 做 value bootstrap；若论文任务语义把 timeout 当失败终止，后续需要明确是否应取消该 bootstrap。
+  - `target_yaw_tolerance_deg`、姿态限制和 head/tail 姿态限制仍未实际接入 `compute_done_terms()`，成功条件仍主要是位置半径。
+
 ## 2026-04-27
 
 ### Stage0 已去掉底层整形，车轮改为直接速度驱动并准备重训
@@ -14,7 +293,22 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - 车轮不再显式下发 torque target；`wheel_torque_target/tau0/tau1` 仅作为按 velocity drive damping 估算的诊断量。
   - Stage0 车轮 drive 使用 `wheel_joint_damping=100.0`、`wheel_joint_effort_limit_sim=20.0`、`wheel_joint_velocity_limit_sim=20.0`。
 - Status:
-  - implemented; next step is a new GPU training run with the direct wheel velocity controller.
+  - implemented; followed by an interrupted training run described below.
+
+### Stage0 直接车轮速度驱动训练已中断，最新 checkpoint 为 `model_75.pt`
+- User request:
+  - 停止当前训练，保存到现在最新 checkpoint，明天醒来后继续接着训练。
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-27_22-42-33_stage0_direct_velocity_no_shaping_watch_700iter`
+  - 终端打印到 iteration `77/700` 后中断；最新自动保存 checkpoint 为 `model_75.pt`。
+  - TensorBoard 标量已导出到 run 内 `tensorboard_export/`。
+- Early result:
+  - 直接速度驱动链路生效：`planar_command_shaping_delta=0`，`desired_planar_command == shaped_planar_command`。
+  - 车轮关节速度能跟踪到约 `2.73 rad/s`，`Omega_ref_abs` 最后约 `2.84 rad/s`，说明不是车轮完全没转。
+  - 实际滚动推进仍低效：最后 `v_parallel_abs≈0.266 m/s`、`v_perp_abs≈0.269 m/s`、`delta_v_abs≈0.551 m/s`、纵滑约 `2.62`、侧滑角约 `0.73 rad`。
+  - `success_rate=0.0`；最高 `active_segment_completion_pct≈35.8%`，最后约 `30.3%`，`waypoints_completed_mean` 最后约 `0.019`。
+- Resume note:
+  - 要接着原计划总 `700` iterations 训练，应从 `model_75.pt` resume 并追加约 `625` iterations。
 
 ### Stage0 轮级牵引已去掉直接纵滑反馈，并重启训练验证
 - User request:
@@ -6935,14 +7229,14 @@ This file stores durable conclusions from past Codex sessions so that future ses
     - `Stage1 actor = 45`
     - `Stage1 critic = 45 + num_height_points`
   - `AGENTS.md` now explicitly requires:
-    - any material Stage0 RL env or Stage0 training-parameter change must update `docs/RL阶段训练参数一览表.md` in the same session
+    - any material Stage0 RL env or Stage0 training-parameter change must update `docs/stage0_baseline参数详情表.md` in the same session
 - Reason:
   - the user explicitly required collapsing the command semantics to one mode only:
     - `Vx + Wz`
     while removing `Vy` and `heading`, and also asked that the Stage0 parameter handbook be maintained as the synchronized reference
 - Impact:
   - future command, observation-dimension, reward, and logging discussions should treat Stage0 as a 2D-command task by default
-  - future Stage0 config edits should not be considered complete unless `docs/RL阶段训练参数一览表.md` is updated at the same time
+  - future Stage0 config edits should not be considered complete unless `docs/stage0_baseline参数详情表.md` is updated at the same time
 - Status:
   - targeted `python3 -m py_compile` check passed for the modified command / reward / env / allocator files
 
@@ -12127,3 +12421,95 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - 本质问题是奖励/成功标准允许“低速低滑移但不完成 waypoint”的局部解，而不是底层运动学完全错误。
 - Status:
   - diagnosed; report saved at `results/stage0_model699_replay_stall_diagnosis_2026-04-27.md`
+
+### Stage0 lowslip gate v1 model_699 历史 run 详细报告
+- Date: 2026-04-28
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter`
+  - checkpoint：`model_699.pt`
+- Report:
+  - `results/stage0_lowslip_gate_v1_model699_detailed_result_config_motion_model_2026-04-28.md`
+- Durable conclusion:
+  - 该 checkpoint 是目前最佳可回放历史 Stage0 checkpoint 之一：后 25 轮 `success_rate≈0.9863`、episode 级 waypoint 完成率约 `99.21%`。
+  - 该 run 当时使用低层力矩控制链路：8 维 policy action -> 平面命令/球铰目标姿态 -> 低侧滑整形 -> 轮速参考 -> 纵滑反馈车轮 effort target；不能按 2026-04-28 后的直接 wheel velocity target 配置解释。
+  - 该 run 的 `is_finite_horizon=false`，timeout 在当时 PPO 语义下仍按 time-limit bootstrap 处理；不能混同于当前 active Stage0 的 timeout 失败终止语义。
+  - 该 run 的原始 `wheel_slip_angle` 使用 wheel local `Y` 旧口径，不能作为真实水平侧滑证据；其低滑移结论只能基于纵滑和旧口径指标谨慎表述。
+  - 该 checkpoint 可作为 Stage0 平地双 waypoint 任务可学习和工程链路可闭环证据，但不能作为低纵滑/低水平侧滑协同控制成功证据。
+  - `target_yaw_tolerance_deg` 和姿态角限制虽然在配置中存在，但该 run 当时的 success/termination 实际主要由位置半径、远离目标、球铰越界和 timeout 决定；success 不应解释为严格朝向成功。
+  - Status: detailed report completed.
+
+### Stage0 active 配置恢复为 best_baseline
+- Date: 2026-04-28
+- User decision:
+  - 将当前 RL 配置和底层运动学模型恢复到 `stage0_lowslip_gate_v1_model699_detailed_result_config_motion_model_2026-04-28` 对应版本。
+  - 纵滑率方向也恢复历史口径。
+  - 唯一保留当前口径的是侧滑角定义，即 wheel local `Z` 作为水平侧向轴，并使用 `max(abs(v_parallel), epsilon)` 低速分母。
+  - 将该版本定义为 `best_baseline`。
+- Implementation:
+  - Stage0 `is_finite_horizon` 恢复为 `False`，timeout 重新作为 RSL-RL time-limit，PPO 会做 bootstrap。
+  - Stage0 runner 默认 `run_name` 设置为 `best_baseline`。
+  - active reward 恢复为 7 项：`distance_to_target`、`progress_to_target`、`reached_target`、`far_from_target`、`angle_diff`、`turn_speed_penalty`、`slip_penalty`。
+  - 移除当前 active reward 中的 `timeout_penalty`、`no_progress_penalty`、`action_rate_penalty` 和 `load_equalization`。
+  - `progress_gate` 使用 `0.5 * (G_kappa + G_alpha)` 平均 gate，正 progress 受 gate 调制，负 progress 不被 gate 削弱。
+  - 底层控制恢复为 `compute_low_slip_control_targets()` 低滑移整形和牵引分配链路；车轮下发 effort target，不再下发 direct velocity target。
+  - 纵滑率恢复为 `kappa = (v_parallel - r * omega) / max(abs(v_parallel), epsilon)`。
+  - 侧滑角保留当前修正口径：wheel local `Z` 侧向轴。
+  - logger 重点标签恢复 `Reward/turn_speed_penalty` 和 `Reward/slip_penalty`，不再把 inactive reward 项作为当前重点输出。
+  - `docs/RL阶段训练参数一览表.md` 已重写为当前 `best_baseline` 参数表。
+- Durable conclusion:
+  - 从本条记录起，Stage0 active mainline 是 `best_baseline`，而不是 2026-04-28 中间的 direct wheel velocity / timeout failure / no-progress reward 配置。
+  - 历史 `model_699` 的原始侧滑曲线仍不可作为真实水平侧滑证据；当前代码只在侧滑角口径上保留修正后的 local `Z` 定义。
+  - 配置类中仍可能保留若干非 active 字段，但当前 Stage0 reward 和动作下发路径不调用这些字段。
+- Verification:
+  - `python3 -m py_compile` 通过。
+  - `validate_wheel_speed_allocator.py --run-smoke-cases` 通过。
+  - `git diff --check` 通过。
+
+### Stage0 best_baseline 严格复核
+- Date: 2026-04-28
+- Checked against:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter/params/env.yaml`
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter/params/agent.yaml`
+  - run 内 `git/Graduation-Project.diff`
+  - 当前 active 源码调用链
+- Result:
+  - Stage0 关键数值配置、reward 结构、PPO 超参数、termination 代码、动作映射和低层 torque 控制链路已对齐历史 `model_699` 版本。
+  - 按用户要求，唯一主动保留差异是侧滑角口径：当前仍使用 wheel local `Z` 与 `max(abs(v_parallel), epsilon)`。
+  - 复核中发现当前日志缓存对 `wheel_speed_reference` 做了额外 clip，虽不影响实际 torque target，但与历史日志口径不完全一致；已改回直接记录 allocator 输出。
+  - 当前源码仍保留若干后续实验字段和诊断字段，但 `env.py` / `rewards.py` / logger 的 active reward 与动作下发路径不再调用 timeout/no-progress/action-rate/load-equalization reward。
+- Verification:
+  - `python3 -m py_compile` 通过。
+  - `validate_wheel_speed_allocator.py --run-smoke-cases` 通过。
+  - `git diff --check` 通过。
+
+### Stage0 best_baseline_2 训练完成：任务完成成功但纵滑仍高
+- Date: 2026-04-28
+- Run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2`
+  - 训练跑满 `700` iterations，终端输出到 `699/700`，进程退出码 `0`
+  - 最终 checkpoint：`model_699.pt`
+- Result:
+  - 末段任务完成质量较好，最后可见阶段基本保持 `Termination/success_rate=1.0`、`Termination/time_out_rate=0.0`。
+  - 未出现 `far_from_target` 或 `ball_joint_limit` 异常终止。
+  - 运动不是近停滞：末段 `v_parallel_abs_mean_raw` 约 `1.18-1.19 m/s`，`v_perp_abs_mean_raw` 约 `0.036-0.040 m/s`。
+  - 当前口径侧滑角末段约 `0.054-0.061 rad`，pitch 约 `-0.5 deg` 到 `-0.7 deg`。
+  - 纵滑仍高：末段纵滑率约 `3.06-3.13`，`LowSlip/combined_pass_rate` 约 `0.087-0.092`，车轮参考角速度约 `8.7-8.8 rad/s`。
+- Durable conclusion:
+  - 当前 `best_baseline` 主线可以学出有效前向运动和稳定任务完成，已经不同于此前近停滞局部解。
+  - 该结果仍不能作为低纵滑控制成功证据；若要支撑低滑移或协同控制结论，后续必须把纵滑率、当前口径侧滑角、有效推进速度和任务完成质量一起作为评价约束。
+  - 中后段曾出现高纵滑和间歇 timeout，最终阶段恢复全成功；如果后续挑选 checkpoint，应回放多个 late-stage checkpoint 比较运动行为，而不是只看最后 checkpoint。
+
+### Stage0 baseline 参数详情表重命名并绑定 best_baseline_2
+- Date: 2026-04-28
+- User request:
+  - 将 `best_baseline_2` 的配置和底层运动学详细写入原 `docs/RL阶段训练参数一览表.md`。
+  - 将该文档重命名为 `stage0_baseline参数详情表`。
+- Implementation:
+  - 原文档已重命名为 `docs/stage0_baseline参数详情表.md`。
+  - 文档已补充 `best_baseline_2` 的 run 目录、checkpoint、训练命令、run 内 `params/env.yaml` 和 `params/agent.yaml` 来源。
+  - 文档明确 `best_baseline_2` 是在当前 `best_baseline` 环境配置上以命令行覆盖 `run_name=best_baseline_2` 启动的完整训练，不是一套新的环境设计。
+  - 文档补充 low-slip 平面命令整形、轮心名义速度、车轮参考角速度、纵滑率、侧滑角、车轮 torque target、active termination 和 inactive 配置边界。
+  - `AGENTS.md` 的 Stage0 参数同步规则已改为指向 `docs/stage0_baseline参数详情表.md`。
+- Durable conclusion:
+  - 从本条记录起，Stage0 baseline 参数总表的规范文件名是 `docs/stage0_baseline参数详情表.md`。
+  - 后续 Stage0 RL 环境设计或训练参数发生实质变化时，应同步更新该新文件名对应的文档。

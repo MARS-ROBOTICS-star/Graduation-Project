@@ -41,6 +41,7 @@ The temporary parallel directory created in the previous round has been removed.
   - Repository-level rules, project background, role boundary, and memory-update policy.
 - `docs/`
   - Persistent project memory, workflow notes, literature notes, and architecture references.
+  - `stage0_baseline参数详情表.md` records the active Stage0 baseline parameters, `best_baseline_2` run config, and low-level motion model.
 - `logs/`
   - Date-based work log.
 - `RL_Training/`

@@ -13650,3 +13650,59 @@
 产出/结论：
 - Stage0 baseline 参数总表的新规范路径为 `docs/stage0_baseline参数详情表.md`。
 - 后续 Stage0 RL 环境设计或训练参数发生实质变化时，应同步更新该新文件名对应的文档。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求将 `best_baseline_2/model_699.pt` 转换为 Stage1 warm-start checkpoint。
+- 为 `train.py` 增加 `--warmstart` 加载方式，只加载 actor/critic，不加载 optimizer 和 iteration。
+- 按用户要求补充 Stage1 高度图 actor/critic 观测、terrain column 目标点逻辑、reset 朝向 `+x`、目标点横向 `3 m` 随机余量。
+- 提高 Stage1 contact buffer 容量，解决地形接触点容量不足问题。
+- 停止此前 128 env headless 训练，改为 Stage1 `32` env 非 headless GUI 训练。
+- 开启目标点 marker 和 `env_0` follow view；目标方向箭头暂不画。
+
+修改文件：
+- `RL_Training/scripts/train.py`
+- `RL_Training/scripts/convert_stage0_to_stage1_warmstart.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/sensors/sensor_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- warm-start checkpoint：`RL_Training/logs/rsl_rl/complete_car_stage1/warmstart_best_baseline_2/model_0.pt`。
+- Stage1 actor/critic 当前观测维度为 `972 = 54 + 34 * 27`。
+- 32 env GUI run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter`。
+- 该 run 已进入 PPO 并持续运行，说明 32 env GUI + Stage1 warm-start + marker/view 当前可启动。
+
+验证：
+- `python3 -m py_compile` 通过。
+- `git diff --check` 通过。
+- Stage1 `num_envs=8` 和 `128` headless smoke 进入 PPO；`32` env GUI 进入 PPO。
+
+补充：
+- 按用户要求停止 `32` env GUI 训练。
+- 终端最后完整输出到 PPO iteration `18/700`，随后 Ctrl-C 正常退出。
+- 已确认没有残留 `CompleteCar-Stage1` 训练进程。
+- 该 run 当前只看到 `model_0.pt`，没有跑到默认保存间隔产生后续 checkpoint。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求撤回未推送的 Stage1 训练快照提交，避免上传当前 Stage1 模型和训练产物。
+- 在 `.gitignore` 中显式加入 `RL_Training/logs/rsl_rl/complete_car_stage1/`。
+- 将“Stage1 训练产物默认不上传，只有用户明确要求某一次结果时才上传”的规则写入当前状态和长期记忆。
+
+修改文件：
+- `.gitignore`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage0 `best_baseline_2` 已上传结果不受影响。
+- Stage1 当前训练产物保留本地并处于 Git 忽略范围。

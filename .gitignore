@@ -2,8 +2,10 @@
 *.SAT
 .cache/
 outputs/
+# Training outputs stay local by default; upload a specific run only when explicitly requested.
 RL_Training/logs/
 RL_Training/outputs/
+RL_Training/logs/rsl_rl/complete_car_stage1/
 __pycache__/
 *.py[cod]
 *.bak

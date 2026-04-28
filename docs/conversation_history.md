@@ -12513,3 +12513,40 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Durable conclusion:
   - 从本条记录起，Stage0 baseline 参数总表的规范文件名是 `docs/stage0_baseline参数详情表.md`。
   - 后续 Stage0 RL 环境设计或训练参数发生实质变化时，应同步更新该新文件名对应的文档。
+
+### Stage1 使用 best_baseline_2 warm-start 并启动 32 env GUI 训练
+- Date: 2026-04-28
+- User decision:
+  - Stage1 保持当前高度图尺寸和原始米制高度值，不 clip 到 `[-1, 1]`，不额外乘 scale。
+  - 同一份 height patch 拼入 actor 观测，critic 也保留。
+  - Stage1 修改不能影响 Stage0。
+  - Stage1 目标点沿 terrain column 的 `+x` 方向推进，目标 `y` 方向允许左右 `3 m` 随机偏移，reset 朝向默认 `+x`。
+  - 使用 `best_baseline_2/model_699.pt` 作为 Stage1 起点。
+- Implementation:
+  - 新增 Stage0->Stage1 checkpoint 转换脚本，将 Stage0 actor/critic 第一层和 obs normalizer 从 `54` 维扩展到 Stage1 `972` 维。
+  - 生成 warm-start checkpoint：`RL_Training/logs/rsl_rl/complete_car_stage1/warmstart_best_baseline_2/model_0.pt`。
+  - `train.py` 增加 `--warmstart`，只加载 actor/critic，不加载 optimizer 和 iteration。
+  - Stage1 contact buffer 容量提高，避免地形接触点超过默认容量。
+  - Stage1 terrain target、reset yaw、height patch actor/critic observation 已按用户要求接入。
+  - Stage1 默认 `num_envs` 当前为 `32`，开启目标点 marker 和 `env_0` follow view；目标方向箭头暂不画。
+- Verification:
+  - Stage1 warm-start checkpoint 形状验证通过：actor/critic 第一层为 `[256, 972]`，normalizer 为 `[1, 972]`。
+  - `num_envs=8` 和 `num_envs=128` headless smoke 均进入 PPO。
+  - 64 env GUI 在 simulation start 附近退出；32 env GUI 已进入 PPO 并稳定运行到用户手动停止。
+- Durable conclusion:
+  - Stage0 checkpoint 不能直接作为 Stage1 resume 使用，原因是观测维度不同；必须通过 warm-start 转换或重新初始化网络。
+  - 当前可用 Stage1 warm-start 路径是 `warmstart_best_baseline_2/model_0.pt` + `--warmstart`。
+  - 若需要亲自看 GUI 训练，当前稳定启动配置是 Stage1 `num_envs=32`，目标点 marker 开启，follow view 开启，目标方向箭头关闭。
+  - 2026-04-28 的 GUI run `2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter` 已按用户要求在 iteration `18/700` 后停止，未产生默认保存间隔后的后续 checkpoint。
+
+### Stage1 训练产物默认不上传 GitHub
+- Date: 2026-04-28
+- User decision:
+  - Stage1 当前模型、checkpoint、TensorBoard event、run diff、训练输出目录均加入默认忽略范围。
+  - 后续只有当用户明确要求上传某一次 Stage1 训练结果时，才把对应 run 强制纳入 Git。
+- Implementation:
+  - `.gitignore` 显式加入 `RL_Training/logs/rsl_rl/complete_car_stage1/`。
+  - 已撤回未推送的本地提交 `e94e29a Add Stage1 warmstart training snapshot`，避免把 Stage1 模型和输出误推送到 GitHub。
+- Impact:
+  - Stage0 已明确要求上传的 `best_baseline_2` 训练数据和 checkpoint 保持已上传状态。
+  - Stage1 当前产物继续保留在本机，但不作为默认同步范围。

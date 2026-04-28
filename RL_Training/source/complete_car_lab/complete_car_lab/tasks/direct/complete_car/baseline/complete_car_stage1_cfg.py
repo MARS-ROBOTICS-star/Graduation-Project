@@ -10,7 +10,7 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
     stage_name: str = "stage1"
 
     def __post_init__(self) -> None:
-        self.scene.num_envs = 64
+        self.scene.num_envs = 32
         self.commands.num_waypoints_per_episode = 1
         self.commands.resampling_time = self.episode_length_s
         self.commands.goal_distance = 16.0
@@ -46,7 +46,7 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
 
         self.debug.enable_debug_draw = True
         self.debug.visualize_goal_heading = False
-        self.debug.create_follow_views = False
+        self.debug.create_follow_views = True
         self.debug.follow_view_top_height = 8.0
         self.debug.follow_view_chase_env_index = 0
         super().__post_init__()

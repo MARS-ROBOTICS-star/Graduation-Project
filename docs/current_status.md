@@ -1,5 +1,36 @@
 # 当前状态
 
+## 当前 Stage1 地形训练状态
+
+- 当前 Stage1 已进入 `best_baseline_2` warm-start 训练阶段。
+- warm-start 来源：
+  - Stage0 run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2`
+  - Stage0 checkpoint：`model_699.pt`
+  - Stage1 warm-start checkpoint：`RL_Training/logs/rsl_rl/complete_car_stage1/warmstart_best_baseline_2/model_0.pt`
+- warm-start 方式：
+  - 不能直接 resume Stage0 checkpoint，因为 Stage0 actor/critic 观测维度为 `54`，Stage1 为 `972`。
+  - 已将 actor/critic 第一层和 obs normalizer 扩展到 `972` 维，前 `54` 维继承 Stage0，新增高度图维度初始化为零权重。
+  - 训练使用 `--warmstart` 只加载 actor/critic，不加载 optimizer 和 iteration。
+- 当前 Stage1 观测策略：
+  - actor / critic 均为 `54 + 34 * 27 = 972` 维。
+  - 高度图保持原始 patch 尺寸和米制高度值，不 clip 到 `[-1, 1]`，不额外乘 scale，交由 PPO normalizer 归一化。
+- 当前 Stage1 目标点逻辑：
+  - 使用 terrain column / terrain type 生成目标点。
+  - 目标方向沿地形列纵向 `+x`。
+  - 目标列保持同列，目标行偏移 `1-2` 行，目标点 `y` 方向允许左右随机偏移 `3 m`。
+  - reset 朝向固定为 `+x`。
+- 当前可视化训练：
+  - 默认并行环境数已改为 `32`，不影响 Stage0。
+  - 当前 GUI run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter`
+  - 已按用户要求停止，终端最后完整输出到 PPO iteration `18/700`。
+  - 该 run 当前只看到 `model_0.pt`，没有跑到默认保存间隔产生后续 checkpoint。
+  - 目标点红色 marker 开启；`env_0` top/chase follow view 开启。
+  - 目标方向箭头暂不画，因为 Stage1 目标方向固定为 `+x`，且此前 GUI 下该箭头曾触发 Fabric point-instancer warning。
+- 当前 Git 上传规则：
+  - Stage1 当前模型、checkpoint、TensorBoard event、run diff、输出目录默认不上传 GitHub。
+  - `.gitignore` 已显式忽略 `RL_Training/logs/rsl_rl/complete_car_stage1/`。
+  - 只有当用户明确要求上传某一次 Stage1 训练结果时，才使用 `git add -f` 纳入对应 run。
+
 ## 当前 active Stage0 基准
 
 - 当前 Stage0 主线已按用户要求恢复为 `best_baseline`。

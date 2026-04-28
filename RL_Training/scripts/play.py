@@ -40,6 +40,12 @@ parser.add_argument(
     help="Hide goal position and heading markers during playback.",
 )
 parser.add_argument(
+    "--hide_goal_heading",
+    action="store_true",
+    default=False,
+    help="Hide only the goal heading arrow while keeping the goal position marker visible.",
+)
+parser.add_argument(
     "--show_wheel_slip_vis",
     action="store_true",
     default=False,
@@ -56,6 +62,12 @@ parser.add_argument(
     action="store_true",
     default=False,
     help="Create selectable follow cameras under /view: one top-down camera per env and one chase camera.",
+)
+parser.add_argument(
+    "--record_chase_view",
+    action="store_true",
+    default=False,
+    help="Record video from the chase follow camera instead of the default viewport camera.",
 )
 parser.add_argument("--follow_view_top_height", type=float, default=2.5)
 parser.add_argument("--follow_view_chase_env", type=int, default=0)
@@ -178,10 +190,14 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
     env_cfg.debug.enable_debug_draw = (not args_cli.hide_goal_vis) or args_cli.show_wheel_slip_vis or args_cli.create_follow_views
+    env_cfg.debug.visualize_goal_heading = not args_cli.hide_goal_heading
     env_cfg.debug.visualize_wheel_slip = args_cli.show_wheel_slip_vis
     env_cfg.debug.create_follow_views = args_cli.create_follow_views
     env_cfg.debug.follow_view_top_height = args_cli.follow_view_top_height
     env_cfg.debug.follow_view_chase_env_index = args_cli.follow_view_chase_env
+    if args_cli.record_chase_view:
+        env_cfg.debug.create_follow_views = True
+        env_cfg.viewer.cam_prim_path = f"/view/env_{args_cli.follow_view_chase_env}/chase_camera"
     if args_cli.slip_vis_close_view:
         env_cfg.viewer.eye = (6.0, -8.0, 5.0)
         env_cfg.viewer.lookat = (6.0, 0.0, 0.4)

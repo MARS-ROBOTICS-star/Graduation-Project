@@ -12568,3 +12568,92 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - `ffprobe` 确认视频为 `1280x720`、`60 fps`、`120.000000 s`、`7200` 帧。
   - `ffmpeg -v error -i ... -f null -` 解码检查通过。
   - 抽帧确认 chase 视角和红色目标点 marker 可见。
+
+### Stage1 参数详情表已建立
+- Date: 2026-04-28
+- User request:
+  - 新建 `Stage1参数详情表.md`，详细记录 Stage1 相关 RL 环境配置，不写底层运动学模型。
+- Output:
+  - `docs/Stage1参数详情表.md`
+- Content boundary:
+  - 文档记录 `CompleteCar-Stage1` 的 task 身份、PPO/warm-start、scene/sim、动作接口、terrain-column 目标点、Stage1 terrain generator、curriculum/reset、高度图 patch、actor/critic 观测、reward、termination、sensor/debug 和 TensorBoard 指标。
+  - 文档明确不展开轮速分配、low-slip 平面命令整形、车轮牵引力矩分配或球铰规划器内部公式。
+- Durable conclusion:
+  - 后续查看 Stage1 RL 环境参数时，优先读取 `docs/Stage1参数详情表.md`。
+  - 当前 Stage1 actor / critic 观测维度仍为 `972 = 54 + 34 * 27`，height patch 以米制相对高度 `root_z - terrain_height` 直接拼入 actor / critic，并交由 PPO normalizer 统计归一化。
+
+### Stage1 cfg 已改为完整显式配置风格
+- Date: 2026-04-28
+- User request:
+  - 将 `stage0_cfg` 中同类配置代码复制到 `stage1_cfg` 中，方便后续在 `stage1_cfg` 内统一修改 Stage1 参数。
+- Implementation:
+  - `complete_car_stage1_cfg.py` 现在显式写出 stage、episode、scene、commands、control、observations、rewards、terminations、resets、randomization、terrain、curriculum、sensors、debug、sim 和 robot rebuild 配置。
+  - Stage0 配置文件未修改。
+  - Stage1 地形、高度图、terrain-column target、warm-start 相关行为保持在 Stage1 配置文件内管理。
+- Durable conclusion:
+  - 后续 Stage1 环境参数调整优先直接改 `complete_car_stage1_cfg.py`，不需要回到共享 base cfg 查找默认值。
+  - 当前源码中 `debug.visualize_goal_heading=True`，与此前 GUI run 中关闭目标方向箭头的记录不同；以后启动 Stage1 GUI 时以当前源码为准。
+
+### Stage1 cfg 去除 terrain-column 无关的自由 waypoint 参数
+- Date: 2026-04-28
+- User request:
+  - Stage1 不相关的配置代码不需要加入，例如 `goal_distance` 和 `goal_direction_max_deg` 这类自由 waypoint 参数，避免和现有 terrain-column 目标逻辑产生歧义。
+- Implementation:
+  - `complete_car_stage1_cfg.py` 的 command 区域不再显式写入 `commands.goal_distance`、`commands.goal_direction_max_deg`、`goal_heading_delta_max_deg`、`zero_command`、`rel_standing_envs` 等自由 waypoint 采样字段。
+  - 新增 reward 参数 `nominal_goal_distance_m` 和 `turn_speed_angle_scale_deg`，使 Stage1 reward / termination 继续保留原先的名义距离和转向惩罚尺度，但不再借用 command sampler 字段表达。
+  - `rewards.py`、`terminations.py` 和 env metrics 改为通过 helper 读取 reward 名义距离；Stage0 未显式设置新字段，因此继续回退到原有 `commands.goal_distance` / `commands.goal_direction_max_deg` 语义。
+- Durable conclusion:
+  - Stage1 terrain-column target 的目标点采样只看 terrain row / column、row offset 和 lateral range。
+  - Stage1 reward 的名义距离尺度是 `rewards.params.nominal_goal_distance_m = 16.0`，不是 `commands.goal_distance`。
+  - Stage1 转向速度惩罚角度尺度是 `rewards.params.turn_speed_angle_scale_deg = 0.0`，不是 `commands.goal_direction_max_deg`。
+
+### Stage1 terrain-column 目标改为事件触发推进
+- Date: 2026-04-28
+- User request:
+  - 检查 `self.commands.resampling_time = self.episode_length_s` 是否会和 Stage1 目标定义混淆。
+  - Stage1 目标应随地形 row 进阶：目标命中或沿 `+x` 前进约 `5-6 m` 后，当前 row 前进一行，目标点同步变为下一行或下两行同列。
+  - `stairs down`、`stairs up`、`discrete obstacles` 的目标 x / y 必须和下一行同列 tile origin 一致，不做横向偏移。
+  - Stage1 训练地形颜色改为黑色。
+- Implementation:
+  - Stage1 cfg 不再显式写入 `commands.resampling_time = episode_length_s`；terrain-column 目标路径不再使用 command timer，普通 waypoint timer 只保留给非 terrain-column 任务。
+  - `terminations.py` 中 terrain-column 目标命中不再产生 Stage1 success termination。
+  - `env.py` 中新增 terrain-column 事件推进：若当前目标被命中，或 `root_x - current_tile_origin_x > terrain_length * move_up_distance_ratio = 5.6 m`，则 terrain level 加 `1`、同步 `scene.env_origins`、并按同列 `+1/+2` row 重采样目标。
+  - `commands.py` 中针对 `stairs down`、`stairs up`、`discrete obstacles` 屏蔽 lateral offset，目标 x / y 直接使用目标 tile origin。
+  - Stage1 training terrain `diffuse_color` 改为 `(0.0, 0.0, 0.0)`，`preview_stage1_terrain.py` 同步为黑色。
+- Durable conclusion:
+  - Stage1 terrain-column target 的推进语义是“事件触发”，不是“固定秒数重采样”。
+  - Stage1 目标点只作为前进引导，不作为 episode 成功终点。
+  - Stage1 的 step/stairs/discrete-obstacle 三类关键地形目标点不做左右 `3 m` 偏移。
+
+### Stage1 discrete obstacles 归入 step terrain class
+- Date: 2026-04-28
+- User request:
+  - 将 `discrete obstacles` 的 terrain class 也设置为 `step`。
+- Implementation:
+  - `terrain_builder.py:get_terrain_class_from_name()` 中将 `discrete obstacles` 加入 `STAGE1_TERRAIN_CLASS_STEP` 集合。
+  - Stage1 参数详情表中的 column `8-9` terrain class 已从 `other` 更新为 `step`。
+- Durable conclusion:
+  - 当前 `stairs down`、`stairs up`、`discrete obstacles` 均属于 `step` class。
+  - reset 时这些地形都会走 step 类 spawn offset，即 x 方向向后随机 `2.0-3.0 m`，不再对 `discrete obstacles` 使用 `other_spawn_xy_range`。
+
+### Stage1 参数详情表同步当前源码参数
+- Date: 2026-04-28
+- User request:
+  - 根据用户刚进行的 Stage1 配置更改，更新 `docs/Stage1参数详情表.md`。
+- Synced current source values:
+  - Stage1 `episode_length_s = 40.0`，对应 `max_episode_length = 2400`。
+  - Stage1 target row offset 固定为 `terrain_goal_min_row_offset = 1`、`terrain_goal_max_row_offset = 1`，目标只取下一行同列。
+  - Stage1 `scene.env_spacing = 2.0`。
+  - Stage1 PhysX `max_velocity_iteration_count = 4`，并记录接触/摩擦相关阈值：`bounce_threshold_velocity = 0.2`、`friction_offset_threshold = 0.04`、`friction_correlation_distance = 0.025`。
+- Durable conclusion:
+  - 后续查看 Stage1 当前参数时，以 `docs/Stage1参数详情表.md` 的源码当前值为准；其中早期 GUI run 只作为“已验证可启动”的历史记录，不再代表所有当前源码参数。
+
+### Stage1 前 54 维观测 scale 已与 Stage0 warm-start 对齐
+- Date: 2026-04-28
+- User correction:
+  - 用户指出 Stage0 中 `ball_joint_pos`、`ball_joint_vel`、`base_lin_vel`、`base_ang_vel`、`wheel_joint_vel`、滑移、接触力、目标命令和 `last_action` 等 active observation scale 都设置为 `1.0`。
+- Implementation:
+  - `complete_car_stage1_cfg.py` 中 `base_ang_vel`、`ball_joint_vel`、`wheel_joint_vel` 的 scale 已从基础默认值 `0.25` / `0.05` 改为 `1.0`。
+  - `docs/Stage1参数详情表.md` 已同步更新观测表。
+- Durable conclusion:
+  - Stage1 warm-start 的前 `54` 维本体 / command / last action 观测 scale 当前与 Stage0 active baseline 完全一致，新增高度图仍保持原始米制高度值并交由 PPO normalizer 归一化。

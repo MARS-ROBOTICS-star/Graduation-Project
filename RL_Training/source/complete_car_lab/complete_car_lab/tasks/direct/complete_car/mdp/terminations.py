@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 
+from .rewards import get_nominal_goal_distance
 from ..utils.math_utils import wrap_to_pi_tensor
 
 
@@ -21,6 +22,8 @@ def compute_done_terms(
     waypoint_hit = current_goal_distance < cfg.rewards.params.target_position_tolerance
     last_waypoint_index = max(int(getattr(cfg.commands, "num_waypoints_per_episode", 1)) - 1, 0)
     is_success = waypoint_hit & (active_waypoint_index >= last_waypoint_index)
+    if getattr(cfg.commands, "use_terrain_column_targets", False):
+        is_success = torch.zeros_like(is_success)
     time_out = (episode_length_buf >= max_episode_length - 1) & ~is_success
     lower_limits = ball_joint_pos.new_tensor(cfg.terminations.ball_joint_pos_lower_limits)
     upper_limits = ball_joint_pos.new_tensor(cfg.terminations.ball_joint_pos_upper_limits)
@@ -33,7 +36,7 @@ def compute_done_terms(
         dim=1,
     )
     far_from_target = current_goal_distance > (
-        cfg.commands.goal_distance + cfg.rewards.params.far_from_target_margin
+        get_nominal_goal_distance(cfg) + cfg.rewards.params.far_from_target_margin
     )
 
     return {

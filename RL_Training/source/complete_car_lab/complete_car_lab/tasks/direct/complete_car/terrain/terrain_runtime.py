@@ -122,6 +122,11 @@ class CompleteCarTerrainRuntime:
             raise RuntimeError("Terrain origins are not initialized.")
         return self._terrain_origins[terrain_levels, terrain_types]
 
+    def get_tile_type_indices(self, terrain_levels: torch.Tensor, terrain_types: torch.Tensor) -> torch.Tensor:
+        if self._terrain_type_map is None:
+            raise RuntimeError("Terrain type map is not initialized.")
+        return self._terrain_type_map[terrain_levels, terrain_types]
+
     def apply_spawn_offsets(self, root_state: torch.Tensor, env_ids: torch.Tensor) -> torch.Tensor:
         if not self.generator_enabled or env_ids.numel() == 0:
             return root_state

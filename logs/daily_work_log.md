@@ -13726,3 +13726,145 @@
 - 抽帧：`results/best_baseline_2_chase_120s_frame10.jpg`
 - 视频规格为 `1280x720`、`60 fps`、`120 s`、`7200` 帧。
 - 抽帧确认 chase 视角和目标点 marker 可见；完整视频解码检查通过。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求新建 `docs/Stage1参数详情表.md`。
+- 详细整理 Stage1 当前 RL 环境配置、PPO/warm-start、地形课程、目标点、高度图 patch、观测、reward、termination、reset、sensor/debug 和 TensorBoard 指标。
+- 按用户要求未展开底层运动学模型。
+
+修改文件：
+- `docs/Stage1参数详情表.md`
+- `README.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 参数详情表路径为 `docs/Stage1参数详情表.md`。
+- 当前 Stage1 actor / critic 观测维度记录为 `972 = 54 + 34 * 27`。
+- 文档明确 height patch 当前为米制相对高度 `root_z - terrain_height`，不额外 clip、不额外乘 scale，交由 PPO normalizer 归一化。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求将 `stage0_cfg` 中同类完整配置写法复制到 `stage1_cfg`。
+- `complete_car_stage1_cfg.py` 现在显式包含 Stage1 的 scene、commands、control、observation、reward、termination、reset、randomization、terrain、curriculum、sensor、debug 和 sim 配置。
+- 同步更新 Stage1 参数详情表和项目记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 后续 Stage1 参数优先在 `complete_car_stage1_cfg.py` 中统一修改。
+- Stage0 配置文件未修改。
+- `python3 -m py_compile` 已通过。
+
+## 2026-04-28
+
+已完成：
+- 按用户反馈精简 `complete_car_stage1_cfg.py`，移除 terrain-column target 无关的自由 waypoint command 字段，避免 `goal_distance`、`goal_direction_max_deg` 等字段造成歧义。
+- 将 Stage1 reward / termination 仍需使用的名义距离和转向角度尺度改为 reward 参数表达。
+- 同步更新 Stage1 参数详情表和项目记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 command 配置区只保留 terrain-column target 直接使用的字段。
+- Stage1 reward 名义距离为 `rewards.params.nominal_goal_distance_m = 16.0`。
+- Stage1 转向速度惩罚角度尺度为 `rewards.params.turn_speed_angle_scale_deg = 0.0`。
+
+## 2026-04-28
+
+已完成：
+- 检查 Stage1 `commands.resampling_time = episode_length_s` 的实际作用，确认它只是在旧逻辑中阻止按秒重采样，但 Stage1 仍缺少用户要求的 episode 内目标推进语义。
+- 将 Stage1 terrain-column 目标改为事件触发推进：目标命中或相对当前 tile origin 沿 `+x` 前进超过 `5.6 m` 后，terrain level 加 `1` 并重采样下一目标。
+- 对 `stairs down`、`stairs up`、`discrete obstacles` 屏蔽目标横向偏移，目标 x / y 直接取下一行同列 tile origin。
+- 将 Stage1 训练地形颜色改为黑色，并同步完整地形预览脚本颜色。
+- 同步更新 Stage1 参数详情表和项目记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_runtime.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `scripts/isaac_sim/preview_stage1_terrain.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 terrain-column 目标不再使用固定秒数计时重采样。
+- Stage1 目标点只作为前进引导，目标命中不再触发 success termination。
+- Stage1 目标推进和地形 row 进阶现在与 `5.6 m` 前进阈值绑定。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求将 Stage1 `discrete obstacles` 的 terrain class 从 `other` 改为 `step`。
+- 同步更新 Stage1 参数详情表和项目记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `stairs down`、`stairs up`、`discrete obstacles` 均属于 `step` class。
+- `discrete obstacles` reset 时会使用 step 类向后 spawn offset，而不是 `other_spawn_xy_range`。
+
+## 2026-04-28
+
+已完成：
+- 按用户要求，根据当前 Stage1 源码参数更新 `docs/Stage1参数详情表.md`。
+- 同步更新当前状态和长期记忆。
+
+修改文件：
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 参数表已同步 `episode_length_s = 40.0`、`max_episode_length = 2400`。
+- Stage1 目标 row offset 已同步为 `1-1`，即只取下一行同列目标。
+- Stage1 场景间距已同步为 `2.0 m`。
+- Stage1 PhysX velocity iteration 已同步为 `4`，并补充接触/摩擦相关阈值。
+
+## 2026-04-28
+
+已完成：
+- 核对 Stage0 / Stage1 active observation scale，确认 Stage0 前 `54` 维 active 观测 scale 全部为 `1.0`。
+- 将 Stage1 中仍保留基础默认缩放的 `base_ang_vel`、`ball_joint_vel`、`wheel_joint_vel` 改为 `1.0`。
+- 同步更新 Stage1 参数详情表、当前状态和长期记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 warm-start 的前 `54` 维本体 / command / last action 观测 scale 当前已与 Stage0 active baseline 完全一致。
+- Stage1 新增高度图仍保持原始米制值，不额外 clip 或 scale。

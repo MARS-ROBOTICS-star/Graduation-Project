@@ -13,19 +13,29 @@
   - 训练使用 `--warmstart` 只加载 actor/critic，不加载 optimizer 和 iteration。
 - 当前 Stage1 观测策略：
   - actor / critic 均为 `54 + 34 * 27 = 972` 维。
+  - 前 `54` 维继承自 Stage0 的本体 / command / last action 观测，当前 active scale 与 Stage0 对齐，全部为 `1.0`。
   - 高度图保持原始 patch 尺寸和米制高度值，不 clip 到 `[-1, 1]`，不额外乘 scale，交由 PPO normalizer 归一化。
+- 当前 Stage1 参数详情表：`docs/Stage1参数详情表.md`。
+- 当前 `complete_car_stage1_cfg.py` 已改为 Stage1 相关参数显式配置风格，后续 Stage1 参数优先在该文件中统一修改。
+- 为避免 terrain-column target 与自由 waypoint 采样语义混淆，Stage1 cfg 不再显式写入 `commands.goal_distance` / `commands.goal_direction_max_deg`；其 reward 名义尺度改由 `rewards.params.nominal_goal_distance_m` 和 `turn_speed_angle_scale_deg` 表达。
 - 当前 Stage1 目标点逻辑：
   - 使用 terrain column / terrain type 生成目标点。
   - 目标方向沿地形列纵向 `+x`。
-  - 目标列保持同列，目标行偏移 `1-2` 行，目标点 `y` 方向允许左右随机偏移 `3 m`。
+  - 目标列保持同列，目标行固定偏移 `1` 行；除 `stairs down`、`stairs up`、`discrete obstacles` 外，目标点 `y` 方向允许左右随机偏移 `3 m`。
+  - `stairs down`、`stairs up`、`discrete obstacles` 的目标 x / y 直接使用下一行同列 tile origin，不做横向偏移。
+  - `discrete obstacles` 已归入 `step` terrain class，reset 时使用 step 类向后 spawn offset。
+  - terrain-column 目标不使用 `commands.resampling_time` 的计时重采样；目标命中或相对当前 tile origin 前进超过 `5.6 m` 时，terrain level 加 `1` 并重采样下一目标。
+  - 目标命中不会触发 Stage1 success termination，目标点只提供前进引导。
   - reset 朝向固定为 `+x`。
+  - 训练地形颜色已改为黑色 `(0.0, 0.0, 0.0)`。
+  - 当前 episode 时长为 `40.0 s`，PhysX `max_velocity_iteration_count = 4`。
 - 当前可视化训练：
   - 默认并行环境数已改为 `32`，不影响 Stage0。
   - 当前 GUI run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter`
   - 已按用户要求停止，终端最后完整输出到 PPO iteration `18/700`。
   - 该 run 当前只看到 `model_0.pt`，没有跑到默认保存间隔产生后续 checkpoint。
   - 目标点红色 marker 开启；`env_0` top/chase follow view 开启。
-  - 目标方向箭头暂不画，因为 Stage1 目标方向固定为 `+x`，且此前 GUI 下该箭头曾触发 Fabric point-instancer warning。
+  - 当前源码中的目标方向箭头开关为 `debug.visualize_goal_heading=True`。
 - 当前 Git 上传规则：
   - Stage1 当前模型、checkpoint、TensorBoard event、run diff、输出目录默认不上传 GitHub。
   - `.gitignore` 已显式忽略 `RL_Training/logs/rsl_rl/complete_car_stage1/`。

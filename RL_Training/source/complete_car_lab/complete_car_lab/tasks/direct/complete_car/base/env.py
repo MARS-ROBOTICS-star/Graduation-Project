@@ -23,7 +23,7 @@ from ..mdp.observations import (
     compute_critic_observation,
     compute_wheel_motion_observations,
 )
-from ..mdp.rewards import REWARD_TERM_NAMES, compute_reward_terms
+from ..mdp.rewards import REWARD_TERM_NAMES, compute_reward_terms, get_nominal_goal_distance
 from ..mdp.terminations import compute_done_terms
 from ..sensors.sensor_cfg import CompleteCarSensorSuiteRuntime
 from ..terrain.terrain_runtime import CompleteCarTerrainRuntime
@@ -77,6 +77,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._waypoint_heading_offsets = torch.zeros_like(self._waypoint_direction_offsets)
         self._active_waypoint_index = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._episode_waypoints_completed = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self._episode_terrain_target_advances = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._previous_goal_distance = torch.zeros(self.num_envs, device=self.device)
 
         self._joint_pos_targets = self.robot.data.default_joint_pos.clone()
@@ -192,7 +193,11 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self.last_actions.copy_(self.actions)
         self.actions.copy_(actions)
 
-        if self._num_waypoints_per_episode == 1 and self.cfg.commands.resampling_time < self.cfg.episode_length_s:
+        if (
+            not self.cfg.commands.use_terrain_column_targets
+            and self._num_waypoints_per_episode == 1
+            and self.cfg.commands.resampling_time < self.cfg.episode_length_s
+        ):
             resample_env_ids = mdp_commands.step_command_timer(self._command_time_left, self.step_dt)
             if resample_env_ids.numel() > 0:
                 base_pos_xy_w = self.robot.data.root_link_pos_w[resample_env_ids, :2]
@@ -363,6 +368,60 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._command_time_left[env_ids] = self.cfg.commands.resampling_time
         self._sync_active_waypoint_targets(env_ids)
 
+    def _get_terrain_column_progress_advance_env_ids(self, relative_goal_commands: torch.Tensor) -> torch.Tensor:
+        if (
+            not self.cfg.commands.use_terrain_column_targets
+            or self._terrain_runtime is None
+            or not self._terrain_runtime.generator_enabled
+            or self._terrain_runtime.terrain_levels is None
+        ):
+            return torch.empty(0, device=self.device, dtype=torch.long)
+
+        root_pos_w = self.robot.data.root_link_pos_w
+        forward_x_from_current_tile_origin = root_pos_w[:, 0] - self.scene.env_origins[:, 0]
+        advance_distance = (
+            float(self._terrain_runtime._terrain_cfg.terrain_length) * float(self.cfg.curriculum.move_up_distance_ratio)
+        )
+        forward_progress_hit = forward_x_from_current_tile_origin > advance_distance
+        waypoint_hit = torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1) < self.cfg.rewards.params.target_position_tolerance
+        can_advance = self._terrain_runtime.terrain_levels < max(int(self._terrain_runtime.max_terrain_level) - 1, 0)
+        blocked = (
+            self._last_done_terms["far_from_target"]
+            | self._last_done_terms["ball_joint_out_of_bounds"]
+            | self._last_done_terms["time_out"]
+        )
+        advance_mask = (forward_progress_hit | waypoint_hit) & can_advance & ~blocked
+        return torch.nonzero(advance_mask, as_tuple=False).flatten()
+
+    def _advance_terrain_column_targets(self, env_ids: torch.Tensor) -> None:
+        if (
+            env_ids.numel() == 0
+            or self._terrain_runtime is None
+            or not self._terrain_runtime.generator_enabled
+            or self._terrain_runtime.terrain_levels is None
+        ):
+            return
+
+        self._terrain_runtime.terrain_levels[env_ids] = torch.clamp(
+            self._terrain_runtime.terrain_levels[env_ids] + 1,
+            max=max(int(self._terrain_runtime.max_terrain_level) - 1, 0),
+        )
+        self._terrain_runtime.sync_env_origins(self.scene, env_ids)
+
+        base_pos_xy_w = self.robot.data.root_link_pos_w[env_ids, :2]
+        base_yaw_w = quaternion_to_rpy(self.robot.data.root_link_quat_w[env_ids])[:, 2]
+        self._active_waypoint_index[env_ids] = 0
+        self._sample_waypoint_queue(env_ids, base_pos_xy_w, base_yaw_w)
+        next_relative_goal_commands = self._compute_relative_goal_commands(env_ids)
+        self.commands[env_ids] = next_relative_goal_commands
+        self._previous_goal_distance[env_ids] = torch.linalg.vector_norm(
+            next_relative_goal_commands[:, :2],
+            dim=1,
+        )
+        self._episode_terrain_target_advances[env_ids] += 1
+        self._cached_step_relative_goal_commands = None
+        self._cached_step_raw_obs_terms = None
+
     def _advance_active_waypoints(self, env_ids: torch.Tensor) -> None:
         if env_ids.numel() == 0:
             return
@@ -464,6 +523,12 @@ class CompleteCarDirectEnv(DirectRLEnv):
 
         self._episode_total_reward_sum += total_reward
         self._last_total_reward.copy_(total_reward)
+        if self.cfg.commands.use_terrain_column_targets:
+            advance_env_ids = self._get_terrain_column_progress_advance_env_ids(relative_goal_commands)
+            if advance_env_ids.numel() > 0:
+                self._advance_terrain_column_targets(advance_env_ids)
+            return total_reward
+
         advance_env_ids = torch.nonzero(
             self._last_done_terms["waypoint_hit"]
             & ~self._last_done_terms["is_success"]
@@ -530,6 +595,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
         extras["episode/goal_direction_offset_deg"] = float(torch.mean(torch.rad2deg(self._goal_direction_offsets[env_ids])).item())
         extras["episode/goal_heading_offset_deg"] = float(torch.mean(torch.rad2deg(self._goal_heading_offsets[env_ids])).item())
         extras["episode/waypoints_completed"] = float(torch.mean(self._episode_waypoints_completed[env_ids].float()).item())
+        extras["episode/terrain_target_advances"] = float(
+            torch.mean(self._episode_terrain_target_advances[env_ids].float()).item()
+        )
         extras["episode/waypoint_completion_pct"] = float(
             torch.mean(self._episode_waypoints_completed[env_ids].float() / float(self._num_waypoints_per_episode) * 100.0).item()
         )
@@ -608,7 +676,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
         middle_pitch_deg = torch.rad2deg(middle_rpy[:, 1])
         active_waypoint_pos_error = torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1)
         active_waypoint_bearing_abs = torch.abs(relative_goal_commands[:, 3])
-        nominal_goal_distance = active_waypoint_pos_error.new_full(active_waypoint_pos_error.shape, self.cfg.commands.goal_distance)
+        nominal_goal_distance = active_waypoint_pos_error.new_full(
+            active_waypoint_pos_error.shape,
+            get_nominal_goal_distance(self.cfg),
+        )
         active_segment_distance_covered = torch.clamp(nominal_goal_distance - active_waypoint_pos_error, min=0.0)
         active_segment_completion_pct = 100.0 * active_segment_distance_covered / torch.clamp(
             nominal_goal_distance,
@@ -669,6 +740,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Tracking/active_segment_completion_pct": float(torch.mean(active_segment_completion_pct).item()),
             "Tracking/active_waypoint_index_mean": float(torch.mean(self._active_waypoint_index.float()).item()),
             "Tracking/waypoints_completed_mean": float(torch.mean(self._episode_waypoints_completed.float()).item()),
+            "Tracking/terrain_target_advances_mean": float(
+                torch.mean(self._episode_terrain_target_advances.float()).item()
+            ),
             "Tracking/episode_completion_pct": float(torch.mean(episode_completion_pct).item()),
             "Action/policy_abs_mean": float(torch.mean(torch.abs(self.actions)).item()),
             "Action/policy_std": float(self.actions.std(unbiased=False).item()),
@@ -776,6 +850,12 @@ class CompleteCarDirectEnv(DirectRLEnv):
             metrics[f"Observation/{joint_name}_limit_usage_max_raw"] = float(
                 torch.max(ball_joint_limit_usage[:, joint_index]).item()
             )
+        if self._terrain_runtime is not None and self._terrain_runtime.terrain_levels is not None:
+            forward_x_from_current_tile_origin = self.robot.data.root_link_pos_w[:, 0] - self.scene.env_origins[:, 0]
+            metrics["Terrain/current_level_mean"] = float(torch.mean(self._terrain_runtime.terrain_levels.float()).item())
+            metrics["Terrain/forward_x_from_current_tile_origin_mean"] = float(
+                torch.mean(forward_x_from_current_tile_origin).item()
+            )
         return metrics
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
@@ -788,15 +868,16 @@ class CompleteCarDirectEnv(DirectRLEnv):
         terrain_metrics = None
         if self._terrain_runtime is not None:
             self.commands.copy_(self._compute_relative_goal_commands())
-            terrain_metrics = mdp_curriculum.update_terrain_curriculum(
-                self.cfg.curriculum,
-                self._terrain_runtime,
-                self.scene,
-                self.robot,
-                env_ids,
-                self.commands,
-                self.cfg.episode_length_s,
-            )
+            if not self.cfg.commands.use_terrain_column_targets:
+                terrain_metrics = mdp_curriculum.update_terrain_curriculum(
+                    self.cfg.curriculum,
+                    self._terrain_runtime,
+                    self.scene,
+                    self.robot,
+                    env_ids,
+                    self.commands,
+                    self.cfg.episode_length_s,
+                )
         self.extras["log"] = self._collect_episode_logs(env_ids, terrain_metrics)
         super()._reset_idx(env_ids)
 
@@ -818,6 +899,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         reset_yaw_w = quaternion_to_rpy(root_state[:, 3:7])[:, 2]
         self._active_waypoint_index[env_ids] = 0
         self._episode_waypoints_completed[env_ids] = 0
+        self._episode_terrain_target_advances[env_ids] = 0
         self._sample_waypoint_queue(
             env_ids,
             reset_pos_xy_w,
@@ -896,6 +978,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             root_yaws_w,
             top_height=self.cfg.debug.follow_view_top_height,
             chase_env_index=self.cfg.debug.follow_view_chase_env_index,
+            chase_env_indices=self.cfg.debug.follow_view_chase_env_indices,
             chase_offset_b=self.cfg.debug.follow_view_chase_offset_b,
             chase_target_offset_b=self.cfg.debug.follow_view_chase_target_offset_b,
         )

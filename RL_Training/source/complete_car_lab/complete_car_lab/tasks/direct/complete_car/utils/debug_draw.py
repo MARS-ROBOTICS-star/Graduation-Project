@@ -141,6 +141,7 @@ class CompleteCarDebugDraw:
         *,
         top_height: float,
         chase_env_index: int,
+        chase_env_indices: tuple[int, ...] = (),
         chase_offset_b: tuple[float, float, float],
         chase_target_offset_b: tuple[float, float, float],
     ) -> None:
@@ -151,7 +152,12 @@ class CompleteCarDebugDraw:
         root_positions = root_positions_w.detach().cpu()
         root_yaws = root_yaws_w.detach().cpu()
         num_envs = int(root_positions.shape[0])
-        view_env_ids = (chase_env_index,) if 0 <= chase_env_index < num_envs else (0,)
+        if chase_env_indices:
+            view_env_ids = tuple(sorted({int(env_id) for env_id in chase_env_indices if 0 <= int(env_id) < num_envs}))
+        else:
+            view_env_ids = (chase_env_index,) if 0 <= chase_env_index < num_envs else (0,)
+        if not view_env_ids:
+            view_env_ids = (0,)
         self._ensure_follow_view_paths(view_env_ids, chase_env_index)
 
         for env_id in view_env_ids:
@@ -160,9 +166,9 @@ class CompleteCarDebugDraw:
             target = (float(root_pos[0]), float(root_pos[1]), float(root_pos[2]))
             sim.set_camera_view(eye=eye, target=target, camera_prim_path=f"{self._view_root_path}/env_{env_id}/top_down_camera")
 
-        if 0 <= chase_env_index < num_envs:
-            root_pos = root_positions[chase_env_index]
-            yaw = float(root_yaws[chase_env_index])
+        for env_id in view_env_ids:
+            root_pos = root_positions[env_id]
+            yaw = float(root_yaws[env_id])
             eye_offset = self._rotate_planar_offset(chase_offset_b, yaw)
             target_offset = self._rotate_planar_offset(chase_target_offset_b, yaw)
             eye = (
@@ -178,7 +184,7 @@ class CompleteCarDebugDraw:
             sim.set_camera_view(
                 eye=eye,
                 target=target,
-                camera_prim_path=f"{self._view_root_path}/env_{chase_env_index}/chase_camera",
+                camera_prim_path=f"{self._view_root_path}/env_{env_id}/chase_camera",
             )
 
     def _ensure_goal_pose_visualizers(self) -> None:
@@ -212,9 +218,7 @@ class CompleteCarDebugDraw:
         for env_id in view_env_ids:
             self._create_xform_if_missing(f"{self._view_root_path}/env_{env_id}")
             self._create_camera_if_missing(f"{self._view_root_path}/env_{env_id}/top_down_camera")
-        if chase_env_index in view_env_ids:
-            self._create_xform_if_missing(f"{self._view_root_path}/env_{chase_env_index}")
-            self._create_camera_if_missing(f"{self._view_root_path}/env_{chase_env_index}/chase_camera")
+            self._create_camera_if_missing(f"{self._view_root_path}/env_{env_id}/chase_camera")
         self._follow_view_count = len(view_env_ids)
         self._follow_view_chase_env_index = chase_env_index
         self._follow_view_env_ids = view_env_ids

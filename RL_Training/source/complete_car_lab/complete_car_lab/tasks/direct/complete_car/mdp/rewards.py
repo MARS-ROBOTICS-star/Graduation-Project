@@ -19,6 +19,28 @@ REWARD_TERM_NAMES = (
 )
 
 
+def get_nominal_goal_distance(cfg) -> float:
+    """Return the reward/termination distance scale without tying Stage1 to waypoint sampling fields."""
+
+    value = float(getattr(cfg.rewards.params, "nominal_goal_distance_m", 0.0))
+    if value > 0.0:
+        return value
+    return float(cfg.commands.goal_distance)
+
+
+def get_turn_speed_angle_scale_rad(cfg) -> float:
+    """Return the turn-speed penalty angle scale.
+
+    Negative values preserve the legacy behavior of reading the command sampler's
+    free-waypoint direction range.
+    """
+
+    value = float(getattr(cfg.rewards.params, "turn_speed_angle_scale_deg", -1.0))
+    if value >= 0.0:
+        return math.radians(value)
+    return math.radians(cfg.commands.goal_direction_max_deg)
+
+
 def compute_reward_terms(
     cfg,
     commands: torch.Tensor,
@@ -49,7 +71,7 @@ def compute_reward_terms(
     if params.progress_to_target_relax_radius_m > 0.0:
         near_goal_mask = current_goal_distance <= params.progress_to_target_relax_radius_m
         progress_delta = torch.where(near_goal_mask, torch.clamp(progress_delta, min=0.0), progress_delta)
-    goal_distance_f = max(float(cfg.commands.goal_distance), 1.0e-6)
+    goal_distance_f = max(get_nominal_goal_distance(cfg), 1.0e-6)
     positive_progress = torch.clamp(progress_delta, min=0.0) / goal_distance_f
     negative_progress = torch.clamp(progress_delta, max=0.0) / goal_distance_f
     mean_longitudinal_slip = torch.mean(torch.abs(wheel_longitudinal_slip), dim=1)
@@ -74,7 +96,7 @@ def compute_reward_terms(
     ungated_progress_to_target = positive_progress + negative_progress
     progress_to_target = progress_multiplier * positive_progress + negative_progress
     reached_target = waypoint_hit_mask.float() * params.reached_target_base_reward * reward_scale
-    far_from_target_threshold = cfg.commands.goal_distance + params.far_from_target_margin
+    far_from_target_threshold = goal_distance_f + params.far_from_target_margin
     far_from_target = torch.where(
         current_goal_distance > far_from_target_threshold,
         torch.ones_like(current_goal_distance),
@@ -84,7 +106,7 @@ def compute_reward_terms(
         (1.0 / (1.0 + torch.abs(goal_heading_error)))
         / max_episode_length_f
     )
-    turn_angle_scale = max(math.radians(cfg.commands.goal_direction_max_deg), 1.0e-6)
+    turn_angle_scale = max(get_turn_speed_angle_scale_rad(cfg), 1.0e-6)
     turn_intensity = torch.clamp(torch.abs(goal_heading_error) / turn_angle_scale, min=0.0, max=1.0)
     planar_speed = torch.linalg.vector_norm(base_lin_vel_b[:, :2], dim=1)
     normalized_planar_speed = planar_speed / max(float(cfg.control.base_forward_velocity_max), 1.0e-6)

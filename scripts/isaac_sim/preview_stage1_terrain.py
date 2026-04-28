@@ -74,7 +74,7 @@ class Stage1PreviewSceneCfg(InteractiveSceneCfg):
         prim_path="/World/terrain",
         terrain_type="plane",
         collision_group=-1,
-        visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.42, 0.38, 0.30)),
+        visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 0.0, 0.0)),
         physics_material=sim_utils.RigidBodyMaterialCfg(
             friction_combine_mode="multiply",
             restitution_combine_mode="multiply",

@@ -207,6 +207,11 @@ def sample_terrain_column_waypoint_command_sequences(
 
     tile_half_width = 0.5 * float(terrain_runtime._terrain_cfg.terrain_width)
     lateral_range = min(max(float(getattr(cfg, "terrain_goal_lateral_range_m", 3.0)), 0.0), max(tile_half_width, 0.0))
+    excluded_lateral_names = set(getattr(cfg, "terrain_goal_lateral_offset_excluded_names", ()))
+    terrain_names = tuple(getattr(terrain_runtime._terrain_cfg, "terrain_names", ()))
+    excluded_lateral_type_indices = tuple(
+        terrain_idx for terrain_idx, terrain_name in enumerate(terrain_names) if terrain_name in excluded_lateral_names
+    )
 
     direction_offsets = torch.zeros((num_envs, num_waypoints), device=device, dtype=dtype)
     heading_offsets = torch.zeros_like(direction_offsets)
@@ -223,10 +228,17 @@ def sample_terrain_column_waypoint_command_sequences(
         target_origins = terrain_runtime.get_tile_origins(target_levels, terrain_types).to(device=device, dtype=dtype)
         target_xy_w = target_origins[:, :2].clone()
         if lateral_range > 0.0:
-            target_xy_w[:, 1] += torch.empty(num_envs, device=device, dtype=dtype).uniform_(
+            lateral_offsets = torch.empty(num_envs, device=device, dtype=dtype).uniform_(
                 -lateral_range,
                 lateral_range,
             )
+            if excluded_lateral_type_indices:
+                target_type_indices = terrain_runtime.get_tile_type_indices(target_levels, terrain_types)
+                no_lateral_mask = torch.zeros(num_envs, device=device, dtype=torch.bool)
+                for terrain_type_idx in excluded_lateral_type_indices:
+                    no_lateral_mask |= target_type_indices == int(terrain_type_idx)
+                lateral_offsets = torch.where(no_lateral_mask, torch.zeros_like(lateral_offsets), lateral_offsets)
+            target_xy_w[:, 1] += lateral_offsets
 
         if sample_height_fn is None:
             target_z_w = torch.zeros(num_envs, device=device, dtype=dtype)

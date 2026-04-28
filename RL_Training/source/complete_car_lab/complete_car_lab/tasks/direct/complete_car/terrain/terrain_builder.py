@@ -124,7 +124,7 @@ def _make_subterrain(cfg: Stage1TerrainCfg) -> _SubTerrain:
 
 
 def get_terrain_class_from_name(terrain_name: str) -> int:
-    if terrain_name in {"stairs down", "stairs up", "new stairs down"}:
+    if terrain_name in {"stairs down", "stairs up", "discrete obstacles", "new stairs down"}:
         return STAGE1_TERRAIN_CLASS_STEP
     if terrain_name in {"gap", "pit"}:
         return STAGE1_TERRAIN_CLASS_GAP

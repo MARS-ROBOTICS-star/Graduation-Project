@@ -26,7 +26,7 @@ class CommandCfg:
 
     num_commands: int = 4
     num_waypoints_per_episode: int = 1
-    resampling_time: float = 5.0  # 目标重采样周期，单位：s。
+    resampling_time: float = 5.0  # 普通 waypoint 的计时重采样周期；terrain-column 目标不使用该计时器。
     goal_distance: float = 20
     goal_direction_max_deg: float = 18.43
     min_segment_turn_deg: float = 0.0
@@ -37,6 +37,11 @@ class CommandCfg:
     terrain_goal_min_row_offset: int = 1
     terrain_goal_max_row_offset: int = 2
     terrain_goal_lateral_range_m: float = 3.0
+    terrain_goal_lateral_offset_excluded_names: tuple[str, ...] = (
+        "stairs down",
+        "stairs up",
+        "discrete obstacles",
+    )
 
 
 @configclass
@@ -133,6 +138,8 @@ class RewardParamsCfg:
     target_yaw_tolerance_deg: float = math.degrees(0.1)
     distance_to_target_denominator_scale: float = 0.01
     distance_to_target_weight: float = 6.0
+    nominal_goal_distance_m: float = 0.0
+    turn_speed_angle_scale_deg: float = -1.0
     progress_to_target_clip_m: float = 0.25
     progress_to_target_relax_radius_m: float = 4.0
     progress_to_target_weight: float = 8.0
@@ -235,6 +242,7 @@ class DebugCfg:
     create_follow_views: bool = False
     follow_view_top_height: float = 2.5
     follow_view_chase_env_index: int = 0
+    follow_view_chase_env_indices: tuple[int, ...] = ()
     follow_view_chase_offset_b: tuple[float, float, float] = (-4.0, -3.0, 2.4)
     follow_view_chase_target_offset_b: tuple[float, float, float] = (1.0, 0.0, 0.4)
     log_sensor_outputs: bool = True

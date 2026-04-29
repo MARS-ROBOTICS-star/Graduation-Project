@@ -44,6 +44,12 @@ parser.add_argument("--checkpoint", type=str, default=None)
 parser.add_argument("--logger", type=str, default=None, choices={"wandb", "tensorboard", "neptune"})
 parser.add_argument("--log_project_name", type=str, default=None)
 parser.add_argument(
+    "--record_only",
+    action="store_true",
+    default=False,
+    help="Load a checkpoint and run policy inference only, without PPO updates.",
+)
+parser.add_argument(
     "--hide_goal_vis",
     action="store_true",
     default=False,
@@ -83,6 +89,18 @@ parser.add_argument(
 )
 parser.add_argument("--terrain_chase_video_length_s", type=float, default=120.0)
 parser.add_argument("--terrain_chase_video_seed", type=int, default=None)
+parser.add_argument(
+    "--terrain_chase_selection_file",
+    type=str,
+    default=None,
+    help="Reuse an existing terrain_chase/selection.txt instead of rescoring envs.",
+)
+parser.add_argument(
+    "--terrain_chase_start_from",
+    type=int,
+    default=1,
+    help="1-based selected-video index to start from when using an existing selection file.",
+)
 parser.add_argument(
     "--terrain_chase_selection_steps",
     type=int,
@@ -175,6 +193,40 @@ def _build_terrain_chase_candidates(raw_env, *, mode: str) -> dict[tuple[int | s
     return groups
 
 
+def _parse_terrain_chase_selection_file(selection_file: str) -> list[dict[str, int | float | str]]:
+    selected: list[dict[str, int | float | str]] = []
+    selection_path = Path(selection_file).expanduser().resolve()
+    with selection_path.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line.startswith("env="):
+                continue
+            values: dict[str, str] = {}
+            for field in line.split(","):
+                if "=" not in field:
+                    continue
+                key, value = field.split("=", 1)
+                values[key.strip()] = value.strip()
+            output_name = values["file"]
+            output_stem = Path(output_name).stem
+            group_label = output_stem.rsplit("_env", 1)[0] if "_env" in output_stem else output_stem
+            selected.append(
+                {
+                    "env_id": int(values["env"]),
+                    "terrain_level": int(values["level"]),
+                    "terrain_column": int(values["column"]),
+                    "terrain_index": int(values["terrain_index"]),
+                    "terrain_name": values["terrain_name"],
+                    "group_label": group_label,
+                    "output_name": output_name,
+                    "selection_score_forward_x_m": float(values.get("score_forward_x_m", "0.0")),
+                }
+            )
+    if not selected:
+        raise RuntimeError(f"No selected terrain chase envs were found in: {selection_path}")
+    return selected
+
+
 class TerrainChaseVideoRecorder(gym.Wrapper):
     """Stream Stage1 chassis-follow videos from selected follow-view cameras during training."""
 
@@ -187,12 +239,21 @@ class TerrainChaseVideoRecorder(gym.Wrapper):
         seed: int,
         video_length_s: float,
         selection_steps: int,
+        selection_file: str | None = None,
+        start_from: int = 1,
     ):
         super().__init__(env)
         self._raw_env = env.unwrapped
         del seed
-        self._candidate_groups = _build_terrain_chase_candidates(self._raw_env, mode=mode)
-        self._selected_envs: list[dict[str, int | str]] = []
+        selection_path = Path(selection_file).expanduser().resolve() if selection_file else None
+        self._candidate_groups = (
+            {}
+            if selection_path is not None
+            else _build_terrain_chase_candidates(self._raw_env, mode=mode)
+        )
+        self._selected_envs: list[dict[str, int | float | str]] = (
+            _parse_terrain_chase_selection_file(str(selection_path)) if selection_path is not None else []
+        )
         self._selection_steps = max(1, int(selection_steps))
         self._selection_frame = 0
         self._selection_start_root_x = self._raw_env.robot.data.root_link_pos_w[:, 0].detach().clone()
@@ -201,24 +262,43 @@ class TerrainChaseVideoRecorder(gym.Wrapper):
         self._target_frames = max(1, int(round(video_length_s / float(self._raw_env.step_dt))))
         self._video_length_label = f"{int(round(video_length_s))}s"
         self._closed = False
-        self._video_folder = os.path.join(log_dir, "videos", "terrain_chase")
+        self._video_folder = (
+            str(selection_path.parent)
+            if selection_path is not None
+            else os.path.join(log_dir, "videos", "terrain_chase")
+        )
         self._fps = round(1.0 / float(self._raw_env.step_dt))
-        self._active_index = 0
+        self._active_index = max(0, int(start_from) - 1)
         self._active_frame = 0
         self._active_writer = None
         self._active_annotator = None
         self._active_render_product = None
-        self._selection_written = False
+        self._selection_written = selection_path is not None
 
         if hasattr(self._raw_env, "_update_follow_views"):
             self._raw_env._update_follow_views()
 
         os.makedirs(self._video_folder, exist_ok=True)
-        print(
-            "[INFO] Terrain chase selection started: "
-            f"mode={mode}, groups={len(self._candidate_groups)}, selection_steps={self._selection_steps}",
-            flush=True,
-        )
+        if self._selected_envs:
+            total = len(self._selected_envs)
+            if self._active_index >= total:
+                self._closed = True
+                print(
+                    f"[INFO] Terrain chase resume start {self._active_index + 1}/{total} exceeds selection count; nothing to record.",
+                    flush=True,
+                )
+            else:
+                print(
+                    "[INFO] Terrain chase resume loaded: "
+                    f"selection_file={selection_path}, start={self._active_index + 1}/{total}",
+                    flush=True,
+                )
+        else:
+            print(
+                "[INFO] Terrain chase selection started: "
+                f"mode={mode}, groups={len(self._candidate_groups)}, selection_steps={self._selection_steps}",
+                flush=True,
+            )
 
     def step(self, action):
         result = self.env.step(action)
@@ -330,7 +410,7 @@ class TerrainChaseVideoRecorder(gym.Wrapper):
         item = self._selected_envs[self._active_index]
         env_id = int(item["env_id"])
         label = _safe_filename_part(str(item["group_label"]))
-        output_name = f"{label}_env{env_id:02d}_chase_{self._video_length_label}.mp4"
+        output_name = str(item.get("output_name") or f"{label}_env{env_id:02d}_chase_{self._video_length_label}.mp4")
         output_path = os.path.join(self._video_folder, output_name)
         camera_prim_path = f"/view/env_{env_id}/chase_camera"
         render_product = rep.create.render_product(camera_prim_path, resolution=self._raw_env.cfg.viewer.resolution)
@@ -372,6 +452,10 @@ class TerrainChaseVideoRecorder(gym.Wrapper):
     def close(self):
         self._close_recorder()
         return self.env.close()
+
+    @property
+    def is_finished(self) -> bool:
+        return self._closed
 
 
 def _update_agent_cfg(agent_cfg):
@@ -431,15 +515,21 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         env_cfg.debug.follow_view_chase_env_indices = tuple(range(env_cfg.scene.num_envs))
 
     log_root_path = os.path.abspath(os.path.join("logs", "rsl_rl", agent_cfg.experiment_name))
-    log_dir = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    print(f"Exact experiment name requested from command line: {log_dir}")
-    if agent_cfg.run_name:
-        log_dir += f"_{agent_cfg.run_name}"
-    log_dir = os.path.join(log_root_path, log_dir)
+    selection_path = Path(args_cli.terrain_chase_selection_file).expanduser().resolve() if args_cli.terrain_chase_selection_file else None
+    if args_cli.record_only and selection_path is not None:
+        log_dir = str(selection_path.parents[2])
+        print(f"[INFO] Reusing existing terrain chase run directory: {log_dir}")
+    else:
+        log_dir = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        print(f"Exact experiment name requested from command line: {log_dir}")
+        if agent_cfg.run_name:
+            log_dir += f"_{agent_cfg.run_name}"
+        log_dir = os.path.join(log_root_path, log_dir)
     env_cfg.log_dir = log_dir
 
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
-    if agent_cfg.resume:
+    needs_checkpoint = agent_cfg.resume or args_cli.record_only
+    if needs_checkpoint:
         run_pattern, checkpoint_pattern = _resolve_checkpoint_lookup_args(agent_cfg)
         resume_path = get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
     else:
@@ -454,24 +544,30 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         }
         print_dict(video_kwargs, nesting=4)
         env = gym.wrappers.RecordVideo(env, **video_kwargs)
+    terrain_chase_recorder = None
     if args_cli.record_terrain_chase_videos:
         terrain_chase_seed = args_cli.terrain_chase_video_seed
         if terrain_chase_seed is None:
             terrain_chase_seed = int(agent_cfg.seed if agent_cfg.seed is not None else time.time())
-        env = TerrainChaseVideoRecorder(
+        terrain_chase_recorder = TerrainChaseVideoRecorder(
             env,
             log_dir=log_dir,
             mode=args_cli.terrain_chase_video_mode,
             seed=terrain_chase_seed,
             video_length_s=args_cli.terrain_chase_video_length_s,
             selection_steps=args_cli.terrain_chase_selection_steps,
+            selection_file=args_cli.terrain_chase_selection_file,
+            start_from=args_cli.terrain_chase_start_from,
         )
+        env = terrain_chase_recorder
 
     start_time = time.time()
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
     try:
-        runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
-        runner.add_git_repo_to_log(__file__)
+        runner_log_dir = None if args_cli.record_only else log_dir
+        runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=runner_log_dir, device=agent_cfg.device)
+        if not args_cli.record_only:
+            runner.add_git_repo_to_log(__file__)
 
         if resume_path is not None:
             print(f"[INFO] Loading checkpoint from: {resume_path}")
@@ -483,10 +579,22 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
             else:
                 runner.load(resume_path)
 
-        dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
-        dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
-        runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
-        print(f"Training time: {round(time.time() - start_time, 2)} seconds")
+        if args_cli.record_only:
+            policy = runner.get_inference_policy(device=env.unwrapped.device)
+            obs = env.get_observations()
+            while simulation_app.is_running():
+                with torch.inference_mode():
+                    actions = policy(obs, stochastic_output=True)
+                    obs, _, dones, _ = env.step(actions)
+                    policy.reset(dones)
+                if terrain_chase_recorder is not None and terrain_chase_recorder.is_finished:
+                    break
+            print(f"Record-only runtime: {round(time.time() - start_time, 2)} seconds")
+        else:
+            dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
+            dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
+            runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+            print(f"Training time: {round(time.time() - start_time, 2)} seconds")
     finally:
         env.close()
 

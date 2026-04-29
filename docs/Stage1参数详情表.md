@@ -8,14 +8,15 @@
 
 当前 `complete_car_stage1_cfg.py` 采用本阶段显式配置风格，但只保留 Stage1 直接相关或当前 active 的参数。terrain-column target 不再在 Stage1 配置中显式写入自由 waypoint 采样参数，例如 `commands.goal_distance` 和 `commands.goal_direction_max_deg`。
 
-当前详表以当前源码配置为准。最近一次已验证可启动的可视化训练 run 为：
+当前详表以当前源码配置为准。当前正在运行的 headless 训练 run 为：
 
-- run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter`
-- env 参数快照：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter/params/env.yaml`
-- agent 参数快照：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter/params/agent.yaml`
+- run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-29_07-37-58_stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter`
+- env 参数快照：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-29_07-37-58_stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter/params/env.yaml`
+- agent 参数快照：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-29_07-37-58_stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter/params/agent.yaml`
 - warm-start checkpoint：`RL_Training/logs/rsl_rl/complete_car_stage1/warmstart_best_baseline_2/model_0.pt`
+- runtime log：`RL_Training/logs/runtime/stage1_32env_best_per_terrain_chase_setsid.log`
 
-该 run 已按用户要求在 PPO iteration `18/700` 后停止，因此它是一次已验证可启动的 GUI warm-start 训练，不是完整收敛训练。当前源码已在该 run 之后继续调整，本文档中的参数表以源码当前值为准，而不是以上 run 的旧参数快照。
+该 run 使用 `32` env、headless、`700` iterations、`best_baseline_2` warm-start，并启用按地形选择最佳 env 后依次录制 `120 s` chase 视频。2026-04-28 的 GUI run `2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter` 已按用户要求在 PPO iteration `18/700` 后停止，只作为历史启动验证记录。
 
 ## 0. 对应源码
 
@@ -49,8 +50,8 @@
 | `scene.num_envs` | `32` | 当前 GUI 训练默认并行环境数 |
 | `scene.env_spacing` | `2.0 m` | 环境克隆间距 |
 | `action_space` | `8` | policy 动作维度 |
-| `observation_space.actor` | `972` | actor 观测维度 |
-| `observation_space.critic` | `972` | critic 观测维度 |
+| `observation_space.actor` | `632` | actor 观测维度 |
+| `observation_space.critic` | `632` | critic 观测维度 |
 | `state_space` | `0` | 当前不使用额外 privileged state |
 | `episode_length_s` | `40.0 s` | 单个 episode 最大时长 |
 | `control.sim_dt` | `1 / 120 s` | PhysX 仿真步长 |
@@ -80,7 +81,7 @@
 |---|---:|---|
 | runner | `OnPolicyRunner` | RSL-RL on-policy runner |
 | `experiment_name` | `complete_car_stage1` | 日志根目录名 |
-| `run_name` | `stage1_warmstart_best_baseline_2_32env_view_700iter` | 当前 GUI run 名 |
+| `run_name` | `stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter` | 当前 headless run 名 |
 | `seed` | `1` | 随机种子 |
 | `device` | `cuda:0` | 训练设备 |
 | `num_steps_per_env` | `512` | 每次 PPO rollout 的每环境步数 |
@@ -132,22 +133,22 @@
 | Stage0 来源 run | `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2` |
 | Stage0 来源 checkpoint | `model_699.pt` |
 | Stage0 actor / critic obs dim | `54` |
-| Stage1 actor / critic obs dim | `972` |
+| Stage1 actor / critic obs dim | `632` |
 | Stage1 warm-start checkpoint | `RL_Training/logs/rsl_rl/complete_car_stage1/warmstart_best_baseline_2/model_0.pt` |
 | Stage1 warm-start 加载方式 | `--warmstart` |
 
 Stage0 checkpoint 不能直接作为 Stage1 resume 使用，因为 actor / critic 第一层输入维度和 obs normalizer 维度不同。当前转换方式是：
 
-- actor / critic 第一层从 `54` 维扩展到 `972` 维。
+- actor / critic 第一层从 `54` 维扩展到 `632` 维。
 - 前 `54` 维继承 Stage0 权重。
 - 新增高度图维度的第一层权重初始化为 `0`。
 - obs normalizer 的新增维度均值为 `0`，方差和标准差为 `1`。
 - `--warmstart` 只加载 actor / critic，不加载 optimizer 和 iteration。
 
-当前 GUI warm-start 训练命令口径：
+当前 headless warm-start 训练命令口径：
 
 ```bash
-env TERM=xterm MPLCONFIGDIR=/tmp/matplotlib OMNI_KIT_ACCEPT_EULA=YES /home/ubuntu/IsaacLab/isaaclab.sh -p scripts/train.py --task CompleteCar-Stage1 --device cuda:0 --num_envs 32 --max_iterations 700 --run_name stage1_warmstart_best_baseline_2_32env_view_700iter --resume --warmstart --load_run warmstart_best_baseline_2 --checkpoint model_0.pt
+python scripts/train.py --task CompleteCar-Stage1 --headless --device cuda:0 --num_envs 32 --resume --warmstart --load_run warmstart_best_baseline_2 --checkpoint model_0.pt --max_iterations 700 --run_name stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter --record_terrain_chase_videos --terrain_chase_video_length_s 120 --terrain_chase_video_mode per_name --terrain_chase_selection_steps 600 --follow_all_envs --hide_goal_heading --hide_wheel_slip_vis
 ```
 
 ## 3. 场景与仿真
@@ -391,13 +392,13 @@ reset 位置先加当前 terrain tile origin，再加 `root_x_range` / `root_y_r
 Stage1 actor 和 critic 使用同一份观测：
 
 $$
-972 = 54 + 34 \times 27
+632 = 54 + 34 \times 17
 $$
 
 其中：
 
 - `54` 是 Stage0 继承来的 proprioception / command / last action 观测。
-- `34 * 27 = 918` 是 Stage1 地形高度 patch。
+- `34 * 17 = 578` 是 Stage1 地形高度 patch。
 
 ### 8.2 观测分量顺序
 
@@ -413,7 +414,7 @@ $$
 | `wheel_normal_contact_force` | `6` | `1.0` | 6 个车轮归一化法向接触力 |
 | `goal_relative_command` | `4` | `1.0` | 车体系相对目标命令 |
 | `last_action` | `8` | `1.0` | 上一帧 policy action |
-| `terrain_height_patch` | `918` | 原始米制值 | Stage1 地形高度 patch |
+| `terrain_height_patch` | `578` | 原始米制值 | Stage1 地形高度 patch |
 
 当前配置类中仍存在 `projected_gravity`、`ball_joint_target_error`、`module_roll_pitch` 等 scale 字段，但当前 `build_observation_descriptor()` 和 `compute_actor_observation_from_raw_terms()` 不把这些项拼入 actor / critic 观测。
 
@@ -439,7 +440,7 @@ $$
 | `terrain.patch_half_width` | `0.280374 m` | 半车宽 |
 | `terrain.patch_preview_length` | `1.0 m` | 车头前方 preview 长度 |
 | `terrain.patch_rear_margin` | `0.40 m` | 车尾后方额外余量 |
-| `terrain.patch_side_margin` | `1.0 m` | 左右额外余量 |
+| `terrain.patch_side_margin` | `0.5 m` | 左右额外余量 |
 | `terrain.patch_origin_offset_xy` | `(0.0, 0.0)` | patch 相对中车参考点平移 |
 | `terrain.patch_resolution_x` | `0.10 m` | x 方向目标采样间距 |
 | `terrain.patch_resolution_y` | `0.10 m` | y 方向目标采样间距 |
@@ -449,12 +450,12 @@ $$
 | 轴 | 范围 | 点数 |
 |---|---:|---:|
 | local x | `[-1.342209, 1.942209] m` | `34` |
-| local y | `[-1.280374, 1.280374] m` | `27` |
+| local y | `[-0.780374, 0.780374] m` | `17` |
 
 因此高度图总维度为：
 
 $$
-34 \times 27 = 918
+34 \times 17 = 578
 $$
 
 ### 9.2 patch 数值语义
@@ -727,15 +728,16 @@ Stage1 cfg 不显式设置目标 yaw tolerance、整车姿态阈值、首尾模�
 | 参数 | 当前值 |
 |---|---:|
 | `debug.enable_debug_draw` | `True` |
-| `debug.visualize_goal_heading` | `True` |
+| `debug.visualize_goal_heading` | `True`，本次 headless 录制命令用 `--hide_goal_heading` 临时关闭 |
 | `debug.visualize_wheel_slip` | `False` |
 | `debug.create_follow_views` | `True` |
 | `debug.follow_view_top_height` | `8.0` |
 | `debug.follow_view_chase_env_index` | `0` |
+| `debug.follow_view_chase_env_indices` | 录制命令用 `--follow_all_envs` 设置为全部 `32` 个 env |
 | `debug.follow_view_chase_offset_b` | `(-4.0, -3.0, 2.4)` |
 | `debug.follow_view_chase_target_offset_b` | `(1.0, 0.0, 0.4)` |
 
-当前目标点红色 marker 开启，目标方向箭头开启。
+当前目标点红色 marker 开启。本次 headless 录制为保留目标点 marker 但关闭目标方向箭头和 wheel-slip 箭头。
 
 ## 13. TensorBoard 主要指标
 

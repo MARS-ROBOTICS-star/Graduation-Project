@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import random
 import re
 import sys
 import time
@@ -85,6 +84,12 @@ parser.add_argument(
 parser.add_argument("--terrain_chase_video_length_s", type=float, default=120.0)
 parser.add_argument("--terrain_chase_video_seed", type=int, default=None)
 parser.add_argument(
+    "--terrain_chase_selection_steps",
+    type=int,
+    default=600,
+    help="Number of training steps used to score envs before choosing the best env in each terrain group.",
+)
+parser.add_argument(
     "--terrain_chase_video_mode",
     type=str,
     choices={"per_column", "per_name"},
@@ -133,7 +138,7 @@ def _terrain_name_from_index(terrain_cfg, terrain_idx: int) -> str:
     return f"terrain_{terrain_idx}"
 
 
-def _select_terrain_chase_envs(raw_env, *, mode: str, seed: int) -> list[dict[str, int | str]]:
+def _build_terrain_chase_candidates(raw_env, *, mode: str) -> dict[tuple[int | str, ...], list[dict[str, int | str]]]:
     terrain_runtime = getattr(raw_env, "_terrain_runtime", None)
     if terrain_runtime is None or terrain_runtime.terrain_types is None or terrain_runtime.terrain_levels is None:
         raise RuntimeError("Terrain chase video recording requires an initialized terrain runtime.")
@@ -167,11 +172,7 @@ def _select_terrain_chase_envs(raw_env, *, mode: str, seed: int) -> list[dict[st
             }
         )
 
-    rng = random.Random(seed)
-    selected = []
-    for group_key in sorted(groups):
-        selected.append(rng.choice(groups[group_key]))
-    return selected
+    return groups
 
 
 class TerrainChaseVideoRecorder(gym.Wrapper):
@@ -185,95 +186,191 @@ class TerrainChaseVideoRecorder(gym.Wrapper):
         mode: str,
         seed: int,
         video_length_s: float,
+        selection_steps: int,
     ):
         super().__init__(env)
         self._raw_env = env.unwrapped
-        self._selected_envs = _select_terrain_chase_envs(self._raw_env, mode=mode, seed=seed)
+        del seed
+        self._candidate_groups = _build_terrain_chase_candidates(self._raw_env, mode=mode)
+        self._selected_envs: list[dict[str, int | str]] = []
+        self._selection_steps = max(1, int(selection_steps))
+        self._selection_frame = 0
+        self._selection_start_root_x = self._raw_env.robot.data.root_link_pos_w[:, 0].detach().clone()
+        self._selection_prev_root_x = self._selection_start_root_x.clone()
+        self._selection_positive_forward_x = torch.zeros(self._raw_env.num_envs, device=self._raw_env.device)
         self._target_frames = max(1, int(round(video_length_s / float(self._raw_env.step_dt))))
-        self._frame = 0
+        self._video_length_label = f"{int(round(video_length_s))}s"
         self._closed = False
-        self._writers = []
-        self._annotators = []
+        self._video_folder = os.path.join(log_dir, "videos", "terrain_chase")
+        self._fps = round(1.0 / float(self._raw_env.step_dt))
+        self._active_index = 0
+        self._active_frame = 0
+        self._active_writer = None
+        self._active_annotator = None
+        self._active_render_product = None
+        self._selection_written = False
 
         if hasattr(self._raw_env, "_update_follow_views"):
             self._raw_env._update_follow_views()
 
-        import imageio.v2 as imageio
-        import omni.replicator.core as rep
-
-        video_folder = os.path.join(log_dir, "videos", "terrain_chase")
-        os.makedirs(video_folder, exist_ok=True)
-        selection_path = os.path.join(video_folder, "selection.txt")
-        fps = round(1.0 / float(self._raw_env.step_dt))
-
-        with open(selection_path, "w", encoding="utf-8") as selection_file:
-            selection_file.write(f"mode={mode}\n")
-            selection_file.write(f"seed={seed}\n")
-            selection_file.write(f"target_frames={self._target_frames}\n")
-            selection_file.write(f"fps={fps}\n")
-            for item in self._selected_envs:
-                env_id = int(item["env_id"])
-                label = _safe_filename_part(str(item["group_label"]))
-                terrain_name = str(item["terrain_name"])
-                output_name = f"{label}_env{env_id:02d}_chase_120s.mp4"
-                output_path = os.path.join(video_folder, output_name)
-                camera_prim_path = f"/view/env_{env_id}/chase_camera"
-                render_product = rep.create.render_product(camera_prim_path, resolution=self._raw_env.cfg.viewer.resolution)
-                if not isinstance(render_product, str):
-                    render_product = render_product.path
-                annotator = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
-                annotator.attach(render_product)
-                writer = imageio.get_writer(
-                    output_path,
-                    fps=fps,
-                    codec="libx264",
-                    macro_block_size=None,
-                )
-                self._annotators.append(annotator)
-                self._writers.append(writer)
-                selection_file.write(
-                    f"env={env_id}, column={item['terrain_column']}, level={item['terrain_level']}, "
-                    f"terrain_index={item['terrain_index']}, terrain_name={terrain_name}, file={output_name}\n"
-                )
-                print(
-                    "[INFO] Terrain chase video selected "
-                    f"env={env_id}, column={item['terrain_column']}, terrain={terrain_name}, file={output_path}",
-                    flush=True,
-                )
+        os.makedirs(self._video_folder, exist_ok=True)
+        print(
+            "[INFO] Terrain chase selection started: "
+            f"mode={mode}, groups={len(self._candidate_groups)}, selection_steps={self._selection_steps}",
+            flush=True,
+        )
 
     def step(self, action):
         result = self.env.step(action)
-        self._record_frame()
+        if self._selected_envs:
+            self._record_frame()
+        else:
+            self._update_selection_scores()
         return result
 
+    def _update_selection_scores(self) -> None:
+        if self._closed:
+            return
+        current_root_x = self._raw_env.robot.data.root_link_pos_w[:, 0].detach()
+        forward_delta = torch.clamp(current_root_x - self._selection_prev_root_x, min=0.0)
+        self._selection_positive_forward_x += forward_delta
+        self._selection_prev_root_x = current_root_x.clone()
+        self._selection_frame += 1
+        if self._selection_frame % 120 == 0:
+            print(
+                f"[INFO] Terrain chase env scoring {self._selection_frame}/{self._selection_steps} steps",
+                flush=True,
+            )
+        if self._selection_frame >= self._selection_steps:
+            self._select_best_envs()
+
+    def _select_best_envs(self) -> None:
+        if self._selected_envs:
+            return
+        selected = []
+        scores = self._selection_positive_forward_x.detach().cpu()
+        for group_key in sorted(self._candidate_groups):
+            candidates = self._candidate_groups[group_key]
+            best_item = max(candidates, key=lambda item: float(scores[int(item["env_id"])].item()))
+            best_item = dict(best_item)
+            best_item["selection_score_forward_x_m"] = float(scores[int(best_item["env_id"])].item())
+            selected.append(best_item)
+        self._selected_envs = selected
+        self._write_selection_file()
+        for item in self._selected_envs:
+            print(
+                "[INFO] Terrain chase selected best env "
+                f"env={item['env_id']}, column={item['terrain_column']}, terrain={item['terrain_name']}, "
+                f"score_forward_x_m={item['selection_score_forward_x_m']:.3f}",
+                flush=True,
+            )
+
+    def _write_selection_file(self) -> None:
+        if self._selection_written:
+            return
+        selection_path = os.path.join(self._video_folder, "selection.txt")
+        with open(selection_path, "w", encoding="utf-8") as selection_file:
+            selection_file.write("selection=best_positive_forward_x\n")
+            selection_file.write(f"selection_steps={self._selection_steps}\n")
+            selection_file.write("schedule=sequential\n")
+            selection_file.write(f"target_frames={self._target_frames}\n")
+            selection_file.write(f"fps={self._fps}\n")
+            for item in self._selected_envs:
+                env_id = int(item["env_id"])
+                label = _safe_filename_part(str(item["group_label"]))
+                output_name = f"{label}_env{env_id:02d}_chase_{self._video_length_label}.mp4"
+                selection_file.write(
+                    f"env={env_id}, column={item['terrain_column']}, level={item['terrain_level']}, "
+                    f"terrain_index={item['terrain_index']}, terrain_name={item['terrain_name']}, "
+                    f"score_forward_x_m={item['selection_score_forward_x_m']:.6f}, file={output_name}\n"
+                )
+        self._selection_written = True
+
     def _record_frame(self) -> None:
-        if self._closed or self._frame >= self._target_frames:
+        if self._closed:
+            return
+        self._ensure_active_video()
+        if self._closed:
             return
 
         self._raw_env.sim.render()
-        for annotator, writer in zip(self._annotators, self._writers, strict=True):
-            frame = annotator.get_data()
-            if frame.size == 0:
-                width, height = self._raw_env.cfg.viewer.resolution
-                frame = np.zeros((height, width, 3), dtype=np.uint8)
-            writer.append_data(frame[:, :, :3])
+        frame = self._active_annotator.get_data()
+        if frame.size == 0:
+            width, height = self._raw_env.cfg.viewer.resolution
+            frame = np.zeros((height, width, 3), dtype=np.uint8)
+        self._active_writer.append_data(frame[:, :, :3])
 
-        self._frame += 1
-        if self._frame % 600 == 0 or self._frame == self._target_frames:
-            print(f"[INFO] Terrain chase videos streamed {self._frame}/{self._target_frames} frames", flush=True)
-        if self._frame >= self._target_frames:
-            self._close_writers()
+        self._active_frame += 1
+        if self._active_frame % 600 == 0 or self._active_frame == self._target_frames:
+            current = self._active_index + 1
+            total = len(self._selected_envs)
+            print(
+                f"[INFO] Terrain chase video {current}/{total} streamed "
+                f"{self._active_frame}/{self._target_frames} frames",
+                flush=True,
+            )
+        if self._active_frame >= self._target_frames:
+            self._close_active_video()
+            self._active_index += 1
+            self._active_frame = 0
+            if self._active_index >= len(self._selected_envs):
+                self._closed = True
+                print("[INFO] Terrain chase video recording finished.", flush=True)
 
-    def _close_writers(self) -> None:
+    def _ensure_active_video(self) -> None:
+        if self._active_writer is not None:
+            return
+        if self._active_index >= len(self._selected_envs):
+            self._closed = True
+            return
+
+        import imageio.v2 as imageio
+        import omni.replicator.core as rep
+
+        item = self._selected_envs[self._active_index]
+        env_id = int(item["env_id"])
+        label = _safe_filename_part(str(item["group_label"]))
+        output_name = f"{label}_env{env_id:02d}_chase_{self._video_length_label}.mp4"
+        output_path = os.path.join(self._video_folder, output_name)
+        camera_prim_path = f"/view/env_{env_id}/chase_camera"
+        render_product = rep.create.render_product(camera_prim_path, resolution=self._raw_env.cfg.viewer.resolution)
+        if not isinstance(render_product, str):
+            render_product = render_product.path
+        annotator = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
+        annotator.attach(render_product)
+        writer = imageio.get_writer(
+            output_path,
+            fps=self._fps,
+            codec="libx264",
+            macro_block_size=None,
+        )
+        self._active_writer = writer
+        self._active_annotator = annotator
+        self._active_render_product = render_product
+        print(
+            "[INFO] Terrain chase recording started "
+            f"{self._active_index + 1}/{len(self._selected_envs)}: env={env_id}, "
+            f"column={item['terrain_column']}, terrain={item['terrain_name']}, file={output_path}",
+            flush=True,
+        )
+
+    def _close_active_video(self) -> None:
+        if self._active_writer is not None:
+            self._active_writer.close()
+            self._active_writer = None
+        if self._active_annotator is not None and self._active_render_product is not None:
+            self._active_annotator.detach([self._active_render_product])
+        self._active_annotator = None
+        self._active_render_product = None
+
+    def _close_recorder(self) -> None:
         if self._closed:
             return
-        for writer in self._writers:
-            writer.close()
+        self._close_active_video()
         self._closed = True
-        print("[INFO] Terrain chase video recording finished.", flush=True)
 
     def close(self):
-        self._close_writers()
+        self._close_recorder()
         return self.env.close()
 
 
@@ -367,28 +464,31 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
             mode=args_cli.terrain_chase_video_mode,
             seed=terrain_chase_seed,
             video_length_s=args_cli.terrain_chase_video_length_s,
+            selection_steps=args_cli.terrain_chase_selection_steps,
         )
 
     start_time = time.time()
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
-    runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
-    runner.add_git_repo_to_log(__file__)
+    try:
+        runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
+        runner.add_git_repo_to_log(__file__)
 
-    if resume_path is not None:
-        print(f"[INFO] Loading checkpoint from: {resume_path}")
-        if args_cli.warmstart:
-            runner.load(
-                resume_path,
-                load_cfg={"actor": True, "critic": True, "optimizer": False, "iteration": False, "rnd": False},
-            )
-        else:
-            runner.load(resume_path)
+        if resume_path is not None:
+            print(f"[INFO] Loading checkpoint from: {resume_path}")
+            if args_cli.warmstart:
+                runner.load(
+                    resume_path,
+                    load_cfg={"actor": True, "critic": True, "optimizer": False, "iteration": False, "rnd": False},
+                )
+            else:
+                runner.load(resume_path)
 
-    dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
-    dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
-    runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
-    print(f"Training time: {round(time.time() - start_time, 2)} seconds")
-    env.close()
+        dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
+        dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
+        runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+        print(f"Training time: {round(time.time() - start_time, 2)} seconds")
+    finally:
+        env.close()
 
 
 if __name__ == "__main__":

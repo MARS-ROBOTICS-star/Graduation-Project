@@ -248,14 +248,37 @@ class SquashedGaussianDistribution(Distribution):
         self._distribution: Normal | None = None
         self._base_mean: torch.Tensor | None = None
         self._base_std: torch.Tensor | None = None
+        self._warned_invalid_mean = False
+        self._warned_invalid_log_std = False
 
         Normal.set_default_validate_args(False)
 
     def update(self, mlp_output: torch.Tensor) -> None:
         """Update the base Gaussian before tanh squashing."""
-        self._base_mean = mlp_output
-        clamped_log_std = torch.clamp(self.log_std_param, min=self.log_std_min, max=self.log_std_max)
-        self._base_std = torch.exp(clamped_log_std).expand_as(self._base_mean)
+        safe_mean = torch.nan_to_num(mlp_output, nan=0.0, posinf=1.0, neginf=-1.0)
+        if not torch.equal(safe_mean, mlp_output) and not self._warned_invalid_mean:
+            print("[WARN] SquashedGaussianDistribution received non-finite action mean; sanitizing values.", flush=True)
+            self._warned_invalid_mean = True
+        self._base_mean = safe_mean
+
+        safe_log_std_param = torch.nan_to_num(
+            self.log_std_param,
+            nan=0.0,
+            posinf=self.log_std_max,
+            neginf=self.log_std_min,
+        )
+        if not torch.equal(safe_log_std_param, self.log_std_param) and not self._warned_invalid_log_std:
+            print(
+                "[WARN] SquashedGaussianDistribution received non-finite log_std parameters; clamping values.",
+                flush=True,
+            )
+            self._warned_invalid_log_std = True
+        if not torch.equal(safe_log_std_param, self.log_std_param):
+            with torch.no_grad():
+                self.log_std_param.copy_(safe_log_std_param)
+
+        clamped_log_std = torch.clamp(safe_log_std_param, min=self.log_std_min, max=self.log_std_max)
+        self._base_std = torch.exp(clamped_log_std).clamp_min(self.squash_epsilon).expand_as(self._base_mean)
         self._distribution = Normal(self._base_mean, self._base_std)
 
     def sample(self) -> torch.Tensor:

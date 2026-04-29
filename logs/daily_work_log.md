@@ -13868,3 +13868,23 @@
 产出/结论：
 - Stage1 warm-start 的前 `54` 维本体 / command / last action 观测 scale 当前已与 Stage0 active baseline 完全一致。
 - Stage1 新增高度图仍保持原始米制值，不额外 clip 或 scale。
+
+## 2026-04-29
+
+已完成：
+- 按用户要求重启 Stage1 训练：`32` env、headless、`best_baseline_2` warm-start、`700` iterations。
+- 在 `scripts/train.py` 中加入训练期地形 chase 视频 recorder：先按 `600` step 正向推进距离为每个地形选择表现最好的 env，再按顺序逐个录制 `120 s` chase 视频。
+- 启动命令开启目标点 marker 和所有 env 的 follow view；本次录制关闭目标方向箭头和 wheel-slip 箭头，只保留目标点 marker。
+- 同步修正 Stage1 当前状态和参数详情表，将当前 warm-start 观测维度记录为 `632 = 54 + 34 * 17`。
+
+修改文件：
+- `RL_Training/scripts/train.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前后台 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-29_07-37-58_stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter`。
+- runtime log：`RL_Training/logs/runtime/stage1_32env_best_per_terrain_chase_setsid.log`。
+- 选择结果写入 `videos/terrain_chase/selection.txt`，视频文件写入同目录。

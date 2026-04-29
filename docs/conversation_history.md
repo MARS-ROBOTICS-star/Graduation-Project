@@ -12657,3 +12657,20 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - `docs/Stage1参数详情表.md` 已同步更新观测表。
 - Durable conclusion:
   - Stage1 warm-start 的前 `54` 维本体 / command / last action 观测 scale 当前与 Stage0 active baseline 完全一致，新增高度图仍保持原始米制高度值并交由 PPO normalizer 归一化。
+
+### Stage1 632 维 warm-start 与按地形顺序 chase 录制
+- Date: 2026-04-29
+- User request:
+  - 按原方案重启 Stage1 训练：`32` env、headless、开启目标点 marker 和 follow view、每个地形选择表现最好的 env、每个 env 录制 `120 s` chase 视频，并且不要并发录制。
+- Implementation:
+  - `scripts/train.py` 增加训练期地形 chase 视频 recorder。
+  - recorder 先用 `600` step 统计每个 env 的正向 `+x` 累计推进距离，再按 terrain name 分组选择每个地形内表现最好的 env。
+  - recorder 采用顺序录制策略，同一时刻只创建一个 chase render product 和一个 mp4 writer，避免多个地形视频并发录制。
+  - 本次启动命令使用 `--record_terrain_chase_videos --terrain_chase_video_length_s 120 --terrain_chase_video_mode per_name --terrain_chase_selection_steps 600 --follow_all_envs --hide_goal_heading --hide_wheel_slip_vis`。
+- Current run:
+  - `RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-29_07-37-58_stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter`
+  - runtime log：`RL_Training/logs/runtime/stage1_32env_best_per_terrain_chase_setsid.log`
+- Durable conclusion:
+  - 当前 Stage1 warm-start checkpoint 已转换为 `632` 维，actor/critic 第一层为 `[256, 632]`，obs normalizer 为 `[1, 632]`。
+  - `632 = 54 + 34 * 17`，其中高度 patch 为 `578` 维；此前 `972 = 54 + 34 * 27` 的记录已被当前 `patch_side_margin = 0.5` 方案取代。
+  - 后续 Stage1 地形训练和回放默认使用当前 `632` 维 warm-start checkpoint，不再使用旧 `972` 维 warm-start。

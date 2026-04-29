@@ -13888,3 +13888,18 @@
 - 当前后台 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-29_07-37-58_stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter`。
 - runtime log：`RL_Training/logs/runtime/stage1_32env_best_per_terrain_chase_setsid.log`。
 - 选择结果写入 `videos/terrain_chase/selection.txt`，视频文件写入同目录。
+
+## 2026-04-29
+
+已完成：
+- 按用户要求将当前项目同步到 GitHub 远端 `origin/main`。
+- 显式将默认被 `.gitignore` 忽略的 Stage1 chase 视频 `slope_down_env02_chase_120s.mp4` 强制纳入 Git 并推送。
+- 同步推送本地已有的 Stage1 terrain chase 录制相关代码和文档更新。
+
+修改文件：
+- `logs/daily_work_log.md`
+
+产出/结论：
+- GitHub 已收到本次同步，推送分支为 `main`。
+- 已上传视频：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-29_07-37-58_stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter/videos/terrain_chase/slope_down_env02_chase_120s.mp4`。
+- 本次同步包含两个提交：`0267be8`、`1e95d81`。

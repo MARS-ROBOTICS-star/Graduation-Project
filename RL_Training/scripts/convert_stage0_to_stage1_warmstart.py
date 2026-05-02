@@ -12,6 +12,7 @@ DEFAULT_SOURCE = (
     "logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2/model_699.pt"
 )
 DEFAULT_OUTPUT = "logs/rsl_rl/complete_car_stage1/warmstart_best_baseline_2/model_0.pt"
+DEFAULT_TARGET_OBS_DIM = 632
 
 
 def _expand_obs_vector(value: torch.Tensor, target_obs_dim: int, *, fill_value: float) -> torch.Tensor:
@@ -98,7 +99,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source_checkpoint", type=Path, default=Path(DEFAULT_SOURCE))
     parser.add_argument("--output_checkpoint", type=Path, default=Path(DEFAULT_OUTPUT))
-    parser.add_argument("--target_obs_dim", type=int, default=972)
+    parser.add_argument(
+        "--target_obs_dim",
+        type=int,
+        default=DEFAULT_TARGET_OBS_DIM,
+        help="Target Stage1 actor/critic observation dimension. Current Stage1 default is 632.",
+    )
     args = parser.parse_args()
 
     convert_checkpoint(

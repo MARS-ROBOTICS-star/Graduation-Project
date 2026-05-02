@@ -8,7 +8,7 @@
 
 当前 `complete_car_stage1_cfg.py` 采用本阶段显式配置风格，但只保留 Stage1 直接相关或当前 active 的参数。terrain-column target 不再在 Stage1 配置中显式写入自由 waypoint 采样参数，例如 `commands.goal_distance` 和 `commands.goal_direction_max_deg`。
 
-当前详表以当前源码配置为准。当前正在运行的 headless 训练 run 为：
+当前详表以当前源码配置为准。下列 run 是最近记录的 headless Stage1 warm-start 训练快照，用于说明当时的启动命令和日志位置：
 
 - run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-29_07-37-58_stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter`
 - env 参数快照：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-29_07-37-58_stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter/params/env.yaml`
@@ -18,7 +18,9 @@
 
 该 run 使用 `32` env、headless、`700` iterations、`best_baseline_2` warm-start，并启用按地形选择最佳 env 后依次录制 `120 s` chase 视频。2026-04-28 的 GUI run `2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter` 已按用户要求在 PPO iteration `18/700` 后停止，只作为历史启动验证记录。
 
-注意：上述 run 的 `env.yaml` 是启动时快照。当前源码中的 Stage1 terrain column 映射已在 2026-05-02 调整为第 `0` 列 `flat`，后续新启动训练以源码配置为准。
+注意：上述 run 的 `env.yaml` 是启动时快照。2026-05-02 起，当前源码中的 Stage1 terrain column 映射已调整为第 `0` 列 `flat`，Stage1 源码默认动作映射也已调整为与 Stage0 相同的底盘物理速度输出范围；此前已经启动的 run 的 `params/env.yaml` 不会因源码修改自动改变，新启动的 Stage1 run 才会使用下文当前源码配置。
+
+本文档中的“当前值”默认表示当前源码配置；若某个值来自训练命令覆盖或历史 run 快照，会在说明中单独标明。
 
 ## 0. 对应源码
 
@@ -49,7 +51,7 @@
 |---|---:|---|
 | task id | `CompleteCar-Stage1` | Stage1 地形课程任务 |
 | `stage_name` | `stage1` | 环境内部阶段名 |
-| `scene.num_envs` | `32` | 当前 GUI 训练默认并行环境数 |
+| `scene.num_envs` | `32` | Stage1 源码默认并行环境数，训练入口可用 `--num_envs` 覆盖 |
 | `scene.env_spacing` | `2.0 m` | 环境克隆间距 |
 | `action_space` | `8` | policy 动作维度 |
 | `observation_space.actor` | `632` | actor 观测维度 |
@@ -73,6 +75,7 @@
 | `sensors.enable_height_scanner` | `False` | 不用 RayCaster 传感器生成高度图 |
 | `debug.enable_debug_draw` | `True` | 开启目标点 marker 等 debug draw |
 | `debug.visualize_goal_heading` | `True` | 绘制目标方向箭头 |
+| `debug.visualize_wheel_slip` | `True` | 源码默认绘制 wheel-slip 箭头，训练命令可临时关闭 |
 | `debug.create_follow_views` | `True` | 创建 top / chase 跟踪视角 |
 
 ## 2. PPO 与 warm-start
@@ -83,7 +86,8 @@
 |---|---:|---|
 | runner | `OnPolicyRunner` | RSL-RL on-policy runner |
 | `experiment_name` | `complete_car_stage1` | 日志根目录名 |
-| `run_name` | `stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter` | 当前 headless run 名 |
+| `run_name` | `""` | Stage1 PPO cfg 默认 run 名；当前 headless 命令用 `--run_name` 覆盖 |
+| 当前命令 `run_name` 覆盖 | `stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter` | 最近记录的 headless warm-start run 名 |
 | `seed` | `1` | 随机种子 |
 | `device` | `cuda:0` | 训练设备 |
 | `num_steps_per_env` | `512` | 每次 PPO rollout 的每环境步数 |
@@ -147,6 +151,8 @@ Stage0 checkpoint 不能直接作为 Stage1 resume 使用，因为 actor / criti
 - obs normalizer 的新增维度均值为 `0`，方差和标准差为 `1`。
 - `--warmstart` 只加载 actor / critic，不加载 optimizer 和 iteration。
 
+当前 `convert_stage0_to_stage1_warmstart.py` 的默认 `target_obs_dim` 已同步为 `632`。按当前 Stage1 环境重新生成 warm-start checkpoint 时，不再需要额外传入 `--target_obs_dim 632`。若后续 Stage1 观测维度再次变化，必须同步修改转换脚本默认值和本文档。
+
 当前 headless warm-start 训练命令口径：
 
 ```bash
@@ -157,7 +163,7 @@ python scripts/train.py --task CompleteCar-Stage1 --headless --device cuda:0 --n
 
 | 参数 | 当前值 | 含义 |
 |---|---:|---|
-| `scene.num_envs` | `32` | GUI 训练默认环境数 |
+| `scene.num_envs` | `32` | Stage1 源码默认环境数，训练入口可用 `--num_envs` 覆盖 |
 | `scene.env_spacing` | `2.0 m` | 克隆环境间距 |
 | `scene.replicate_physics` | `True` | 克隆环境复用物理配置 |
 | `scene.clone_in_fabric` | `True` | 使用 Fabric clone |
@@ -187,21 +193,21 @@ python scripts/train.py --task CompleteCar-Stage1 --headless --device cuda:0 --n
 | `actions[:, 1]` | `1` | 底盘 yaw rate 归一化命令 |
 | `actions[:, 2:8]` | `6` | 两组等效球铰目标姿态归一化命令 |
 
-Stage1 当前不允许倒车：
+Stage1 当前与 Stage0 保持相同的底盘物理速度输出范围，并允许倒车：
 
 $$
-v_x^d = 0.5(a_0 + 1) \cdot 1.2
+v_x^d = a_0 \cdot 2.0
 $$
 
-因此当 actor 输出 $a_0 \in [-1, 1]$ 时，$v_x^d \in [0, 1.2]\ \mathrm{m/s}$。
+因此当 actor 输出 $a_0 \in [-1, 1]$ 时，$v_x^d \in [-2.0, 2.0]\ \mathrm{m/s}$。
 
 yaw rate 映射为：
 
 $$
-\omega_z^d = a_1 \cdot 0.6
+\omega_z^d = a_1 \cdot 2.0
 $$
 
-因此 $\omega_z^d \in [-0.6, 0.6]\ \mathrm{rad/s}$。
+因此 $\omega_z^d \in [-2.0, 2.0]\ \mathrm{rad/s}$。
 
 球铰动作按默认零位、lower limit、upper limit 映射成目标姿态。当前受控球铰顺序为：
 
@@ -235,6 +241,7 @@ $$
 |---|---:|---|
 | `commands.num_waypoints_per_episode` | `1` | 每个 episode 只有一个 active waypoint |
 | `commands.use_terrain_column_targets` | `True` | 使用 terrain row / column 目标点 |
+| `commands.resampling_time` | `5.0 s` | 继承自共享配置；terrain-column 目标路径不使用该计时重采样 |
 | `commands.terrain_goal_min_row_offset` | `1` | 目标至少在前方 1 行 |
 | `commands.terrain_goal_max_row_offset` | `1` | 目标最多在前方 1 行 |
 | `commands.terrain_goal_lateral_range_m` | `3.0 m` | 目标 y 坐标在同列 tile origin 左右随机偏移 |
@@ -258,6 +265,16 @@ Stage1 目标点逻辑：
 - 当前车体世界系 x 坐标相对当前 tile origin 前进超过 `8 m * 0.70 = 5.6 m` 时，terrain level 加 `1` 并重采样下一目标。
 - 目标重采样后仍保持同列，目标 row 继续取当前 row 的 `+1`。
 - 目标命中不会触发 Stage1 success termination。
+
+### 5.3 继承但当前不参与 Stage1 terrain-column 目标采样的 command 字段
+
+| 字段 | 继承值 | 当前作用 |
+|---|---:|---|
+| `commands.goal_distance` | `20 m` | 不用于 Stage1 terrain-column 目标采样 |
+| `commands.goal_direction_max_deg` | `18.43 deg` | 不用于 Stage1 terrain-column 目标采样；转向惩罚角度尺度由 `rewards.params.turn_speed_angle_scale_deg` 指定 |
+| `commands.goal_heading_delta_max_deg` | `9.215 deg` | 不用于 Stage1 terrain-column 目标采样，目标 heading 固定为 `0 rad` |
+| `commands.zero_command` | `False` | terrain-column 目标路径不使用自由 waypoint 的 zero-command 逻辑 |
+| `commands.rel_standing_envs` | `0.0` | terrain-column 目标路径不使用自由 waypoint 的 standing-env 逻辑 |
 
 ## 6. Stage1 地形配置
 
@@ -342,23 +359,26 @@ origin 的 z 坐标取 tile 中心区域高度的非负最大值，用于 reset 
 - `terrain_types` 按 env id 均匀分配到 `0-9` 全部地形列。
 - `scene.env_origins` 同步到每个 env 当前 row / column 对应 tile origin。
 
-### 7.2 升级 / 降级
+### 7.2 Episode 内 terrain row 推进
 
 | 参数 | 当前值 | 含义 |
 |---|---:|---|
-| `curriculum.move_up_distance_ratio` | `0.70` | 前进超过 tile 长度 70% 则升级 |
-| `curriculum.move_up_uses_forward_x` | `True` | 升降级距离只看世界系 `+x` 位移 |
+| `curriculum.move_up_distance_ratio` | `0.70` | 前进超过 tile 长度 70% 则推进到下一 row |
+| `curriculum.move_up_uses_forward_x` | `True` | Stage1 terrain-column 目标推进只看世界系 `+x` 位移 |
+| `curriculum.move_down_command_ratio` | `0.50` | 继承自共享配置；terrain-column 目标路径当前不执行 reset-time 降级 |
 
 当前 tile 长度为 `8 m`，因此：
 
-- 升级阈值：$8 \times 0.70 = 5.6\ \mathrm{m}$。
+- row 推进阈值：$8 \times 0.70 = 5.6\ \mathrm{m}$。
 
-Stage1 terrain-column 目标的 row 推进发生在 episode 内，而不是 reset 前计时重采样：
+Stage1 terrain-column 目标的 row 推进发生在 episode 内，而不是 reset 前计时重采样或 reset-time curriculum update：
 
 - 若 `root_x - origin_x > 5.6 m`，terrain level 加 `1`。
 - 若当前目标点被命中，terrain level 加 `1`。
 - row 推进后，`scene.env_origins` 同步到新 row / 同 column 的 tile origin。
 - row 推进后立刻重采样下一目标点。
+- 若 episode 因 far、球铰越界或 timeout 结束，本步不会触发 row 推进。
+- 当前 terrain-column 路径没有对应的 episode 内降级逻辑。
 
 ### 7.3 reset 初值
 
@@ -637,7 +657,7 @@ r_{\mathrm{turn}} =
 -2.0 \cdot
 I_{\mathrm{turn}}
 \cdot
-\frac{\|v_{xy}\|}{1.2}
+\frac{\|v_{xy}\|}{2.0}
 \cdot
 \frac{1}{N}
 $$
@@ -731,11 +751,11 @@ Stage1 cfg 不显式设置目标 yaw tolerance、整车姿态阈值、首尾模�
 |---|---:|
 | `debug.enable_debug_draw` | `True` |
 | `debug.visualize_goal_heading` | `True`，本次 headless 录制命令用 `--hide_goal_heading` 临时关闭 |
-| `debug.visualize_wheel_slip` | `False` |
+| `debug.visualize_wheel_slip` | `True`，本次 headless 录制命令用 `--hide_wheel_slip_vis` 临时关闭 |
 | `debug.create_follow_views` | `True` |
 | `debug.follow_view_top_height` | `8.0` |
 | `debug.follow_view_chase_env_index` | `0` |
-| `debug.follow_view_chase_env_indices` | 录制命令用 `--follow_all_envs` 设置为全部 `32` 个 env |
+| `debug.follow_view_chase_env_indices` | 源码默认 `()`；录制命令用 `--follow_all_envs` 设置为全部 `32` 个 env |
 | `debug.follow_view_chase_offset_b` | `(-4.0, -3.0, 2.4)` |
 | `debug.follow_view_chase_target_offset_b` | `(1.0, 0.0, 0.4)` |
 
@@ -755,7 +775,9 @@ Stage1 cfg 不显式设置目标 yaw tolerance、整车姿态阈值、首尾模�
 | `Observation/*` | 关键观测原始值摘要 |
 | `LowSlip/*` | 纵滑、侧滑角通过率和 margin |
 | `PerWheel/*` | 每个车轮的速度、滑移、接触、执行摘要 |
-| `terrain/*` | terrain level、move-up ratio、move-down ratio |
+| `Terrain/*` | 当前 terrain level 和当前 tile origin 下的前进距离 |
 | `Termination/*` | success、timeout、far、ball-joint-limit 等终止率 |
 
 其中 `Action/*`、`LowLevel/*`、`PerWheel/*` 中会出现底层执行摘要指标，但本文档不解释其底层运动学计算过程。
+
+说明：共享 curriculum 代码仍能在普通 waypoint 路径中输出小写 `terrain/*` reset 指标；但当前 Stage1 terrain-column 目标路径不走 reset-time `update_terrain_curriculum()`，主要使用 step-level `Terrain/*` 指标。

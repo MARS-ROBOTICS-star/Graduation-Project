@@ -1,5 +1,15 @@
 # 当前状态
 
+## 当前文献 PDF 转 Markdown 工具状态
+
+- 已新增 Codex Skill：`/home/lbz/.codex/skills/opendataloader-pdf/`。
+- 后续文献 PDF 转 Markdown 默认使用该 Skill 和本地 OpenDataLoader PDF 项目；MinerU 不作为默认工具，`pdftotext` 仅用于诊断或修复 OpenDataLoader 已确认无法恢复的 PDF 字体/CMap 损坏片段，不作为整批替代转换器。
+- 当前固定本地项目路径：`/home/lbz/opendataloader-pdf-fulltty`，其远端为 `https://github.com/opendataloader-project/opendataloader-pdf.git`；`/home/lbz/` 下重复的 `opendataloader-pdf*` 实验目录已清理，只保留该目录。
+- Skill 内置批量转换脚本：`/home/lbz/.codex/skills/opendataloader-pdf/scripts/convert_pdfs.py`。
+- 本终端环境运行 OpenDataLoader 时需设置 `JAVA_TOOL_OPTIONS=-Djava.awt.headless=true`。
+- 已使用 OpenDataLoader 将 `docs/literature/铰接车发展历史` 中 `20` 个 PDF 覆盖转换到 `docs/literature/output/铰接车发展历史`，输出 `20` 个 Markdown 文件、`20` 个图片目录、`528` 张图片。
+- 本次已修复该目录中 PDF 连字、私有区数学字形和参考文献空括号问题：`15` 个文件进行了通用乱码清理，其中 `2自由度铰接车体车辆越障偏移饱和控制_寇伟.md` 与 `张君 - 2019 - 双桥独立驱动铰接车辆牵引力控制策略研究.md` 因 CNKI PDF 字体/CMap 损坏严重，保留 OpenDataLoader 图片目录并用 PDF 文本层重建正文。
+
 ## 当前 Stage1 地形训练状态
 
 - 当前 Stage1 已进入 `best_baseline_2` warm-start 地形训练阶段。
@@ -11,12 +21,17 @@
   - 不能直接 resume Stage0 checkpoint，因为 Stage0 actor/critic 观测维度为 `54`，当前 Stage1 为 `632`。
   - 已将 actor/critic 第一层和 obs normalizer 扩展到 `632` 维，前 `54` 维继承 Stage0，新增高度图维度初始化为零权重。
   - 训练使用 `--warmstart` 只加载 actor/critic，不加载 optimizer 和 iteration。
+  - `convert_stage0_to_stage1_warmstart.py` 默认 `target_obs_dim` 已改为当前 Stage1 的 `632`，重新生成 warm-start 时不再默认生成旧 `972` 维 checkpoint。
 - 当前 Stage1 观测策略：
   - actor / critic 均为 `54 + 34 * 17 = 632` 维。
   - 前 `54` 维继承自 Stage0 的本体 / command / last action 观测，当前 active scale 与 Stage0 对齐，全部为 `1.0`。
   - 高度图保持原始 patch 尺寸和米制高度值，不 clip 到 `[-1, 1]`，不额外乘 scale，交由 PPO normalizer 归一化。
 - 当前 Stage1 参数详情表：`docs/Stage1参数详情表.md`。
+- `docs/Stage1参数详情表.md` 已按当前 Stage1 源码配置重新同步，区分了源码默认值、训练命令覆盖值和历史 run 参数快照。
 - 当前 `complete_car_stage1_cfg.py` 已改为 Stage1 相关参数显式配置风格，后续 Stage1 参数优先在该文件中统一修改。
+- 当前新启动的 Stage1 run 使用与 Stage0 相同的底盘动作物理速度输出范围：
+  - `a0 -> vx_cmd` 映射为 `[-2.0, 2.0] m/s`，允许倒车。
+  - `a1 -> yaw_rate_cmd` 映射为 `[-2.0, 2.0] rad/s`。
 - 当前 Stage1 训练地形列映射：
   - `0: flat`
   - `1: slope down`
@@ -48,6 +63,7 @@
   - 视频策略：按 terrain name 分组，先用 `600` step 选择每个地形中正向 `+x` 表现最好的 env，再按顺序逐个录制 `120 s` chase 视频。
   - 当前录制为非并发策略，同一时刻只创建一个 chase render product 和一个 mp4 writer。
   - 目标点红色 marker 开启；所有 env 创建 follow view；本次启动关闭目标方向箭头和 wheel-slip 可视箭头，保留目标点 marker。
+  - 若该 run 是 2026-05-02 前启动，其 `params/env.yaml` 仍保留启动时的旧动作映射；源码修改只影响之后新启动的 Stage1 run。
   - 该训练 run 已在第 `2/6` 个视频期间于 PPO 更新阶段报错退出：`RuntimeError: normal expects all elements of std >= 0.0`。
   - 当前已切换为纯推理续录：
     - runtime log：`RL_Training/logs/runtime/stage1_32env_best_per_terrain_chase_resume_record_only.log`

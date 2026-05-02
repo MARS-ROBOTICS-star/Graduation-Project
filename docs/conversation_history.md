@@ -2,6 +2,97 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-05-02
+
+### Stage1 warm-start 转换脚本默认维度已修正为 632
+- User request:
+  - 用户指出 `convert_stage0_to_stage1_warmstart.py` 默认 `target_obs_dim=972` 是旧值，要求解决重新生成 warm-start 时可能生成错误维度 checkpoint 的风险。
+- Implementation:
+  - `RL_Training/scripts/convert_stage0_to_stage1_warmstart.py` 新增 `DEFAULT_TARGET_OBS_DIM = 632`。
+  - `--target_obs_dim` argparse 默认值改为 `632`，并在 help 文本中标明当前 Stage1 默认 actor/critic 观测维度为 `632`。
+  - `docs/Stage1参数详情表.md` 和 `docs/current_status.md` 已同步说明。
+- Durable conclusion:
+  - 当前 Stage1 重新生成 warm-start checkpoint 时，默认目标观测维度就是 `632`，不会再因漏传 `--target_obs_dim 632` 而生成旧 `972` 维 checkpoint。
+  - 若后续 Stage1 观测维度再次变化，必须同步修改转换脚本默认值、Stage1 参数表和当前状态。
+- Status:
+  - implemented.
+
+### 文献 PDF 转 Markdown 已建立 `opendataloader-pdf` Skill 工作流
+- User request:
+  - 用户要求将 `https://github.com/opendataloader-project/opendataloader-pdf.git` 克隆到本地，并做成 Skill；以后文献 PDF 转 Markdown 都使用该 Skill 和项目进行转换。
+- Implementation:
+  - 已创建 Codex Skill：`/home/lbz/.codex/skills/opendataloader-pdf/`。
+  - Skill 记录的固定本地 OpenDataLoader PDF 项目路径为：`/home/lbz/opendataloader-pdf-fulltty`。
+  - 该本地项目已核对远端为：`https://github.com/opendataloader-project/opendataloader-pdf.git`。
+  - Skill 内置脚本：`/home/lbz/.codex/skills/opendataloader-pdf/scripts/convert_pdfs.py`，用于批量将 PDF 转为 Markdown。
+  - Skill 已写明在当前终端环境必须使用 `JAVA_TOOL_OPTIONS=-Djava.awt.headless=true`，避免 Java AWT 依赖 GUI。
+- Durable conclusion:
+  - 后续凡是用户要求文献 PDF 转 Markdown、批量 PDF 转 `.md`、或明确提到 OpenDataLoader / opendataloader-pdf，默认触发并使用 `opendataloader-pdf` Skill。
+  - 不应再在用户要求 OpenDataLoader 时临时改用 `pdftotext` 或 MinerU。
+  - 若 `/tmp/opendataloader-pdf-venv/bin/opendataloader-pdf` 不存在，应先按 Skill 脚本创建 venv 并安装 `opendataloader-pdf`；若网络被沙箱阻止，再按权限规则请求联网安装。
+- Status:
+  - implemented and validated.
+
+### OpenDataLoader PDF 重复本地目录已清理
+- User request:
+  - 用户要求删除 `/home/lbz/` 下重复的 `opendataloader-pdf` 相关目录。
+- Implementation:
+  - 已保留 Skill 固定使用的 `/home/lbz/opendataloader-pdf-fulltty`。
+  - 已删除重复/实验目录：
+    - `/home/lbz/opendataloader-pdf`
+    - `/home/lbz/opendataloader-pdf-clean`
+    - `/home/lbz/opendataloader-pdf-repo`
+    - `/home/lbz/opendataloader-pdf-skill-repo`
+- Durable conclusion:
+  - 后续 OpenDataLoader PDF 相关任务不要再寻找或使用上述已删除目录。
+  - 唯一有效的本地 OpenDataLoader PDF 项目路径是 `/home/lbz/opendataloader-pdf-fulltty`。
+- Status:
+  - cleaned.
+
+### 铰接车发展历史文献已用 OpenDataLoader 转为 Markdown
+- User request:
+  - 用户要求将 `/铰接车发展历史` 中的文献转换为 Markdown，并输出到 `/output/铰接车发展历史`。
+- Implementation:
+  - 按 Skill 路径解析，输入目录为 `docs/literature/铰接车发展历史`。
+  - 输出目录为仓库根目录下的 `output/铰接车发展历史`。
+  - 使用 `/home/lbz/.codex/skills/opendataloader-pdf/scripts/convert_pdfs.py` 调用 OpenDataLoader PDF 完成批量转换。
+  - 由于沙箱网络下载中断，先手动续传并安装 `opendataloader_pdf-2.4.1` wheel 到 `/tmp/opendataloader-pdf-venv`，随后执行转换。
+- Verification:
+  - 输入 PDF 数量：`20`。
+  - 输出 Markdown 数量：`20`。
+  - PDF stem 与 Markdown stem 完全匹配，无缺失、无额外文件。
+  - 输出目录无 `0` 字节 Markdown 文件。
+  - 转换过程中部分 PDF 出现字体/CMap/glyph 映射 warning，但命令正常退出且输出数量匹配。
+- Status:
+  - converted and verified.
+
+### Stage1 参数详情表已按当前源码配置重新同步
+- Work:
+  - 用户要求根据现有 Stage1 RL 环境配置更新 `docs/Stage1参数详情表.md`。
+- Durable conclusion:
+  - Stage1 参数表当前以 `complete_car_stage1_cfg.py`、共享 env cfg、PPO cfg、terrain/observation/reward/termination 代码为准。
+  - 文档已明确区分“源码默认值”“训练命令覆盖值”和“历史 run 的 params/env.yaml 快照”。
+  - Stage1 源码默认 `debug.visualize_wheel_slip=True`，最近 headless 录制命令通过 `--hide_wheel_slip_vis` 临时关闭；不应把录制命令覆盖值误写成源码默认值。
+  - Stage1 terrain-column 目标路径当前不走 reset-time `update_terrain_curriculum()`，主要通过 episode 内 `+x` 前进超过 `5.6 m` 或目标命中推进 terrain row；因此当前主指标是 `Terrain/*`，不是普通 waypoint 路径的小写 `terrain/*` reset 指标。
+- Status:
+  - documented.
+
+### Stage1 底盘动作物理速度输出已与 Stage0 对齐
+- User decision:
+  - Stage1 的物理速度输出与 Stage0 保持相同。
+  - `a0` 映射为 `vx_cmd in [-2.0, 2.0] m/s`。
+  - `a1` 映射为 `yaw_rate_cmd in [-2.0, 2.0] rad/s`。
+- Implementation:
+  - `complete_car_stage1_cfg.py` 中 `base_forward_velocity_max` 改为 `2.0`。
+  - `base_yaw_rate_max` 改为 `2.0`。
+  - `base_allow_reverse` 改为 `True`。
+  - `docs/Stage1参数详情表.md` 已同步动作映射公式和转向速度惩罚中的速度归一化分母。
+- Impact:
+  - 新启动的 Stage1 run 会使用与 Stage0 相同的底盘平面命令物理范围。
+  - 已经启动的历史 Stage1 run 的 `params/env.yaml` 是启动时快照，不会因源码修改自动改变。
+- Status:
+  - implemented and documented.
+
 ## 2026-04-28
 
 ### Stage0 best_baseline 非 active 代码和配置字段已清理
@@ -12726,3 +12817,19 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Durable conclusion:
   - 当前 Stage1 初始化 / reset 出生列重新覆盖 `0-9` 全部地形列。
   - Stage1 terrain-column episode 内推进逻辑仍只增加 row、不改变 column；因此全地形训练由初始化阶段的全列分配保证。
+
+### OpenDataLoader PDF 转 Markdown 乱码修复结论
+- Date: 2026-05-02
+- Context:
+  - 用户将铰接车发展历史文献转换结果移动到 `docs/literature/output/铰接车发展历史` 后，发现部分 Markdown 中公式和参考文献乱码。
+- Diagnosis:
+  - 问题不是普通 UTF-8 文件编码错误，而主要来自 PDF 内嵌字体、ToUnicode CMap、数学字体和 CNKI 旧式排版导致的字形映射失败。
+  - OpenDataLoader 本地确定性模式可以稳定提取 Markdown 与图片，但不能保证把所有复杂公式还原成 LaTeX，也不能完全恢复 CMap 损坏的中文 PDF 文本。
+- Implementation conclusion:
+  - 已重新覆盖转换 `docs/literature/铰接车发展历史` 的 `20` 个 PDF 到 `docs/literature/output/铰接车发展历史`。
+  - 输出目录当前包含 `20` 个 Markdown、`20` 个图片目录、`528` 张图片。
+  - 已对 `15` 个 Markdown 执行通用清理：替换 PDF 连字、私有区括号/数学字形、控制字符和长 `ﬃ` 根号乱码。
+  - `2自由度铰接车体车辆越障偏移饱和控制_寇伟.md` 与 `张君 - 2019 - 双桥独立驱动铰接车辆牵引力控制策略研究.md` 的 OpenDataLoader 文本层损坏严重，已保留 OpenDataLoader 图片目录，并用 PDF 文本层重建正文和参考文献。
+- Boundary:
+  - `Zhu 等 - 2018 - A novel forestry chassis with an articulated body with 3 degreesof freedom and installed luffingwhee.md` 是主要公式风险文件；长 `ﬃ` 乱码已修为可读根号符号，但复杂公式仍应以源 PDF 为准。
+  - OpenDataLoader hybrid formula 模式是更接近公式还原的上游方向，但本机测试受大模型下载/代理稳定性影响，未作为本次最终覆盖路径。

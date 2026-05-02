@@ -12833,3 +12833,48 @@ This file stores durable conclusions from past Codex sessions so that future ses
 - Boundary:
   - `Zhu 等 - 2018 - A novel forestry chassis with an articulated body with 3 degreesof freedom and installed luffingwhee.md` 是主要公式风险文件；长 `ﬃ` 乱码已修为可读根号符号，但复杂公式仍应以源 PDF 为准。
   - OpenDataLoader hybrid formula 模式是更接近公式还原的上游方向，但本机测试受大模型下载/代理稳定性影响，未作为本次最终覆盖路径。
+
+### 铰接车发展历史文献结构化抽取与综述初稿
+- Date: 2026-05-02
+- Context:
+  - 用户要求基于 `docs/literature/output/铰接车发展历史` 中已转换的 Markdown，完成阶段 `3-8`：文献信息抽取、参考文献追踪、分类体系、时间线、综述初稿和质量检查。
+- Outputs:
+  - `literature_database.yaml`：包含 `20` 篇文献的结构化字段、证据摘录和引用参考文献。
+  - `missing_references.md`：列出当前缺失但可能关键的被引文献，并按优先级排序。
+  - `classification_system.md`：按时间阶段、铰接自由度、驱动方式、应用场景和控制方法建立分类体系。
+  - `timeline.md` 与 `timeline.html`：按年份生成铰接车发展时间线，并标出若干转折点。
+  - `articulated_vehicle_review.md`：形成毕业论文综述风格的初稿，包含用户要求的 `12` 个章节。
+  - `quality_check.md`：记录转换质量、题录不确定性、分类可靠性和需人工检查的图表。
+- Durable conclusions:
+  - 当前本地语料覆盖了工程/农业车辆、军用/救援全地形车、行星探测/复杂地形移动机器人、多体/多模块铰接机器人、现代规划/模型控制等方向，但尚未包含直接验证“铰接式移动机器人强化学习控制”的核心论文。
+  - `Zhu2018` 是当前语料中最接近“三维铰接/三自由度车体姿态适应”的论文，可作为三模块六轮球铰启发结构的重要近邻文献，但其公式转换质量仍需以 PDF 复核。
+  - `Amar2010` 对多体铰接移动机器人微分运动学建模具有基础意义，可支撑当前项目把复杂机构等效为可控制关节链的建模讨论。
+  - `Kayacan2018`、`Gao2020`、`HuCheng2023`、`Li2021` 等构成当前语料中的非 RL 控制基线，包括 MPC、动态虚拟地形场、路径规划和多点预瞄路径跟踪。
+  - 综述中关于 RL 的表述必须保持边界：当前文献集支持“存在从模型控制走向学习控制的研究缺口”，但不支持声称“已有文献已证明 RL 在此类三模块六轮铰接车上有效”。
+  - `missing_references.md` 中的 Horton and Crolla 1986、Dudziński 1989、Altafini 1999、Polotski and Hemami 1997、Hemami and Polotski 1997、Corke and Ridley 2001、Ridley and Corke 2003、DeSantis 1997 等应优先补充下载，用于补强铰接车早期发展和行星探测/机器人转向阶段。
+- Boundary:
+  - 所有题录、自由度、机构类型或贡献判断中不能从 Markdown 直接确认的内容已用 `[UNCERTAIN]` 或 `[MISSING]` 标注；后续正式写入论文前应回查源 PDF、DOI 数据库或原始出版页面。
+
+## 2026-05-03
+
+### Stage1 日志与评价指标已切换为 `Stage1Eval` 体系
+- Decision / implementation:
+  - Stage0 日志保持原口径：原有 TensorBoard curated extra scalar 白名单、`CONSOLE_PRIORITY_TAGS` 和终端输出顺序未改动。
+  - Stage1 日志按 `stage_name` / `experiment_name` 分支：终端只打印 `Stage1Eval/flat`、`Stage1Eval/global` 和非 flat terrain column 的 `difficulty_score`。
+  - Stage1 新增 `Stage1Eval/global/*`、`Stage1Eval/flat/*` 和 `Stage1Eval/col00_flat` 到 `Stage1Eval/col09_obstacles` 的列级指标。
+  - Stage1 的旧 `Reward/*`、`ProgressGate/*`、`Action/*`、`LowLevel/*`、`Command/*` 诊断指标改以 `Debug/Stage1/*` 写入 TensorBoard，不进入 Stage1 终端 priority tags。
+  - 新增 `logging.enable_stage1_per_wheel_debug = False`，Stage1 默认不写 PerWheel TensorBoard；开启后只允许法向力、纵滑、侧滑角、轮地纵/侧向速度、轮端力矩目标和轮速参考。
+- Durable conclusion:
+  - Stage1 terrain-column 目标下 `Termination/success_rate` 固定为 `0`，不能再作为 Stage1 主评价指标。
+  - Stage1 主评价应看 flat retention、row advance、forward x、effective failure、stagnation、滑移、接触、姿态、动作饱和和各列 `difficulty_score`；`hardest_col_index` 排名不包含 flat。
+  - Stage1Eval 指标计算对空 column / 空 mask 返回 `0`，避免 NaN/Inf 写入 TensorBoard。
+- Numerical safety update:
+  - `distribution.py` 对 Gaussian / SquashedGaussian / HeteroscedasticGaussian 的 action mean、std、log_std 做非有限值清理，并在构造 `Normal` 前 clamp 出严格正的 std。
+  - CompleteCar env 对 policy action、actor / critic obs、reward、episode extras 和 step metrics 写出前执行 `nan_to_num`，reward / observation MDP helper 内部也清理原始张量。
+  - Stage1Eval 的 retention score、difficulty score、hardest column 和空 column 计算保持 NaN-safe；空 mask 返回 `0`。
+- Verification:
+  - `python3 -m py_compile`、`git diff --check` 通过。
+  - 使用 `.venv-mineru` 中的 `torch` 运行 `RL_Training/tests/test_stage1_eval_metrics.py` 通过。
+  - 轻量导入 logger 后静态断言通过：Stage1 不打印 `Termination/success_rate` 和 `Reward/reached_target`，Stage0 仍打印/写入原 tags。
+- Status:
+  - implemented.

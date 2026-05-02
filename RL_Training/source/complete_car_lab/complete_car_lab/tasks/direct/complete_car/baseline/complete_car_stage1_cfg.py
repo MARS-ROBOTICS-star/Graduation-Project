@@ -198,6 +198,8 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.sensors.height_scanner_debug_vis = False
         self.sensors.wheel_contact_max_points_per_env = 128
 
+        self.logging.enable_stage1_per_wheel_debug = False
+
         self.debug.enable_debug_draw = True
         self.debug.visualize_goal_heading = True
         self.debug.visualize_wheel_slip = True

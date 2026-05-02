@@ -9,6 +9,10 @@
 - 本终端环境运行 OpenDataLoader 时需设置 `JAVA_TOOL_OPTIONS=-Djava.awt.headless=true`。
 - 已使用 OpenDataLoader 将 `docs/literature/铰接车发展历史` 中 `20` 个 PDF 覆盖转换到 `docs/literature/output/铰接车发展历史`，输出 `20` 个 Markdown 文件、`20` 个图片目录、`528` 张图片。
 - 本次已修复该目录中 PDF 连字、私有区数学字形和参考文献空括号问题：`15` 个文件进行了通用乱码清理，其中 `2自由度铰接车体车辆越障偏移饱和控制_寇伟.md` 与 `张君 - 2019 - 双桥独立驱动铰接车辆牵引力控制策略研究.md` 因 CNKI PDF 字体/CMap 损坏严重，保留 OpenDataLoader 图片目录并用 PDF 文本层重建正文。
+- 已基于上述 `20` 篇 Markdown 完成铰接车发展历史文献阶段 `3-8` 的结构化整理，输出位置仍为 `docs/literature/output/铰接车发展历史`。
+- 阶段 `3-8` 产物包括：`literature_database.yaml`、`missing_references.md`、`classification_system.md`、`timeline.md`、`timeline.html`、`articulated_vehicle_review.md`、`quality_check.md`。
+- 当前语料中没有直接以强化学习控制铰接式移动机器人为主题的论文；综述中应把 RL 作为当前课题的研究缺口和后续路线，不应写成该文献集已经验证过的成熟方向。
+- 当前结构化抽取仍有不确定项：部分论文的铰接自由度、DOI、期刊/会议信息和复杂公式需要回查源 PDF 或补充数据库检索；相关位置已用 `[UNCERTAIN]` 或 `[MISSING]` 标记。
 
 ## 当前 Stage1 地形训练状态
 
@@ -28,6 +32,11 @@
   - 高度图保持原始 patch 尺寸和米制高度值，不 clip 到 `[-1, 1]`，不额外乘 scale，交由 PPO normalizer 归一化。
 - 当前 Stage1 参数详情表：`docs/Stage1参数详情表.md`。
 - `docs/Stage1参数详情表.md` 已按当前 Stage1 源码配置重新同步，区分了源码默认值、训练命令覆盖值和历史 run 参数快照。
+- 当前 Stage1 TensorBoard / 终端日志指标说明文档：`docs/stage1评价指标.md`；该文档基于当前 logger、env 和 train 源码整理指标含义，并明确当前本地缺少 Stage1 event/runtime log，未伪造具体曲线数值。
+- 当前 Stage1 日志系统已重构为 stage-specific：Stage0 仍使用原 TensorBoard 白名单和终端 `CONSOLE_PRIORITY_TAGS`；Stage1 终端只打印 `Stage1Eval/*` 高信号评价指标，不再把固定为 `0` 的 `Termination/success_rate` 作为主指标。
+- Stage1 新增 `Stage1Eval/global`、`Stage1Eval/flat` 和 `Stage1Eval/col00-col09` 指标，用于观察 flat retention、terrain column 通过能力、滑移、接触、姿态、动作饱和与最难地形列。
+- Stage1 PerWheel TensorBoard 调试默认关闭：`logging.enable_stage1_per_wheel_debug = False`；打开后只写法向力、纵滑、侧滑角、轮地纵/侧向速度、轮端力矩目标和轮速参考。
+- 当前 CompleteCar 训练链路已补充 NaN/Inf 数值安全保护：policy action mean / std / log_std 在进入 `Normal` 前清理并保证 `std > 0`，obs / reward / extras metrics 写入前执行 `nan_to_num`，Stage1Eval 的 retention / difficulty 空 mask 返回 `0`。
 - 当前 `complete_car_stage1_cfg.py` 已改为 Stage1 相关参数显式配置风格，后续 Stage1 参数优先在该文件中统一修改。
 - 当前新启动的 Stage1 run 使用与 Stage0 相同的底盘动作物理速度输出范围：
   - `a0 -> vx_cmd` 映射为 `[-2.0, 2.0] m/s`，允许倒车。
@@ -69,7 +78,7 @@
     - runtime log：`RL_Training/logs/runtime/stage1_32env_best_per_terrain_chase_resume_record_only.log`
     - 续录方式：`scripts/train.py --record_only --record_terrain_chase_videos --terrain_chase_selection_file .../selection.txt --terrain_chase_start_from 2`
     - 续录逻辑：复用原 `selection.txt`，从第 `2/6` 个视频开始覆盖重录 `slope up`，随后顺序录制剩余地形，不再进行 PPO 参数更新。
-  - 当前源码已加入分布数值保护：若 `SquashedGaussianDistribution` 的 `mean` 或 `log_std` 出现非有限值，会先做有限值清理和 clamp，再继续采样，避免再次因非法 `std` 直接崩溃。
+  - 当前源码已加入完整数值保护：若 policy distribution 的 action mean / std / log_std 出现非有限值，会先做有限值清理和 clamp，并保证传入 `Normal` 的 `std > 0`；obs、reward 和 extras metrics 在写出前也会清理 NaN/Inf。
 - 历史可视化训练：
   - GUI run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter`
   - 已按用户要求停止，终端最后完整输出到 PPO iteration `18/700`。

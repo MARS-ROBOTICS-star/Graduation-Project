@@ -233,6 +233,13 @@ class SensorBindingCfg(CompleteCarSensorSuiteCfg):
 
 
 @configclass
+class LoggingCfg:
+    """训练日志开关。"""
+
+    enable_stage1_per_wheel_debug: bool = False
+
+
+@configclass
 class DebugCfg:
     """调试辅助配置。"""
 
@@ -284,6 +291,7 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
     curriculum: CurriculumCfg = CurriculumCfg()
     terrain: TerrainBindingCfg = TerrainBindingCfg()
     sensors: SensorBindingCfg = SensorBindingCfg()
+    logging: LoggingCfg = LoggingCfg()
     debug: DebugCfg = DebugCfg()
 
     def _build_action_noise_model_cfg(self) -> NoiseModelWithAdditiveBiasCfg | None:

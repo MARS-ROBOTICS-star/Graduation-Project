@@ -24,6 +24,7 @@ from ..mdp.observations import (
     compute_wheel_motion_observations,
 )
 from ..mdp.rewards import REWARD_TERM_NAMES, compute_reward_terms, get_nominal_goal_distance
+from ..mdp.stage1_eval import compute_stage1_eval_metrics
 from ..mdp.terminations import compute_done_terms
 from ..sensors.sensor_cfg import CompleteCarSensorSuiteRuntime
 from ..terrain.terrain_runtime import CompleteCarTerrainRuntime
@@ -140,10 +141,16 @@ class CompleteCarDirectEnv(DirectRLEnv):
     def step(self, action: torch.Tensor):
         observations, rewards, terminated, time_outs, extras = super().step(action)
         for group_name in ("actor", "critic"):
-            observations[group_name] = observations[group_name].clamp(
-                -self.cfg.observations.clip_observations,
-                self.cfg.observations.clip_observations,
+            observations[group_name] = torch.nan_to_num(
+                observations[group_name].clamp(
+                    -self.cfg.observations.clip_observations,
+                    self.cfg.observations.clip_observations,
+                ),
+                nan=0.0,
+                posinf=self.cfg.observations.clip_observations,
+                neginf=-self.cfg.observations.clip_observations,
             )
+        rewards = torch.nan_to_num(rewards, nan=0.0, posinf=0.0, neginf=0.0)
         self._debug_draw.draw_goal_pose(
             goal_positions_w=self.command_targets_w[:, :3],
             goal_headings_w=self.command_targets_w[:, 3],
@@ -191,7 +198,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
     # 执行动作预处理，刷新目标，运输动作输出到关节目标
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self.last_actions.copy_(self.actions)
-        self.actions.copy_(actions)
+        self.actions.copy_(torch.nan_to_num(actions, nan=0.0, posinf=1.0, neginf=-1.0))
 
         if (
             not self.cfg.commands.use_terrain_column_targets
@@ -634,7 +641,39 @@ class CompleteCarDirectEnv(DirectRLEnv):
         )
         if terrain_metrics is not None:
             extras.update({f"terrain/{key}": value for key, value in terrain_metrics.items()})
-        return extras
+        return self._sanitize_scalar_metrics(extras)
+
+    def _is_stage1(self) -> bool:
+        return str(getattr(self.cfg, "stage_name", "")).lower() == "stage1"
+
+    @staticmethod
+    def _sanitize_scalar_metrics(metrics: dict[str, float]) -> dict[str, float]:
+        sanitized: dict[str, float] = {}
+        for key, value in metrics.items():
+            if isinstance(value, torch.Tensor):
+                tensor_value = value.detach().float().reshape(-1)
+            else:
+                tensor_value = torch.as_tensor(value, dtype=torch.float32).reshape(-1)
+            if tensor_value.numel() == 0:
+                sanitized[key] = 0.0
+            else:
+                sanitized[key] = float(
+                    torch.nan_to_num(torch.mean(tensor_value), nan=0.0, posinf=0.0, neginf=0.0).item()
+                )
+        return sanitized
+
+    def _add_stage1_debug_metrics(self, metrics: dict[str, float]) -> None:
+        if not self._is_stage1():
+            return
+        debug_prefixes = ("Reward/", "ProgressGate/", "Action/", "LowLevel/", "Command/")
+        for key, value in tuple(metrics.items()):
+            if key.startswith(debug_prefixes):
+                metrics[f"Debug/Stage1/{key}"] = value
+
+    def _should_collect_per_wheel_metrics(self) -> bool:
+        if not self._is_stage1():
+            return True
+        return bool(getattr(self.cfg.logging, "enable_stage1_per_wheel_debug", False))
 
     def _collect_step_metrics(self) -> dict[str, float]:
         relative_goal_commands = self._cached_step_relative_goal_commands
@@ -710,6 +749,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         planar_command_delta = self._last_shaped_planar_command - self._last_desired_planar_command
 
         metrics = {
+            "Meta/stage_id": 1.0 if self._is_stage1() else 0.0,
             "Reward/total": float(torch.mean(self._last_total_reward).item()),
             "Reward/distance_to_target": float(torch.mean(self._last_reward_components["distance_to_target"]).item()),
             "Reward/progress_to_target": float(torch.mean(self._last_reward_components["progress_to_target"]).item()),
@@ -822,6 +862,39 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "LowLevel/tau0_abs_mean_raw": float(torch.mean(torch.abs(self._last_wheel_tau0)).item()),
             "LowLevel/tau1_abs_mean_raw": float(torch.mean(torch.abs(self._last_wheel_tau1)).item()),
         }
+
+        if (
+            self._is_stage1()
+            and self._terrain_runtime is not None
+            and self._terrain_runtime.terrain_types is not None
+            and self._terrain_runtime.terrain_levels is not None
+        ):
+            forward_x_from_current_tile_origin = self.robot.data.root_link_pos_w[:, 0] - self.scene.env_origins[:, 0]
+            metrics.update(
+                compute_stage1_eval_metrics(
+                    terrain_types=self._terrain_runtime.terrain_types,
+                    terrain_levels=self._terrain_runtime.terrain_levels,
+                    forward_x_from_current_tile_origin=forward_x_from_current_tile_origin,
+                    rows_advanced=self._episode_terrain_target_advances.float(),
+                    far_mask=self._last_done_terms["far_from_target"],
+                    ball_joint_limit_mask=self._last_done_terms["ball_joint_out_of_bounds"],
+                    timeout_mask=self._last_done_terms["time_out"],
+                    base_lin_vel=raw_obs_terms["base_lin_vel"],
+                    base_ang_vel=raw_obs_terms["base_ang_vel"],
+                    wheel_longitudinal_slip=raw_obs_terms["wheel_longitudinal_slip"],
+                    wheel_slip_angle=raw_obs_terms["wheel_slip_angle"],
+                    wheel_normal_contact_force=raw_obs_terms["wheel_normal_contact_force"],
+                    roll_deg=middle_roll_deg,
+                    pitch_deg=middle_pitch_deg,
+                    ball_joint_limit_usage=ball_joint_limit_usage,
+                    actions=self.actions,
+                    last_actions=self.last_actions,
+                    active_waypoint_distance=active_waypoint_pos_error,
+                    terrain_length=float(self._terrain_runtime._terrain_cfg.terrain_length),
+                )
+            )
+        self._add_stage1_debug_metrics(metrics)
+
         per_wheel_metric_sources = {
             "wheel_joint_vel": raw_obs_terms["wheel_joint_vel"],
             "wheel_speed_reference": self._last_wheel_speed_reference,
@@ -836,12 +909,26 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "longitudinal_slip": raw_obs_terms["wheel_longitudinal_slip"],
             "slip_angle": raw_obs_terms["wheel_slip_angle"],
         }
-        for wheel_index, wheel_name in enumerate(WHEEL_JOINT_NAMES):
-            wheel_log_name = wheel_name.removesuffix("_joint")
-            for metric_name, values in per_wheel_metric_sources.items():
-                metrics[f"PerWheel/{wheel_log_name}/{metric_name}"] = float(
-                    torch.mean(values[:, wheel_index]).item()
-                )
+        if self._is_stage1():
+            stage1_per_wheel_fields = {
+                "normal_force",
+                "longitudinal_slip",
+                "slip_angle",
+                "v_parallel",
+                "v_perp",
+                "wheel_torque_target",
+                "wheel_speed_reference",
+            }
+            per_wheel_metric_sources = {
+                key: value for key, value in per_wheel_metric_sources.items() if key in stage1_per_wheel_fields
+            }
+        if self._should_collect_per_wheel_metrics():
+            for wheel_index, wheel_name in enumerate(WHEEL_JOINT_NAMES):
+                wheel_log_name = wheel_name.removesuffix("_joint")
+                for metric_name, values in per_wheel_metric_sources.items():
+                    metrics[f"PerWheel/{wheel_log_name}/{metric_name}"] = float(
+                        torch.mean(values[:, wheel_index]).item()
+                    )
         for joint_index, joint_name in enumerate(BALL_JOINT_NAMES):
             metrics[f"Observation/{joint_name}_pos_raw"] = float(torch.mean(ball_joint_pos[:, joint_index]).item())
             metrics[f"Observation/{joint_name}_limit_usage_mean_raw"] = float(
@@ -856,7 +943,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             metrics["Terrain/forward_x_from_current_tile_origin_mean"] = float(
                 torch.mean(forward_x_from_current_tile_origin).item()
             )
-        return metrics
+        return self._sanitize_scalar_metrics(metrics)
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
         if env_ids is None:

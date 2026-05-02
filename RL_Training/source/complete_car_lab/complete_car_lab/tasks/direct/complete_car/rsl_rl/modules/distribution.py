@@ -11,6 +11,17 @@ import torch.nn as nn
 from torch.distributions import Normal
 
 
+_MIN_STD = 1.0e-6
+
+
+def _finite_tensor(value: torch.Tensor, *, posinf: float = 0.0, neginf: float = 0.0) -> torch.Tensor:
+    return torch.nan_to_num(value, nan=0.0, posinf=posinf, neginf=neginf)
+
+
+def _positive_std(value: torch.Tensor, min_std: float = _MIN_STD) -> torch.Tensor:
+    return _finite_tensor(value, posinf=1.0 / min_std, neginf=min_std).clamp_min(min_std)
+
+
 class Distribution(nn.Module):
     """Base class for distribution modules.
 
@@ -168,11 +179,19 @@ class GaussianDistribution(Distribution):
 
     def update(self, mlp_output: torch.Tensor) -> None:
         """Update the Gaussian distribution from MLP output."""
-        mean = mlp_output
+        mean = _finite_tensor(mlp_output)
         if self.std_type == "scalar":
-            std = self.std_param.expand_as(mean)
+            safe_std_param = _positive_std(self.std_param)
+            if not torch.equal(safe_std_param, self.std_param):
+                with torch.no_grad():
+                    self.std_param.copy_(safe_std_param)
+            std = safe_std_param.expand_as(mean)
         elif self.std_type == "log":
-            std = torch.exp(self.log_std_param).expand_as(mean)
+            safe_log_std_param = _finite_tensor(self.log_std_param)
+            if not torch.equal(safe_log_std_param, self.log_std_param):
+                with torch.no_grad():
+                    self.log_std_param.copy_(safe_log_std_param)
+            std = _positive_std(torch.exp(safe_log_std_param)).expand_as(mean)
         self._distribution = Normal(mean, std)
 
     def sample(self) -> torch.Tensor:
@@ -181,7 +200,7 @@ class GaussianDistribution(Distribution):
 
     def deterministic_output(self, mlp_output: torch.Tensor) -> torch.Tensor:
         """Extract the mean from the MLP output."""
-        return mlp_output
+        return _finite_tensor(mlp_output)
 
     def as_deterministic_output_module(self) -> nn.Module:
         """Return an export-friendly module that extracts the mean from the MLP output."""
@@ -214,12 +233,16 @@ class GaussianDistribution(Distribution):
 
     def log_prob(self, outputs: torch.Tensor) -> torch.Tensor:
         """Compute the log probability under the Gaussian, summed over the last dimension."""
-        return self._distribution.log_prob(outputs).sum(dim=-1)  # type: ignore
+        return self._distribution.log_prob(_finite_tensor(outputs)).sum(dim=-1)  # type: ignore
 
     def kl_divergence(self, old_params: tuple[torch.Tensor, ...], new_params: tuple[torch.Tensor, ...]) -> torch.Tensor:
         """Compute KL(old || new) between two Gaussian distributions using torch.distributions."""
         old_mean, old_std = old_params
         new_mean, new_std = new_params
+        old_mean = _finite_tensor(old_mean)
+        new_mean = _finite_tensor(new_mean)
+        old_std = _positive_std(old_std)
+        new_std = _positive_std(new_std)
         old_dist = Normal(old_mean, old_std)
         new_dist = Normal(new_mean, new_std)
         return torch.distributions.kl_divergence(old_dist, new_dist).sum(dim=-1)
@@ -255,7 +278,7 @@ class SquashedGaussianDistribution(Distribution):
 
     def update(self, mlp_output: torch.Tensor) -> None:
         """Update the base Gaussian before tanh squashing."""
-        safe_mean = torch.nan_to_num(mlp_output, nan=0.0, posinf=1.0, neginf=-1.0)
+        safe_mean = _finite_tensor(mlp_output, posinf=1.0, neginf=-1.0)
         if not torch.equal(safe_mean, mlp_output) and not self._warned_invalid_mean:
             print("[WARN] SquashedGaussianDistribution received non-finite action mean; sanitizing values.", flush=True)
             self._warned_invalid_mean = True
@@ -278,7 +301,7 @@ class SquashedGaussianDistribution(Distribution):
                 self.log_std_param.copy_(safe_log_std_param)
 
         clamped_log_std = torch.clamp(safe_log_std_param, min=self.log_std_min, max=self.log_std_max)
-        self._base_std = torch.exp(clamped_log_std).clamp_min(self.squash_epsilon).expand_as(self._base_mean)
+        self._base_std = _positive_std(torch.exp(clamped_log_std), self.squash_epsilon).expand_as(self._base_mean)
         self._distribution = Normal(self._base_mean, self._base_std)
 
     def sample(self) -> torch.Tensor:
@@ -287,7 +310,7 @@ class SquashedGaussianDistribution(Distribution):
 
     def deterministic_output(self, mlp_output: torch.Tensor) -> torch.Tensor:
         """Return the squashed mean action for deterministic inference."""
-        return torch.tanh(mlp_output)
+        return torch.tanh(_finite_tensor(mlp_output, posinf=1.0, neginf=-1.0))
 
     def as_deterministic_output_module(self) -> nn.Module:
         """Return export-friendly module that applies tanh to the mean."""
@@ -301,7 +324,7 @@ class SquashedGaussianDistribution(Distribution):
     @property
     def mean(self) -> torch.Tensor:
         """Return the squashed mean action."""
-        return torch.tanh(self._base_mean)  # type: ignore[arg-type]
+        return torch.tanh(_finite_tensor(self._base_mean))  # type: ignore[arg-type]
 
     @property
     def std(self) -> torch.Tensor:
@@ -320,7 +343,11 @@ class SquashedGaussianDistribution(Distribution):
 
     def log_prob(self, outputs: torch.Tensor) -> torch.Tensor:
         """Compute exact log-probability with tanh change-of-variables correction."""
-        clipped_outputs = torch.clamp(outputs, -1.0 + self.squash_epsilon, 1.0 - self.squash_epsilon)
+        clipped_outputs = torch.clamp(
+            _finite_tensor(outputs),
+            -1.0 + self.squash_epsilon,
+            1.0 - self.squash_epsilon,
+        )
         unsquashed_outputs = torch.atanh(clipped_outputs)
         log_prob = self._distribution.log_prob(unsquashed_outputs).sum(dim=-1)  # type: ignore[union-attr]
         log_det_jacobian = torch.log(1.0 - clipped_outputs.pow(2) + self.squash_epsilon).sum(dim=-1)
@@ -330,6 +357,10 @@ class SquashedGaussianDistribution(Distribution):
         """KL is computed in the pre-squash Gaussian space."""
         old_mean, old_std = old_params
         new_mean, new_std = new_params
+        old_mean = _finite_tensor(old_mean)
+        new_mean = _finite_tensor(new_mean)
+        old_std = _positive_std(old_std, self.squash_epsilon)
+        new_std = _positive_std(new_std, self.squash_epsilon)
         old_dist = Normal(old_mean, old_std)
         new_dist = Normal(new_mean, new_std)
         return torch.distributions.kl_divergence(old_dist, new_dist).sum(dim=-1)
@@ -376,12 +407,14 @@ class HeteroscedasticGaussianDistribution(GaussianDistribution):
             mean, std = torch.unbind(mlp_output, dim=-2)
         elif self.std_type == "log":
             mean, log_std = torch.unbind(mlp_output, dim=-2)
-            std = torch.exp(log_std)
+            std = torch.exp(_finite_tensor(log_std))
+        mean = _finite_tensor(mean)
+        std = _positive_std(std)
         self._distribution = Normal(mean, std)
 
     def deterministic_output(self, mlp_output: torch.Tensor) -> torch.Tensor:
         """Extract the mean from the MLP output (first slice of the second-to-last dimension)."""
-        return mlp_output[..., 0, :]
+        return _finite_tensor(mlp_output[..., 0, :])
 
     def as_deterministic_output_module(self) -> nn.Module:
         """Return export-friendly module that extracts the mean from the MLP output."""

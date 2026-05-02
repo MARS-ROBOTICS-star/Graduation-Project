@@ -19,6 +19,10 @@ REWARD_TERM_NAMES = (
 )
 
 
+def _finite_tensor(value: torch.Tensor) -> torch.Tensor:
+    return torch.nan_to_num(value, nan=0.0, posinf=0.0, neginf=0.0)
+
+
 def get_nominal_goal_distance(cfg) -> float:
     """Return the reward/termination distance scale without tying Stage1 to waypoint sampling fields."""
 
@@ -53,10 +57,16 @@ def compute_reward_terms(
     waypoint_hit_mask: torch.Tensor,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     params = cfg.rewards.params
+    commands = _finite_tensor(commands)
+    previous_goal_distance = _finite_tensor(previous_goal_distance)
+    episode_length_buf = _finite_tensor(episode_length_buf.float())
+    base_lin_vel_b = _finite_tensor(base_lin_vel_b)
+    wheel_longitudinal_slip = _finite_tensor(wheel_longitudinal_slip)
+    wheel_slip_angle = _finite_tensor(wheel_slip_angle)
     max_episode_length_f = float(max(max_episode_length, 1))
     current_goal_distance = torch.linalg.vector_norm(commands[:, :2], dim=1)
     goal_heading_error = wrap_to_pi_tensor(commands[:, 3])
-    reward_scale = (max_episode_length_f - episode_length_buf.float()) / max_episode_length_f
+    reward_scale = (max_episode_length_f - episode_length_buf) / max_episode_length_f
 
     distance_to_target = (
         1.0
@@ -124,9 +134,11 @@ def compute_reward_terms(
         "turn_speed_penalty": turn_speed_penalty * params.turn_speed_penalty_weight,
         "slip_penalty": slip_penalty * params.slip_penalty_weight,
     }
+    components = {name: _finite_tensor(value) for name, value in components.items()}
     total_reward = sum(components.values())
     if cfg.rewards.only_positive_rewards:
         total_reward = torch.clamp(total_reward, min=0.0)
+    total_reward = _finite_tensor(total_reward)
     diagnostics = {
         "progress_ungated": ungated_progress_to_target,
         "progress_positive": positive_progress,
@@ -136,4 +148,5 @@ def compute_reward_terms(
         "progress_gate": progress_gate,
         "progress_multiplier": progress_multiplier,
     }
+    diagnostics = {name: _finite_tensor(value) for name, value in diagnostics.items()}
     return total_reward, components, diagnostics

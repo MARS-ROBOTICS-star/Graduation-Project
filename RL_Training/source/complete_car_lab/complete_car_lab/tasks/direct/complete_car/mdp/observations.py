@@ -10,6 +10,10 @@ from ..kinematics import compute_longitudinal_slip_torch
 from ..utils.math_utils import quat_rotate, wrap_to_pi_tensor
 
 
+def _finite_tensor(value: torch.Tensor) -> torch.Tensor:
+    return torch.nan_to_num(value, nan=0.0, posinf=0.0, neginf=0.0)
+
+
 def compute_wheel_motion_observations(
     wheel_body_lin_vel_w: torch.Tensor,
     wheel_body_quat_w: torch.Tensor,
@@ -25,8 +29,8 @@ def compute_wheel_motion_observations(
     wheel_forward_axis_w = quat_rotate(wheel_body_quat_w, x_axis_local)
     wheel_lateral_axis_w = quat_rotate(wheel_body_quat_w, z_axis_local)
 
-    v_x = torch.sum(wheel_body_lin_vel_w * wheel_forward_axis_w, dim=-1)
-    v_y = torch.sum(wheel_body_lin_vel_w * wheel_lateral_axis_w, dim=-1)
+    v_x = _finite_tensor(torch.sum(wheel_body_lin_vel_w * wheel_forward_axis_w, dim=-1))
+    v_y = _finite_tensor(torch.sum(wheel_body_lin_vel_w * wheel_lateral_axis_w, dim=-1))
 
     # Reflect wheel-ground traction state, including tire spin, braking slip, and obstacle-climb adhesion loss.
     wheel_longitudinal_slip = compute_longitudinal_slip_torch(
@@ -40,7 +44,7 @@ def compute_wheel_motion_observations(
     safe_v_x = torch.maximum(torch.abs(v_x), torch.full_like(v_x, slip_velocity_epsilon))
     wheel_slip_angle = torch.atan2(v_y, safe_v_x)
 
-    return wheel_longitudinal_slip, wheel_slip_angle
+    return _finite_tensor(wheel_longitudinal_slip), _finite_tensor(wheel_slip_angle)
 
 
 def _compute_wheel_contact_observations(
@@ -62,9 +66,16 @@ def _compute_wheel_contact_observations(
 
     # The runtime sensor path reconstructs one wheel-ground normal-force resultant vector in world frame
     # by summing all contact-point (normal_force_scalar * contact_normal_vector) terms for each wheel.
-    wheel_normal_contact_force = torch.linalg.vector_norm(wheel_contact_forces_w, dim=-1) / total_vehicle_weight
+    wheel_normal_contact_force = torch.linalg.vector_norm(wheel_contact_forces_w, dim=-1) / torch.clamp(
+        total_vehicle_weight,
+        min=1.0e-6,
+    )
 
-    return wheel_longitudinal_slip, wheel_slip_angle, wheel_normal_contact_force
+    return (
+        _finite_tensor(wheel_longitudinal_slip),
+        _finite_tensor(wheel_slip_angle),
+        _finite_tensor(wheel_normal_contact_force),
+    )
 
 
 def collect_raw_observation_terms(
@@ -100,7 +111,7 @@ def collect_raw_observation_terms(
         max=cfg.observations.wheel_slip_angle_clip_rad,
     )
 
-    return {
+    raw_terms = {
         "base_lin_vel": robot.data.root_com_lin_vel_b,
         "base_ang_vel": robot.data.root_com_ang_vel_b,
         "projected_gravity": robot.data.projected_gravity_b,
@@ -114,6 +125,7 @@ def collect_raw_observation_terms(
         "relative_goal_commands": relative_goal_commands,
         "last_actions": last_actions,
     }
+    return {name: _finite_tensor(value) for name, value in raw_terms.items()}
 
 
 def compute_actor_observation_from_raw_terms(
@@ -137,8 +149,8 @@ def compute_actor_observation_from_raw_terms(
         raw_terms["last_actions"] * scales.last_action,
     ]
     if height_patch is not None:
-        terms.append(height_patch)
-    return torch.cat(terms, dim=-1)
+        terms.append(_finite_tensor(height_patch))
+    return _finite_tensor(torch.cat(terms, dim=-1))
 
 
 def compute_actor_observation(
@@ -174,7 +186,7 @@ def compute_actor_observation(
 def compute_critic_observation(actor_obs: torch.Tensor) -> torch.Tensor:
     """构造 Critic 观测；当前与 Actor 使用同一份观测。"""
 
-    return actor_obs
+    return _finite_tensor(actor_obs)
 
 
 # 传感器噪声注入
@@ -185,11 +197,11 @@ def per_component_uniform_noise(data: torch.Tensor, cfg: "PerComponentUniformNoi
         cfg.n_max = torch.tensor(cfg.n_max, device=data.device, dtype=data.dtype)
 
     if cfg.operation == "add":
-        return data + torch.rand_like(data) * (cfg.n_max - cfg.n_min) + cfg.n_min
+        return _finite_tensor(data + torch.rand_like(data) * (cfg.n_max - cfg.n_min) + cfg.n_min)
     if cfg.operation == "scale":
-        return data * (torch.rand_like(data) * (cfg.n_max - cfg.n_min) + cfg.n_min)
+        return _finite_tensor(data * (torch.rand_like(data) * (cfg.n_max - cfg.n_min) + cfg.n_min))
     if cfg.operation == "abs":
-        return torch.rand_like(data) * (cfg.n_max - cfg.n_min) + cfg.n_min
+        return _finite_tensor(torch.rand_like(data) * (cfg.n_max - cfg.n_min) + cfg.n_min)
     raise ValueError(f"Unknown operation in noise: {cfg.operation}")
 
 

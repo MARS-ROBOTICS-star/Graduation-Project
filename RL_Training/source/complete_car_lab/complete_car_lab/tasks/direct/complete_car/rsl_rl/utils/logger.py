@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import git
-import math
 import os
 import pathlib
 import statistics
@@ -265,6 +264,149 @@ TENSORBOARD_EXTRA_TAGS = {
     "episode_per_step/reached_target",
 }
 
+STAGE1_TERRAIN_COLUMNS = (
+    "col00_flat",
+    "col01_slope_down",
+    "col02_slope_up",
+    "col03_rough",
+    "col04_rough",
+    "col05_stairs_down",
+    "col06_stairs_down",
+    "col07_stairs_up",
+    "col08_stairs_up",
+    "col09_obstacles",
+)
+
+STAGE1_GLOBAL_EVAL_FIELDS = (
+    "rows_advanced_mean",
+    "row_advance_rate",
+    "current_level_mean",
+    "forward_x_mean",
+    "effective_failure_rate",
+    "far_rate",
+    "ball_joint_limit_rate",
+    "timeout_rate",
+    "stagnation_rate",
+    "v_forward_mean",
+    "v_lateral_abs_mean",
+    "lateral_velocity_ratio",
+    "longitudinal_slip_abs_mean",
+    "slip_angle_abs_mean",
+    "combined_low_slip_pass_rate",
+    "contact_loss_rate",
+    "normal_force_sum_mean",
+    "roll_abs_mean",
+    "pitch_abs_mean",
+    "ball_joint_limit_usage_max",
+    "action_abs_mean",
+    "action_rate_abs_mean",
+    "action_saturation_rate",
+    "hardest_col_index",
+    "hardest_col_difficulty_score",
+)
+
+STAGE1_FLAT_EVAL_FIELDS = (
+    "retention_score",
+    "rows_advanced_mean",
+    "row_advance_rate",
+    "forward_x_mean",
+    "v_forward_mean",
+    "v_lateral_abs_mean",
+    "lateral_velocity_ratio",
+    "effective_failure_rate",
+    "far_rate",
+    "ball_joint_limit_rate",
+    "stagnation_rate",
+    "longitudinal_slip_abs_mean",
+    "slip_angle_abs_mean",
+    "combined_low_slip_pass_rate",
+    "pitch_abs_mean",
+    "roll_abs_mean",
+    "ball_joint_limit_usage_max",
+    "action_saturation_rate",
+)
+
+STAGE1_PER_COLUMN_EVAL_FIELDS = (
+    "rows_advanced_mean",
+    "row_advance_rate",
+    "forward_x_mean",
+    "current_level_mean",
+    "effective_failure_rate",
+    "far_rate",
+    "ball_joint_limit_rate",
+    "timeout_rate",
+    "stagnation_rate",
+    "backward_rate",
+    "v_forward_mean",
+    "v_lateral_abs_mean",
+    "lateral_velocity_ratio",
+    "yaw_rate_abs_mean",
+    "longitudinal_slip_abs_mean",
+    "slip_angle_abs_mean",
+    "combined_low_slip_pass_rate",
+    "contact_loss_rate",
+    "normal_force_sum_mean",
+    "roll_abs_mean",
+    "pitch_abs_mean",
+    "ball_joint_limit_usage_max",
+    "action_abs_mean",
+    "action_rate_abs_mean",
+    "action_saturation_rate",
+    "difficulty_score",
+)
+
+STAGE1_TENSORBOARD_EXTRA_TAGS = (
+    {f"Stage1Eval/global/{field}" for field in STAGE1_GLOBAL_EVAL_FIELDS}
+    | {f"Stage1Eval/flat/{field}" for field in STAGE1_FLAT_EVAL_FIELDS}
+    | {
+        f"Stage1Eval/{column}/{field}"
+        for column in STAGE1_TERRAIN_COLUMNS
+        for field in STAGE1_PER_COLUMN_EVAL_FIELDS
+    }
+)
+
+STAGE1_CONSOLE_PRIORITY_TAGS = (
+    "Stage1Eval/flat/retention_score",
+    "Stage1Eval/flat/row_advance_rate",
+    "Stage1Eval/flat/v_forward_mean",
+    "Stage1Eval/flat/effective_failure_rate",
+    "Stage1Eval/global/rows_advanced_mean",
+    "Stage1Eval/global/current_level_mean",
+    "Stage1Eval/global/forward_x_mean",
+    "Stage1Eval/global/effective_failure_rate",
+    "Stage1Eval/global/stagnation_rate",
+    "Stage1Eval/global/longitudinal_slip_abs_mean",
+    "Stage1Eval/global/slip_angle_abs_mean",
+    "Stage1Eval/global/combined_low_slip_pass_rate",
+    "Stage1Eval/global/contact_loss_rate",
+    "Stage1Eval/global/pitch_abs_mean",
+    "Stage1Eval/global/roll_abs_mean",
+    "Stage1Eval/global/action_saturation_rate",
+    "Stage1Eval/global/hardest_col_index",
+    "Stage1Eval/global/hardest_col_difficulty_score",
+    "Stage1Eval/col01_slope_down/difficulty_score",
+    "Stage1Eval/col02_slope_up/difficulty_score",
+    "Stage1Eval/col03_rough/difficulty_score",
+    "Stage1Eval/col04_rough/difficulty_score",
+    "Stage1Eval/col05_stairs_down/difficulty_score",
+    "Stage1Eval/col06_stairs_down/difficulty_score",
+    "Stage1Eval/col07_stairs_up/difficulty_score",
+    "Stage1Eval/col08_stairs_up/difficulty_score",
+    "Stage1Eval/col09_obstacles/difficulty_score",
+)
+
+STAGE1_CONSOLE_VISIBLE_TAGS = set(STAGE1_CONSOLE_PRIORITY_TAGS)
+STAGE1_CONSOLE_TAG_ORDER = {tag: idx for idx, tag in enumerate(STAGE1_CONSOLE_PRIORITY_TAGS)}
+STAGE1_PER_WHEEL_DEBUG_FIELDS = {
+    "normal_force",
+    "longitudinal_slip",
+    "slip_angle",
+    "v_parallel",
+    "v_perp",
+    "wheel_torque_target",
+    "wheel_speed_reference",
+}
+
 CONSOLE_VISIBLE_TAGS = set(CONSOLE_PRIORITY_TAGS)
 CONSOLE_TAG_ORDER = {tag: idx for idx, tag in enumerate(CONSOLE_PRIORITY_TAGS)}
 
@@ -285,6 +427,56 @@ class Logger:
         filled = int(round(progress * width))
         bar = "#" * filled + "-" * max(width - filled, 0)
         return bar, progress
+
+    @staticmethod
+    def _get_cfg_value(cfg: dict | object | None, key: str, default=None):
+        if cfg is None:
+            return default
+        if isinstance(cfg, dict):
+            return cfg.get(key, default)
+        return getattr(cfg, key, default)
+
+    @classmethod
+    def _get_nested_cfg_value(cls, cfg: dict | object | None, keys: tuple[str, ...], default=None):
+        value = cfg
+        for key in keys:
+            value = cls._get_cfg_value(value, key, default)
+            if value is default:
+                return default
+        return value
+
+    def _infer_stage_name(self) -> str:
+        stage_name = self._get_cfg_value(self.env_cfg, "stage_name", None)
+        if isinstance(stage_name, str) and stage_name.lower() in {"stage0", "stage1"}:
+            return stage_name.lower()
+
+        candidates = (
+            self.cfg.get("task"),
+            self.cfg.get("experiment_name"),
+            self.cfg.get("run_name"),
+        )
+        for candidate in candidates:
+            candidate_lower = str(candidate or "").lower()
+            if candidate_lower in {"completecar-stage0", "complete_car_stage0"} or "stage0" in candidate_lower:
+                return "stage0"
+            if candidate_lower in {"completecar-stage1", "complete_car_stage1"} or "stage1" in candidate_lower:
+                return "stage1"
+        return "unknown"
+
+    def _update_stage_name_from_metrics(self, metrics: dict) -> None:
+        if self.stage_name in {"stage0", "stage1"}:
+            return
+        stage_id = metrics.get("Meta/stage_id")
+        if stage_id is None:
+            return
+        try:
+            stage_id_float = float(stage_id)
+        except (TypeError, ValueError):
+            return
+        if abs(stage_id_float - 1.0) < 0.5:
+            self.stage_name = "stage1"
+        elif abs(stage_id_float) < 0.5:
+            self.stage_name = "stage0"
 
     def __init__(
         self,
@@ -307,6 +499,10 @@ class Logger:
         self.git_status_repos = [rsl_rl.__file__]
         self.tot_timesteps = 0
         self.tot_time = 0
+        self.stage_name = self._infer_stage_name()
+        self.enable_stage1_per_wheel_debug = bool(
+            self._get_nested_cfg_value(self.env_cfg, ("logging", "enable_stage1_per_wheel_debug"), False)
+        )
 
         # Create buffers
         self.ep_extras = []
@@ -372,11 +568,15 @@ class Logger:
     ) -> None:
         """Add metrics from the environment step to the buffers."""
         if self.writer is not None:
+            rewards = torch.nan_to_num(rewards, nan=0.0, posinf=0.0, neginf=0.0)
+            if intrinsic_rewards is not None:
+                intrinsic_rewards = torch.nan_to_num(intrinsic_rewards, nan=0.0, posinf=0.0, neginf=0.0)
             if "episode" in extras:
                 self.ep_extras.append(extras["episode"])
             elif "log" in extras:
                 self.ep_extras.append(extras["log"])
             if "metrics" in extras:
+                self._update_stage_name_from_metrics(extras["metrics"])
                 self.step_extras.append(extras["metrics"])
 
             # Update rewards and episode length
@@ -445,6 +645,9 @@ class Logger:
             for key, value in self._ordered_scalar_items(console_scalars):
                 if not print_minimal and self._should_print_scalar(key):
                     extras_string += f"""{f"{key}:":>{pad}} {value:.4f}\n"""
+            action_std_mean = float(
+                torch.nan_to_num(action_std.mean(), nan=0.0, posinf=0.0, neginf=0.0).item()
+            )
 
             # Log losses
             for key, value in loss_dict.items():
@@ -452,7 +655,7 @@ class Logger:
             self._write_tensorboard_scalar("Loss/learning_rate", learning_rate, it)
 
             # Log std
-            self._write_tensorboard_scalar("Policy/mean_std", action_std.mean().item(), it)
+            self._write_tensorboard_scalar("Policy/mean_std", action_std_mean, it)
 
             # Log performance
             fps = int(collection_size / (collect_time + learn_time))
@@ -505,7 +708,7 @@ class Logger:
                 log_string += f"""{"Mean episode length:":>{pad}} {statistics.mean(self.lenbuffer):.2f}\n"""
 
             # Print std
-            log_string += f"""{"Mean action std:":>{pad}} {action_std.mean().item():.2f}\n"""
+            log_string += f"""{"Mean action std:":>{pad}} {action_std_mean:.2f}\n"""
 
             # Print episode extras
             if not print_minimal:
@@ -596,7 +799,7 @@ class Logger:
                     value = value.to(self.device, dtype=torch.float32)
                 if value.ndim == 0:
                     value = value.unsqueeze(0)
-                values.append(value.reshape(-1))
+                values.append(torch.nan_to_num(value.reshape(-1), nan=0.0, posinf=0.0, neginf=0.0))
             if values:
                 aggregated[key] = float(torch.mean(torch.cat(values)).item())
         return aggregated
@@ -609,8 +812,14 @@ class Logger:
         """Write scalars to TensorBoard while suppressing blank series until they activate."""
         if self.writer is None:
             return
-        if not math.isfinite(float(value)):
-            return
+        if isinstance(value, torch.Tensor):
+            tensor_value = value.detach().float().reshape(-1)
+        else:
+            tensor_value = torch.as_tensor(value, dtype=torch.float32).reshape(-1)
+        if tensor_value.numel() == 0:
+            value = 0.0
+        else:
+            value = float(torch.nan_to_num(torch.mean(tensor_value), nan=0.0, posinf=0.0, neginf=0.0).item())
 
         tensorboard_tag = self._tensorboard_tag(tag)
         if tag not in self._activated_sparse_zero_scalars:
@@ -625,15 +834,30 @@ class Logger:
 
     def _should_print_scalar(self, tag: str) -> bool:
         """Only print the highest-signal scalar subset to the training console."""
+        if self.stage_name == "stage1":
+            return tag in STAGE1_CONSOLE_VISIBLE_TAGS
         return tag in CONSOLE_VISIBLE_TAGS
 
     def _should_write_tensorboard_extra(self, tag: str) -> bool:
         """Only keep the curated extra-scalar subset in TensorBoard."""
+        if self.stage_name == "stage1":
+            return (
+                tag in STAGE1_TENSORBOARD_EXTRA_TAGS
+                or tag.startswith("Debug/Stage1/")
+                or self._should_write_stage1_per_wheel_debug(tag)
+            )
         return tag in TENSORBOARD_EXTRA_TAGS or tag.startswith("PerWheel/")
+
+    def _should_write_stage1_per_wheel_debug(self, tag: str) -> bool:
+        if not self.enable_stage1_per_wheel_debug or not tag.startswith("PerWheel/"):
+            return False
+        parts = tag.split("/")
+        return len(parts) == 3 and parts[2] in STAGE1_PER_WHEEL_DEBUG_FIELDS
 
     def _ordered_scalar_items(self, scalar_dict: dict[str, float]) -> list[tuple[str, float]]:
         """Sort scalar tags so the same high-signal subset stays near the top in console output."""
+        tag_order = STAGE1_CONSOLE_TAG_ORDER if self.stage_name == "stage1" else CONSOLE_TAG_ORDER
         return sorted(
             scalar_dict.items(),
-            key=lambda item: (CONSOLE_TAG_ORDER.get(item[0], len(CONSOLE_TAG_ORDER)), item[0]),
+            key=lambda item: (tag_order.get(item[0], len(tag_order)), item[0]),
         )

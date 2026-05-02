@@ -14145,3 +14145,96 @@
 - 当前输出目录包含 `20` 个 Markdown、`20` 个图片目录、`528` 张图片。
 - 校验结果：无残留 PDF 连字乱码、私有区字形、替换字符、控制字符；参考文献段无空引用号。
 - 乱码根因主要是 PDF 字体/CMap 映射损坏，不是 Markdown 文件本身的 UTF-8 编码错误。
+
+## 2026-05-02
+
+已完成：
+- 基于 `docs/literature/output/铰接车发展历史` 中 `20` 篇 Markdown 完成阶段 `3-8` 文献整理。
+- 抽取每篇文献的题名、作者、年份、来源、DOI/URL、车辆类型、铰接自由度、铰接机构、运动方式、应用场景、控制方法、地形类型、贡献、局限、与本课题相关性和参考文献。
+- 从参考文献中整理可能缺失的关键文献，并按优先级给出后续补充下载建议。
+- 建立按时间阶段、自由度、驱动方式、应用场景和控制方法的多维分类体系。
+- 生成 Markdown 与 HTML 两种时间线，以及毕业论文综述风格的初稿和质量检查报告。
+
+修改文件：
+- `docs/literature/output/铰接车发展历史/literature_database.yaml`
+- `docs/literature/output/铰接车发展历史/missing_references.md`
+- `docs/literature/output/铰接车发展历史/classification_system.md`
+- `docs/literature/output/铰接车发展历史/timeline.md`
+- `docs/literature/output/铰接车发展历史/timeline.html`
+- `docs/literature/output/铰接车发展历史/articulated_vehicle_review.md`
+- `docs/literature/output/铰接车发展历史/quality_check.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `literature_database.yaml` 已通过 YAML 解析检查，共 `20` 条论文记录。
+- 当前语料没有直接以强化学习控制铰接式移动机器人为主题的论文；综述中将 RL 作为本课题的研究缺口和后续路线处理。
+- `Zhu2018`、`Amar2010`、`Kayacan2018`、`Gao2020`、`HuCheng2023`、`Li2021` 等是后续写作中需要重点回查的核心文献。
+- 仍需人工复核部分论文的 DOI、期刊/会议信息、铰接自由度和复杂公式。
+
+## 2026-05-02
+
+已完成：
+- 按用户要求新建 Stage1 TensorBoard 与终端日志评价指标说明文档。
+- 核对 `logger.py`、`env.py`、`train.py`、Stage1 配置和当前项目状态，整理 TensorBoard tag、终端打印字段、terrain chase 录制输出、异常/警告输出和推荐判断组合。
+- 明确当前本地 Stage1 run 目录缺少 `events.out.tfevents*`、`params/env.yaml`、`params/agent.yaml` 和 runtime `.log` 文件，因此文档不填写具体训练曲线数值，只解释当前源码会输出的指标内容。
+
+修改文件：
+- `docs/stage1评价指标.md`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `docs/stage1评价指标.md` 已覆盖 `Train/*`、`Loss/*`、`Policy/*`、`Perf/*`、`Reward/*`、`ProgressGate/*`、`Termination/*`、`Tracking/*`、`Terrain/*`、`Action/*`、`LowLevel/*`、`LowSlip/*`、`Observation/*`、`Command/*`、`episode/*` 和 `PerWheel/*` 指标。
+- 文档强调 Stage1 terrain-column 目标下 `success_rate` 不是主成功率，应优先结合 `Terrain/*`、`Tracking/terrain_target_advances_mean`、滑移指标和视频行为判断。
+
+## 2026-05-03
+
+已完成：
+- 重构 CompleteCar logger 为 Stage0 / Stage1 分支，Stage0 保持原 TensorBoard 白名单和终端输出顺序。
+- 新增 Stage1Eval 指标计算模块，输出 global、flat retention 和 `col00_flat` 到 `col09_obstacles` 的列级通过能力 / 运动质量指标。
+- Stage1 终端 priority tags 改为只打印 Stage1Eval 高信号指标，不再打印固定为 `0` 的 `Termination/success_rate` 或旧 reward/gate/lowlevel 细项。
+- Stage1 旧 reward、progress gate、action、lowlevel、command 诊断指标改以 `Debug/Stage1/*` 写入 TensorBoard。
+- 新增 `logging.enable_stage1_per_wheel_debug = False`，Stage1 默认不写 PerWheel TensorBoard；开启后只写受限的 7 类 PerWheel 调试指标。
+- 新增 Stage1Eval dry-run 测试，验证 retention score、difficulty score、hardest column 和空 column 指标为 `0`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/stage1_eval.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `RL_Training/tests/test_stage1_eval_metrics.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 主评价口径已从旧 `Termination/success_rate` / reward 细项转为 `Stage1Eval/*`。
+- `hardest_col_index` 只在非 flat column 中排名。
+- 已验证 `python3 -m py_compile`、`git diff --check`、`.venv-mineru` dry-run 测试和 logger 分支静态断言。
+
+## 2026-05-03
+
+已完成：
+- 按用户补充要求加入 CompleteCar / RSL-RL 训练链路 NaN/Inf 数值安全保护。
+- 对 Gaussian、SquashedGaussian、HeteroscedasticGaussian 的 action mean、std、log_std 做非有限值清理，并确保传入 `Normal` distribution 的 std 始终大于 `0`。
+- 对 policy action、actor / critic obs、reward、episode extras 和 step metrics 写入前执行 `nan_to_num`。
+- 扩展 Stage1Eval dry-run 测试，覆盖空 mask、retention score、difficulty score、hardest column 和 distribution std clamp。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/stage1_eval.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/modules/distribution.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `RL_Training/tests/test_stage1_eval_metrics.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 此前 Stage1 PPO update 报错中的非法 distribution std 已在分布层做保护；Stage1Eval 空 column / 空 mask 仍返回 `0`，不会写入 NaN/Inf。
+- 已验证 `python3 -m py_compile`、`git diff --check` 和 `.venv-mineru` dry-run 测试。

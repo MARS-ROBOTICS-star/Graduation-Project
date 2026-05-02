@@ -28,12 +28,13 @@ class Stage1TerrainCfg:
     roughness_downsampled_scale: float = 0.2
     terrain_dict: dict[str, float] = field(
         default_factory=lambda: {
+            "flat": 0.10,
             "slope down": 0.10,
             "slope up": 0.10,
             "uneven rough": 0.20,
             "stairs down": 0.20,
             "stairs up": 0.20,
-            "discrete obstacles": 0.15,
+            "discrete obstacles": 0.10,
             "hurdle": 0.20,
             "gap": 1.20,
             "ramp": 1.10,
@@ -528,6 +529,8 @@ def get_terrain_name_from_idx(cfg: Stage1TerrainCfg, terrain_idx: int) -> str:
 
 def make_tile_by_name(cfg: Stage1TerrainCfg, terrain_name: str, difficulty: float, choice: float, seed: int) -> np.ndarray:
     del choice
+    if terrain_name == "flat":
+        return _make_subterrain(cfg).height_field_raw.copy()
     if terrain_name == "slope down":
         return make_slope_down_tile(cfg, difficulty)
     if terrain_name == "slope up":

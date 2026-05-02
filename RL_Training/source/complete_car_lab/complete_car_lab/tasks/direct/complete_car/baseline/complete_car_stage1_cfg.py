@@ -170,12 +170,13 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.terrain.generator.roughness_height_range = (0.01, 0.04)
         self.terrain.generator.roughness_downsampled_scale = 0.2
         self.terrain.generator.terrain_dict = {
+            "flat": 0.10,
             "slope down": 0.10,
             "slope up": 0.10,
             "uneven rough": 0.20,
             "stairs down": 0.20,
             "stairs up": 0.20,
-            "discrete obstacles": 0.15,
+            "discrete obstacles": 0.10,
             "hurdle": 0.20,
             "gap": 1.20,
             "ramp": 1.10,
@@ -186,7 +187,7 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
 
         self.curriculum.enabled = True
         self.curriculum.max_init_terrain_level = 5
-        self.curriculum.default_terrain_name = "slope down"
+        self.curriculum.default_terrain_name = "flat"
         self.curriculum.move_up_distance_ratio = 0.70
         self.curriculum.move_up_uses_forward_x = True
 

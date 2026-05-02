@@ -18,6 +18,8 @@
 
 该 run 使用 `32` env、headless、`700` iterations、`best_baseline_2` warm-start，并启用按地形选择最佳 env 后依次录制 `120 s` chase 视频。2026-04-28 的 GUI run `2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter` 已按用户要求在 PPO iteration `18/700` 后停止，只作为历史启动验证记录。
 
+注意：上述 run 的 `env.yaml` 是启动时快照。当前源码中的 Stage1 terrain column 映射已在 2026-05-02 调整为第 `0` 列 `flat`，后续新启动训练以源码配置为准。
+
 ## 0. 对应源码
 
 | 模块 | 路径 |
@@ -311,15 +313,15 @@ origin 的 z 坐标取 tile 中心区域高度的非负最大值，用于 reset 
 
 | column | terrain name | terrain class |
 |---:|---|---|
-| `0` | `slope down` | `other` |
-| `1` | `slope up` | `other` |
-| `2` | `uneven rough` | `other` |
+| `0` | `flat` | `other` |
+| `1` | `slope down` | `other` |
+| `2` | `slope up` | `other` |
 | `3` | `uneven rough` | `other` |
-| `4` | `stairs down` | `step` |
+| `4` | `uneven rough` | `other` |
 | `5` | `stairs down` | `step` |
-| `6` | `stairs up` | `step` |
+| `6` | `stairs down` | `step` |
 | `7` | `stairs up` | `step` |
-| `8` | `discrete obstacles` | `step` |
+| `8` | `stairs up` | `step` |
 | `9` | `discrete obstacles` | `step` |
 
 `terrain_dict` 中还保留 `hurdle`、`gap`、`ramp`、`beam`、`new stairs down`、`pit` 等条目；但在当前 `num_cols = 10` 且 `choice < 1.0` 的列选择方式下，这些类型不会被当前 10 列实际采到。
@@ -332,12 +334,12 @@ origin 的 z 坐标取 tile 中心区域高度的非负最大值，用于 reset 
 |---|---:|---|
 | `curriculum.enabled` | `True` | 启用课程 |
 | `curriculum.max_init_terrain_level` | `5` | 初始 row 从 `0-5` 随机 |
-| `curriculum.default_terrain_name` | `slope down` | 默认地形名，仅用于初始化检查和默认类型索引 |
+| `curriculum.default_terrain_name` | `flat` | 默认地形名，仅用于初始化检查和默认类型索引 |
 
 初始化时：
 
 - `terrain_levels` 从 `0` 到 `5` 均匀随机采样。
-- `terrain_types` 按 env id 均匀分配到 `0-9` 列。
+- `terrain_types` 按 env id 均匀分配到 `0-9` 全部地形列。
 - `scene.env_origins` 同步到每个 env 当前 row / column 对应 tile origin。
 
 ### 7.2 升级 / 降级

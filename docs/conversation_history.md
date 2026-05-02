@@ -12674,3 +12674,55 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - 当前 Stage1 warm-start checkpoint 已转换为 `632` 维，actor/critic 第一层为 `[256, 632]`，obs normalizer 为 `[1, 632]`。
   - `632 = 54 + 34 * 17`，其中高度 patch 为 `578` 维；此前 `972 = 54 + 34 * 27` 的记录已被当前 `patch_side_margin = 0.5` 方案取代。
   - 后续 Stage1 地形训练和回放默认使用当前 `632` 维 warm-start checkpoint，不再使用旧 `972` 维 warm-start。
+
+### Stage1 terrain chase 训练中断后的纯推理续录
+- Date: 2026-04-29
+- Failure:
+  - 原训练 run `2026-04-29_07-37-58_stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter` 在第 `2/6` 个视频期间于 PPO update 崩溃，报错为 `RuntimeError: normal expects all elements of std >= 0.0`。
+  - 中断时第 `1/6` 个 `slope down` 已完整录完，第 `2/6` 个 `slope up` 只录到约 `49.2 s`。
+- Implementation:
+  - `scripts/train.py` 新增 `--record_only`，允许只加载 checkpoint 做策略推理，不再执行 PPO rollout/update。
+  - `scripts/train.py` 新增 `--terrain_chase_selection_file` 和 `--terrain_chase_start_from`，允许复用已有 `selection.txt`，从指定序号继续顺序录制。
+  - `distribution.py` 中 `SquashedGaussianDistribution.update()` 新增非有限 `mean/log_std` 清理与 clamp，避免再次因非法 `std` 直接在 `Normal.sample()` 崩溃。
+- Verification:
+  - 短测已验证纯推理续录链路能够从 `2/6` 开始，顺序录完到 `6/6` 并正常退出。
+  - 正式续录已通过后台命令启动，复用原 run 目录和原 `selection.txt`，从第 `2/6` 个视频开始覆盖重录。
+- Durable conclusion:
+  - 当 Stage1 chase 视频录制目标是“保留既定选中的 env 并把视频补齐”时，优先使用 `record_only + selection.txt resume`，不要再依赖继续 PPO 更新。
+
+### Stage1 terrain column 第一列已恢复为 flat
+- Date: 2026-05-02
+- User request:
+  - 将 Stage1 地形第一列改回 `flat`，后续列依次顺推，最后一列只保留一列 `discrete obstacles`。
+- Implementation:
+  - `Stage1TerrainCfg.terrain_dict` 和 `CompleteCarStage1EnvCfg.terrain.generator.terrain_dict` 均重新加入首项 `flat: 0.10`。
+  - `make_tile_by_name(...)` 重新支持 `terrain_name == "flat"`，返回零高度平地 tile。
+  - `discrete obstacles` 权重调整为 `0.10`，因此当前 `num_cols = 10` 下只占最后一列。
+  - `CompleteCarStage1EnvCfg.curriculum.default_terrain_name` 改为 `flat`。
+- Durable conclusion:
+  - 当前 Stage1 10 列映射为：`0 flat`、`1 slope down`、`2 slope up`、`3-4 uneven rough`、`5-6 stairs down`、`7-8 stairs up`、`9 discrete obstacles`。
+  - 旧结论“Stage1 terrain generator 已删除 flat”已被本次修改取代；后续 Stage1 地形预览和新训练应按包含 `flat` 的列映射解释。
+
+### Stage1 初始训练列曾限制到前 5 列（已被下一条取代）
+- Date: 2026-05-02
+- User request:
+  - 修改小车出生逻辑，先只在前 5 列地形进行训练。
+- Implementation:
+  - `CurriculumCfg` 新增 `max_init_terrain_type`，用于限制初始化时 env 可分配到的最大 terrain column。
+  - `mdp/curriculum.py` 的初始 terrain type 分配改为按 `0..max_init_terrain_type` 均匀分配。
+  - `CompleteCarStage1EnvCfg` 设置 `curriculum.max_init_terrain_type = 4`。
+- Durable conclusion:
+  - 当时 Stage1 初始化 / reset 出生列只覆盖 `0-4` 列：`flat`、`slope down`、`slope up`、两列 `uneven rough`。
+  - Stage1 terrain-column episode 内推进逻辑只增加 row，不改变 column，因此当时训练不会进入 `5-9` 列。
+
+### Stage1 初始训练列已恢复为全地形
+- Date: 2026-05-02
+- User request:
+  - 修改小车出生逻辑，改回全地形训练，不再只在前 5 列训练。
+- Implementation:
+  - 删除 `CurriculumCfg.max_init_terrain_type` 配置字段。
+  - `mdp/curriculum.py` 的初始 terrain type 分配恢复为按 `num_cols` 全列均匀分配。
+  - `CompleteCarStage1EnvCfg` 不再设置初始化 terrain column 上限。
+- Durable conclusion:
+  - 当前 Stage1 初始化 / reset 出生列重新覆盖 `0-9` 全部地形列。
+  - Stage1 terrain-column episode 内推进逻辑仍只增加 row、不改变 column；因此全地形训练由初始化阶段的全列分配保证。

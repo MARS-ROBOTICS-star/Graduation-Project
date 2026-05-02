@@ -17,6 +17,18 @@
   - 高度图保持原始 patch 尺寸和米制高度值，不 clip 到 `[-1, 1]`，不额外乘 scale，交由 PPO normalizer 归一化。
 - 当前 Stage1 参数详情表：`docs/Stage1参数详情表.md`。
 - 当前 `complete_car_stage1_cfg.py` 已改为 Stage1 相关参数显式配置风格，后续 Stage1 参数优先在该文件中统一修改。
+- 当前 Stage1 训练地形列映射：
+  - `0: flat`
+  - `1: slope down`
+  - `2: slope up`
+  - `3-4: uneven rough`
+  - `5-6: stairs down`
+  - `7-8: stairs up`
+  - `9: discrete obstacles`
+  - 即第一列已恢复为平地，后续地形顺推，最后只保留一列 `discrete obstacles`。
+- 当前 Stage1 初始出生 / 训练列分配：
+  - 初始化时 env 按 id 均匀分配到 `0-9` 全部地形列。
+  - episode 内 terrain-column 目标推进只增加 row，不改变 column，因此全地形训练依赖初始化时覆盖所有 column。
 - 为避免 terrain-column target 与自由 waypoint 采样语义混淆，Stage1 cfg 不再显式写入 `commands.goal_distance` / `commands.goal_direction_max_deg`；其 reward 名义尺度改由 `rewards.params.nominal_goal_distance_m` 和 `turn_speed_angle_scale_deg` 表达。
 - 当前 Stage1 目标点逻辑：
   - 使用 terrain column / terrain type 生成目标点。
@@ -36,6 +48,12 @@
   - 视频策略：按 terrain name 分组，先用 `600` step 选择每个地形中正向 `+x` 表现最好的 env，再按顺序逐个录制 `120 s` chase 视频。
   - 当前录制为非并发策略，同一时刻只创建一个 chase render product 和一个 mp4 writer。
   - 目标点红色 marker 开启；所有 env 创建 follow view；本次启动关闭目标方向箭头和 wheel-slip 可视箭头，保留目标点 marker。
+  - 该训练 run 已在第 `2/6` 个视频期间于 PPO 更新阶段报错退出：`RuntimeError: normal expects all elements of std >= 0.0`。
+  - 当前已切换为纯推理续录：
+    - runtime log：`RL_Training/logs/runtime/stage1_32env_best_per_terrain_chase_resume_record_only.log`
+    - 续录方式：`scripts/train.py --record_only --record_terrain_chase_videos --terrain_chase_selection_file .../selection.txt --terrain_chase_start_from 2`
+    - 续录逻辑：复用原 `selection.txt`，从第 `2/6` 个视频开始覆盖重录 `slope up`，随后顺序录制剩余地形，不再进行 PPO 参数更新。
+  - 当前源码已加入分布数值保护：若 `SquashedGaussianDistribution` 的 `mean` 或 `log_std` 出现非有限值，会先做有限值清理和 clamp，再继续采样，避免再次因非法 `std` 直接崩溃。
 - 历史可视化训练：
   - GUI run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter`
   - 已按用户要求停止，终端最后完整输出到 PPO iteration `18/700`。

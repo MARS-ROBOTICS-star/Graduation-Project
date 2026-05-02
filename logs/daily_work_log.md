@@ -13892,6 +13892,26 @@
 ## 2026-04-29
 
 已完成：
+- 诊断 Stage1 terrain chase 训练在第 `2/6` 个视频期间中断的原因，确认崩溃点位于 PPO update 的 `SquashedGaussianDistribution.sample()`，报错为非法 `std`。
+- 在 `distribution.py` 中为 `SquashedGaussianDistribution` 增加 `mean/log_std` 非有限值清理和 clamp。
+- 在 `scripts/train.py` 中增加 `--record_only`、`--terrain_chase_selection_file`、`--terrain_chase_start_from`，支持只做策略推理并从已有 `selection.txt` 指定序号继续顺序录制。
+- 用临时目录短测验证纯推理续录链路能从 `2/6` 继续顺序录到 `6/6` 并正常退出。
+- 在正式 run 目录中启动后台纯推理续录任务，从第 `2/6` 个视频开始覆盖重录并继续录制剩余地形。
+
+修改文件：
+- `RL_Training/scripts/train.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/modules/distribution.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 正式续录 runtime log：`RL_Training/logs/runtime/stage1_32env_best_per_terrain_chase_resume_record_only.log`。
+- 正式续录复用原 run 目录和原 `selection.txt`，从 `2/6 slope up` 开始录制。
+
+## 2026-04-29
+
+已完成：
 - 按用户要求将当前项目同步到 GitHub 远端 `origin/main`。
 - 显式将默认被 `.gitignore` 忽略的 Stage1 chase 视频 `slope_down_env02_chase_120s.mp4` 强制纳入 Git 并推送。
 - 同步推送本地已有的 Stage1 terrain chase 录制相关代码和文档更新。
@@ -13903,3 +13923,65 @@
 - GitHub 已收到本次同步，推送分支为 `main`。
 - 已上传视频：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-29_07-37-58_stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter/videos/terrain_chase/slope_down_env02_chase_120s.mp4`。
 - 本次同步包含两个提交：`0267be8`、`1e95d81`。
+
+## 2026-05-02
+
+已完成：
+- 按用户要求将 Stage1 地形第一列恢复为 `flat`。
+- 将原有 Stage1 地形列顺序整体后推，并让最后一列只保留一列 `discrete obstacles`。
+- 恢复 `make_tile_by_name(...)` 对 `flat` tile 的支持。
+- 将 Stage1 默认地形名改为 `flat`。
+- 同步更新 Stage1 参数详情表、当前状态和长期记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage1 10 列映射为 `flat`、`slope down`、`slope up`、两列 `uneven rough`、两列 `stairs down`、两列 `stairs up`、一列 `discrete obstacles`。
+
+## 2026-05-02
+
+已完成：
+- 按用户要求修改 Stage1 小车出生列分配逻辑，当前先只在前 5 列地形训练。
+- 在 curriculum 配置中加入 `max_init_terrain_type`。
+- 将 Stage1 的 `max_init_terrain_type` 设置为 `4`，对应列 `0-4`。
+- 同步更新 Stage1 参数详情表、当前状态和长期记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage1 初始化时 env 只会分配到 `flat`、`slope down`、`slope up` 和两列 `uneven rough`。
+- episode 内地形目标推进只改变 row，不改变 column，因此当前训练不会进入后 5 列。
+
+## 2026-05-02
+
+已完成：
+- 按用户要求将 Stage1 小车出生列逻辑改回全地形训练。
+- 删除 `max_init_terrain_type` 初始化列上限。
+- 恢复 curriculum 初始化时按 `num_cols` 将 env 均匀分配到全部地形列。
+- 同步更新 Stage1 参数详情表、当前状态和长期记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage1 初始化时 env 会覆盖 `0-9` 全部地形列。
+- episode 内地形目标推进仍保持同 column 只推进 row。

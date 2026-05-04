@@ -5,11 +5,32 @@ from __future__ import annotations
 import torch
 
 
-def _build_initial_terrain_levels(curriculum_cfg, terrain_runtime) -> torch.Tensor:
+def sample_initial_terrain_levels(curriculum_cfg, terrain_runtime, terrain_types: torch.Tensor) -> torch.Tensor:
     max_init_level = min(curriculum_cfg.max_init_terrain_level, terrain_runtime._terrain_cfg.num_rows - 1)
     if not curriculum_cfg.enabled:
         max_init_level = terrain_runtime._terrain_cfg.num_rows - 1
-    return torch.randint(0, max_init_level + 1, (terrain_runtime.num_envs,), device=terrain_runtime.device, dtype=torch.long)
+    max_levels = torch.full_like(terrain_types, max_init_level, dtype=torch.long, device=terrain_runtime.device)
+    per_name_limits = (
+        getattr(curriculum_cfg, "initial_max_terrain_level_by_name", {}) or {}
+        if curriculum_cfg.enabled
+        else {}
+    )
+    if per_name_limits:
+        terrain_names = tuple(getattr(terrain_runtime._terrain_cfg, "terrain_names", ()))
+        row0 = torch.zeros_like(terrain_types, dtype=torch.long, device=terrain_runtime.device)
+        terrain_type_indices = terrain_runtime.get_tile_type_indices(row0, terrain_types.to(torch.long))
+        for terrain_name, terrain_max_level in per_name_limits.items():
+            if terrain_name not in terrain_names:
+                continue
+            terrain_index = terrain_names.index(terrain_name)
+            terrain_max_level = min(max(int(terrain_max_level), 0), terrain_runtime._terrain_cfg.num_rows - 1)
+            max_levels = torch.where(
+                terrain_type_indices == terrain_index,
+                torch.full_like(max_levels, terrain_max_level),
+                max_levels,
+            )
+    u = torch.rand(terrain_types.shape, device=terrain_runtime.device)
+    return torch.floor(u * (max_levels.float() + 1.0)).to(torch.long).clamp(min=0)
 
 
 def _build_initial_terrain_types(terrain_runtime) -> torch.Tensor:
@@ -22,8 +43,12 @@ def initialize_terrain_curriculum(curriculum_cfg, terrain_runtime, scene) -> Non
     if not terrain_runtime.generator_enabled:
         return
 
-    terrain_runtime.terrain_levels = _build_initial_terrain_levels(curriculum_cfg, terrain_runtime)
     terrain_runtime.terrain_types = _build_initial_terrain_types(terrain_runtime)
+    terrain_runtime.terrain_levels = sample_initial_terrain_levels(
+        curriculum_cfg,
+        terrain_runtime,
+        terrain_runtime.terrain_types,
+    )
     terrain_runtime.terrain_classes = torch.zeros(
         terrain_runtime.num_envs,
         dtype=torch.long,
@@ -66,4 +91,4 @@ def update_terrain_curriculum(curriculum_cfg, terrain_runtime, scene, robot, env
     }
 
 
-__all__ = ["initialize_terrain_curriculum", "update_terrain_curriculum"]
+__all__ = ["initialize_terrain_curriculum", "sample_initial_terrain_levels", "update_terrain_curriculum"]

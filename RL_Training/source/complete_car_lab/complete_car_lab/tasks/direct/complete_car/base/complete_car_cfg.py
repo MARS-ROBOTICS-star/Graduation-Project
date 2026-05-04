@@ -216,6 +216,7 @@ class CurriculumCfg:
 
     enabled: bool = False
     max_init_terrain_level: int = 0
+    initial_max_terrain_level_by_name: dict[str, int] = field(default_factory=dict)
     default_terrain_name: str = "slope down"
     move_up_distance_ratio: float = 0.5
     move_down_command_ratio: float = 0.5

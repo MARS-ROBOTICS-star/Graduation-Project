@@ -104,7 +104,7 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.rewards.params.far_from_target_margin = 8.0
         self.rewards.params.far_from_target_weight = -2.0
         self.rewards.params.angle_diff_weight = 6.0
-        self.rewards.params.turn_speed_penalty_weight = -2.0
+        self.rewards.params.turn_speed_penalty_weight = 0.0
         self.rewards.params.slip_penalty_weight = -2.0
         self.rewards.params.slip_angle_penalty_ratio = 6.0
         self.rewards.params.progress_gate_longitudinal_k = 3.0
@@ -156,6 +156,9 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.terrain.height_scanner_update_period = 0.02
         self.terrain.height_scanner_offset = (0.0, 0.0, 20.0)
         self.terrain.step_spawn_back_range = (2.0, 3.0)
+        self.terrain.step_approach_spawn_back_range = (0.3, 0.8)
+        self.terrain.step_approach_spawn_lateral_range = (-0.2, 0.2)
+        self.terrain.base_spawn_clearance = 0.30
         self.terrain.gap_spawn_back_range = (0.0, 0.4)
         self.terrain.other_spawn_xy_range = (-0.5, 0.5)
         self.terrain.generator.horizontal_scale = 0.1
@@ -187,6 +190,11 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
 
         self.curriculum.enabled = True
         self.curriculum.max_init_terrain_level = 5
+        self.curriculum.initial_max_terrain_level_by_name = {
+            "stairs down": 1,
+            "stairs up": 1,
+            "discrete obstacles": 2,
+        }
         self.curriculum.default_terrain_name = "flat"
         self.curriculum.move_up_distance_ratio = 0.70
         self.curriculum.move_up_uses_forward_x = True

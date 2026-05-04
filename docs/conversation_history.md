@@ -2,6 +2,73 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-05-03
+
+### Stage1 max-row、step spawn 和初始课程逻辑已修正
+- User request:
+  - 用户基于当前 Stage1 训练结果指出 flat 没有灾难性遗忘，主要问题集中在 step 类地形和 slope/rough 高 row tile seam 姿态，并要求先修正 Stage1 环境逻辑，不修改 Stage0。
+- Implementation:
+  - Stage1 terrain-column row advance 改为使用 `root_x - tile_start_x > terrain_length * 0.70`，其中 `tile_start_x = tile_origin_x - terrain_length / 2`。
+  - terrain-column target 不再允许超过最大 row 后夹紧到同一最后 row；推进到没有合法下一目标的最高 row 区域时，记录 `terrain_column_completed`，通过 reset 回到按地形类别采样的新低 row。
+  - `stairs down`、`stairs up`、`discrete obstacles` 的 reset 改为安全 approach spawn：`tile_start_x - U(0.3, 0.8)`、`tile_origin_y + U(-0.2, 0.2)`、`heightfield(spawn_xy) + 0.30`，yaw 固定为 `0`；flat/slope/rough 保持原 reset 逻辑。
+  - 初始 row 限制改为：`stairs down` 与 `stairs up` 为 `0-1`，`discrete obstacles` 为 `0-2`，其他地形保持默认 `0-5`。
+  - Stage1Eval 增加 `max_row_reached_rate`、`valid_target_masked`，并记录/打印 `tile_start_x`、`tile_origin_x`、`tile_end_x`、`root_x`、`target_x`、`forward_x` 相关诊断。
+- Durable conclusion:
+  - 后续 Stage1 新训练不应再把最后 row 的 `row_advance_rate = 0` 解释为 flat 遗忘；应结合 `max_row_reached_rate` 和 `valid_target_masked` 判断是否已到达最高 row 语义边界。
+  - step 类地形训练应从 tile 前 approach 区域进入障碍，不再从 tile center 附近或台阶内部出生。
+- Status:
+  - implemented and documented. 用户随后要求去掉 repeated-failure retry / move-down，本条实现不再包含失败计数降级逻辑。
+
+### Stage1 flat 全过程指标显示 Stage0 平地技能基本保留
+- User observation:
+  - 用户回放后认为小车在 flat 上整体表现还行，和 Stage0 基本一致；越往后速度变慢，可能是因为已经走到最后 row，最后 row 附近失去目标不应作为主要判断依据。
+- Analysis:
+  - 将 Stage1 三段有效训练链路按 checkpoint 继承关系合并分析：`0-24` 来自初次 run，`25-124` 来自 fixed distribution run，`125-699` 来自 PPO guard run。
+  - flat 每次从低 row 重新开始后，约 `9` 个 PPO iteration 内达到 `current_level_mean = 19`。
+  - 到达最后 row 之前，`row_advance_rate` 均值约 `0.75-0.85`，`rows_advanced_mean` 约 `3.3-3.8`，`v_forward_mean` 约 `1.9-2.1 m/s`，`forward_x_mean` 约 `1.7-1.9 m`，`retention_score` 约 `0.85-0.89`，`stagnation_rate` 约 `0.01`。
+  - 到达最后 row 后，`row_advance_rate` 和 `rows_advanced_mean` 长期为 `0`，但这主要反映 terrain level 饱和和目标推进语义，不应直接解释为 flat 平地技能丢失。
+- Durable conclusion:
+  - 当前 Stage1 flat 结果应表述为：Stage0 平地前进技能在 Stage1 warm-start 后基本保留，前段推进能力明显；后段速度变慢和 row 指标归零需要结合最高 row / 目标语义解释。
+  - 这不等价于 Stage1 全地形能力已经学成；复杂地形和全局指标仍需要单独分析。
+- Status:
+  - analyzed and recorded.
+
+### Stage1 回放已支持按地形列选择出生列
+- User request:
+  - 用户要求修改回放逻辑，支持逐列地形回放；每次回放可以指定小车出生列地形，同时仍允许全地形回放。
+- Implementation:
+  - `RL_Training/scripts/play.py` 新增 `--terrain_replay_columns` 参数。
+  - 支持 `all`、单列编号、列编号列表和地形名选择。
+  - `all` 会按 env id 轮转分配到 `0-9` 全部地形列，要求 `--num_envs >= 10`。
+  - 指定单列编号时所有 env 都出生在该列；指定重复地形名时会映射到对应多列，例如 `stairs_up` 对应 `7,8`。
+  - 回放环境创建后会显式重绑 `terrain_runtime.terrain_types`、同步 `scene.env_origins`，并重新 reset，使出生列选择立即生效。
+  - `play.py` 的 checkpoint 解析已修正：`--checkpoint model_699.pt` 这类裸文件名会作为 run 内 checkpoint pattern 处理，并结合 `--load_run` 查找；显式路径和 URI 仍直接读取。
+- Durable conclusion:
+  - 后续 Stage1 行为观察可以按列隔离，例如单独回放 `flat`、`stairs_up` 或 `discrete obstacles`，也可以用 `all` 同时观察全地形分布。
+  - 该改动只影响 `play.py` 回放入口，不改变 Stage1 训练初始化和 curriculum 逻辑。
+- Status:
+  - implemented and documented.
+
+### Stage1 iteration 31 崩溃与后续 PPO 数值污染已修复并完成 700iter 训练
+- User request:
+  - 用户提供 Stage1 在 iteration `31` 报错的训练日志，并要求修正问题、重启训练、全程跟踪直到训练完成。
+- Diagnosis:
+  - iteration `31` 的直接崩溃不是普通 `std < 0`，而是分布层数值保护在当前 autograd graph 已经引用 `log_std_param` 后执行 `copy_()`，导致 PyTorch backward 检测到参数 version 被原地修改。
+  - 首次从 `model_25.pt` resume 后越过原崩溃点，但在 iteration `148` 左右出现 `Mean surrogate loss: inf` 和策略污染风险；该进程已停止，未继续使用受污染风险较高的 `model_150.pt`。
+- Implementation:
+  - `distribution.py` 中 Gaussian / SquashedGaussian 的参数清理改为先基于 `detach()` 计算安全值，再在 `no_grad` 下清理参数，之后才让清理后的参数进入当前 graph。
+  - `ppo.py` 增加 PPO update 有限值保护：batch / loss / gradient / 参数更新前后检查 finite 状态，clamp log ratio，异常 mini-batch 跳过，异常 optimizer step 会恢复更新前参数并清空 optimizer state。
+- Run:
+  - 完整训练 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-03_02-17-59_stage1_resume_from125_ppo_guard_to700`
+  - resume 来源：`2026-05-03_01-17-07_stage1_resume_from25_fixed_distribution_to700/model_125.pt`
+  - 结果：终端输出到 `699/700`，进程退出码 `0`，最终 checkpoint 为 `model_699.pt`，TensorBoard event 文件已生成并成功导出 `308` 个非空 scalar tag。
+- Durable conclusion:
+  - 当前 Stage1 训练链路的主要崩溃问题已从工程层面解决：原地修改参数导致的 autograd version mismatch 不应再复现，PPO update 也具备基本的非有限值隔离能力。
+  - 本次 700iter 完整训练不能解释为 Stage1 全地形通过能力已经学成。末段 `flat/row_advance_rate` 仍为 `0`，`global/rows_advanced_mean` 约 `0.0087`，纵滑、接触丢失和 pitch 仍偏高。
+  - 后续若继续推进 Stage1，应把重点转向 reward / curriculum / 目标推进语义诊断，而不是继续把主要精力放在分布层崩溃修补上。
+- Status:
+  - implemented, trained, and recorded.
+
 ## 2026-05-02
 
 ### Stage1 warm-start 转换脚本默认维度已修正为 632
@@ -12878,3 +12945,26 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - 轻量导入 logger 后静态断言通过：Stage1 不打印 `Termination/success_rate` 和 `Reward/reached_target`，Stage0 仍打印/写入原 tags。
 - Status:
   - implemented.
+
+### Stage1 分布数值保护的 autograd 原地修改问题已修复
+- Date: 2026-05-03
+- Failure:
+  - 新 Stage1 全地形训练在 PPO iteration `31` 左右出现：
+    - `SquashedGaussianDistribution received non-finite action mean`
+    - `SquashedGaussianDistribution received non-finite log_std parameters`
+    - 随后 `loss.backward()` 报 `RuntimeError: one of the variables needed for gradient computation has been modified by an inplace operation`。
+- Root cause:
+  - 旧数值保护逻辑先基于 `log_std_param` 构造 `safe_log_std_param`，再在同一次 `update()` 中用 `copy_()` 原地改写 `log_std_param`。
+  - `log_std_param` 是 8 维可学习动作分布参数；它已经被当前 autograd graph 引用后又被原地修改，导致 backward 版本计数不一致。
+- Implementation:
+  - `distribution.py` 新增 `_sanitize_parameter_()`。
+  - 对 Gaussian / SquashedGaussian 的 learnable std 参数，先用 `detach()` 计算安全值，再在 `no_grad` 下清理参数，最后使用清理后的参数参与当前 graph。
+  - 不改变 PPO 主算法结构，不改变 Stage1 评价指标或任务语义。
+- Verification:
+  - `python3 -m py_compile` 通过。
+  - `git diff --check` 通过。
+  - `RL_Training/tests/test_stage1_eval_metrics.py` 通过。
+  - 人工构造 `mean=NaN`、`log_std=NaN/Inf` 的 `SquashedGaussianDistribution` 后，`loss.backward()` 通过，`log_std_param` 被夹回有限范围。
+- Durable conclusion:
+  - 后续若再次看到同类 warning，表示分布层执行了数值清理；不应再因分布参数原地修改导致 backward 版本错误。
+  - 若 warning 高频出现，说明上游观测、reward 或学习率仍可能导致策略网络输出发散，需要再从训练稳定性层面诊断。

@@ -1,5 +1,65 @@
 # 每日工作日志
 
+## 2026-05-03
+
+已完成：
+- 按用户要求撤掉 Stage1 repeated failure retry / move-down 功能。
+- 删除连续失败计数 buffer、`repeated_failure_move_down_threshold` 配置字段和 Stage1 reset curriculum 中的连续失败降级分支。
+- 保留本轮其它 Stage1 修改：max-row 目标语义、step 类安全 approach spawn、分地形初始低 row、tile start 口径 row advance、Stage1Eval 诊断指标。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 现在不再因为同一 env 连续失败而自动 move down。
+- 普通失败 reset 不再维护额外失败计数；只有 max-row 语义完成或已处于无合法下一目标 row 时才重采样低 row。
+
+验证：
+- Stage1 相关 Python 文件 `python3 -m py_compile` 通过。
+- `git diff --check` 通过。
+
+## 2026-05-03
+
+已完成：
+- 按用户要求只修改 Stage1，不修改 Stage0。
+- 修正 Stage1 terrain-column 最高 row 目标语义：目标采样不再夹紧到同一最后 row，推进到最高 row 语义边界时记录完成并 reset 到新的低 row。
+- 将 Stage1 row advance 的前进距离定义从 `root_x - tile_origin_x` 改为 `root_x - tile_start_x`。
+- 将 `stairs down`、`stairs up`、`discrete obstacles` reset 改为 tile start 前安全 approach spawn，并用 spawn 点 heightfield 高度加 clearance 设置 z。
+- 将 step 类初始 row 限制为低难度：`stairs down/up` 为 `0-1`，`discrete obstacles` 为 `0-2`。
+- 增加 Stage1 repeated failure retry / move-down 逻辑和 max-row / valid-target 诊断指标。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/stage1_eval.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_runtime.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/Stage1参数详情表.md`
+- `docs/stage1评价指标.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 后续 Stage1 训练应使用 `Stage1Eval/*/max_row_reached_rate` 和 `valid_target_masked` 解释最高 row 语义边界。
+- step 类地形不再从 tile 内部或台阶上出生，而是从 tile 前 approach 区域进入障碍。
+
+验证：
+- Stage1 相关 Python 文件 `python3 -m py_compile` 通过。
+- `git diff --check` 通过。
+- `docs/Stage1参数详情表.md`、`docs/stage1评价指标.md`、`docs/current_status.md`、`docs/conversation_history.md`、`logs/daily_work_log.md` 未发现 Obsidian 不兼容的旧式反斜杠数学定界符。
+- 对初始 row 采样和新增 Stage1Eval 指标做了轻量 smoke check，通过。
+
 ## 2026-05-02
 
 已完成：
@@ -14238,3 +14298,132 @@
 产出/结论：
 - 此前 Stage1 PPO update 报错中的非法 distribution std 已在分布层做保护；Stage1Eval 空 column / 空 mask 仍返回 `0`，不会写入 NaN/Inf。
 - 已验证 `python3 -m py_compile`、`git diff --check` 和 `.venv-mineru` dry-run 测试。
+
+## 2026-05-03
+
+已完成：
+- 诊断用户提供的 Stage1 iteration `31` 崩溃日志，确认新错误不是 `std < 0` 本身，而是分布数值保护中的 `log_std_param.copy_()` 触发 autograd 原地修改版本冲突。
+- 修改 `SquashedGaussianDistribution` / `GaussianDistribution` 的 std 参数清理顺序：先用 `detach()` 计算安全值，再在 `no_grad` 下清理参数，最后用清理后的参数构造当前 graph。
+- 保持 PPO update 主流程和 Stage1 评价逻辑不变。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/modules/distribution.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 修复后人工构造 `mean=NaN`、`log_std=NaN/Inf` 的分布测试可以正常执行 `loss.backward()`。
+- 已验证 `python3 -m py_compile`、`git diff --check` 和 `RL_Training/tests/test_stage1_eval_metrics.py`。
+
+## 2026-05-03
+
+已完成：
+- 从用户提供的 Stage1 崩溃日志继续处理训练：先修复 distribution 参数清理的原地修改问题，再处理 resume 后出现的 PPO surrogate `inf` 污染风险。
+- 在 PPO update 中加入有限值保护、log ratio clamp、异常 mini-batch 跳过、optimizer step 后参数检查和异常回滚。
+- 从健康 checkpoint `2026-05-03_01-17-07_stage1_resume_from25_fixed_distribution_to700/model_125.pt` 重新启动 Stage1 训练，并持续跟踪到完整结束。
+- 按 `100` iteration 节点向用户汇报训练状态；训练进程最终正常退出。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/modules/distribution.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/algorithms/ppo.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 完整 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-03_02-17-59_stage1_resume_from125_ppo_guard_to700`
+- 最终 checkpoint：`model_699.pt`；TensorBoard event 文件已生成。
+- 已使用 `tensorboard_export.py` 导出训练曲线，`tensorboard_export/summary.json` 读取到 `308` 个非空 scalar tag，最后 step 为 `699`。
+- 训练终端输出到 `699/700`，退出码 `0`，训练耗时约 `15492.84 s`。
+- 原 iteration `31` 的 in-place autograd crash 未复现，训练没有因 NaN/Inf distribution 错误中断。
+- 末段策略仍未形成可靠全地形通过能力：最后可见 `flat/row_advance_rate=0.0000`、`global/rows_advanced_mean=0.0087`、`longitudinal_slip_abs_mean=5.8542`、`contact_loss_rate=0.5531`、`pitch_abs_mean=10.5290`。
+
+## 2026-05-03
+
+已完成：
+- 按用户要求修改 Stage1 回放逻辑，支持按地形列选择小车出生列，同时保留全地形回放。
+- 在 `scripts/play.py` 中新增 `--terrain_replay_columns` 参数。
+- 支持 `all`、单列编号、列编号列表和地形名选择；回放环境创建后会重绑 `terrain_types`、同步 env origins 并 reset。
+- 在 `docs/Stage1参数详情表.md` 中补充全地形、单列和按地形名回放命令示例。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 全地形回放使用 `--terrain_replay_columns all`，并要求 `--num_envs >= 10`。
+- 单列回放可使用如 `--terrain_replay_columns 7`。
+- 按地形名回放可使用如 `--terrain_replay_columns stairs_up`，重复地形名会映射到对应多列。
+
+## 2026-05-03
+
+已完成：
+- 修复 Stage1 回放时 `--checkpoint model_699.pt` 被误当作当前目录显式文件路径的问题。
+- 调整 `scripts/play.py` checkpoint 选择逻辑：裸文件名作为 run 内 checkpoint pattern 处理，结合 `--load_run` 在日志目录中查找；绝对路径、带目录的相对路径和 URI 仍按显式路径读取。
+- 复查 `model_699.pt` 存在于最新 Stage1 完整训练 run 目录中。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 原报错 `FileNotFoundError: Unable to find the file: model_699.pt` 已从代码路径上修复。
+- 轻量回放冒烟启动已能解析到完整 checkpoint 路径；当前工具环境 GPU driver / CUDA 不可用，因此未完成真实仿真回放。
+
+## 2026-05-03
+
+已完成：
+- 按用户要求重新分析 Stage1 flat 全过程指标，不再只看最后 50 iteration。
+- 将三段有效 Stage1 训练链路按 checkpoint 继承关系合并分析：初次 run 的 `0-24`、fixed distribution run 的 `25-124`、PPO guard run 的 `125-699`。
+- 使用 `Stage1Eval/col00_flat/current_level_mean` 区分到达最后 row 前后，避免把最后 row 后的目标推进饱和误判为 flat 技能丢失。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- flat 每次从低 row 重新开始后约 `9` 个 PPO iteration 内达到 `current_level_mean = 19`。
+- 到达最后 row 前，flat 的 `row_advance_rate` 均值约 `0.75-0.85`，`v_forward_mean` 约 `1.9-2.1 m/s`，`retention_score` 约 `0.85-0.89`，说明 Stage0 平地前进技能基本保留。
+- 最后 row 后 `row_advance_rate = 0` 主要受 terrain level 饱和和目标推进语义影响，不能单独解释为平地技能丢失。
+
+## 2026-05-03
+
+已完成：
+- 按用户要求将当前 TensorBoard 中的 Stage1 数据全部打包为一个压缩文件。
+- 对 `complete_car_stage1` 下 `11` 个包含 event 文件的 run 全部执行 `tensorboard_export.py`，生成逐 tag CSV、`summary.json`、`latest_values.csv` 和 `group_summary.csv`。
+- 额外生成有效训练链路 `0-699` 的合并表：`merged_scalar_long.csv` 和 `merged_scalar_wide.csv`。
+- 打包原始 event 文件、全部 scalar 导出和合并表。
+
+输出文件：
+- `results/stage1_tensorboard_all_iterations_2026-05-03.tar.gz`
+- 解压目录：`results/stage1_tensorboard_all_iterations_2026-05-03/`
+
+产出/结论：
+- 压缩包大小约 `13M`，解压后约 `71M`。
+- 包含 `11` 个 Stage1 TensorBoard run 的原始 event 文件。
+- 连续有效训练链路包含 `700` 个 iteration、`308` 个 scalar tag、`214208` 条 scalar 数据点。
+- 已通过 `tar -tzf` 完整性检查。
+
+## 2026-05-03
+
+已完成：
+- 按用户反馈重新筛选 TensorBoard zip，去掉 ChatGPT 分析不必要的原始 event、逐 tag CSV 和历史 smoke run 冗余数据。
+- 生成 ChatGPT 高效分析精简包，只保留连续 `0-699` 全 iteration 分析需要的核心数据文件。
+
+输出文件：
+- `results/stage1_tensorboard_chatgpt_essential_0_699_2026-05-03.zip`
+- 解压目录：`results/stage1_tensorboard_chatgpt_essential_0_699_2026-05-03/`
+
+产出/结论：
+- 原全量 zip：约 `15M`，`2120` 个 zip 条目。
+- 精简 zip：约 `1.5M`，`12` 个 zip 条目，内部 `10` 个实际文件。
+- 精简包保留：核心宽表、flat 表、global 表、training/reward/action 表、10 个地形列长表、指标摘要、地形列映射、训练链路 manifest 和 ChatGPT 分析提示。
+- 已通过 `unzip -t` 完整性检查。

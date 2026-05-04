@@ -22,6 +22,15 @@ def _positive_std(value: torch.Tensor, min_std: float = _MIN_STD) -> torch.Tenso
     return _finite_tensor(value, posinf=1.0 / min_std, neginf=min_std).clamp_min(min_std)
 
 
+def _sanitize_parameter_(parameter: nn.Parameter, safe_value: torch.Tensor) -> bool:
+    """Replace invalid parameter values before the parameter participates in autograd."""
+    if torch.equal(safe_value, parameter):
+        return False
+    with torch.no_grad():
+        parameter.copy_(safe_value)
+    return True
+
+
 class Distribution(nn.Module):
     """Base class for distribution modules.
 
@@ -181,17 +190,13 @@ class GaussianDistribution(Distribution):
         """Update the Gaussian distribution from MLP output."""
         mean = _finite_tensor(mlp_output)
         if self.std_type == "scalar":
-            safe_std_param = _positive_std(self.std_param)
-            if not torch.equal(safe_std_param, self.std_param):
-                with torch.no_grad():
-                    self.std_param.copy_(safe_std_param)
-            std = safe_std_param.expand_as(mean)
+            safe_std_param = _positive_std(self.std_param.detach())
+            _sanitize_parameter_(self.std_param, safe_std_param)
+            std = _positive_std(self.std_param).expand_as(mean)
         elif self.std_type == "log":
-            safe_log_std_param = _finite_tensor(self.log_std_param)
-            if not torch.equal(safe_log_std_param, self.log_std_param):
-                with torch.no_grad():
-                    self.log_std_param.copy_(safe_log_std_param)
-            std = _positive_std(torch.exp(safe_log_std_param)).expand_as(mean)
+            safe_log_std_param = _finite_tensor(self.log_std_param.detach())
+            _sanitize_parameter_(self.log_std_param, safe_log_std_param)
+            std = _positive_std(torch.exp(self.log_std_param)).expand_as(mean)
         self._distribution = Normal(mean, std)
 
     def sample(self) -> torch.Tensor:
@@ -285,22 +290,21 @@ class SquashedGaussianDistribution(Distribution):
         self._base_mean = safe_mean
 
         safe_log_std_param = torch.nan_to_num(
-            self.log_std_param,
+            self.log_std_param.detach(),
             nan=0.0,
             posinf=self.log_std_max,
             neginf=self.log_std_min,
         )
-        if not torch.equal(safe_log_std_param, self.log_std_param) and not self._warned_invalid_log_std:
+        safe_log_std_param = torch.clamp(safe_log_std_param, min=self.log_std_min, max=self.log_std_max)
+        if not torch.equal(safe_log_std_param, self.log_std_param.detach()) and not self._warned_invalid_log_std:
             print(
                 "[WARN] SquashedGaussianDistribution received non-finite log_std parameters; clamping values.",
                 flush=True,
             )
             self._warned_invalid_log_std = True
-        if not torch.equal(safe_log_std_param, self.log_std_param):
-            with torch.no_grad():
-                self.log_std_param.copy_(safe_log_std_param)
+        _sanitize_parameter_(self.log_std_param, safe_log_std_param)
 
-        clamped_log_std = torch.clamp(safe_log_std_param, min=self.log_std_min, max=self.log_std_max)
+        clamped_log_std = torch.clamp(self.log_std_param, min=self.log_std_min, max=self.log_std_max)
         self._base_std = _positive_std(torch.exp(clamped_log_std), self.squash_epsilon).expand_as(self._base_mean)
         self._distribution = Normal(self._base_mean, self._base_std)
 

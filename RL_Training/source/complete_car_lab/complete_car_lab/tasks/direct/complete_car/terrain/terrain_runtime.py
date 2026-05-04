@@ -15,6 +15,7 @@ from .terrain_cfg import (
     STAGE1_TERRAIN_CLASS_OTHER,
     STAGE1_TERRAIN_CLASS_STEP,
 )
+from ..utils.math_utils import yaw_quaternion
 
 
 def _offset_mesh_to_world_frame(terrain_cfg, terrain_mesh: trimesh.Trimesh) -> trimesh.Trimesh:
@@ -127,6 +128,12 @@ class CompleteCarTerrainRuntime:
             raise RuntimeError("Terrain type map is not initialized.")
         return self._terrain_type_map[terrain_levels, terrain_types]
 
+    def get_tile_x_bounds(self, terrain_levels: torch.Tensor, terrain_types: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        origins = self.get_tile_origins(terrain_levels, terrain_types)
+        half_length = 0.5 * float(self._terrain_cfg.terrain_length)
+        tile_origin_x = origins[:, 0]
+        return tile_origin_x - half_length, tile_origin_x, tile_origin_x + half_length
+
     def apply_spawn_offsets(self, root_state: torch.Tensor, env_ids: torch.Tensor) -> torch.Tensor:
         if not self.generator_enabled or env_ids.numel() == 0:
             return root_state
@@ -137,9 +144,30 @@ class CompleteCarTerrainRuntime:
         other_mask = env_classes == STAGE1_TERRAIN_CLASS_OTHER
 
         if torch.any(step_mask):
-            root_state[step_mask, 0:1] -= _sample_uniform(
-                self.cfg.step_spawn_back_range, (int(step_mask.sum().item()), 1), self.device
+            step_env_ids = env_ids[step_mask]
+            num_step = int(step_env_ids.numel())
+            tile_origins = self.get_tile_origins(
+                self.terrain_levels[step_env_ids],
+                self.terrain_types[step_env_ids],
+            ).to(device=self.device, dtype=root_state.dtype)
+            tile_start_x = tile_origins[:, 0] - 0.5 * float(self._terrain_cfg.terrain_length)
+            spawn_back = _sample_uniform(self.cfg.step_approach_spawn_back_range, (num_step,), self.device).to(root_state.dtype)
+            spawn_lateral = _sample_uniform(self.cfg.step_approach_spawn_lateral_range, (num_step,), self.device).to(
+                root_state.dtype
             )
+            spawn_xy = torch.stack(
+                (
+                    tile_start_x - spawn_back,
+                    tile_origins[:, 1] + spawn_lateral,
+                ),
+                dim=-1,
+            )
+            root_state[step_mask, 0:2] = spawn_xy
+            root_state[step_mask, 2] = (
+                self.sample_heights_world_xy(spawn_xy).to(dtype=root_state.dtype)
+                + float(self.cfg.base_spawn_clearance)
+            )
+            root_state[step_mask, 3:7] = yaw_quaternion(torch.zeros(num_step, device=self.device, dtype=root_state.dtype))
         if torch.any(gap_mask):
             root_state[gap_mask, 0:1] -= _sample_uniform(
                 self.cfg.gap_spawn_back_range, (int(gap_mask.sum().item()), 1), self.device

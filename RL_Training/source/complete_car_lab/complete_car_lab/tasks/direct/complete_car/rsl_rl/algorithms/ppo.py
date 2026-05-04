@@ -19,6 +19,9 @@ from rsl_rl.storage import RolloutStorage
 from rsl_rl.utils import resolve_callable, resolve_obs_groups, resolve_optimizer
 
 
+_LOG_RATIO_CLIP = 20.0
+
+
 class PPO:
     """Proximal Policy Optimization algorithm.
 
@@ -112,13 +115,14 @@ class PPO:
         # PPO components
         self.actor = actor.to(self.device)
         self.critic = critic.to(self.device)
+        self._ppo_parameters = list(chain(self.actor.parameters(), self.critic.parameters()))
 
         # Create the optimizer
         optimizer_kwargs = {"lr": learning_rate}
         if optimizer.lower() in {"adam", "adamw"}:
             optimizer_kwargs["eps"] = adam_eps
         self.optimizer = resolve_optimizer(optimizer)(
-            chain(self.actor.parameters(), self.critic.parameters()), **optimizer_kwargs
+            self._ppo_parameters, **optimizer_kwargs
         )  # type: ignore
 
         # Add storage
@@ -140,6 +144,50 @@ class PPO:
         self.schedule = schedule
         self.learning_rate = learning_rate
         self.normalize_advantage_per_mini_batch = normalize_advantage_per_mini_batch
+        self._warned_invalid_ppo_update = False
+        self._warned_restored_ppo_update = False
+
+    @staticmethod
+    def _tensors_are_finite(*tensors: torch.Tensor) -> bool:
+        return all(torch.isfinite(tensor).all().item() for tensor in tensors)
+
+    @staticmethod
+    def _parameters_are_finite(parameters: list[nn.Parameter]) -> bool:
+        return all(torch.isfinite(parameter).all().item() for parameter in parameters)
+
+    @staticmethod
+    def _gradients_are_finite(parameters: list[nn.Parameter]) -> bool:
+        return all(
+            parameter.grad is None or torch.isfinite(parameter.grad).all().item()
+            for parameter in parameters
+        )
+
+    @staticmethod
+    def _clone_parameters(parameters: list[nn.Parameter]) -> list[torch.Tensor]:
+        return [parameter.detach().clone() for parameter in parameters]
+
+    @staticmethod
+    def _restore_parameters(parameters: list[nn.Parameter], backup: list[torch.Tensor]) -> None:
+        with torch.no_grad():
+            for parameter, value in zip(parameters, backup):
+                parameter.copy_(value)
+
+    @staticmethod
+    def _clear_optimizer_state(optimizer: optim.Optimizer) -> None:
+        optimizer.state.clear()
+
+    def _warn_invalid_ppo_update(self, reason: str) -> None:
+        if not self._warned_invalid_ppo_update:
+            print(f"[WARN] PPO skipped a non-finite update: {reason}.", flush=True)
+            self._warned_invalid_ppo_update = True
+
+    def _warn_restored_ppo_update(self) -> None:
+        if not self._warned_restored_ppo_update:
+            print(
+                "[WARN] PPO restored parameters after optimizer.step produced non-finite values.",
+                flush=True,
+            )
+            self._warned_restored_ppo_update = True
 
     def act(self, obs: TensorDict) -> torch.Tensor:
         """Sample actions and store transition data."""
@@ -218,6 +266,8 @@ class PPO:
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy = 0
+        applied_updates = 0
+        skipped_updates = 0
         # RND loss
         mean_rnd_loss = 0 if self.rnd else None
         # Symmetry loss
@@ -269,6 +319,21 @@ class PPO:
             # Note: We only keep the distribution parameters and entropy of the first augmentation (the original one)
             distribution_params = tuple(p[:original_batch_size] for p in self.actor.output_distribution_params)
             entropy = self.actor.output_entropy[:original_batch_size]
+            old_actions_log_prob = torch.squeeze(batch.old_actions_log_prob)  # type: ignore[arg-type]
+
+            if not self._tensors_are_finite(
+                actions_log_prob,
+                old_actions_log_prob,
+                values,
+                batch.values,
+                batch.returns,
+                batch.advantages,
+                entropy,
+            ):
+                self.optimizer.zero_grad(set_to_none=True)
+                skipped_updates += 1
+                self._warn_invalid_ppo_update("batch tensors contain NaN or Inf")
+                continue
 
             # Compute KL divergence and adapt the learning rate
             if self.desired_kl is not None and self.schedule == "adaptive":
@@ -299,7 +364,9 @@ class PPO:
                         param_group["lr"] = self.learning_rate
 
             # Surrogate loss
-            ratio = torch.exp(actions_log_prob - torch.squeeze(batch.old_actions_log_prob))  # type: ignore
+            log_ratio = actions_log_prob - old_actions_log_prob
+            log_ratio = torch.clamp(log_ratio, min=-_LOG_RATIO_CLIP, max=_LOG_RATIO_CLIP)
+            ratio = torch.exp(log_ratio)
             surrogate = -torch.squeeze(batch.advantages) * ratio  # type: ignore
             surrogate_clipped = -torch.squeeze(batch.advantages) * torch.clamp(  # type: ignore
                 ratio, 1.0 - self.clip_param, 1.0 + self.clip_param
@@ -364,21 +431,53 @@ class PPO:
                 rnd_loss = mseloss(predicted_embedding, target_embedding)
 
             # Compute the gradients for PPO
-            self.optimizer.zero_grad()
+            if not self._tensors_are_finite(loss):
+                self.optimizer.zero_grad(set_to_none=True)
+                skipped_updates += 1
+                self._warn_invalid_ppo_update("loss is NaN or Inf")
+                continue
+
+            self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
             # Compute the gradients for RND
             if self.rnd:
-                self.rnd_optimizer.zero_grad()
+                self.rnd_optimizer.zero_grad(set_to_none=True)
                 rnd_loss.backward()
 
             # Collect gradients from all GPUs
             if self.is_multi_gpu:
                 self.reduce_parameters()
 
+            if not self._gradients_are_finite(self._ppo_parameters):
+                self.optimizer.zero_grad(set_to_none=True)
+                if self.rnd_optimizer:
+                    self.rnd_optimizer.zero_grad(set_to_none=True)
+                skipped_updates += 1
+                self._warn_invalid_ppo_update("gradients contain NaN or Inf")
+                continue
+
             # Apply the gradients for PPO
-            nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)
-            nn.utils.clip_grad_norm_(self.critic.parameters(), self.max_grad_norm)
+            actor_grad_norm = nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)
+            critic_grad_norm = nn.utils.clip_grad_norm_(self.critic.parameters(), self.max_grad_norm)
+            if not self._tensors_are_finite(actor_grad_norm, critic_grad_norm):
+                self.optimizer.zero_grad(set_to_none=True)
+                if self.rnd_optimizer:
+                    self.rnd_optimizer.zero_grad(set_to_none=True)
+                skipped_updates += 1
+                self._warn_invalid_ppo_update("gradient norm is NaN or Inf")
+                continue
+
+            parameter_backup = self._clone_parameters(self._ppo_parameters)
             self.optimizer.step()
+            if not self._parameters_are_finite(self._ppo_parameters):
+                self._restore_parameters(self._ppo_parameters, parameter_backup)
+                self._clear_optimizer_state(self.optimizer)
+                self.optimizer.zero_grad(set_to_none=True)
+                if self.rnd_optimizer:
+                    self.rnd_optimizer.zero_grad(set_to_none=True)
+                skipped_updates += 1
+                self._warn_restored_ppo_update()
+                continue
             # Apply the gradients for RND
             if self.rnd_optimizer:
                 self.rnd_optimizer.step()
@@ -387,6 +486,7 @@ class PPO:
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
             mean_entropy += entropy.mean().item()
+            applied_updates += 1
             # RND loss
             if mean_rnd_loss is not None:
                 mean_rnd_loss += rnd_loss.item()
@@ -395,7 +495,7 @@ class PPO:
                 mean_symmetry_loss += symmetry_loss.item()
 
         # Divide the losses by the number of updates
-        num_updates = self.num_learning_epochs * self.num_mini_batches
+        num_updates = max(applied_updates, 1)
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         mean_entropy /= num_updates
@@ -413,6 +513,8 @@ class PPO:
             "surrogate": mean_surrogate_loss,
             "entropy": mean_entropy,
         }
+        if skipped_updates > 0:
+            loss_dict["skipped_updates"] = float(skipped_updates)
         if self.rnd:
             loss_dict["rnd"] = mean_rnd_loss
         if self.symmetry:

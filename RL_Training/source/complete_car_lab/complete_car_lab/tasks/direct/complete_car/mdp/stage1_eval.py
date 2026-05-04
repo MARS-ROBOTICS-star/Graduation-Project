@@ -52,6 +52,8 @@ def _group_stats(
     terrain_levels: torch.Tensor,
     forward_x: torch.Tensor,
     rows_advanced: torch.Tensor,
+    max_row_reached_mask: torch.Tensor,
+    valid_target_masked: torch.Tensor,
     far_mask: torch.Tensor,
     ball_joint_limit_mask: torch.Tensor,
     timeout_mask: torch.Tensor,
@@ -82,6 +84,8 @@ def _group_stats(
         "env_count": _safe_float(mask.float().sum()),
         "rows_advanced_mean": _safe_float(_masked_mean(rows_advanced.float(), mask)),
         "row_advance_rate": _safe_float(_masked_mean((rows_advanced > 0).float(), mask)),
+        "max_row_reached_rate": _safe_float(_masked_mean(max_row_reached_mask.float(), mask)),
+        "valid_target_masked": _safe_float(_masked_mean(valid_target_masked.float(), mask)),
         "forward_x_mean": _safe_float(_masked_mean(forward_x, mask)),
         "current_level_mean": _safe_float(_masked_mean(terrain_levels.float(), mask)),
         "effective_failure_rate": _safe_float(far_rate + ball_limit_rate),
@@ -143,8 +147,15 @@ def compute_stage1_eval_metrics(
     *,
     terrain_types: torch.Tensor,
     terrain_levels: torch.Tensor,
-    forward_x_from_current_tile_origin: torch.Tensor,
+    forward_x_from_current_tile_start: torch.Tensor,
     rows_advanced: torch.Tensor,
+    max_row_reached_mask: torch.Tensor,
+    valid_target_masked: torch.Tensor,
+    tile_start_x: torch.Tensor,
+    tile_origin_x: torch.Tensor,
+    tile_end_x: torch.Tensor,
+    root_x: torch.Tensor,
+    target_x: torch.Tensor,
     far_mask: torch.Tensor,
     ball_joint_limit_mask: torch.Tensor,
     timeout_mask: torch.Tensor,
@@ -170,7 +181,14 @@ def compute_stage1_eval_metrics(
     terrain_types = terrain_types.to(dtype=torch.long)
     terrain_levels = _clean(terrain_levels)
     rows_advanced = _clean(rows_advanced)
-    forward_x = _clean(forward_x_from_current_tile_origin).clamp(0.0, float(terrain_length))
+    max_row_reached_mask = max_row_reached_mask.to(dtype=torch.bool)
+    valid_target_masked = valid_target_masked.to(dtype=torch.bool)
+    forward_x = _clean(forward_x_from_current_tile_start).clamp(0.0, float(terrain_length))
+    tile_start_x = _clean(tile_start_x)
+    tile_origin_x = _clean(tile_origin_x)
+    tile_end_x = _clean(tile_end_x)
+    root_x = _clean(root_x)
+    target_x = _clean(target_x)
     base_lin_vel = _clean(base_lin_vel)
     base_ang_vel = _clean(base_ang_vel)
     wheel_longitudinal_slip = _clean(wheel_longitudinal_slip)
@@ -207,6 +225,8 @@ def compute_stage1_eval_metrics(
         "terrain_levels": terrain_levels,
         "forward_x": forward_x,
         "rows_advanced": rows_advanced,
+        "max_row_reached_mask": max_row_reached_mask,
+        "valid_target_masked": valid_target_masked,
         "far_mask": far_mask,
         "ball_joint_limit_mask": ball_joint_limit_mask,
         "timeout_mask": timeout_mask,
@@ -243,8 +263,15 @@ def compute_stage1_eval_metrics(
     metrics: dict[str, float] = {
         "Stage1Eval/global/rows_advanced_mean": global_stats["rows_advanced_mean"],
         "Stage1Eval/global/row_advance_rate": global_stats["row_advance_rate"],
+        "Stage1Eval/global/max_row_reached_rate": global_stats["max_row_reached_rate"],
+        "Stage1Eval/global/valid_target_masked": global_stats["valid_target_masked"],
         "Stage1Eval/global/current_level_mean": global_stats["current_level_mean"],
         "Stage1Eval/global/forward_x_mean": global_stats["forward_x_mean"],
+        "Stage1Eval/global/tile_start_x_mean": _safe_float(torch.mean(tile_start_x)),
+        "Stage1Eval/global/tile_origin_x_mean": _safe_float(torch.mean(tile_origin_x)),
+        "Stage1Eval/global/tile_end_x_mean": _safe_float(torch.mean(tile_end_x)),
+        "Stage1Eval/global/root_x_mean": _safe_float(torch.mean(root_x)),
+        "Stage1Eval/global/target_x_mean": _safe_float(torch.mean(target_x)),
         "Stage1Eval/global/effective_failure_rate": global_stats["effective_failure_rate"],
         "Stage1Eval/global/far_rate": global_stats["far_rate"],
         "Stage1Eval/global/ball_joint_limit_rate": global_stats["ball_joint_limit_rate"],
@@ -270,6 +297,8 @@ def compute_stage1_eval_metrics(
     flat_fields = (
         "rows_advanced_mean",
         "row_advance_rate",
+        "max_row_reached_rate",
+        "valid_target_masked",
         "forward_x_mean",
         "v_forward_mean",
         "v_lateral_abs_mean",
@@ -293,6 +322,8 @@ def compute_stage1_eval_metrics(
     per_column_fields = (
         "rows_advanced_mean",
         "row_advance_rate",
+        "max_row_reached_rate",
+        "valid_target_masked",
         "forward_x_mean",
         "current_level_mean",
         "effective_failure_rate",

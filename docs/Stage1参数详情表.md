@@ -159,6 +159,48 @@ Stage0 checkpoint 不能直接作为 Stage1 resume 使用，因为 actor / criti
 python scripts/train.py --task CompleteCar-Stage1 --headless --device cuda:0 --num_envs 32 --resume --warmstart --load_run warmstart_best_baseline_2 --checkpoint model_0.pt --max_iterations 700 --run_name stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter --record_terrain_chase_videos --terrain_chase_video_length_s 120 --terrain_chase_video_mode per_name --terrain_chase_selection_steps 600 --follow_all_envs --hide_goal_heading --hide_wheel_slip_vis
 ```
 
+### 2.5 Stage1 回放列选择
+
+当前 `scripts/play.py` 已支持 Stage1 按地形列回放。新增参数为：
+
+| 参数 | 默认值 | 含义 |
+|---|---|---|
+| `--terrain_replay_columns` | `all` | Stage1 回放出生地形列选择；可取 `all`、单列编号、列编号列表或地形名 |
+
+当前地形列编号仍为：
+
+| 列编号 | 地形 |
+|---:|---|
+| `0` | `flat` |
+| `1` | `slope down` |
+| `2` | `slope up` |
+| `3-4` | `uneven rough` |
+| `5-6` | `stairs down` |
+| `7-8` | `stairs up` |
+| `9` | `discrete obstacles` |
+
+使用 `all` 时，回放会按 env id 轮转分配到所有 `0-9` 列；因此 `--num_envs` 至少需要为 `10`。指定单列时，所有 env 都出生在该列；指定重复地形名时，会覆盖该地形对应的所有列，例如 `stairs_up` 对应 `7,8`。
+
+`--checkpoint model_699.pt` 这类裸 checkpoint 文件名会结合 `--load_run` 在对应 run 目录下解析；如果传入绝对路径、带目录的相对路径或 URI，则仍按显式 checkpoint 路径读取。
+
+全地形回放示例：
+
+```bash
+python scripts/play.py --task CompleteCar-Stage1 --device cuda:0 --num_envs 10 --load_run 2026-05-03_02-17-59_stage1_resume_from125_ppo_guard_to700 --checkpoint model_699.pt --terrain_replay_columns all --create_follow_views
+```
+
+指定单列回放示例：
+
+```bash
+python scripts/play.py --task CompleteCar-Stage1 --device cuda:0 --num_envs 4 --load_run 2026-05-03_02-17-59_stage1_resume_from125_ppo_guard_to700 --checkpoint model_699.pt --terrain_replay_columns 7 --create_follow_views
+```
+
+按地形名回放示例：
+
+```bash
+python scripts/play.py --task CompleteCar-Stage1 --device cuda:0 --num_envs 4 --load_run 2026-05-03_02-17-59_stage1_resume_from125_ppo_guard_to700 --checkpoint model_699.pt --terrain_replay_columns stairs_up --create_follow_views
+```
+
 ## 3. 场景与仿真
 
 | 参数 | 当前值 | 含义 |
@@ -251,7 +293,7 @@ Stage1 目标点逻辑：
 
 1. 读取当前 env 的 terrain level 作为当前 row。
 2. 读取当前 env 的 terrain type 作为当前 column。
-3. 目标 row 固定取当前 row 的 `+1`，超过最大 row 时夹紧。
+3. 目标 row 固定取当前 row 的 `+1`；若该目标会超过最大 row，视为环境逻辑错误，不再夹紧到当前最后 row。
 4. 目标 column 保持不变。
 5. 目标世界坐标的 x / y 先取目标 tile origin。
 6. 除 `stairs down`、`stairs up`、`discrete obstacles` 外，目标 y 再加上 `[-3 m, 3 m]` 均匀随机扰动。
@@ -261,9 +303,10 @@ Stage1 目标点逻辑：
 
 目标点在 Stage1 的作用是提供沿地形列向前的运动引导，不作为必须完成的 episode 终点。terrain-column 目标不使用 `commands.resampling_time` 的计时重采样；目标推进由事件触发：
 
-- 当前目标距离小于 `target_position_tolerance = 0.5 m` 时，terrain level 加 `1` 并重采样下一目标。
-- 当前车体世界系 x 坐标相对当前 tile origin 前进超过 `8 m * 0.70 = 5.6 m` 时，terrain level 加 `1` 并重采样下一目标。
+- 当前目标距离小于 `target_position_tolerance = 0.5 m` 时，触发 terrain row 推进。
+- 当前车体世界系 x 坐标相对当前 tile start 前进超过 `8 m * 0.70 = 5.6 m` 时，触发 terrain row 推进。
 - 目标重采样后仍保持同列，目标 row 继续取当前 row 的 `+1`。
+- 若本次推进会进入没有合法下一目标的最高 row 区域，则本段记为完成，通过 reset 回到新的低 row，不再采样被夹紧到同一最后 row 的假目标。
 - 目标命中不会触发 Stage1 success termination。
 
 ### 5.3 继承但当前不参与 Stage1 terrain-column 目标采样的 command 字段
@@ -350,12 +393,17 @@ origin 的 z 坐标取 tile 中心区域高度的非负最大值，用于 reset 
 | 参数 | 当前值 | 含义 |
 |---|---:|---|
 | `curriculum.enabled` | `True` | 启用课程 |
-| `curriculum.max_init_terrain_level` | `5` | 初始 row 从 `0-5` 随机 |
+| `curriculum.max_init_terrain_level` | `5` | 默认初始 row 从 `0-5` 随机 |
+| `curriculum.initial_max_terrain_level_by_name["stairs down"]` | `1` | `stairs down` 初始 row 限制为 `0-1` |
+| `curriculum.initial_max_terrain_level_by_name["stairs up"]` | `1` | `stairs up` 初始 row 限制为 `0-1` |
+| `curriculum.initial_max_terrain_level_by_name["discrete obstacles"]` | `2` | `discrete obstacles` 初始 row 限制为 `0-2` |
 | `curriculum.default_terrain_name` | `flat` | 默认地形名，仅用于初始化检查和默认类型索引 |
 
 初始化时：
 
-- `terrain_levels` 从 `0` 到 `5` 均匀随机采样。
+- `flat`、`slope down`、`slope up`、`uneven rough` 仍按默认 `0-5` 均匀随机采样。
+- `stairs down`、`stairs up` 按 `0-1` 均匀随机采样。
+- `discrete obstacles` 按 `0-2` 均匀随机采样。
 - `terrain_types` 按 env id 均匀分配到 `0-9` 全部地形列。
 - `scene.env_origins` 同步到每个 env 当前 row / column 对应 tile origin。
 
@@ -365,7 +413,7 @@ origin 的 z 坐标取 tile 中心区域高度的非负最大值，用于 reset 
 |---|---:|---|
 | `curriculum.move_up_distance_ratio` | `0.70` | 前进超过 tile 长度 70% 则推进到下一 row |
 | `curriculum.move_up_uses_forward_x` | `True` | Stage1 terrain-column 目标推进只看世界系 `+x` 位移 |
-| `curriculum.move_down_command_ratio` | `0.50` | 继承自共享配置；terrain-column 目标路径当前不执行 reset-time 降级 |
+| `curriculum.move_down_command_ratio` | `0.50` | 继承自共享配置；普通 waypoint curriculum 使用，Stage1 terrain-column 不使用该字段判断降级 |
 
 当前 tile 长度为 `8 m`，因此：
 
@@ -373,12 +421,13 @@ origin 的 z 坐标取 tile 中心区域高度的非负最大值，用于 reset 
 
 Stage1 terrain-column 目标的 row 推进发生在 episode 内，而不是 reset 前计时重采样或 reset-time curriculum update：
 
-- 若 `root_x - origin_x > 5.6 m`，terrain level 加 `1`。
+- 定义 `tile_start_x = tile_origin_x - terrain_length / 2`。
+- 若 `root_x - tile_start_x > 5.6 m`，触发 row 推进；这里的 `5.6 m` 表示走过当前 tile 长度的 `70%`。
 - 若当前目标点被命中，terrain level 加 `1`。
 - row 推进后，`scene.env_origins` 同步到新 row / 同 column 的 tile origin。
 - row 推进后立刻重采样下一目标点。
+- 若推进会进入没有合法下一目标的最高 row 区域，本段记为 `terrain_column_completed`，本 step 通过 time-limit reset 回到按当前地形类别重新采样的低 row。
 - 若 episode 因 far、球铰越界或 timeout 结束，本步不会触发 row 推进。
-- 当前 terrain-column 路径没有对应的 episode 内降级逻辑。
 
 ### 7.3 reset 初值
 
@@ -395,15 +444,31 @@ Stage1 terrain-column 目标的 row 推进发生在 episode 内，而不是 rese
 | `resets.wheel_joint_pos_range` | `(0.0, 0.0)` |
 | `resets.wheel_joint_vel_range` | `(0.0, 0.0)` |
 
-reset 位置先加当前 terrain tile origin，再加 `root_x_range` / `root_y_range` 随机扰动。随后 terrain runtime 根据地形类别追加 spawn offset：
+reset 位置先加当前 terrain tile origin，再加 `root_x_range` / `root_y_range` 随机扰动。随后 terrain runtime 根据地形类别处理 spawn：
 
 | terrain class | offset 逻辑 |
 |---|---|
-| `step` | x 方向向后随机 `2.0-3.0 m` |
+| `step` | 使用安全 approach spawn：在当前 tile start 前 `0.3-0.8 m` 出生，y 在 tile origin 左右 `0.2 m` 内扰动 |
 | `gap` | x 方向向后随机 `0.0-0.4 m` |
 | `other` | x / y 各随机 `-0.5-0.5 m` |
 
-当前 `stairs down`、`stairs up`、`discrete obstacles` 均属于 `step` class，因此 reset 时都会使用 step 类向后 spawn offset。
+当前 `stairs down`、`stairs up`、`discrete obstacles` 均属于 `step` class，因此 reset 时都会使用 step 类安全 approach spawn。
+
+step 类 spawn 公式为：
+
+$$
+x_{\mathrm{spawn}} = x_{\mathrm{tile\_start}} - U(0.3, 0.8)
+$$
+
+$$
+y_{\mathrm{spawn}} = y_{\mathrm{tile\_origin}} + U(-0.2, 0.2)
+$$
+
+$$
+z_{\mathrm{spawn}} = h(x_{\mathrm{spawn}}, y_{\mathrm{spawn}}) + 0.30
+$$
+
+其中 $h(\cdot)$ 来自 heightfield 世界坐标采样。step 类不再使用 tile center height 设置 spawn z。`flat`、`slope`、`rough` 等 `other` class 保留原 reset 逻辑。
 
 当前 reset yaw 固定为 `0 rad`，即默认朝世界系 `+x`。
 
@@ -775,8 +840,10 @@ Stage1 cfg 不显式设置目标 yaw tolerance、整车姿态阈值、首尾模�
 | `Observation/*` | 关键观测原始值摘要 |
 | `LowSlip/*` | 纵滑、侧滑角通过率和 margin |
 | `PerWheel/*` | 每个车轮的速度、滑移、接触、执行摘要 |
-| `Terrain/*` | 当前 terrain level 和当前 tile origin 下的前进距离 |
+| `Terrain/*` | 当前 terrain level、tile start / origin / end、root x、target x，以及 tile start / origin 两种 forward x 诊断 |
 | `Termination/*` | success、timeout、far、ball-joint-limit 等终止率 |
+| `Stage1Eval/global/*` | Stage1 全局地形列评价指标，包括 max-row reached、valid-target masked、tile x 调试值 |
+| `Stage1Eval/colXX/*` | 各地形列评价指标，包括 `max_row_reached_rate` 和 `valid_target_masked` |
 
 其中 `Action/*`、`LowLevel/*`、`PerWheel/*` 中会出现底层执行摘要指标，但本文档不解释其底层运动学计算过程。
 

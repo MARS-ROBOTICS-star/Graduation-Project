@@ -34,9 +34,11 @@
 - `docs/Stage1参数详情表.md` 已按当前 Stage1 源码配置重新同步，区分了源码默认值、训练命令覆盖值和历史 run 参数快照。
 - 当前 Stage1 TensorBoard / 终端日志指标说明文档：`docs/stage1评价指标.md`；该文档基于当前 logger、env 和 train 源码整理指标含义，并明确当前本地缺少 Stage1 event/runtime log，未伪造具体曲线数值。
 - 当前 Stage1 日志系统已重构为 stage-specific：Stage0 仍使用原 TensorBoard 白名单和终端 `CONSOLE_PRIORITY_TAGS`；Stage1 终端只打印 `Stage1Eval/*` 高信号评价指标，不再把固定为 `0` 的 `Termination/success_rate` 作为主指标。
-- Stage1 新增 `Stage1Eval/global`、`Stage1Eval/flat` 和 `Stage1Eval/col00-col09` 指标，用于观察 flat retention、terrain column 通过能力、滑移、接触、姿态、动作饱和与最难地形列。
+- Stage1 新增 `Stage1Eval/global`、`Stage1Eval/flat` 和 `Stage1Eval/col00-col09` 指标，用于观察 flat retention、terrain column 通过能力、max-row reached、valid-target masked、滑移、接触、姿态、动作饱和与最难地形列。
 - Stage1 PerWheel TensorBoard 调试默认关闭：`logging.enable_stage1_per_wheel_debug = False`；打开后只写法向力、纵滑、侧滑角、轮地纵/侧向速度、轮端力矩目标和轮速参考。
 - 当前 CompleteCar 训练链路已补充 NaN/Inf 数值安全保护：policy action mean / std / log_std 在进入 `Normal` 前清理并保证 `std > 0`，obs / reward / extras metrics 写入前执行 `nan_to_num`，Stage1Eval 的 retention / difficulty 空 mask 返回 `0`。
+- 已修复 Stage1 iteration `31` 暴露出的分布参数原地修改问题：`SquashedGaussianDistribution` 现在先在 `no_grad` 下清理 `log_std_param`，再让清理后的参数参与当前 autograd graph，避免 backward 报 `modified by an inplace operation`。
+- PPO update 主流程已加入有限值保护：batch / loss / gradient / 参数更新前后都会检查 finite 状态；异常 mini-batch 会跳过，异常 optimizer step 会恢复更新前参数并清空 optimizer state，避免一次 `inf` surrogate loss 污染整条训练链。
 - 当前 `complete_car_stage1_cfg.py` 已改为 Stage1 相关参数显式配置风格，后续 Stage1 参数优先在该文件中统一修改。
 - 当前新启动的 Stage1 run 使用与 Stage0 相同的底盘动作物理速度输出范围：
   - `a0 -> vx_cmd` 映射为 `[-2.0, 2.0] m/s`，允许倒车。
@@ -52,33 +54,38 @@
   - 即第一列已恢复为平地，后续地形顺推，最后只保留一列 `discrete obstacles`。
 - 当前 Stage1 初始出生 / 训练列分配：
   - 初始化时 env 按 id 均匀分配到 `0-9` 全部地形列。
+  - 初始 row 已按地形限制：`stairs down` 和 `stairs up` 为 `0-1`，`discrete obstacles` 为 `0-2`，`flat` / `slope` / `rough` 保持 `0-5`。
   - episode 内 terrain-column 目标推进只增加 row，不改变 column，因此全地形训练依赖初始化时覆盖所有 column。
+- 当前 Stage1 回放列选择：
+  - `scripts/play.py` 新增 `--terrain_replay_columns`，默认 `all`。
+  - `all` 表示按 env id 轮转分配到 `0-9` 全部地形列，要求 `--num_envs >= 10`。
+  - 可指定单列编号，如 `--terrain_replay_columns 7`，使所有 env 出生在该地形列。
+  - 可指定列编号列表，如 `--terrain_replay_columns 5,6`，也可指定地形名，如 `flat`、`slope_up`、`stairs_up`；重复地形名会映射到对应多列。
+  - `scripts/play.py` 已修正 checkpoint 解析：`--checkpoint model_699.pt` 这类裸文件名会结合 `--load_run` 在 run 目录下查找；绝对路径、带目录的相对路径或 URI 仍按显式路径读取。
 - 为避免 terrain-column target 与自由 waypoint 采样语义混淆，Stage1 cfg 不再显式写入 `commands.goal_distance` / `commands.goal_direction_max_deg`；其 reward 名义尺度改由 `rewards.params.nominal_goal_distance_m` 和 `turn_speed_angle_scale_deg` 表达。
 - 当前 Stage1 目标点逻辑：
   - 使用 terrain column / terrain type 生成目标点。
   - 目标方向沿地形列纵向 `+x`。
   - 目标列保持同列，目标行固定偏移 `1` 行；除 `stairs down`、`stairs up`、`discrete obstacles` 外，目标点 `y` 方向允许左右随机偏移 `3 m`。
   - `stairs down`、`stairs up`、`discrete obstacles` 的目标 x / y 直接使用下一行同列 tile origin，不做横向偏移。
-  - `discrete obstacles` 已归入 `step` terrain class，reset 时使用 step 类向后 spawn offset。
-  - terrain-column 目标不使用 `commands.resampling_time` 的计时重采样；目标命中或相对当前 tile origin 前进超过 `5.6 m` 时，terrain level 加 `1` 并重采样下一目标。
+  - 目标采样不再允许超过最大 row 后夹紧到同一最后 row；若推进会进入没有合法下一目标的最高 row 区域，则本段记为完成并 reset 到新的低 row。
+  - `discrete obstacles` 已归入 `step` terrain class；`stairs down`、`stairs up`、`discrete obstacles` reset 时使用 tile start 前 `0.3-0.8 m` 的安全 approach spawn，spawn z 由 spawn 点 heightfield 高度加 `0.30 m` 得到，不再用 tile center height。
+  - terrain-column 目标不使用 `commands.resampling_time` 的计时重采样；目标命中或相对当前 `tile_start_x` 前进超过 `5.6 m` 时触发 row 推进。
   - 目标命中不会触发 Stage1 success termination，目标点只提供前进引导。
   - reset 朝向固定为 `+x`。
   - 训练地形颜色已改为黑色 `(0.0, 0.0, 0.0)`。
   - 当前 episode 时长为 `40.0 s`，PhysX `max_velocity_iteration_count = 4`。
-- 当前后台训练：
-  - run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-29_07-37-58_stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter`
-  - runtime log：`RL_Training/logs/runtime/stage1_32env_best_per_terrain_chase_setsid.log`
-  - 启动方式：`32` env、headless、`700` iterations、`--warmstart`、`--record_terrain_chase_videos`。
-  - 视频策略：按 terrain name 分组，先用 `600` step 选择每个地形中正向 `+x` 表现最好的 env，再按顺序逐个录制 `120 s` chase 视频。
-  - 当前录制为非并发策略，同一时刻只创建一个 chase render product 和一个 mp4 writer。
-  - 目标点红色 marker 开启；所有 env 创建 follow view；本次启动关闭目标方向箭头和 wheel-slip 可视箭头，保留目标点 marker。
-  - 若该 run 是 2026-05-02 前启动，其 `params/env.yaml` 仍保留启动时的旧动作映射；源码修改只影响之后新启动的 Stage1 run。
-  - 该训练 run 已在第 `2/6` 个视频期间于 PPO 更新阶段报错退出：`RuntimeError: normal expects all elements of std >= 0.0`。
-  - 当前已切换为纯推理续录：
-    - runtime log：`RL_Training/logs/runtime/stage1_32env_best_per_terrain_chase_resume_record_only.log`
-    - 续录方式：`scripts/train.py --record_only --record_terrain_chase_videos --terrain_chase_selection_file .../selection.txt --terrain_chase_start_from 2`
-    - 续录逻辑：复用原 `selection.txt`，从第 `2/6` 个视频开始覆盖重录 `slope up`，随后顺序录制剩余地形，不再进行 PPO 参数更新。
-  - 当前源码已加入完整数值保护：若 policy distribution 的 action mean / std / log_std 出现非有限值，会先做有限值清理和 clamp，并保证传入 `Normal` 的 `std > 0`；obs、reward 和 extras metrics 在写出前也会清理 NaN/Inf。
+- 当前最新 Stage1 完整训练：
+  - run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-03_02-17-59_stage1_resume_from125_ppo_guard_to700`
+  - 启动方式：从 `2026-05-03_01-17-07_stage1_resume_from25_fixed_distribution_to700/model_125.pt` resume，`32` env、headless、目标补足到 `700` iterations。
+  - 训练结果：终端输出到 `699/700`，进程退出码 `0`，训练耗时约 `15492.84 s`，最终 checkpoint 为 `model_699.pt`。
+  - 输出文件：同一 run 目录下已保存 TensorBoard event 文件、`model_125.pt` 到 `model_699.pt` 的间隔 checkpoint、`params/` 和 `git/` 快照；已导出 `308` 个非空 TensorBoard scalar tag 到 `tensorboard_export/`。
+  - 数值稳定结论：未复现 iteration `31` 的 in-place autograd crash，也未出现会终止训练的 NaN/Inf distribution 错误。
+  - 策略效果边界：训练链路已跑通，但末段仍未学出可靠全地形前进；最后可见 `Stage1Eval/flat/row_advance_rate = 0.0000`、`Stage1Eval/global/rows_advanced_mean = 0.0087`、`Stage1Eval/global/longitudinal_slip_abs_mean = 5.8542`、`Stage1Eval/global/contact_loss_rate = 0.5531`、`Stage1Eval/global/pitch_abs_mean = 10.5290`。
+  - Flat 全过程复核：`Stage1Eval/flat` 不能只看最后 50 iteration。三段有效 Stage1 训练链路中，flat 在每次从低 row 重新开始后约 `9` 个 PPO iteration 内达到 `current_level_mean = 19`；到达最后 row 前，`row_advance_rate` 均值约 `0.75-0.85`，`v_forward_mean` 约 `1.9-2.1 m/s`，`retention_score` 约 `0.85-0.89`，说明 Stage0 平地前进技能基本保留。最后 row 后的 `row_advance_rate = 0` 主要受 terrain level 饱和和目标推进语义影响，不能单独解释为平地技能丢失。
+  - TensorBoard 全量数据包：`results/stage1_tensorboard_all_iterations_2026-05-03.tar.gz` / `.zip`，包含当前 `complete_car_stage1` 下 `11` 个 run 的原始 event 文件、全部 scalar CSV/JSON 导出，以及有效训练链路 `0-699` 的 long/wide 合并表。
+  - ChatGPT 高效分析精简包：`results/stage1_tensorboard_chatgpt_essential_0_699_2026-05-03.zip`，只保留 `0-699` 全 iteration 结果分析必要的核心 CSV、地形列长表、摘要表和分析提示；压缩包约 `1.5M`，内部 `10` 个实际文件。
+  - 工程判断：当前优先问题已从“训练会崩溃”转为“Stage1 reward / curriculum / 目标推进语义下 policy 未形成稳定全地形通过能力”。
 - 历史可视化训练：
   - GUI run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter`
   - 已按用户要求停止，终端最后完整输出到 PPO iteration `18/700`。

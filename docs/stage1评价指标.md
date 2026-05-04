@@ -213,10 +213,25 @@ Stage1 的目标点逻辑是沿同一 terrain column 的 `+x` 方向推进。若
 
 | tag | 终端是否打印 | 含义 | 主要用途 |
 |---|---:|---|---|
-| `Terrain/current_level_mean` | 是 | 当前 env 所处 terrain row / difficulty level 均值 | Stage1 主指标之一，越高说明能进入更难地形 row |
-| `Terrain/forward_x_from_current_tile_origin_mean` | 是 | 相对当前 tile origin 的世界系 `+x` 前进量均值，单位 m | 判断是否沿地形列方向推进 |
+| `Terrain/current_level_mean` | TensorBoard debug | 当前 env 所处 terrain row / difficulty level 均值 | Stage1 主指标之一，越高说明能进入更难地形 row |
+| `Terrain/tile_start_x_mean` | TensorBoard debug | 当前 tile 起点 x 坐标均值 | 检查 row advance 的几何定义 |
+| `Terrain/tile_origin_x_mean` | TensorBoard debug | 当前 tile origin x 坐标均值 | 对照旧的 origin-based 口径 |
+| `Terrain/tile_end_x_mean` | TensorBoard debug | 当前 tile 终点 x 坐标均值 | 检查 tile 范围 |
+| `Terrain/root_x_mean` | TensorBoard debug | 车体 root x 坐标均值 | 与 tile start / origin / end 对照 |
+| `Terrain/target_x_mean` | TensorBoard debug | 当前目标点 x 坐标均值 | 检查目标是否被错误夹紧 |
+| `Terrain/forward_x_from_current_tile_start_mean` | TensorBoard debug | 相对当前 tile start 的世界系 `+x` 前进量均值，单位 m | 当前 row advance 使用的真实口径 |
+| `Terrain/forward_x_from_current_tile_origin_mean` | TensorBoard debug | 相对当前 tile origin 的世界系 `+x` 前进量均值，单位 m | 旧口径对照，不再作为 row advance 判断口径 |
 
-当前 Stage1 的 terrain-column 课程逻辑主要看 episode 内 `+x` 前进量。配置中 `move_up_distance_ratio=0.70`，tile 长度为 `8 m`，所以超过约 `5.6 m` 的 `+x` 前进量会推动 terrain level 增加。这个指标比普通 waypoint success 更接近 Stage1 的训练目标。
+当前 Stage1 的 terrain-column 课程逻辑主要看 episode 内 `+x` 前进量。配置中 `move_up_distance_ratio=0.70`，tile 长度为 `8 m`，所以 `root_x - tile_start_x > 5.6 m` 会触发 terrain row 推进。这个指标比普通 waypoint success 更接近 Stage1 的训练目标。
+
+Stage1Eval 额外提供：
+
+- `Stage1Eval/global/max_row_reached_rate`
+- `Stage1Eval/global/valid_target_masked`
+- `Stage1Eval/colXX/max_row_reached_rate`
+- `Stage1Eval/colXX/valid_target_masked`
+
+这些指标用于区分“真实不能前进”和“已经到达最高 row 语义边界，目标不应继续夹紧”的情况。
 
 ## 5. Reward 与 progress gate 指标
 
@@ -270,7 +285,7 @@ Stage1 的 `reached_target_weight=0.0`，因此目标点命中主要用于推进
 | `Action/planar_command_delta_wz_raw` | 否 | `shaped_wz - desired_wz` | 看转向命令被改了多少 |
 | `Action/contact_weight_mean_raw` | 否 | 轮级接触权重均值 | 看车轮接触状态对力矩分配的影响 |
 
-判断 Stage1 是否真的学到地形推进，不能只看 `desired_planar_vx_raw`。更合理的链条是同时看 `desired_planar_vx_raw`、`shaped_planar_vx_raw`、`wheel_speed_reference_abs_mean_raw`、`wheel_torque_target_abs_mean_raw`、`forward_x_from_current_tile_origin_mean` 和滑移指标。
+判断 Stage1 是否真的学到地形推进，不能只看 `desired_planar_vx_raw`。更合理的链条是同时看 `desired_planar_vx_raw`、`shaped_planar_vx_raw`、`wheel_speed_reference_abs_mean_raw`、`wheel_torque_target_abs_mean_raw`、`Stage1Eval/global/forward_x_mean` 和滑移指标。
 
 ### 6.2 `LowLevel/*`
 
@@ -453,13 +468,13 @@ episode 指标只在有环境 reset 后聚合，因此训练前期或 episode �
 42. `Tracking/active_segment_completion_pct`
 43. `Tracking/terrain_target_advances_mean`
 44. `Terrain/current_level_mean`
-45. `Terrain/forward_x_from_current_tile_origin_mean`
+45. `Terrain/forward_x_from_current_tile_start_mean`
 46. `Tracking/waypoints_completed_mean`
 47. `Tracking/episode_completion_pct`
 
 终端快速判断建议：
 
-- 先看 `Terrain/forward_x_from_current_tile_origin_mean` 和 `Terrain/current_level_mean`：是否真的沿地形列向前推进。
+- 先看 `Stage1Eval/global/forward_x_mean`、`Stage1Eval/global/current_level_mean`、`Stage1Eval/global/max_row_reached_rate` 和 `Stage1Eval/global/valid_target_masked`：是否真的沿地形列向前推进，还是已经进入最高 row 语义边界。
 - 再看 `Termination/far_from_target_rate` 和 `ball_joint_limit_rate`：是否因偏离或姿态越界提前失败。
 - 再看 `Observation/wheel_longitudinal_slip_abs_mean_raw`、`Observation/wheel_slip_angle_abs_mean_raw`、`LowSlip/combined_pass_rate`：是否形成低滑移运动。
 - 最后看 `Action/*` 和 `LowLevel/*`：判断是 policy 命令问题、low-slip 整形问题、轮速分配问题，还是轮地接触问题。
@@ -481,8 +496,10 @@ episode 指标只在有环境 reset 后聚合，因此训练前期或 episode �
 
 优先看：
 
-- `Terrain/forward_x_from_current_tile_origin_mean`
+- `Stage1Eval/global/forward_x_mean`
 - `Terrain/current_level_mean`
+- `Stage1Eval/global/max_row_reached_rate`
+- `Stage1Eval/global/valid_target_masked`
 - `Tracking/terrain_target_advances_mean`
 - `Tracking/active_segment_completion_pct`
 - terrain chase 视频中的实际车体位移
@@ -556,4 +573,3 @@ python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/comple
 - 后 `25/50/100` 个 TensorBoard step 的均值
 - peak 与稳定窗口，而不是只看单点最高值
 - 对每类地形分别的 chase 视频行为观察
-

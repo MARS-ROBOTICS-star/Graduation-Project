@@ -78,6 +78,15 @@ parser.add_argument(
 )
 parser.add_argument("--follow_view_top_height", type=float, default=2.5)
 parser.add_argument("--follow_view_chase_env", type=int, default=0)
+parser.add_argument(
+    "--terrain_replay_columns",
+    type=str,
+    default="all",
+    help=(
+        "Stage1 replay terrain columns: 'all', one or more column indices such as '0' or '7,8', "
+        "or terrain names such as 'flat', 'slope_up', 'stairs_up'."
+    ),
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
 
@@ -183,12 +192,121 @@ def _resolve_explicit_checkpoint_path(checkpoint: str) -> str:
     return _validate_checkpoint_file(retrieve_file_path(checkpoint))
 
 
+def _checkpoint_selector_is_explicit_path(checkpoint: str) -> bool:
+    """Return True when checkpoint should be treated as a direct file path or URI."""
+    local_path = Path(checkpoint).expanduser()
+    return local_path.is_file() or local_path.is_absolute() or local_path.parent != Path(".") or "://" in checkpoint
+
+
 def _parse_rsl_rl_version(version_str: str):
     """Parse vendored rsl_rl versions robustly."""
     try:
         return version.parse(version_str)
     except InvalidVersion:
         return version.parse(version_str.replace("-local", "+local"))
+
+
+def _normalize_selector(value: str) -> str:
+    return value.strip().lower().replace("-", " ").replace("_", " ")
+
+
+def _terrain_column_name(terrain_runtime, column: int) -> str:
+    terrain_cfg = terrain_runtime._terrain_cfg
+    terrain_names = list(getattr(terrain_cfg, "terrain_names", []))
+    if getattr(terrain_runtime, "_terrain_type_map", None) is not None:
+        terrain_idx = int(terrain_runtime._terrain_type_map[0, column].item())
+    else:
+        terrain_idx = column
+    if 0 <= terrain_idx < len(terrain_names):
+        return terrain_names[terrain_idx]
+    return f"terrain_{terrain_idx}"
+
+
+def _parse_stage1_replay_columns(raw_selector: str, terrain_runtime) -> list[int] | None:
+    selector = _normalize_selector(raw_selector)
+    if selector in {"", "all", "*", "full", "full terrain", "all terrain"}:
+        return None
+
+    terrain_cfg = terrain_runtime._terrain_cfg
+    num_cols = int(terrain_cfg.num_cols)
+    columns_by_name: dict[str, list[int]] = {}
+    for column in range(num_cols):
+        terrain_name = _terrain_column_name(terrain_runtime, column)
+        columns_by_name.setdefault(_normalize_selector(terrain_name), []).append(column)
+    if "uneven rough" in columns_by_name:
+        columns_by_name.setdefault("rough", list(columns_by_name["uneven rough"]))
+
+    selected_columns: list[int] = []
+    for token in selector.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if token.isdigit():
+            column = int(token)
+            if column < 0 or column >= num_cols:
+                raise ValueError(f"Stage1 terrain replay column must be in [0, {num_cols - 1}], got {column}.")
+            selected_columns.append(column)
+            continue
+        if token not in columns_by_name:
+            available = ", ".join(
+                f"{column}:{_terrain_column_name(terrain_runtime, column).replace(' ', '_')}"
+                for column in range(num_cols)
+            )
+            raise ValueError(
+                f"Unknown Stage1 terrain replay selector '{token}'. "
+                f"Use 'all', a column index, or one of: {available}."
+            )
+        selected_columns.extend(columns_by_name[token])
+
+    unique_columns = sorted(set(selected_columns))
+    if not unique_columns:
+        raise ValueError("No Stage1 terrain replay columns were selected.")
+    return unique_columns
+
+
+def _format_stage1_replay_columns(columns: list[int], terrain_runtime) -> str:
+    return ", ".join(f"{column}:{_terrain_column_name(terrain_runtime, column)}" for column in columns)
+
+
+def _configure_stage1_replay_terrain(raw_env, raw_selector: str) -> bool:
+    terrain_runtime = getattr(raw_env, "_terrain_runtime", None)
+    if terrain_runtime is None or not getattr(terrain_runtime, "generator_enabled", False):
+        if _normalize_selector(raw_selector) in {"", "all", "*", "full", "full terrain", "all terrain"}:
+            return False
+        raise RuntimeError("--terrain_replay_columns is only available for generated Stage1 terrain replay.")
+    if terrain_runtime.terrain_types is None or terrain_runtime.terrain_levels is None:
+        raise RuntimeError("Stage1 terrain runtime has not initialized terrain levels/types.")
+
+    selected_columns = _parse_stage1_replay_columns(raw_selector, terrain_runtime)
+    num_envs = int(raw_env.num_envs)
+    num_cols = int(terrain_runtime._terrain_cfg.num_cols)
+    env_ids = torch.arange(num_envs, device=raw_env.device, dtype=torch.long)
+
+    if selected_columns is None:
+        if num_envs < num_cols:
+            raise ValueError(
+                f"Full-terrain replay needs at least {num_cols} envs, but got {num_envs}. "
+                "Increase --num_envs or choose a specific --terrain_replay_columns value."
+            )
+        columns_tensor = torch.remainder(env_ids, num_cols)
+        terrain_runtime.terrain_types[:] = columns_tensor
+        terrain_runtime.sync_env_origins(raw_env.scene)
+        print(
+            "[INFO] Stage1 replay terrain mode: all columns "
+            f"({_format_stage1_replay_columns(list(range(num_cols)), terrain_runtime)}).",
+            flush=True,
+        )
+        return True
+
+    selected_tensor = torch.tensor(selected_columns, device=raw_env.device, dtype=torch.long)
+    terrain_runtime.terrain_types[:] = selected_tensor[torch.remainder(env_ids, selected_tensor.numel())]
+    terrain_runtime.sync_env_origins(raw_env.scene)
+    print(
+        "[INFO] Stage1 replay terrain columns: "
+        f"{_format_stage1_replay_columns(selected_columns, terrain_runtime)}.",
+        flush=True,
+    )
+    return True
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)
@@ -212,7 +330,7 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     agent_cfg.device = env_cfg.sim.device
 
     log_root_path = os.path.abspath(os.path.join("logs", "rsl_rl", agent_cfg.experiment_name))
-    if args_cli.checkpoint:
+    if args_cli.checkpoint and _checkpoint_selector_is_explicit_path(args_cli.checkpoint):
         resume_path = _resolve_explicit_checkpoint_path(args_cli.checkpoint)
     else:
         run_pattern, checkpoint_pattern = _resolve_checkpoint_lookup_args(agent_cfg)
@@ -222,6 +340,8 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     env_cfg.log_dir = log_dir
 
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+    if _configure_stage1_replay_terrain(env.unwrapped, args_cli.terrain_replay_columns):
+        env.reset()
     stream_video_path = None
     if args_cli.video and args_cli.stream_video:
         video_folder = os.path.join(log_dir, "videos", "play")

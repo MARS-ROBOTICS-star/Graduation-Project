@@ -224,7 +224,14 @@ def sample_terrain_column_waypoint_command_sequences(
             device=device,
             dtype=torch.long,
         )
-        target_levels = torch.clamp(anchor_levels + row_offsets, max=max_target_level)
+        target_levels = anchor_levels + row_offsets
+        if torch.any(target_levels > max_target_level):
+            invalid_count = int(torch.count_nonzero(target_levels > max_target_level).item())
+            raise RuntimeError(
+                "Terrain-column target sampling reached beyond the last terrain row. "
+                f"Invalid samples: {invalid_count}. Reset/curriculum logic must resample a lower row before "
+                "sampling a new target; clamping to the current last row is not allowed."
+            )
         target_origins = terrain_runtime.get_tile_origins(target_levels, terrain_types).to(device=device, dtype=dtype)
         target_xy_w = target_origins[:, :2].clone()
         if lateral_range > 0.0:

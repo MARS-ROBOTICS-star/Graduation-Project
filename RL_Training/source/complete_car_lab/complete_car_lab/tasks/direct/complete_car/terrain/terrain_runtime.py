@@ -150,18 +150,7 @@ class CompleteCarTerrainRuntime:
                 self.terrain_levels[step_env_ids],
                 self.terrain_types[step_env_ids],
             ).to(device=self.device, dtype=root_state.dtype)
-            tile_start_x = tile_origins[:, 0] - 0.5 * float(self._terrain_cfg.terrain_length)
-            spawn_back = _sample_uniform(self.cfg.step_approach_spawn_back_range, (num_step,), self.device).to(root_state.dtype)
-            spawn_lateral = _sample_uniform(self.cfg.step_approach_spawn_lateral_range, (num_step,), self.device).to(
-                root_state.dtype
-            )
-            spawn_xy = torch.stack(
-                (
-                    tile_start_x - spawn_back,
-                    tile_origins[:, 1] + spawn_lateral,
-                ),
-                dim=-1,
-            )
+            spawn_xy = tile_origins[:, 0:2]
             root_state[step_mask, 0:2] = spawn_xy
             root_state[step_mask, 2] = (
                 self.sample_heights_world_xy(spawn_xy).to(dtype=root_state.dtype)
@@ -177,7 +166,7 @@ class CompleteCarTerrainRuntime:
                 self.cfg.other_spawn_xy_range, (int(other_mask.sum().item()), 2), self.device
             )
         return root_state
-    
+
     # 输入世界坐标系下的一批二维点，在height_field_raw做双线性插值，输出点对应的地形高度
     def sample_heights_world_xy(self, points_xy_w: torch.Tensor) -> torch.Tensor:
         if self._height_field_raw is None:

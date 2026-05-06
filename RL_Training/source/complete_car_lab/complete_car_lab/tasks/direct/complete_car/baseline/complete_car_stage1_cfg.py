@@ -94,19 +94,29 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.rewards.params.target_position_tolerance = 0.5
         self.rewards.params.distance_to_target_denominator_scale = 0.01
         self.rewards.params.distance_to_target_weight = 6.0
-        self.rewards.params.nominal_goal_distance_m = 16.0
+        self.rewards.params.nominal_goal_distance_m = 8.0
         self.rewards.params.turn_speed_angle_scale_deg = 0.0
         self.rewards.params.progress_to_target_clip_m = 0.25
-        self.rewards.params.progress_to_target_relax_radius_m = 4.0
+        self.rewards.params.progress_to_target_relax_radius_m = 2.0
         self.rewards.params.progress_to_target_weight = 8.0
         self.rewards.params.reached_target_base_reward = 2.0
-        self.rewards.params.reached_target_weight = 0.0
-        self.rewards.params.far_from_target_margin = 8.0
+        self.rewards.params.reached_target_weight = 6.0
+        self.rewards.params.far_from_target_margin = 3.0
         self.rewards.params.far_from_target_weight = -2.0
         self.rewards.params.angle_diff_weight = 6.0
         self.rewards.params.turn_speed_penalty_weight = 0.0
         self.rewards.params.slip_penalty_weight = -2.0
-        self.rewards.params.slip_angle_penalty_ratio = 6.0
+        self.rewards.params.slip_longitudinal_penalty_ratio = 2.0
+        self.rewards.params.slip_angle_penalty_ratio = 1.0
+        self.rewards.params.action_rate_penalty_weight = -10.0
+        self.rewards.params.action_rate_base_ratio = 0.5
+        self.rewards.params.action_rate_joint_ratio = 1.0
+        self.rewards.params.contact_support_penalty_weight = -4.0
+        self.rewards.params.contact_support_min_weight = 0.3
+        self.rewards.params.edge_speed_penalty_weight = -6.0
+        self.rewards.params.edge_height_low_threshold_m = 0.04
+        self.rewards.params.edge_height_high_threshold_m = 0.10
+        self.rewards.params.edge_speed_limit_mps = 0.5
         self.rewards.params.progress_gate_longitudinal_k = 3.0
         self.rewards.params.progress_gate_slip_angle_scale_rad = 1.5
         self.rewards.params.progress_gate_min_multiplier = 0.25
@@ -156,8 +166,6 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.terrain.height_scanner_update_period = 0.02
         self.terrain.height_scanner_offset = (0.0, 0.0, 20.0)
         self.terrain.step_spawn_back_range = (2.0, 3.0)
-        self.terrain.step_approach_spawn_back_range = (0.3, 0.8)
-        self.terrain.step_approach_spawn_lateral_range = (-0.2, 0.2)
         self.terrain.base_spawn_clearance = 0.30
         self.terrain.gap_spawn_back_range = (0.0, 0.4)
         self.terrain.other_spawn_xy_range = (-0.5, 0.5)
@@ -196,8 +204,7 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
             "discrete obstacles": 2,
         }
         self.curriculum.default_terrain_name = "flat"
-        self.curriculum.move_up_distance_ratio = 0.70
-        self.curriculum.move_up_uses_forward_x = True
+        self.curriculum.terrain_column_move_down_progress_ratio = 0.30
 
         self.sensors.imu.enabled = False
         self.sensors.stereo_camera.enabled = False

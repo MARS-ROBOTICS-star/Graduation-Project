@@ -214,15 +214,24 @@ Stage1 的目标点逻辑是沿同一 terrain column 的 `+x` 方向推进。若
 | tag | 终端是否打印 | 含义 | 主要用途 |
 |---|---:|---|---|
 | `Terrain/current_level_mean` | TensorBoard debug | 当前 env 所处 terrain row / difficulty level 均值 | Stage1 主指标之一，越高说明能进入更难地形 row |
-| `Terrain/tile_start_x_mean` | TensorBoard debug | 当前 tile 起点 x 坐标均值 | 检查 row advance 的几何定义 |
+| `Terrain/tile_start_x_mean` | TensorBoard debug | 当前 tile 起点 x 坐标均值 | 检查 tile 几何定义 |
 | `Terrain/tile_origin_x_mean` | TensorBoard debug | 当前 tile origin x 坐标均值 | 对照旧的 origin-based 口径 |
 | `Terrain/tile_end_x_mean` | TensorBoard debug | 当前 tile 终点 x 坐标均值 | 检查 tile 范围 |
 | `Terrain/root_x_mean` | TensorBoard debug | 车体 root x 坐标均值 | 与 tile start / origin / end 对照 |
 | `Terrain/target_x_mean` | TensorBoard debug | 当前目标点 x 坐标均值 | 检查目标是否被错误夹紧 |
-| `Terrain/forward_x_from_current_tile_start_mean` | TensorBoard debug | 相对当前 tile start 的世界系 `+x` 前进量均值，单位 m | 当前 row advance 使用的真实口径 |
-| `Terrain/forward_x_from_current_tile_origin_mean` | TensorBoard debug | 相对当前 tile origin 的世界系 `+x` 前进量均值，单位 m | 旧口径对照，不再作为 row advance 判断口径 |
+| `Terrain/forward_x_from_current_tile_start_mean` | TensorBoard debug | 相对当前 tile start 的世界系 `+x` 前进量均值，单位 m | tile 几何调试量，不再作为 row advance 判断口径 |
+| `Terrain/forward_x_from_current_tile_origin_mean` | TensorBoard debug | 相对当前 tile origin 的世界系 `+x` 前进量均值，单位 m | tile 几何调试量，不再作为 row advance 判断口径 |
+| `Terrain/active_goal_start_distance_mean` | TensorBoard debug | 当前目标段刚采样时车辆到目标点的水平距离均值 | 检查 row progress 的归一化分母 |
+| `Terrain/active_goal_progress_mean` | TensorBoard debug | 当前目标段进度均值，范围约 `0-1` | reset 时 row 退级逻辑的核心参考量 |
 
-当前 Stage1 的 terrain-column 课程逻辑主要看 episode 内 `+x` 前进量。配置中 `move_up_distance_ratio=0.70`，tile 长度为 `8 m`，所以 `root_x - tile_start_x > 5.6 m` 会触发 terrain row 推进。这个指标比普通 waypoint success 更接近 Stage1 的训练目标。
+当前 Stage1 的 terrain-column 课程逻辑不再使用 `root_x - tile_start_x > 5.6 m` 触发 row 推进。row 升级只由目标点命中触发；row 退级在 reset 时按当前目标段进度判断，失败/超时且 `active_goal_progress < 0.30` 时当前 row 退一级。
+
+reset 日志会额外输出小写 `terrain/*` 指标：
+
+- `terrain/row_progress_at_reset`：episode 结束时的当前目标段进度。
+- `terrain/move_down_ratio`：本次 reset 中触发 row 退级的比例。
+- `terrain/reset_to_low_ratio`：到达最高有效 row 或完成地形列后重新采样低 row 的比例。
+- `terrain/level_after_reset`：reset curriculum 更新后的 terrain level 均值。
 
 Stage1Eval 额外提供：
 
@@ -242,13 +251,22 @@ Stage1Eval 额外提供：
 | `Reward/total` | 是 | 当前 step reward 总和的 env 均值 | 趋势上升，但不能单独判断运动质量 |
 | `Reward/distance_to_target` | 是 | 距离目标越近越高的 dense reward | 越高越好 |
 | `Reward/progress_to_target` | 是 | 当前步相对上一帧向目标接近的 progress reward | 越高越好 |
-| `Reward/reached_target` | 是 | 命中目标点时的奖励项 | Stage1 当前权重为 `0.0`，通常不应作为核心指标 |
+| `Reward/reached_target` | 是 | 命中目标点时的奖励项 | Stage1 当前权重为 `6.0`，目标命中会直接贡献稀疏奖励 |
 | `Reward/far_from_target` | 是 | 远离目标阈值后的惩罚项 | 越接近 `0` 越好 |
 | `Reward/angle_diff` | 是 | heading error 越小越高的奖励项 | 越高越好 |
 | `Reward/turn_speed_penalty` | 是 | 大角度误差下高速运动惩罚 | 越接近 `0` 越好 |
-| `Reward/slip_penalty` | 是 | 纵滑和侧滑角惩罚 | 越接近 `0` 越好 |
+| `Reward/slip_penalty` | 是 | 接触权重 mask 后的纵滑和侧滑角惩罚 | 越接近 `0` 越好 |
+| `Reward/action_rate_penalty` | 否 | 动作变化惩罚；Stage1 当前按 `N=2400` 归一化，并通过 `Debug/Stage1/Reward/action_rate_penalty` 写入 TensorBoard | 越接近 `0` 越好 |
+| `Reward/contact_support_penalty` | 否 | 前、中、后三段模块支撑丢失惩罚，并通过 `Debug/Stage1/Reward/contact_support_penalty` 写入 TensorBoard | 越接近 `0` 越好 |
+| `Reward/edge_speed_penalty` | 否 | 地形突变前正向超速惩罚，并通过 `Debug/Stage1/Reward/edge_speed_penalty` 写入 TensorBoard | 越接近 `0` 越好 |
 
-Stage1 的 `reached_target_weight=0.0`，因此目标点命中主要用于推进下一个 terrain-column 目标，而不是靠 `Reward/reached_target` 直接提供稀疏成功奖励。
+注意：当前 Stage1 终端主输出已切换为 `Stage1Eval/*`，`Reward/*` 诊断在 Stage1 TensorBoard 中会以 `Debug/Stage1/Reward/*` 写入；终端盯盘仍以第 10 节的 Stage1Eval 建议为准。
+
+Stage1 的 `reached_target_weight=6.0`，参数与 Stage0 相同；目标点命中既用于推进下一个 terrain-column 目标，也会通过 `Reward/reached_target` 提供稀疏奖励。
+Stage1 的 `action_rate_penalty_weight=-10.0`，动作权重为 `[0.5, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]`，前两个底盘动作变化惩罚较轻，后六个球铰姿态动作变化惩罚较重。
+Stage1 的 `contact_support_penalty_weight=-4.0`，最低模块支撑要求为 `0.3`；中车、前车、后车各自只取左右轮中较大的接触权重，不强制六轮同时接地。
+Stage1 的 slip reward 现在使用接触权重 masked mean；TensorBoard 额外记录 `Debug/Stage1/Slip/masked_longitudinal_abs_mean_raw`、`Debug/Stage1/Slip/masked_angle_abs_mean_raw` 和 `Debug/Stage1/Slip/contact_weight_sum_raw`，用于确认实际参与 slip 评价的有效接触规模。
+Stage1 的 `edge_speed_penalty_weight=-6.0`，edge strength 使用前方 `1.0 m`、侧向额外 `0.5 m` 的 height patch 预览区域；高度跳变阈值为 `0.04-0.10 m`，强突变安全速度为 `0.5 m/s`，平地不额外限速。
 
 ### 5.2 `ProgressGate/*`
 
@@ -263,6 +281,18 @@ Stage1 的 `reached_target_weight=0.0`，因此目标点命中主要用于推进
 | `ProgressGate/multiplier` | 是 | progress reward multiplier | 当前范围由 `0.25` 到 `1.5` |
 
 `ProgressGate/combined_gate` 不是成功率。它只说明正向 progress 在 reward 中被放大或削弱的程度。若 `positive_progress_raw` 有明显正值，但 `combined_gate` 很低，说明车辆在“能动”的同时伴随明显滑移，reward 对这种 progress 会打折。
+
+### 5.3 `EdgeSpeed/*`
+
+| tag | 终端是否打印 | 含义 | 主要用途 |
+|---|---:|---|---|
+| `EdgeSpeed/strength_raw` | 否 | 前方预览区域高度突变强度，范围约为 `0-1` | 判断 height patch 是否识别到台阶/障碍边缘 |
+| `EdgeSpeed/height_jump_m_raw` | 否 | 前方预览区域相邻采样点最大高度跳变，单位 m | 对照地形生成高度，检查阈值是否合适 |
+| `EdgeSpeed/safe_speed_mps_raw` | 否 | 当前 edge strength 对应的安全前进速度，单位 m/s | 看突变前是否把安全速度压到 `0.5 m/s` 附近 |
+| `EdgeSpeed/forward_speed_mps_raw` | 否 | 车体系正向速度，倒车时记为 `0` | 看车辆实际是否仍在向前冲 |
+| `EdgeSpeed/excess_speed_mps_raw` | 否 | 超过安全速度的正向速度部分，单位 m/s | 越接近 `0` 越好 |
+
+这些指标在 Stage1 TensorBoard 中会以 `Debug/Stage1/EdgeSpeed/*` 写入。若 `height_jump_m_raw` 明显大于 `0.10` 但 `excess_speed_mps_raw` 长期较高，说明策略仍在地形突变前高速冲击；若 `height_jump_m_raw` 接近 `0`，`Reward/edge_speed_penalty` 应接近 `0`。
 
 ## 6. 动作与底层控制指标
 
@@ -376,6 +406,9 @@ episode 指标只在有环境 reset 后聚合，因此训练前期或 episode �
 | `episode/angle_diff` | episode 内 angle reward 累计值 |
 | `episode/turn_speed_penalty` | episode 内 turn-speed penalty 累计值 |
 | `episode/slip_penalty` | episode 内 slip penalty 累计值 |
+| `episode/action_rate_penalty` | episode 内 action rate penalty 累计值 |
+| `episode/contact_support_penalty` | episode 内 contact support penalty 累计值 |
+| `episode/edge_speed_penalty` | episode 内 edge speed penalty 累计值 |
 | `episode/goal_target_x_world` | episode 结束时目标点世界系 x 均值 |
 | `episode/goal_target_y_world` | episode 结束时目标点世界系 y 均值 |
 | `episode/goal_target_z_world` | episode 结束时目标点世界系 z 均值 |

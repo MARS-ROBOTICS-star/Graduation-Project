@@ -23,7 +23,7 @@ from ..mdp.observations import (
     compute_critic_observation,
     compute_wheel_motion_observations,
 )
-from ..mdp.rewards import REWARD_TERM_NAMES, compute_reward_terms, get_nominal_goal_distance
+from ..mdp.rewards import REWARD_TERM_NAMES, compute_reward_terms
 from ..mdp.stage1_eval import compute_stage1_eval_metrics
 from ..mdp.terminations import compute_done_terms
 from ..sensors.sensor_cfg import CompleteCarSensorSuiteRuntime
@@ -82,6 +82,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._last_stage1_max_row_reached = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._last_stage1_valid_target_masked = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._previous_goal_distance = torch.zeros(self.num_envs, device=self.device)
+        self._active_goal_start_distance = torch.ones(self.num_envs, device=self.device)
 
         self._joint_pos_targets = self.robot.data.default_joint_pos.clone()
         self._joint_effort_targets = torch.zeros_like(self.robot.data.default_joint_vel)
@@ -107,6 +108,18 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "progress_slip_angle_gate": torch.zeros(self.num_envs, device=self.device),
             "progress_gate": torch.zeros(self.num_envs, device=self.device),
             "progress_multiplier": torch.zeros(self.num_envs, device=self.device),
+            "slip_contact_weight_sum": torch.zeros(self.num_envs, device=self.device),
+            "slip_masked_longitudinal": torch.zeros(self.num_envs, device=self.device),
+            "slip_masked_angle": torch.zeros(self.num_envs, device=self.device),
+            "contact_support_front": torch.zeros(self.num_envs, device=self.device),
+            "contact_support_mid": torch.zeros(self.num_envs, device=self.device),
+            "contact_support_rear": torch.zeros(self.num_envs, device=self.device),
+            "contact_support_score": torch.zeros(self.num_envs, device=self.device),
+            "edge_strength": torch.zeros(self.num_envs, device=self.device),
+            "edge_height_jump": torch.zeros(self.num_envs, device=self.device),
+            "edge_safe_speed": torch.zeros(self.num_envs, device=self.device),
+            "edge_forward_speed": torch.zeros(self.num_envs, device=self.device),
+            "edge_speed_excess": torch.zeros(self.num_envs, device=self.device),
         }
         self._last_total_reward = torch.zeros(self.num_envs, device=self.device)
         self._episode_total_reward_sum = torch.zeros(self.num_envs, device=self.device)
@@ -140,6 +153,21 @@ class CompleteCarDirectEnv(DirectRLEnv):
             device= self.device,
             dtype = self.robot.data.root_link_pos_w.dtype,
         )
+        self._height_patch_x_points = torch.unique(self._critic_height_patch_local[:, 0], sorted=True)
+        self._height_patch_y_points = torch.unique(self._critic_height_patch_local[:, 1], sorted=True)
+        edge_preview_x_min = float(self.cfg.terrain.patch_front_extent)
+        edge_preview_x_max = edge_preview_x_min + float(self.cfg.terrain.patch_preview_length)
+        edge_preview_y_limit = float(self.cfg.terrain.patch_half_width) + float(self.cfg.terrain.patch_side_margin)
+        edge_eps = 1.0e-6
+        self._edge_preview_x_indices = torch.nonzero(
+            (self._height_patch_x_points >= edge_preview_x_min - edge_eps)
+            & (self._height_patch_x_points <= edge_preview_x_max + edge_eps),
+            as_tuple=False,
+        ).flatten()
+        self._edge_preview_y_indices = torch.nonzero(
+            torch.abs(self._height_patch_y_points) <= edge_preview_y_limit + edge_eps,
+            as_tuple=False,
+        ).flatten()
 
     def step(self, action: torch.Tensor):
         observations, rewards, terminated, time_outs, extras = super().step(action)
@@ -379,6 +407,37 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._waypoint_heading_offsets[env_ids] = heading_offsets
         self._command_time_left[env_ids] = self.cfg.commands.resampling_time
         self._sync_active_waypoint_targets(env_ids)
+        self._set_active_goal_start_distance(env_ids, start_pos_xy_w)
+
+    def _set_active_goal_start_distance(self, env_ids: torch.Tensor, start_pos_xy_w: torch.Tensor) -> None:
+        if env_ids.numel() == 0:
+            return
+        start_distance = torch.linalg.vector_norm(
+            self.command_targets_w[env_ids, :2] - start_pos_xy_w,
+            dim=1,
+        )
+        self._active_goal_start_distance[env_ids] = torch.nan_to_num(
+            start_distance,
+            nan=1.0,
+            posinf=1.0,
+            neginf=1.0,
+        ).clamp(min=1.0e-6)
+
+    def _compute_active_goal_progress(self, env_ids: torch.Tensor) -> torch.Tensor:
+        if env_ids.numel() == 0:
+            return torch.empty(0, device=self.device)
+        current_distance = torch.linalg.vector_norm(
+            self.command_targets_w[env_ids, :2] - self.robot.data.root_link_pos_w[env_ids, :2],
+            dim=1,
+        )
+        start_distance = self._active_goal_start_distance[env_ids].clamp(min=1.0e-6)
+        row_progress = (start_distance - current_distance) / start_distance
+        return torch.nan_to_num(
+            row_progress.clamp(min=0.0, max=1.0),
+            nan=0.0,
+            posinf=1.0,
+            neginf=0.0,
+        )
 
     def _get_terrain_column_tile_x_values(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         if (
@@ -412,13 +471,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
             empty_mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
             return empty_mask, empty_mask, empty_mask
 
-        _tile_start_x, _tile_origin_x, _tile_end_x, _root_x, _target_x, forward_x_from_current_tile_start = (
-            self._get_terrain_column_tile_x_values()
-        )
-        advance_distance = (
-            float(self._terrain_runtime._terrain_cfg.terrain_length) * float(self.cfg.curriculum.move_up_distance_ratio)
-        )
-        forward_progress_hit = forward_x_from_current_tile_start > advance_distance
         waypoint_hit = torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1) < self.cfg.rewards.params.target_position_tolerance
         min_row_offset = max(int(getattr(self.cfg.commands, "terrain_goal_min_row_offset", 1)), 1)
         max_target_level = max(int(self._terrain_runtime.max_terrain_level) - 1, 0)
@@ -432,7 +484,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             | done_terms["ball_joint_out_of_bounds"]
             | done_terms["time_out"]
         )
-        progress_hit = (forward_progress_hit | waypoint_hit) & ~blocked
+        progress_hit = waypoint_hit & ~blocked
         advance_mask = progress_hit & can_advance
         max_row_reached_mask = progress_hit & reaches_max_row
         return progress_hit, advance_mask, max_row_reached_mask
@@ -483,6 +535,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             return
         self._active_waypoint_index[env_ids] += 1
         self._sync_active_waypoint_targets(env_ids)
+        self._set_active_goal_start_distance(env_ids, self.robot.data.root_link_pos_w[env_ids, :2])
 
 
     def _get_observations(self) -> dict:
@@ -507,7 +560,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._total_vehicle_weight,
             self._joint_pos_targets[:, self._ball_joint_ids],
             relative_goal_commands,
-            self.last_actions,
+            self.actions,
         )
         self._cached_step_relative_goal_commands = relative_goal_commands
         self._cached_step_raw_obs_terms = raw_obs_terms
@@ -544,6 +597,35 @@ class CompleteCarDirectEnv(DirectRLEnv):
         relative_height = root_pos_w[:, 2:3] - terrain_height
         return torch.nan_to_num(relative_height, nan=0.0, posinf=0.0, neginf=0.0)
 
+    def _compute_edge_preview(self) -> tuple[torch.Tensor, torch.Tensor]:
+        zeros = torch.zeros(self.num_envs, device=self.device, dtype=self.robot.data.root_link_pos_w.dtype)
+        terrain_height_patch = self._compute_critic_height_patch()
+        if terrain_height_patch is None:
+            return zeros, zeros
+        if self._edge_preview_x_indices.numel() < 2 or self._edge_preview_y_indices.numel() < 2:
+            return zeros, zeros
+
+        patch_grid = terrain_height_patch.reshape(
+            self.num_envs,
+            self._height_patch_x_points.numel(),
+            self._height_patch_y_points.numel(),
+        )
+        preview_grid = patch_grid.index_select(1, self._edge_preview_x_indices).index_select(
+            2,
+            self._edge_preview_y_indices,
+        )
+        dx_jump = torch.abs(preview_grid[:, 1:, :] - preview_grid[:, :-1, :])
+        dy_jump = torch.abs(preview_grid[:, :, 1:] - preview_grid[:, :, :-1])
+        edge_height_jump = torch.maximum(
+            torch.amax(dx_jump.reshape(self.num_envs, -1), dim=1),
+            torch.amax(dy_jump.reshape(self.num_envs, -1), dim=1),
+        )
+        edge_low = float(self.cfg.rewards.params.edge_height_low_threshold_m)
+        edge_high = float(self.cfg.rewards.params.edge_height_high_threshold_m)
+        edge_denominator = max(edge_high - edge_low, 1.0e-6)
+        edge_strength = torch.clamp((edge_height_jump - edge_low) / edge_denominator, min=0.0, max=1.0)
+        return torch.nan_to_num(edge_strength, nan=0.0), torch.nan_to_num(edge_height_jump, nan=0.0)
+
     def _get_rewards(self) -> torch.Tensor:
         relative_goal_commands = self._compute_relative_goal_commands()
         self.commands.copy_(relative_goal_commands)
@@ -559,15 +641,35 @@ class CompleteCarDirectEnv(DirectRLEnv):
             min=-self.cfg.observations.wheel_slip_angle_clip_rad,
             max=self.cfg.observations.wheel_slip_angle_clip_rad,
         )
+        if self._sensor_runtime is not None:
+            wheel_contact_forces_w = self._sensor_runtime.get_wheel_contact_forces_w(WHEEL_BODY_NAMES)
+        else:
+            wheel_contact_forces_w = torch.zeros(
+                (self.num_envs, len(self._wheel_body_ids), 3),
+                device=self.device,
+                dtype=self.robot.data.root_link_pos_w.dtype,
+            )
+        wheel_normal_contact_force = torch.linalg.vector_norm(wheel_contact_forces_w, dim=-1) / self._total_vehicle_weight
+        wheel_contact_weights = self._wheel_speed_allocator.compute_contact_weights(
+            wheel_normal_contact_force,
+            self.cfg.control.contact_force_off_threshold,
+            self.cfg.control.contact_force_on_threshold,
+        )
+        edge_strength, edge_height_jump = self._compute_edge_preview()
         total_reward, components, diagnostics = compute_reward_terms(
             self.cfg,
             relative_goal_commands,
             self._previous_goal_distance,
             self.episode_length_buf,
             self.max_episode_length,
+            self.actions,
+            self.last_actions,
             self.robot.data.root_com_lin_vel_b,
             wheel_longitudinal_slip,
             wheel_slip_angle,
+            wheel_contact_weights,
+            edge_strength,
+            edge_height_jump,
             self._last_done_terms["waypoint_hit"],
         )
         self._previous_goal_distance.copy_(torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1))
@@ -744,7 +846,17 @@ class CompleteCarDirectEnv(DirectRLEnv):
     def _add_stage1_debug_metrics(self, metrics: dict[str, float]) -> None:
         if not self._is_stage1():
             return
-        debug_prefixes = ("Reward/", "ProgressGate/", "Action/", "LowLevel/", "Command/", "Terrain/")
+        debug_prefixes = (
+            "Reward/",
+            "ProgressGate/",
+            "ContactSupport/",
+            "Slip/",
+            "EdgeSpeed/",
+            "Action/",
+            "LowLevel/",
+            "Command/",
+            "Terrain/",
+        )
         for key, value in tuple(metrics.items()):
             if key.startswith(debug_prefixes):
                 metrics[f"Debug/Stage1/{key}"] = value
@@ -754,7 +866,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             return True
         return bool(getattr(self.cfg.logging, "enable_stage1_per_wheel_debug", False))
 
-    def _apply_stage1_terrain_column_reset_curriculum(self, env_ids: torch.Tensor) -> None:
+    def _apply_stage1_terrain_column_reset_curriculum(self, env_ids: torch.Tensor) -> dict[str, float] | None:
         if (
             not self._is_stage1()
             or not self.cfg.commands.use_terrain_column_targets
@@ -763,15 +875,27 @@ class CompleteCarDirectEnv(DirectRLEnv):
             or self._terrain_runtime.terrain_levels is None
             or self._terrain_runtime.terrain_types is None
         ):
-            return
+            return None
         if env_ids.numel() == 0:
-            return
+            return None
 
         levels = self._terrain_runtime.terrain_levels[env_ids]
         max_target_level = max(int(self._terrain_runtime.max_terrain_level) - 1, 0)
         completed = self._last_done_terms["terrain_column_completed"][env_ids]
         max_level_without_valid_next_target = levels >= max_target_level
         reset_to_low = completed | max_level_without_valid_next_target
+        row_progress = self._compute_active_goal_progress(env_ids)
+        row_failed = (
+            (
+                self._last_done_terms["far_from_target"][env_ids]
+                | self._last_done_terms["ball_joint_out_of_bounds"][env_ids]
+                | self._last_done_terms["time_out"][env_ids]
+            )
+            & ~self._last_done_terms["waypoint_hit"][env_ids]
+            & ~reset_to_low
+        )
+        move_down_threshold = float(getattr(self.cfg.curriculum, "terrain_column_move_down_progress_ratio", 0.30))
+        move_down = row_failed & (row_progress < move_down_threshold) & (levels > 0)
 
         if torch.any(reset_to_low):
             reset_low_env_ids = env_ids[reset_to_low]
@@ -780,8 +904,22 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 self._terrain_runtime,
                 self._terrain_runtime.terrain_types[reset_low_env_ids],
             )
+        if torch.any(move_down):
+            move_down_env_ids = env_ids[move_down]
+            self._terrain_runtime.terrain_levels[move_down_env_ids] = torch.clamp(
+                self._terrain_runtime.terrain_levels[move_down_env_ids] - 1,
+                min=0,
+            )
 
         self._terrain_runtime.sync_env_origins(self.scene, env_ids)
+        return self._sanitize_scalar_metrics(
+            {
+                "terrain/row_progress_at_reset": row_progress,
+                "terrain/move_down_ratio": move_down.float(),
+                "terrain/reset_to_low_ratio": reset_to_low.float(),
+                "terrain/level_after_reset": self._terrain_runtime.terrain_levels[env_ids].float(),
+            }
+        )
 
     def _collect_step_metrics(self) -> dict[str, float]:
         relative_goal_commands = self._cached_step_relative_goal_commands
@@ -806,7 +944,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 self._total_vehicle_weight,
                 self._joint_pos_targets[:, self._ball_joint_ids],
                 relative_goal_commands,
-                self.last_actions,
+                self.actions,
             )
         self.commands.copy_(relative_goal_commands)
         if self._sensor_runtime is not None:
@@ -823,13 +961,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
         middle_pitch_deg = torch.rad2deg(middle_rpy[:, 1])
         active_waypoint_pos_error = torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1)
         active_waypoint_bearing_abs = torch.abs(relative_goal_commands[:, 3])
-        nominal_goal_distance = active_waypoint_pos_error.new_full(
-            active_waypoint_pos_error.shape,
-            get_nominal_goal_distance(self.cfg),
-        )
-        active_segment_distance_covered = torch.clamp(nominal_goal_distance - active_waypoint_pos_error, min=0.0)
+        active_goal_start_distance = self._active_goal_start_distance.clamp(min=1.0e-6)
+        active_segment_distance_covered = torch.clamp(active_goal_start_distance - active_waypoint_pos_error, min=0.0)
         active_segment_completion_pct = 100.0 * active_segment_distance_covered / torch.clamp(
-            nominal_goal_distance,
+            active_goal_start_distance,
             min=1.0e-6,
         )
         episode_completion_pct = self._episode_waypoints_completed.float() / float(self._num_waypoints_per_episode) * 100.0
@@ -866,6 +1001,15 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Reward/angle_diff": float(torch.mean(self._last_reward_components["angle_diff"]).item()),
             "Reward/turn_speed_penalty": float(torch.mean(self._last_reward_components["turn_speed_penalty"]).item()),
             "Reward/slip_penalty": float(torch.mean(self._last_reward_components["slip_penalty"]).item()),
+            "Reward/action_rate_penalty": float(
+                torch.mean(self._last_reward_components["action_rate_penalty"]).item()
+            ),
+            "Reward/contact_support_penalty": float(
+                torch.mean(self._last_reward_components["contact_support_penalty"]).item()
+            ),
+            "Reward/edge_speed_penalty": float(
+                torch.mean(self._last_reward_components["edge_speed_penalty"]).item()
+            ),
             "ProgressGate/ungated_progress_raw": float(
                 torch.mean(self._last_reward_diagnostics["progress_ungated"]).item()
             ),
@@ -883,6 +1027,36 @@ class CompleteCarDirectEnv(DirectRLEnv):
             ),
             "ProgressGate/combined_gate": float(torch.mean(self._last_reward_diagnostics["progress_gate"]).item()),
             "ProgressGate/multiplier": float(torch.mean(self._last_reward_diagnostics["progress_multiplier"]).item()),
+            "ContactSupport/front_raw": float(
+                torch.mean(self._last_reward_diagnostics["contact_support_front"]).item()
+            ),
+            "ContactSupport/mid_raw": float(
+                torch.mean(self._last_reward_diagnostics["contact_support_mid"]).item()
+            ),
+            "ContactSupport/rear_raw": float(
+                torch.mean(self._last_reward_diagnostics["contact_support_rear"]).item()
+            ),
+            "ContactSupport/score_raw": float(
+                torch.mean(self._last_reward_diagnostics["contact_support_score"]).item()
+            ),
+            "Slip/masked_longitudinal_abs_mean_raw": float(
+                torch.mean(self._last_reward_diagnostics["slip_masked_longitudinal"]).item()
+            ),
+            "Slip/masked_angle_abs_mean_raw": float(
+                torch.mean(self._last_reward_diagnostics["slip_masked_angle"]).item()
+            ),
+            "Slip/contact_weight_sum_raw": float(
+                torch.mean(self._last_reward_diagnostics["slip_contact_weight_sum"]).item()
+            ),
+            "EdgeSpeed/strength_raw": float(torch.mean(self._last_reward_diagnostics["edge_strength"]).item()),
+            "EdgeSpeed/height_jump_m_raw": float(torch.mean(self._last_reward_diagnostics["edge_height_jump"]).item()),
+            "EdgeSpeed/safe_speed_mps_raw": float(torch.mean(self._last_reward_diagnostics["edge_safe_speed"]).item()),
+            "EdgeSpeed/forward_speed_mps_raw": float(
+                torch.mean(self._last_reward_diagnostics["edge_forward_speed"]).item()
+            ),
+            "EdgeSpeed/excess_speed_mps_raw": float(
+                torch.mean(self._last_reward_diagnostics["edge_speed_excess"]).item()
+            ),
             "Tracking/active_waypoint_pos_error": float(torch.mean(active_waypoint_pos_error).item()),
             "Tracking/active_waypoint_bearing_abs": float(torch.mean(active_waypoint_bearing_abs).item()),
             "Tracking/active_segment_completion_pct": float(torch.mean(active_segment_completion_pct).item()),
@@ -1081,6 +1255,16 @@ class CompleteCarDirectEnv(DirectRLEnv):
             metrics["Terrain/forward_x_from_current_tile_origin_mean"] = float(
                 torch.mean(forward_x_from_current_tile_origin).item()
             )
+            metrics["Terrain/active_goal_start_distance_mean"] = float(
+                torch.mean(self._active_goal_start_distance).item()
+            )
+            metrics["Terrain/active_goal_progress_mean"] = float(
+                torch.mean(
+                    self._compute_active_goal_progress(
+                        torch.arange(self.num_envs, device=self.device),
+                    )
+                ).item()
+            )
         return self._sanitize_scalar_metrics(metrics)
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
@@ -1105,7 +1289,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 )
         self.extras["log"] = self._collect_episode_logs(env_ids, terrain_metrics)
         super()._reset_idx(env_ids)
-        self._apply_stage1_terrain_column_reset_curriculum(env_ids)
+        stage1_reset_metrics = self._apply_stage1_terrain_column_reset_curriculum(env_ids)
+        if stage1_reset_metrics is not None:
+            self.extras["log"].update(stage1_reset_metrics)
 
         if self._sensor_runtime is not None:
             self._sensor_runtime.reset(env_ids)

@@ -2,6 +2,390 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-05-06
+
+### Stage1 last_action 观测滞后一拍已修复；Stage0 progress 未除以 episode 长度
+- User request:
+  - 用户要求先修复 Stage1 `last_action` 观测滞后一拍，并确认 Stage0 的 `progress_to_target` 是否除以 episode 长度。
+- Implementation:
+  - `env.py` 中观测链路 `collect_raw_observation_terms(...)` 改为传入 `self.actions`，使 `step(a_t)` 返回的下一帧观测中 `last_action` 表示刚执行过的 policy action `a_t`。
+  - `rewards.py` 的 `action_rate_penalty` 调用仍保持 `actions` 与 `last_actions` 同时传入，因此动作变化惩罚仍按当前动作相对上一控制步动作计算。
+  - `observations.py` 中对应参数名改为 `executed_actions`，避免再把观测用 action 与 reward 用 previous action 混淆。
+  - 同步更新 `docs/Stage1参数详情表.md` 和 `docs/current_status.md` 中 `last_action` 观测含义。
+- Durable conclusion:
+  - 当前 Stage0 和 Stage1 共用 `rewards.py` 的 `progress_to_target` 公式；`progress_to_target` 只按名义目标距离归一化，不额外除以最大 episode 步数 `N`。
+  - Stage0 因 `nominal_goal_distance_m = 0.0`，实际使用 `commands.goal_distance = 10.0 m` 作为 progress 归一化距离；Stage1 使用 `nominal_goal_distance_m = 8.0 m`。
+- Verification:
+  - 已执行 `python3 -m py_compile` 检查 `env.py`、`observations.py`、`rewards.py`，通过。
+- Status:
+  - implemented and documented.
+
+### Stage1 terrain-column 课程升级/退级逻辑已改为目标命中与 row progress
+- User request:
+  - 用户指出 Stage1 旧逻辑中 `root_x - tile_start_x > 5.6 m` 即可触发 row 升级，尤其对 step 类地形会导致未真正到达目标点也晋级，削弱台阶适应学习；随后确认按“目标命中升级、失败低进度退级”的方案修改。
+- Implementation:
+  - `env.py` 中 terrain-column row 升级改为只由当前目标点命中触发，不再使用 `terrain_length * move_up_distance_ratio` 的前进距离捷径。
+  - 新增当前目标段初始距离缓存 `active_goal_start_distance`，并用 `row_progress = clip((d_start - d_now) / d_start, 0, 1)` 表示当前 row 内有效推进比例。
+  - Stage1 reset-time curriculum 新增退级：若 episode 因 `far_from_target`、`ball_joint_out_of_bounds` 或 `time_out` 结束，且未命中当前目标，同时 `row_progress < 0.30`，则 terrain level 减 `1`；若 `row_progress >= 0.30`，保持当前 row。
+  - 最高 row 完成或没有合法下一目标时仍按当前地形类别重新采样低 row。
+  - 新增 reset 日志 `terrain/row_progress_at_reset`、`terrain/move_down_ratio`、`terrain/reset_to_low_ratio`、`terrain/level_after_reset`，并新增 step debug 指标 `Terrain/active_goal_start_distance_mean`、`Terrain/active_goal_progress_mean`。
+- Durable conclusion:
+  - Stage1 课程推进语义现在与 `reached_target` / 目标命中一致，避免 step 类地形只从 tile origin 向前冲约 `1.6 m` 就因旧 `5.6 m` 阈值假晋级。
+  - 退级不采用“未命中就退级”，而是只在失败/超时且当前目标段进度不足 `30%` 时退级；已推进至少 `30%` 的失败 episode 保持当前 row，给策略继续练习当前难度的机会。
+- Status:
+  - implemented and documented.
+
+### Stage1 已加入 edge speed 地形突变前速度惩罚
+- User request:
+  - 用户要求按照当前 height patch 前方 `1.0 m`、侧向额外 `0.5 m` 预览空间重新设计 edge speed；平地不做速度限制，地形突变安全速度限制为 `0.5 m/s`，并要求检查底层 terrain 生成，重点确认 step 类型地形的 edge strength 数值。
+- Implementation:
+  - `rewards.py` 新增 `edge_speed_penalty` reward 分量，基础配置默认 `edge_speed_penalty_weight = 0.0`，Stage0 默认不受影响。
+  - Stage1 设置 `edge_speed_penalty_weight = -6.0`、`edge_height_low_threshold_m = 0.04`、`edge_height_high_threshold_m = 0.10`、`edge_speed_limit_mps = 0.5`。
+  - `env.py` 使用当前局部高程图的车头前方预览区域计算 `edge_strength`：预览 x 范围为车体前端到车体前端外 `1.0 m`，预览 y 范围为半车宽加 `0.5 m` 侧向余量。
+  - `edge_speed_penalty` 只惩罚正向超速：平地或无高度突变时不额外限速；强突变时安全前进速度为 `0.5 m/s`。
+  - Stage1 TensorBoard debug 额外输出 `Debug/Stage1/EdgeSpeed/*`。
+- Terrain-scale conclusion:
+  - 当前 `stairs up/down` 单级台阶相邻高度跳变约 `0.05-0.22 m`；`discrete obstacles` 相邻高度跳变从约 `0.10 m` 起，高 row 可更大；`slope up` 最高 row 相邻高度差约 `0.04 m`。
+  - 因此 `0.04 m` 作为 edge low threshold 可避免普通坡面触发限速，`0.10 m` 作为 high threshold 可将明确台阶/离散障碍边缘视为强突变。
+- Status:
+  - implemented and documented.
+
+### Stage1 已加入 contact support 惩罚并将 slip 改为接触权重 mask
+- User request:
+  - 用户要求添加 `contact_support_penalty` 和 slip 的 mask slip，并要求解释 edge speed 的设计含义。
+- Implementation:
+  - `rewards.py` 新增 `contact_support_penalty` reward 分量，基础配置默认 `contact_support_penalty_weight = 0.0`，Stage0 默认不受影响。
+  - Stage1 设置 `contact_support_penalty_weight = -4.0`、`contact_support_min_weight = 0.3`。
+  - Stage1 的 `slip_penalty` 从直接六轮平均改为复用底层接触权重 masked mean：`sum_i c_i * |kappa_i| / max(sum_i c_i, 1.0)` 和 `sum_i c_i * |alpha_i| / max(sum_i c_i, 1.0)`，其中 `c_i` 与底层力矩分配相同，来自 `clamp((n_i - 0.01) / (0.08 - 0.01), 0, 1)`。
+  - `contact_support_penalty` 使用三段模块支撑：前模块取车轮 `2,3` 最大接触权重，中模块取 `0,1`，后模块取 `4,5`；只惩罚某个模块左右轮都低于最低支撑要求，不强制六轮同时接地。
+  - Stage1 TensorBoard debug 额外输出 `Debug/Stage1/ContactSupport/*`、`Debug/Stage1/Slip/masked_*` 和 `Debug/Stage1/Slip/contact_weight_sum_raw`。
+- Durable conclusion:
+  - 当前底层接触权重同时用于力矩分配和 reward 接触 mask，避免控制与奖励使用两套不同接触语义。
+  - 当时暂未实现 `edge_speed_penalty`；该结论已被后续“Stage1 已加入 edge speed 地形突变前速度惩罚”更新。
+- Status:
+  - implemented and documented.
+
+### Stage1 已加入 episode 长度归一化动作变化惩罚
+- User request:
+  - 用户确认将“动作变化惩罚，用 episode 最大长度归一化”的方案加入 Stage1 reward。
+- Implementation:
+  - 在共享 reward 主干中新增 `action_rate_penalty` 分量，但基础配置默认 `action_rate_penalty_weight = 0.0`，因此 Stage0 默认不受该项影响。
+  - Stage1 设置 `action_rate_penalty_weight = -10.0`、`action_rate_base_ratio = 0.5`、`action_rate_joint_ratio = 1.0`。
+  - reward 公式为 `-10.0 * ((1/8) * sum_j rho_j * (a_j,t - a_j,t-1)^2) / N`，其中 `rho = [0.5, 0.5, 1, 1, 1, 1, 1, 1]`，`N = max_episode_length = 2400`。
+  - `env.py` 传入 `actions` 和 `last_actions`，并输出 `Reward/action_rate_penalty`；Stage1 会通过既有 `Debug/Stage1/Reward/*` 路径写入 TensorBoard。
+- Durable conclusion:
+  - 当前 Stage1 已有动作平滑压力，但这只是草案中的动作变化项；row advance、接触保持、姿态相对地形、地形突变前高速冲击、动作软限幅等拟采用项尚未写入源码。
+  - 由于该项按 episode 最大步数归一化，`weight = -10.0` 的单步数值通常不会压倒 progress / reached target，但会在 episode 累计回报中抑制持续大幅度动作抖动。
+- Status:
+  - implemented and documented.
+
+### Stage1 reached_target 已启用，slip penalty 改为纵滑 5 / 侧滑 1
+- User request:
+  - 用户要求启用 Stage1 的 `r_reached`，参数与 Stage0 相同；同时将 `r_slip` 中纵滑率前的参数改为 `5`，侧滑角参数改为 `1`。
+- Implementation:
+  - `complete_car_stage1_cfg.py` 中 `reached_target_base_reward = 2.0`、`reached_target_weight = 6.0`，与 Stage0 保持一致。
+  - 新增 reward 参数 `slip_longitudinal_penalty_ratio`，默认值为 `1.0`，保持 Stage0 现有滑移惩罚语义不变。
+  - `rewards.py` 的滑移惩罚改为纵滑系数乘以平均纵滑率，再加侧滑角系数乘以平均侧滑角。
+  - Stage1 配置为 `slip_longitudinal_penalty_ratio = 5.0`、`slip_angle_penalty_ratio = 1.0`，`slip_penalty_weight` 仍为 `-2.0`。
+- Durable conclusion:
+  - 当前 Stage1 目标命中不会触发 success termination，但会贡献 `reached_target` 稀疏奖励，并继续用于 terrain row / target 推进。
+  - 当前 Stage1 滑移惩罚实际形式为 `-2.0 * (5.0 * mean(|kappa|) + 1.0 * mean(|alpha|)) / N`。
+- Status:
+  - implemented and documented.
+
+### Stage1 d_nom 改为 8m，step 类 reset xy 改为当前 tile origin
+- User request:
+  - 用户要求将 Stage1 的 `d_nom` 改为 `8 m`，并要求 step 类型地形的小车 reset xy 坐标出生在当前 tile origin 上，不再出生在 tile start 前 `0.3-0.8 m`。
+- Implementation:
+  - `complete_car_stage1_cfg.py` 中 `rewards.params.nominal_goal_distance_m` 已从 `16.0` 改为 `8.0`。
+  - `terrain_runtime.py` 中 step 类 reset 直接使用当前 tile origin 的 xy 坐标，并用该点 heightfield 高度加 `base_spawn_clearance = 0.30 m` 设置 spawn z。
+  - `terrain_cfg.py` 和 Stage1 cfg 中已移除废弃的 `step_approach_spawn_back_range` / `step_approach_spawn_lateral_range` 配置项。
+  - `stairs down`、`stairs up`、`discrete obstacles` 仍属于 `step` terrain class，因此三类地形 reset 都采用当前 tile origin xy 出生。
+- Durable conclusion:
+  - 当前 Stage1 reward 的名义距离尺度是 `rewards.params.nominal_goal_distance_m = 8.0`；far-from-target 阈值随当前 `far_from_target_margin` 计算，当前配置为 `8.0 + 3.0 = 11.0 m`。
+  - 当前 step 类 reset 不再使用 tile start 前 approach spawn，也不再保留 `step_approach_spawn_back_range` 或横向 approach 扰动配置决定出生 xy。
+- Status:
+  - implemented and documented.
+
+### Stage1 奖励函数数学公式草案已整理
+- User request:
+  - 用户要求在补充两条原则后，将 Stage1 新奖励函数参考 `Stage1参数详情表.md` 的形式写成数学公式：动作限幅/变化惩罚参考 MGDP，不使用球铰极限惩罚；非轮体碰撞暂时不加。
+- Output:
+  - 新增文件：`docs/Stage1奖励函数设计草案.md`。
+- Durable conclusion:
+  - 当前 Stage1 源码实际 reward 仍是共享目标导向 reward 主干：`distance_to_target`、`progress_to_target`、`reached_target`、`far_from_target`、`angle_diff`、`turn_speed_penalty`、`slip_penalty`；其中 `turn_speed_penalty_weight = 0.0`，实际不贡献总 reward；`reached_target` 已在后续配置中启用。
+  - Stage1 后续奖励函数草案应以局部高程图为外感知抽象，围绕稳定前进、有效 row advance、接地滑移、悬空空转、模块支撑、相对地形姿态、地形突变前高速冲击、动作变化、动作软限幅和无推进失败组织。
+  - 不采用球铰极限惩罚，不采用非轮体碰撞或前端 clearance 惩罚；动作约束只通过 policy 输出的动作变化惩罚和动作软限幅惩罚表达。
+  - MGDP 可借鉴的动作正则项是 action rate penalty，即相邻时刻动作差的平方和；在 CompleteCar 草案中优先采用按维度加权平均形式，若实现为求和形式则权重需相应降低。
+  - `docs/Stage1奖励函数设计草案.md` 已按当前 reward 符号补充源码实际公式对照；拟采用 reward 仍是设计草案，尚未改动 `rewards.py`、Stage1 cfg 或训练代码。
+- Status:
+  - documented; not implemented.
+
+### 双目相机与 LiDAR 融合作为 RL 外感知模型的文献检索结论
+- User request:
+  - 用户给出 height map、local elevation map、LiDAR traversability、stereo depth map、perception-based RL locomotion、Isaac Lab height scanner、MGDP、articulated / wheeled robot rough terrain RL 等提示词，要求查找综述文献、研究论文和开源 GitHub 项目。
+- Durable conclusion:
+  - 未检索到成熟综述专门围绕“双目相机与 LiDAR 融合作为强化学习外感知模型”这一窄主题；该主题应拆成三条可引用文献链：地形可通行性与传感器融合综述、深度图/高度图感知式 RL locomotion、相机/LiDAR 到 elevation / traversability map 的开源实现。
+  - 综述层优先使用 Papadakis 2013、Borges 2022、Guastella and Muscato 2021、Wijayathunga 2023、Wang 2024、Carvalho 2025，以及本地已有的 Beycimen 2023 等材料。
+  - 方法层可按三种融合方式组织：先融合为局部高程/可通行性地图再输入策略；相机与 LiDAR 分别编码后在 BEV 或 latent token 层融合；分别训练感知模型与控制策略，通过辅助重建、对比学习或 privileged height map 对齐。
+  - 对当前 CompleteCar 主线，Stage1 仍应保持高度 patch 基准；双目/LiDAR 融合更适合作为 Stage2 感知增强，不应未经研究目标确认就替换当前 Stage1 训练链路。
+- Status:
+  - literature and project search summarized; no RL code changes.
+
+### 双目相机与 LiDAR 融合感知综述按质量和时效性排序
+- User request:
+  - 用户要求在谷歌学术和 CNKI 上查找双目照相机和 LiDAR 融合作为感知的综述文献，并按质量和时效性排序。
+- Durable conclusion:
+  - 英文侧最贴合“双目 RGB + LiDAR 稀疏深度融合”的综述是 Marsh 等 2022《A Critical Review of Deep Learning-Based Multi-Sensor Fusion Techniques》，其主题直接覆盖 stereo images、LiDAR-projected depth map 和 dense depth prediction。
+  - 近年英文综述若按时效性优先，可补充 Qian 等 2025《A Review of Multi-Sensor Fusion in Autonomous Driving》和 Ping 等 2026《A comprehensive survey on multi-sensor information processing and fusion for BEV perception in autonomous vehicles》，但它们更偏 camera-LiDAR / BEV / autonomous driving multi-sensor fusion，不专门限定双目。
+  - CNKI 侧最贴合的是王荣儿、伍济钢 2026《面向AGV环境感知的图像点云融合研究综述》和马建红等 2022《自动驾驶中图像与点云融合方法研究综述》；其中 2026 文献时效性最好，2022 文献下载和引用更多、题名和摘要更明确聚焦自动驾驶相机与激光雷达组合。
+  - 若论文写作对象是本项目三节主动铰接地面机器人，Borges 等 2022 terrain traversability survey 仍应作为地面机器人复杂地形感知主综述补充，而不是替代相机-LiDAR 融合综述。
+- Status:
+  - searched and ranked; no code changes.
+
+### 正式 LaTeX 第二章和第四章正文初稿已补写；第三章已按用户澄清恢复原运动学主线
+- User request:
+  - 用户要求按给定章节结构撰写第二章正文初稿、第三章 `3.2`/`3.3` 中 3-RRR 球铰正逆运动学与雅可比奇异性分析、第四章正文初稿，并检查符号一致性、章节边界和逻辑衔接。
+  - 用户随后明确澄清：原来的运动学模型推导和底层动力学分配完整保留，不要改动，之后由用户自己修改。
+- Output:
+  - 修改文件：`毕业论文/毕业论文模板/LaTeX/chapters/chapter02.tex`、`毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`、`毕业论文/毕业论文模板/LaTeX/chapters/chapter04.tex`。
+  - `chapter02.tex` 已从模板占位改为“三节主动铰接车系统结构与仿真建模”，包含结构组成、参数表、USD/Isaac Sim 架构、闭环并联机构串联等效与模型验证。
+  - `chapter03.tex` 已撤回 3-RRR 正逆运动学替换稿，恢复为“车辆运动学建模”主线，保留 `整车构型变量与球铰姿态规划器`、`名义轮速解析分配`、`面向低滑移的接触感知轮级牵引分配` 和本章小结。
+  - `chapter04.tex` 已从模板占位改为“基于强化学习的地形自适应控制方法”，包含分层控制框架、RL 状态/动作/奖励/终止定义、Stage0 与 Stage1 环境、PPO warm-start 和当前结果边界。
+- Durable conclusion:
+  - 第二章当前边界是“机器人是什么、仿真模型如何建立、闭环并联机构如何等效”，不展开大量运动学公式。
+  - 第三章当前必须按用户要求保留原运动学模型推导和底层动力学/轮级分配主线；后续会话不得再默认用 3-RRR 球面并联机构正逆运动学推导覆盖 `chapter03.tex`。
+  - 若后续仍需整理 3-RRR 正逆运动学、雅可比和奇异性分析，应先作为独立草稿、附录候选或用户指定位置处理，不能直接替换第三章现有正文。
+  - 第四章对 Stage0/Stage1 的表述保持结果边界：Stage0 证明分层控制和基础动作空间可行，但不能声称低滑移控制已成功；Stage1 证明 warm-start、高度 patch 和地形课程训练链路已跑通，但复杂地形通过能力仍需改进。
+  - 第二章质量和惯量表当前只能说明由 USD 刚体属性提供；正式定稿前需要从 CAD 或 Isaac Sim 导出各 link 的质量、质心和惯量数值。
+- Verification:
+  - 在 `毕业论文/毕业论文模板/LaTeX` 下执行 `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex`，恢复第三章后仍可编译成功生成 `main.pdf`；剩余为模板既有字体/overfull 警告、少量表格排版 overfull 和 BibTeX 空页警告。
+- Status:
+  - chapter02/chapter04 drafted in LaTeX; chapter03 restored to original modeling mainline after user clarification.
+
+### 正式 LaTeX 第一章 `1.4 论文主要研究内容` 已补写
+- User request:
+  - 用户要求撰写 `1.4 论文主要研究内容`。
+- Output:
+  - 修改文件：`毕业论文/毕业论文模板/LaTeX/chapters/chapter01.tex`。
+  - 在空的 `\section{论文主要研究内容}` 下补写正文。
+- Durable conclusion:
+  - 正式 LaTeX 中的 `1.4` 当前按四项研究内容组织：三节主动铰接移动机器人等效建模与仿真平台构建、面向高层策略的底层运动控制链路设计、强化学习任务构建、由平地基础运动到复杂地形适应的阶段化训练与评价。
+  - 表述边界保持为“建立可运行、可训练、可评价的研究闭环”，不预设主动铰接结构必然优于其他移动结构，也不提前声称复杂地形协同控制已经取得最终优势。
+- Status:
+  - drafted in LaTeX.
+
+## 2026-05-05
+
+### 《无人驾驶铰接转向车辆路径跟踪控制研究综述》已转换为 Markdown
+- User request:
+  - 用户要求将 `无人驾驶铰接转向车辆路径跟踪控制研究综述_祝青园.pdf` 转换为 Markdown。
+- Output:
+  - 源文件：`docs/literature/综述论文/无人驾驶铰接转向车辆路径跟踪控制研究综述_祝青园.pdf`。
+  - 输出文件：`docs/literature/output/无人驾驶铰接转向车辆路径跟踪控制研究综述_祝青园.md`。
+  - 图片目录：`docs/literature/output/无人驾驶铰接转向车辆路径跟踪控制研究综述_祝青园_images/`。
+- Verification:
+  - OpenDataLoader 识别源 PDF 为 `21` 页。
+  - 输出 Markdown 为 `966` 行。
+  - 图片资源为 `16` 张。
+- Quality note:
+  - 该 CNKI PDF 转换时出现字体/CMap 映射警告；正文整体可读，但公式变量和部分参考编号可能缺失或不完整，后续若用于正式引用、公式摘录或图表核对，应回查源 PDF。
+- Status:
+  - converted.
+
+### 铰接式越野车辆发展综述网络检索结论
+- User request:
+  - 用户要求联网检索铰接式越野车辆综述，覆盖 Google Scholar、CNKI、国内外来源，优先寻找近年且能讲清发展脉络的综述。
+- Durable conclusion:
+  - 国外文献中最直接对应“铰接式轮式越野车辆发展脉络”的经典综述仍是 Holm 1970《Articulated, wheeled off-the-road vehicles》，适合作为早期多轴铰接越野车辆历史主线的起点。
+  - 国内中文材料中，成龙 2018《铰接履带式全地形车技术发展对比解析》更适合支撑履带式/双节全地形车的结构发展、国外型号对比和技术路线归纳；李补莲和叶晓彤 2011《俄罗斯铰接式全地形车》适合作为俄罗斯 DT/Vityaz 系列的专门背景来源；曲学春等 2014《国外履带式全地形车发展现状》可作为国外履带式全地形车总体发展现状补充。
+  - 近年“综述”更偏向控制、路径跟踪或主动铰接架构机会与挑战，例如 SAE 2023《Actively Articulated Wheeled Architectures for Autonomous Ground Vehicles: Opportunities and Challenges》、2024 年矿用/无人驾驶铰接转向车辆路径跟踪控制综述；这些更适合写控制方法演进，不宜替代车辆发展历史主线。
+  - 工业/装备近况可用 Euro-SD 2025《Coupling up: Articulated all-terrain vehicles》补充，但其不是学术综述，论文中应作为当前应用状态或型号趋势参考，不能作为核心学术依据。
+- Status:
+  - searched; CNKI 条目仍需在正式引用前逐条核对元数据。
+
+### SAE 2023 主动铰接轮式架构论文公开全文已获取
+- User request:
+  - 用户表示学校未订阅 SAE，询问是否有其他数据库能获得《Actively Articulated Wheeled Architectures for Autonomous Ground Vehicles: Opportunities and Challenges》PDF。
+- Durable conclusion:
+  - 不能通过绕过 SAE 付费库或抓取未授权 PDF 的方式获取。
+  - 该论文在 NSF Public Access Repository / NSF PAGES 存在合法公开的 Accepted Manuscript，PURL 为 `https://par.nsf.gov/servlets/purl/10489457`。
+  - 本地已保存 PDF：`docs/literature/综述论文/Mehta 等 - 2023 - Actively Articulated Wheeled Architectures for Autonomous Ground Vehicles - Opportunities and Challenges.pdf`。
+- Verification:
+  - 文件为 PDF 1.7，未加密，`11` 页，大小约 `2.1M`。
+  - DOI：`10.4271/2023-01-0109`。
+- Status:
+  - downloaded.
+
+## 2026-05-04
+
+### `docs/literature` 全部文献 BibTeX 草稿已生成
+- User request:
+  - 用户要求输出 `literature` 中所有文献的 BibTeX 条目，写入一个 Markdown 文件，并且重复文献只输出一次。
+  - 先前生成的 `docs/literature/全部文献LaTeX引用.md` 只是正文 `\cite{...}` 引用键清单；用户已澄清需要的是 BibTeX，不是引用键清单。
+- Output:
+  - 新增文件：`docs/literature/全部文献BibTeX.md`。
+  - 扫描范围：`docs/literature/**/*.pdf`。
+  - 原始 PDF 数量：`158`。
+  - 去重后 BibTeX 条目数量：`95`。
+- Durable conclusion:
+  - 当前 BibTeX 文件按规范化题名去重，同一题名下的跨目录副本、`-1` 副本和 `_zh-CN_dual` 双语副本只保留一个条目。
+  - 元数据来源优先使用 `docs/literature/output/铰接车发展历史/literature_database.yaml`、`docs/literature/lunwen/第一章绪论初稿.md`、已转换 Markdown，缺失字段再由 PDF 文件名推断。
+  - 该文件是自动生成的 BibTeX 草稿；正式进入论文 `ref.bib` 前仍需逐条核对作者、题名、期刊/会议、卷期、页码、学校和 DOI。
+- Status:
+  - generated.
+
+### 第一章绪论初稿已按逐节评价继续精修
+- User request:
+  - 用户对第一章初稿逐节给出修改意见，要求继续修改润色。
+  - 重点意见包括：`1.1` 开头从复杂地形失效机制切入；`Isaac Sim / Isaac Lab` 不宜过早出现在研究意义中；“感知”应收窄为局部地形观测；`1.2` 增加技术演化逻辑；`1.3` 改为三节主动铰接复杂地形控制难点；球面并联机构文献移入结构发展部分；`1.4` 改为“问题—方法—局限”；`1.5` 增加课程学习和 Stage0 到 Stage1 阶段训练逻辑；`1.7` 降调为主要研究内容。
+- Output:
+  - 覆盖更新：`docs/literature/lunwen/第一章绪论初稿.md`。
+  - 新增二级小节结构：`1.2.1-1.2.4`、`1.3.1-1.3.4`、`1.4.1-1.4.4`、`1.5.1-1.5.4`。
+- Durable conclusion:
+  - 当前第一章写作边界：`感知` 在本文当前阶段主要指仿真环境提供的局部地形高度观测，不包括完整真实传感器融合系统。
+  - `等效串联球铰` 的表述应强调其主要保留车体间三自由度相对姿态调节关系，用于整车运动和强化学习控制；并联机构内部连杆受力、闭链约束误差和奇异性不作为本文重点。
+  - `1.7` 不再强行写“主要贡献”，改为“本文主要研究内容”，避免将流程性工作写成过强创新性结论。
+  - 模型方法在本文中的定位不是被抛弃，而是用于建立姿态与轮端运动映射，并将滑移、接触和姿态约束转化为动作边界、奖励项和评价指标。
+- Status:
+  - polished; reference metadata still needs formal thesis-format verification.
+
+### 第一章绪论初稿已按硕博论文式综述结构重写
+- User request:
+  - 用户要求仿照硕博论文写作风格，按固定结构重写第一章初稿。
+  - 用户明确要求开头从宏观背景切入，区分结构化与非结构化环境，再指出普通轮式/履带车辆在横向自由度和几何适应性上的限制，进而引出主动铰接轮式车辆。
+  - 用户要求文献综述说明已有研究分别解决了什么、留下什么需求；应用现状先按全地形车辆、林业/农业/矿山车辆、管道/狭窄空间机器人、工程车辆展开，再归纳从被动铰接和机械通过性到主动形态调节、路径规划和智能控制的发展趋势。
+- Output:
+  - 覆盖更新：`docs/literature/lunwen/第一章绪论初稿.md`。
+  - 新版保留 `1.1` 至 `1.8` 结构，参考文献列表保持 `42` 条。
+- Durable conclusion:
+  - 第一章的当前推荐写法是“宏观背景 -> 结构化/非结构化环境差异 -> 普通轮式/履带平台结构限制 -> 主动铰接轮式车辆 -> 三节主动铰接形态—牵引—感知协同问题”。
+  - `1.2` 应按应用领域组织现状，并在段末明确每类研究解决的问题和留下的需求。
+  - `1.4` 应先写模型控制的基本路径，再按运动学/动力学建模、MPC/预测控制、路径跟踪、稳定性控制、牵引/折腰协调控制组织，最后写优势和局限。
+  - `1.5` 应说明 RL 适合复杂地形控制的原因，再按粗糙地形车辆、主动铰接/履带机器人、轮腿机器人和仿真训练平台组织，最后指出与三节主动铰接轮式机器人任务表达的差异。
+- Status:
+  - rewritten; reference metadata still needs formal thesis-format verification.
+
+### 第一章绪论初稿已按“背景需求—环境差异—铰接挑战”逻辑再次重写
+- User feedback:
+  - 用户指出上一版仍不像正常毕业论文开头：不应一上来就讲“面临什么问题”，而应先讲轮式移动机器人应用背景和需求，再分析结构化与非结构化环境运行差异，由此引出铰接式机器人及其挑战。
+  - 用户要求已有文献不合适或不够用时联网查找更适合文献。
+- Output:
+  - 覆盖更新：`docs/literature/lunwen/第一章绪论初稿.md`。
+  - 新版保留 `1.1` 至 `1.8` 结构，参考文献由 `39` 条扩展为 `42` 条。
+- Durable conclusion:
+  - 第一章开头应采用“轮式移动机器人应用背景 -> 结构化/非结构化环境差异 -> 非结构化地形对通过性、牵引、姿态和感知的需求 -> 铰接式移动机器人 -> 三节主动铰接协同控制挑战”的展开顺序。
+  - 文献综述各节应围绕上述需求承接：前人分别解决了环境可通行性、铰接平台结构、模型控制、地形自适应规划和复杂地形学习控制问题，但仍未直接覆盖三节主动铰接轮式机器人的形态—牵引—感知统一任务表达。
+  - 新增外部参考重点包括 Wang 等 2024 非结构化环境路径规划综述、Borges 等 2022 地形可通行性综述、Iagnemma 和 Dubowsky 2004 粗糙地形牵引控制、Huang 等 2024 铰接工程车辆地形自适应规划、Xu 等 2024 轮式复杂地形强化学习和 Pan 等 2025 C-TRAC。
+  - 贡献边界保持不变：本文建立仿真建模、强化学习任务构建和复杂地形训练验证路径，不提前声称结构或方法优于其他方案。
+- Status:
+  - rewritten again; reference metadata still needs formal thesis-format verification.
+
+### 第一章绪论初稿已按写作风格调研重写
+- User request:
+  - 用户要求按照 `docs/literature/lunwen/第一章写作风格调研.md`，重写一版第一章初稿。
+- Output:
+  - 覆盖更新：`docs/literature/lunwen/第一章绪论初稿.md`。
+  - 新版仍保留 `1.1` 至 `1.8` 的原章节结构，并在正文末尾保留 `39` 条顺序编码参考文献。
+- Durable conclusion:
+  - 新版第一章开头不再从应用场景罗列起笔，而是先写“复杂地形如何破坏普通轮式移动”，再引出铰接结构使车体形态成为可控变量。
+  - 全章中心表述统一为“三节主动铰接移动机器人在复杂地形中的形态—牵引—感知协同控制问题”。
+  - 文献引用调整为服务问题递进、分类对比和研究缺口，而不是句尾装饰；`1.6` 按结构层、控制层、感知层和学习层组织“现有研究不足与本文研究思路”。
+  - 贡献表述仍保持边界：本文建立仿真建模、强化学习任务构建和复杂地形训练验证路径，不提前声称协同控制已优于传统方法。
+- Status:
+  - rewritten; reference metadata still needs formal formatting cleanup before thesis finalization.
+
+### 第一章写作风格调研已加入本地硕博论文和双目视觉机械臂样本
+- User request:
+  - 用户要求将调研对象加入 `docs/literature/lunwen` 中的硕博毕业论文，以及 `基于双目视觉的多自由度机械臂避障与运动规划 (2).pdf`，并重新输出 `docs/literature/lunwen/第一章写作风格调研.md`。
+- Research:
+  - 本地重点样本包括宁悦《双铰接轮式越野工程车辆机液复合驱动系统研究》、任志勇《矿山铰接车辆折腰随动及转向横摆性能调控研究》、Mehta《Hybrid Learning for Rough Terrain Navigation of Actively Articulated Wheeled Vehicles》以及大连理工大学本科毕业设计《基于双目视觉的多自由度机械臂避障与运动规划》。
+  - 双目视觉机械臂论文为图像型 PDF，无法直接抽取文本层；本次依据目录、绪论前几页和后续章节页面进行结构与风格观察。
+- Durable conclusion:
+  - 本地样本进一步确认：第一章应从“问题怎样发生”写起，而不是从应用场景或术语清单起笔。
+  - `1.1` 应按“复杂地形破坏普通轮式移动 -> 铰接结构使形态成为可控变量 -> 三节主动铰接引出形态-牵引-感知耦合 -> 本文研究意义与边界”收束。
+  - `1.6` 建议模仿“现有研究与需求分析”，把不足写成结构层、控制层、感知层和学习层的具体需求，而不是写成泛泛的“仍存在不足”。
+- Status:
+  - style research note rewritten; first chapter draft not rewritten yet.
+
+### 第一章初稿写法问题已定位，后续应重写问题链
+- User feedback:
+  - 用户对 `docs/literature/lunwen/第一章绪论初稿.md` 不满意，指出其开头直接罗列应用场景，术语堆砌，句段之间缺少起承转合，文献引用僵硬，整体像 AI 生成，不像毕业论文写法。
+- Research:
+  - 调研了机器人 / 粗糙地形相关硕博论文和高校写作指导，包括 ETH、METU、Waterloo、CMU、Monash、ANU、University of Toronto 等来源。
+  - 生成调研文档：`docs/literature/lunwen/第一章写作风格调研.md`。
+- Durable conclusion:
+  - 当前初稿的问题不是局部语言润色，而是第一章开头没有建立“问题发生过程”。
+  - 后续重写应先用自然语言讲清：复杂地形如何破坏普通轮式移动；铰接结构为什么把车体形态变成可控变量；为什么三节主动铰接机器人必须把形态、牵引和感知作为一个协同控制问题。
+  - 文献引用应服务“证明、归类、转折、对比”，不应作为句尾装饰。
+  - 下一轮建议先重写 `1.1 研究背景与意义` 和 `1.6 现有研究不足与本文研究思路`，再调整其他小节。
+- Status:
+  - research note generated; draft not rewritten yet.
+
+### 第一章绪论初稿已生成
+- User request:
+  - 用户要求根据 `docs/literature/lunwen/第一章文献分类与写作思路.md` 撰写毕业论文第一章初稿，并在正文末尾给出参考文献列表。
+- Output:
+  - 新增文件：`docs/literature/lunwen/第一章绪论初稿.md`。
+  - 初稿结构包括：`1.1` 研究背景与意义、`1.2` 铰接式移动机器人国内外发展现状、`1.3` 铰接车辆结构类型与控制难点分析、`1.4` 基于模型的铰接车辆控制方法研究现状、`1.5` 强化学习在复杂地形移动机器人控制中的研究现状、`1.6` 现有研究不足与本文研究思路、`1.7` 本文主要研究内容与贡献、`1.8` 本章小结。
+  - 正文采用顺序编码引用，末尾列出 `39` 条参考文献。
+- Durable conclusion:
+  - 初稿将整章逻辑收束为复杂地形需求 -> 铰接结构价值 -> 结构与控制难点 -> 模型方法边界 -> 强化学习方法现状 -> 本文“形态—牵引—感知”协同控制路线。
+  - 初稿刻意避免提前声称本文已证明协同控制优于传统方法，贡献表述限定为仿真建模、RL 任务构建和阶段性训练验证路径。
+  - 参考文献条目基于当前 PDF 文件名整理，后续进入正式论文前需按学校格式补齐出版信息。
+- Status:
+  - drafted.
+
+### MGDP 深度感知模型迁移到 CompleteCar 的初步判断
+- Context:
+  - 用户要求检查 `/home/lbz/MGDP` 官方 GitHub 是否有更新，并基于 `Dong 等 - MGDP mastering a generalized depth perception model for quadruped locomotion.pdf` 与已实现代码，解释 MGDP 深度感知模型及其迁移到当前小车的可行性和工作量。
+- Git conclusion:
+  - 本地 `/home/lbz/MGDP` 的 `origin` 为 `https://github.com/arclab-hku/MGDP.git`，fetch 后本地 `master` 相对 `origin/master` 为“领先 1、落后 1”。
+  - 远端新增提交 `dc0e4ef Uupdate author info`，只修改 `index.html` 作者信息；本地提交 `cb0b9b5 publish mgdp project` 仍未进入 `origin/master`。
+  - `personal` 远端因缺少 GitHub 凭据未能 fetch，不能据此判断个人 fork 是否更新。
+- Technical conclusion:
+  - MGDP 不是把原始深度图直接拼到策略输入，而是将深度图通过 CNN encoder 压成低维 token，用 decoder 重建干净深度图以实现去噪；同时用高度图 encoder/decoder 提供几何监督，并用对比损失对齐深度 token 与高度 token。
+  - MGDP actor 使用可部署输入：本体观测、历史观测估计出的速度/足端高度，以及感知 token；critic 使用仿真 privileged 信息，包括真实速度、足端高度和高度图。
+  - 当前 CompleteCar Stage1 已直接把局部高度 patch 拼入 actor/critic，观测维度为 `632`，相机和 LiDAR 默认未参与策略输入；因此 MGDP 完整迁移会改变观测、网络、训练 runner、checkpoint warm-start 和评价口径。
+- Boundary:
+  - 将 MGDP 感知模型作为 CompleteCar 的后续增强在工程上可行，但不应在用户未确认研究目标前默认替换当前 Stage1 主线。
+  - 更稳妥的路径是先完成当前 Stage1 地形课程闭环，再决定是否进入 Stage2 感知增强；若只加入 terrain-adaptive reward，成本远低于完整深度感知模型。
+- Status:
+  - analysis only; not implemented.
+
+### 第一章绪论文献已按论证功能分类
+- User request:
+  - 用户将毕业论文第一章中心问题收束为“三节主动铰接移动机器人在复杂地形中的形态—牵引—感知协同控制问题”，要求对 `docs/literature/lunwen` 文献分类放入子文件夹，并为第一章各小节选择可用参考文献、说明理由和写作思路。
+- Implementation:
+  - 将 `41` 个 PDF 按第一章论证功能移动到六个子文件夹：
+    - `01_development_and_applications`：`3` 篇。
+    - `02_morphology_structure_mechanism`：`8` 篇。
+    - `03_model_based_dynamics_control`：`16` 篇。
+    - `04_terrain_perception_planning`：`2` 篇。
+    - `05_rl_complex_terrain_control`：`9` 篇。
+    - `06_learning_frameworks_transfer`：`3` 篇。
+  - 新增整理文档：`docs/literature/lunwen/第一章文献分类与写作思路.md`。
+- Durable conclusion:
+  - 第一章写作主线应从复杂地形移动需求出发，经铰接结构发展、结构类型与控制难点、模型控制方法、RL 复杂地形控制现状，收束到本文“形态—牵引—感知”协同控制问题。
+  - 第一章中不应提前声称本文已证明协同控制优于传统方法；更稳妥的表述是建立仿真建模、RL 任务构建和阶段性训练验证路径。
+- Status:
+  - classified and documented.
+
+### `docs/literature/lunwen` 重复 PDF 和双语 PDF 已清理
+- User request:
+  - 用户要求删除 `/home/lbz/Graduation-Project/docs/literature/lunwen` 中的重复文件，只保留一份。
+- Implementation:
+  - 使用 SHA-256 文件内容哈希判断重复，而不是仅按文件名判断。
+  - 删除 `20` 个与无后缀原文件内容完全一致的 `-1.pdf` 副本。
+  - 按用户追加要求删除 `14` 个 `_zh-CN_dual.pdf` 双语版本，只保留英文/原始版本。
+  - 保留同名近似但哈希不同的文件，例如 `双铰接轮式越野工程车辆机液复合驱动系统研究_宁悦.pdf` 与其 `-1` 版本。
+- Verification:
+  - 清理后 `docs/literature/lunwen` 保留 `41` 个 PDF。
+  - 未发现 `_zh-CN_dual.pdf` 文件。
+  - 重新计算 SHA-256 后未发现内容哈希重复组。
+- Status:
+  - cleaned.
+
 ## 2026-05-03
 
 ### Stage1 max-row、step spawn 和初始课程逻辑已修正
@@ -12921,6 +13305,23 @@ This file stores durable conclusions from past Codex sessions so that future ses
   - `missing_references.md` 中的 Horton and Crolla 1986、Dudziński 1989、Altafini 1999、Polotski and Hemami 1997、Hemami and Polotski 1997、Corke and Ridley 2001、Ridley and Corke 2003、DeSantis 1997 等应优先补充下载，用于补强铰接车早期发展和行星探测/机器人转向阶段。
 - Boundary:
   - 所有题录、自由度、机构类型或贡献判断中不能从 Markdown 直接确认的内容已用 `[UNCERTAIN]` 或 `[MISSING]` 标注；后续正式写入论文前应回查源 PDF、DOI 数据库或原始出版页面。
+
+### 铰接式越野车辆与 AAWV 图文发展脉络整理
+- Date: 2026-05-05
+- Context:
+  - 用户要求在本地 `docs/literature/` 中找出与铰接式越野车辆、AAWV 相关的文献，依据绪论和研究现状整理国内外发展脉络，并为每个代表车辆配图、说明图片来源和该文献在本地哪里被引用。
+- Output:
+  - 新增 `docs/literature/铰接式越野车辆与AAWV发展脉络整理.md`。
+  - 文档包含核心文献筛选表、国内外发展脉络、`21` 个代表车辆/图谱条目、第一章综述表述草稿和引用位置索引。
+  - 已核查文档中的全部图片相对路径，当前无断图路径。
+- Durable conclusions:
+  - 后续第一章综述可把铰接式车辆发展分成两条线：工程车辆/运输车辆线，以及机器人/AAWV 主动调姿线。
+  - 工程车辆线用于说明铰接结构在重载越野、全地形运输、折腰转向和车架适应中的长期工程基础；优先引用李补莲 2011、宁悦 2014。
+  - 机器人/AAWV 线用于说明车体或轮-车体连接从被动适应发展到主动调姿和闭环控制；优先引用 Iagnemma 2003、Amar 2010、Ben-Tzvi 2010、Zhu 2018、Mehta 2023、Mehta 2025。
+  - 规划控制线可用 Kayacan 2018、Huang 2024、Hu 2024 等补充，说明铰接车辆已从机械通过性研究进入自主规划、MPC 和地形稳定性评价阶段。
+- Boundary:
+  - 文档中的“被引用位置”采用本项目本地可核查口径，不等同于全网 citation count。
+  - 图片来自本地论文 PDF 转换结果，正式写入毕业论文前仍需按学校格式和版权要求决定是否保留原图或重绘示意图。
 
 ## 2026-05-03
 

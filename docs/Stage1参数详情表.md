@@ -304,7 +304,6 @@ Stage1 目标点逻辑：
 目标点在 Stage1 的作用是提供沿地形列向前的运动引导，不作为必须完成的 episode 终点。terrain-column 目标不使用 `commands.resampling_time` 的计时重采样；目标推进由事件触发：
 
 - 当前目标距离小于 `target_position_tolerance = 0.5 m` 时，触发 terrain row 推进。
-- 当前车体世界系 x 坐标相对当前 tile start 前进超过 `8 m * 0.70 = 5.6 m` 时，触发 terrain row 推进。
 - 目标重采样后仍保持同列，目标 row 继续取当前 row 的 `+1`。
 - 若本次推进会进入没有合法下一目标的最高 row 区域，则本段记为完成，通过 reset 回到新的低 row，不再采样被夹紧到同一最后 row 的假目标。
 - 目标命中不会触发 Stage1 success termination。
@@ -411,23 +410,39 @@ origin 的 z 坐标取 tile 中心区域高度的非负最大值，用于 reset 
 
 | 参数 | 当前值 | 含义 |
 |---|---:|---|
-| `curriculum.move_up_distance_ratio` | `0.70` | 前进超过 tile 长度 70% 则推进到下一 row |
-| `curriculum.move_up_uses_forward_x` | `True` | Stage1 terrain-column 目标推进只看世界系 `+x` 位移 |
+| `curriculum.terrain_column_move_down_progress_ratio` | `0.30` | reset 时若当前目标段进度低于 30%，则当前 row 退一级 |
+| `curriculum.move_up_distance_ratio` | `0.50` | 继承自共享配置；普通 waypoint curriculum 使用，Stage1 terrain-column 不使用该字段判断升级 |
+| `curriculum.move_up_uses_forward_x` | `False` | 继承自共享配置；Stage1 terrain-column 不使用该字段判断升级 |
 | `curriculum.move_down_command_ratio` | `0.50` | 继承自共享配置；普通 waypoint curriculum 使用，Stage1 terrain-column 不使用该字段判断降级 |
-
-当前 tile 长度为 `8 m`，因此：
-
-- row 推进阈值：$8 \times 0.70 = 5.6\ \mathrm{m}$。
 
 Stage1 terrain-column 目标的 row 推进发生在 episode 内，而不是 reset 前计时重采样或 reset-time curriculum update：
 
-- 定义 `tile_start_x = tile_origin_x - terrain_length / 2`。
-- 若 `root_x - tile_start_x > 5.6 m`，触发 row 推进；这里的 `5.6 m` 表示走过当前 tile 长度的 `70%`。
 - 若当前目标点被命中，terrain level 加 `1`。
 - row 推进后，`scene.env_origins` 同步到新 row / 同 column 的 tile origin。
 - row 推进后立刻重采样下一目标点。
 - 若推进会进入没有合法下一目标的最高 row 区域，本段记为 `terrain_column_completed`，本 step 通过 time-limit reset 回到按当前地形类别重新采样的低 row。
 - 若 episode 因 far、球铰越界或 timeout 结束，本步不会触发 row 推进。
+
+Stage1 terrain-column 的 row 退级发生在 episode reset 时。当前目标段进度定义为：
+
+$$
+p_{\mathrm{row}}
+=
+\mathrm{clip}
+\left(
+\frac{d_{\mathrm{start}} - d_{\mathrm{now}}}{d_{\mathrm{start}}},
+0,
+1
+\right)
+$$
+
+其中 $d_{\mathrm{start}}$ 是当前目标段刚采样时车辆到目标点的水平距离，$d_{\mathrm{now}}$ 是 episode 结束时车辆到当前目标点的水平距离。
+
+reset 时的 terrain level 更新逻辑为：
+
+- 若 `terrain_column_completed=True` 或当前 row 已没有合法下一目标，则按当前地形类别重新采样低 row。
+- 若 episode 因 `far_from_target`、`ball_joint_out_of_bounds` 或 `time_out` 结束，且没有命中目标，同时 $p_{\mathrm{row}} < 0.30$，则 terrain level 减 `1`。
+- 若 episode 失败/超时但 $p_{\mathrm{row}} \ge 0.30$，保持当前 row 不变，让策略继续在当前难度练习。
 
 ### 7.3 reset 初值
 
@@ -448,27 +463,27 @@ reset 位置先加当前 terrain tile origin，再加 `root_x_range` / `root_y_r
 
 | terrain class | offset 逻辑 |
 |---|---|
-| `step` | 使用安全 approach spawn：在当前 tile start 前 `0.3-0.8 m` 出生，y 在 tile origin 左右 `0.2 m` 内扰动 |
+| `step` | 直接覆盖 xy 到当前 tile origin，不再在 tile start 前 `0.3-0.8 m` 出生 |
 | `gap` | x 方向向后随机 `0.0-0.4 m` |
 | `other` | x / y 各随机 `-0.5-0.5 m` |
 
-当前 `stairs down`、`stairs up`、`discrete obstacles` 均属于 `step` class，因此 reset 时都会使用 step 类安全 approach spawn。
+当前 `stairs down`、`stairs up`、`discrete obstacles` 均属于 `step` class，因此 reset 时都会出生在当前 tile origin 的 xy 坐标上。
 
 step 类 spawn 公式为：
 
 $$
-x_{\mathrm{spawn}} = x_{\mathrm{tile\_start}} - U(0.3, 0.8)
+x_{\mathrm{spawn}} = x_{\mathrm{tile\_origin}}
 $$
 
 $$
-y_{\mathrm{spawn}} = y_{\mathrm{tile\_origin}} + U(-0.2, 0.2)
+y_{\mathrm{spawn}} = y_{\mathrm{tile\_origin}}
 $$
 
 $$
 z_{\mathrm{spawn}} = h(x_{\mathrm{spawn}}, y_{\mathrm{spawn}}) + 0.30
 $$
 
-其中 $h(\cdot)$ 来自 heightfield 世界坐标采样。step 类不再使用 tile center height 设置 spawn z。`flat`、`slope`、`rough` 等 `other` class 保留原 reset 逻辑。
+其中 $h(\cdot)$ 来自 heightfield 世界坐标采样。step 类不再使用 tile start 前 approach spawn，也不再使用 tile center height 设置 spawn z。`flat`、`slope`、`rough` 等 `other` class 保留原 reset 逻辑。
 
 当前 reset yaw 固定为 `0 rad`，即默认朝世界系 `+x`。
 
@@ -500,7 +515,7 @@ $$
 | `wheel_slip_angle` | `6` | `1.0` | 6 个车轮侧滑角，已 clip 到 `[-pi/2, pi/2]` |
 | `wheel_normal_contact_force` | `6` | `1.0` | 6 个车轮归一化法向接触力 |
 | `goal_relative_command` | `4` | `1.0` | 车体系相对目标命令 |
-| `last_action` | `8` | `1.0` | 上一帧 policy action |
+| `last_action` | `8` | `1.0` | 上一控制步已经执行的 policy action |
 | `terrain_height_patch` | `578` | 原始米制值 | Stage1 地形高度 patch |
 
 当前配置类中仍存在 `projected_gravity`、`ball_joint_target_error`、`module_roll_pitch` 等 scale 字段，但当前 `build_observation_descriptor()` 和 `compute_actor_observation_from_raw_terms()` 不把这些项拼入 actor / critic 观测。
@@ -564,7 +579,7 @@ $$
 
 ## 10. Reward 配置
 
-Stage1 当前 active reward 项与共享 reward 主干一致，共 `7` 项：
+Stage1 当前 reward 计算项与共享 reward 主干一致，共 `10` 项：
 
 1. `distance_to_target`
 2. `progress_to_target`
@@ -573,6 +588,11 @@ Stage1 当前 active reward 项与共享 reward 主干一致，共 `7` 项：
 5. `angle_diff`
 6. `turn_speed_penalty`
 7. `slip_penalty`
+8. `action_rate_penalty`
+9. `contact_support_penalty`
+10. `edge_speed_penalty`
+
+其中 `turn_speed_penalty_weight = 0.0`，所以 `turn_speed_penalty` 当前只作为计算/日志分量存在，不贡献总 reward。`reached_target` 已启用，参数与 Stage0 相同。`action_rate_penalty` 已在 Stage1 启用，用 episode 最大步数归一化。`slip_penalty` 当前使用底层接触权重 mask，`contact_support_penalty` 用于惩罚前、中、后三段模块支撑丢失，`edge_speed_penalty` 用局部高程图前方预览区域惩罚高度突变前高速冲击。
 
 ### 10.1 reward 参数
 
@@ -581,19 +601,29 @@ Stage1 当前 active reward 项与共享 reward 主干一致，共 `7` 项：
 | `target_position_tolerance` | `0.5 m` |
 | `distance_to_target_denominator_scale` | `0.01` |
 | `distance_to_target_weight` | `6.0` |
-| `nominal_goal_distance_m` | `16.0 m` |
+| `nominal_goal_distance_m` | `8.0 m` |
 | `turn_speed_angle_scale_deg` | `0.0 deg` |
 | `progress_to_target_clip_m` | `0.25 m` |
 | `progress_to_target_relax_radius_m` | `4.0 m` |
 | `progress_to_target_weight` | `8.0` |
 | `reached_target_base_reward` | `2.0` |
-| `reached_target_weight` | `0.0` |
-| `far_from_target_margin` | `8.0 m` |
+| `reached_target_weight` | `6.0` |
+| `far_from_target_margin` | `3.0 m` |
 | `far_from_target_weight` | `-2.0` |
 | `angle_diff_weight` | `6.0` |
-| `turn_speed_penalty_weight` | `-2.0` |
+| `turn_speed_penalty_weight` | `0.0` |
 | `slip_penalty_weight` | `-2.0` |
-| `slip_angle_penalty_ratio` | `6.0` |
+| `slip_longitudinal_penalty_ratio` | `5.0` |
+| `slip_angle_penalty_ratio` | `1.0` |
+| `action_rate_penalty_weight` | `-10.0` |
+| `action_rate_base_ratio` | `0.5` |
+| `action_rate_joint_ratio` | `1.0` |
+| `contact_support_penalty_weight` | `-4.0` |
+| `contact_support_min_weight` | `0.3` |
+| `edge_speed_penalty_weight` | `-6.0` |
+| `edge_height_low_threshold_m` | `0.04 m` |
+| `edge_height_high_threshold_m` | `0.10 m` |
+| `edge_speed_limit_mps` | `0.5 m/s` |
 | `progress_gate_longitudinal_k` | `3.0` |
 | `progress_gate_slip_angle_scale_rad` | `1.5 rad` |
 | `progress_gate_min_multiplier` | `0.25` |
@@ -627,12 +657,14 @@ $$
 正向和负向 progress：
 
 $$
-p^+ = \frac{\max(\Delta D, 0)}{16.0}
+p^+ = \frac{\max(\Delta D, 0)}{8.0}
 $$
 
 $$
-p^- = \frac{\min(\Delta D, 0)}{16.0}
+p^- = \frac{\min(\Delta D, 0)}{8.0}
 $$
+
+当前源码中 `progress_to_target` 不额外除以 $N$，只按名义目标距离 `8.0 m` 归一化。
 
 纵滑 gate：
 
@@ -685,21 +717,27 @@ $$
 r_{\mathrm{progress}} = 8.0 \cdot (m p^+ + p^-)
 $$
 
-目标命中奖励当前权重为 `0`：
+目标命中奖励已启用，参数与 Stage0 相同：
 
 $$
-r_{\mathrm{reached}} = 0
+r_{\mathrm{reached}} =
+6.0 \cdot
+\mathbb I(D_t < 0.5)
+\cdot
+2.0
+\cdot
+\frac{N-l_t}{N}
 $$
 
-Stage1 不再用 `commands.goal_distance` 表示目标采样距离；reward 使用 `nominal_goal_distance_m = 16.0 m` 作为 progress 归一化和 far-from-target 的名义尺度。
+Stage1 不再用 `commands.goal_distance` 表示目标采样距离；reward 使用 `nominal_goal_distance_m = 8.0 m` 作为 progress 归一化和 far-from-target 的名义尺度。
 
 far-from-target 阈值为：
 
 $$
-D_{\mathrm{far}} = 16.0 + 8.0 = 24.0\ \mathrm{m}
+D_{\mathrm{far}} = 8.0 + 3.0 = 11.0\ \mathrm{m}
 $$
 
-若 $D_t > 24.0\ \mathrm{m}$：
+若 $D_t > 11.0\ \mathrm{m}$：
 
 $$
 r_{\mathrm{far}} = -2.0
@@ -715,11 +753,11 @@ r_{\mathrm{angle}} =
 \frac{1}{N}
 $$
 
-转向速度惩罚：
+转向速度惩罚当前会被源码计算，但 Stage1 权重为 `0.0`，因此不贡献总 reward：
 
 $$
 r_{\mathrm{turn}} =
--2.0 \cdot
+0.0 \cdot
 I_{\mathrm{turn}}
 \cdot
 \frac{\|v_{xy}\|}{2.0}
@@ -727,17 +765,181 @@ I_{\mathrm{turn}}
 \frac{1}{N}
 $$
 
-由于 Stage1 当前 `turn_speed_angle_scale_deg = 0.0`，代码内部使用 `1.0e-6` 作为分母保护，因此只要目标 bearing 非零，`I_turn` 很容易被 clip 到 `1`。
+由于 Stage1 当前 `turn_speed_angle_scale_deg = 0.0`，代码内部使用 `1.0e-6` 作为分母保护，因此只要目标 bearing 非零，`I_turn` 很容易被 clip 到 `1`；但该项当前权重为 `0.0`，所以只作为计算分量存在。
 
-滑移惩罚：
+底层接触权重：
+
+$$
+c_i =
+\mathrm{clip}
+\left(
+\frac{n_i - 0.01}{0.08 - 0.01},
+0,
+1
+\right)
+$$
+
+其中 $n_i$ 为第 $i$ 个车轮的接触力模长按整车重量归一化后的值。当前 reward 复用该接触权重，不再额外定义 sigmoid 接触系数。
+
+滑移惩罚当前使用接触权重 mask：
+
+$$
+S_c =
+\max
+\left(
+\sum_{i=1}^{6}c_i,
+1.0
+\right)
+$$
 
 $$
 r_{\mathrm{slip}} =
 -2.0 \cdot
 \frac{
-\mathrm{mean}(|\kappa|)
-+ 6.0 \cdot \mathrm{mean}(|\alpha|)
+5.0 \cdot \frac{\sum_{i=1}^{6}c_i|\kappa_i|}{S_c}
++ 1.0 \cdot \frac{\sum_{i=1}^{6}c_i|\alpha_i|}{S_c}
 }{N}
+$$
+
+其中 $S_c$ 是有效接触权重和的保护分母。这样离地轮不会贡献滑移惩罚；当只有少数轮有效接地时，仍然评价这些接地轮自身的滑移，而不是因为除以固定 `6` 把惩罚压得过低。
+
+动作变化惩罚：
+
+$$
+\rho =
+\left[
+0.5,\ 0.5,\ 1.0,\ 1.0,\ 1.0,\ 1.0,\ 1.0,\ 1.0
+\right]
+$$
+
+$$
+r_{\Delta a}
+=
+-10.0 \cdot
+\frac{
+\frac{1}{8}
+\sum_{j=1}^{8}
+\rho_j
+(a_{j,t}-a_{j,t-1})^2
+}{N}
+$$
+
+模块支撑惩罚：
+
+$$
+C_{\mathrm{front}} = \max(c_2,c_3)
+$$
+
+$$
+C_{\mathrm{mid}} = \max(c_0,c_1)
+$$
+
+$$
+C_{\mathrm{rear}} = \max(c_4,c_5)
+$$
+
+其中 `0,1` 为中车左右轮，`2,3` 为前车左右轮，`4,5` 为后车左右轮。模块支撑缺口为：
+
+$$
+d_m =
+\mathrm{clip}
+\left(
+\frac{0.3-C_m}{0.3},
+0,
+1
+\right)
+$$
+
+模块支撑惩罚为：
+
+$$
+r_{\mathrm{contact}} =
+-4.0 \cdot
+\frac{
+\frac{1}{3}
+\left(
+d_{\mathrm{front}}^2
++ d_{\mathrm{mid}}^2
++ d_{\mathrm{rear}}^2
+\right)
+}{N}
+$$
+
+地形突变前速度惩罚使用当前局部高程图的前方预览区域。当前 height patch 从车体前端继续向前预览 `1.0 m`，并在车体左右两侧各保留 `0.5 m` 侧向预览空间。设预览区域内相邻采样点的最大高度跳变为：
+
+$$
+E_{\mathrm{raw}}
+=
+\max
+\left(
+|\Delta_x H|,
+|\Delta_y H|
+\right)
+$$
+
+其中 $H$ 为局部高程图中的地形高度。源码中 height patch 存的是 `root_z - terrain_height`，但相邻差值取绝对值后与真实地形高度差等价。
+
+根据 Stage1 地形生成函数检查：
+
+- `stairs up/down` 的单级台阶高度约为 `0.05-0.22 m`；
+- `discrete obstacles` 的局部相邻高度跳变从约 `0.10 m` 起，高 row 可更大；
+- `slope up` 最高 row 的相邻网格高度差约为 `0.04 m`。
+
+因此当前 edge strength 采用：
+
+$$
+E
+=
+\mathrm{clip}
+\left(
+\frac{E_{\mathrm{raw}}-0.04}{0.10-0.04},
+0,
+1
+\right)
+$$
+
+安全前进速度为：
+
+$$
+v_{\mathrm{safe}}
+=
+2.0
+-
+E
+\left(
+2.0 - 0.5
+\right)
+$$
+
+当 $E=0$ 时，$v_{\mathrm{safe}}=2.0\ \mathrm{m/s}$，等于 Stage1 底盘前进速度上限，平地不额外限速；当 $E=1$ 时，$v_{\mathrm{safe}}=0.5\ \mathrm{m/s}$。
+
+只惩罚前进方向上的超速：
+
+$$
+v^+
+=
+\max(v_x,0)
+$$
+
+$$
+e_v
+=
+\max
+\left(
+v^+ - v_{\mathrm{safe}},
+0
+\right)
+$$
+
+$$
+r_{\mathrm{edge}}
+=
+-6.0 \cdot
+E
+\left(
+\frac{e_v}{2.0}
+\right)^2
+\frac{1}{N}
 $$
 
 总 reward 为上述 active 项求和，不做正值裁剪。
@@ -750,9 +952,9 @@ $$
 
 | 条件 | 判定 |
 |---|---|
-| `waypoint_hit` | 当前目标距离 `< 0.5 m`；只用于触发 terrain row / target 推进 |
+| `waypoint_hit` | 当前目标距离 `< 0.5 m`；用于触发 terrain row / target 推进，并为 `reached_target` 提供命中指示 |
 | `is_success` | Stage1 terrain-column 目标下固定为 `False` |
-| `far_from_target` | 当前目标距离 `> 24.0 m` |
+| `far_from_target` | 当前目标距离 `> 11.0 m` |
 | `ball_joint_out_of_bounds` | 任一受控球铰超过 lower / upper limit |
 | `time_out` | episode 到达 `max_episode_length - 1` 且未 success |
 
@@ -840,11 +1042,11 @@ Stage1 cfg 不显式设置目标 yaw tolerance、整车姿态阈值、首尾模�
 | `Observation/*` | 关键观测原始值摘要 |
 | `LowSlip/*` | 纵滑、侧滑角通过率和 margin |
 | `PerWheel/*` | 每个车轮的速度、滑移、接触、执行摘要 |
-| `Terrain/*` | 当前 terrain level、tile start / origin / end、root x、target x，以及 tile start / origin 两种 forward x 诊断 |
+| `Terrain/*` | 当前 terrain level、tile start / origin / end、root x、target x、forward x 诊断，以及 active goal start distance / progress |
 | `Termination/*` | success、timeout、far、ball-joint-limit 等终止率 |
 | `Stage1Eval/global/*` | Stage1 全局地形列评价指标，包括 max-row reached、valid-target masked、tile x 调试值 |
 | `Stage1Eval/colXX/*` | 各地形列评价指标，包括 `max_row_reached_rate` 和 `valid_target_masked` |
 
 其中 `Action/*`、`LowLevel/*`、`PerWheel/*` 中会出现底层执行摘要指标，但本文档不解释其底层运动学计算过程。
 
-说明：共享 curriculum 代码仍能在普通 waypoint 路径中输出小写 `terrain/*` reset 指标；但当前 Stage1 terrain-column 目标路径不走 reset-time `update_terrain_curriculum()`，主要使用 step-level `Terrain/*` 指标。
+说明：共享 curriculum 代码仍能在普通 waypoint 路径中输出小写 `terrain/*` reset 指标；当前 Stage1 terrain-column 目标路径额外输出 reset-time 的 `terrain/row_progress_at_reset`、`terrain/move_down_ratio`、`terrain/reset_to_low_ratio` 和 `terrain/level_after_reset`，用于检查 row 退级逻辑。

@@ -1,5 +1,330 @@
 # 每日工作日志
 
+## 2026-05-06
+
+已完成：
+- 修复 Stage1 `last_action` 观测滞后一拍问题。
+- `env.py` 观测链路改为传入当前刚执行过的 `self.actions`，使下一帧 policy 观测中的 `last_action` 对应上一控制步实际执行动作。
+- 保持 reward 中 `action_rate_penalty` 的 `actions - last_actions` 计算不变，动作变化惩罚仍按当前动作相对上一控制步动作计算。
+- 将 `observations.py` 中观测链路参数名改为 `executed_actions`，降低语义混淆。
+- 核对 Stage0 / Stage1 共用 reward 公式：`progress_to_target` 不除以 episode 最大步数，只按目标名义距离归一化。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 `last_action` 观测语义已修正为“上一控制步已经执行的 policy action”。
+- Stage0 的 `progress_to_target` 当前没有除以 episode 长度；Stage0 使用 `commands.goal_distance = 10.0 m` 作为 progress 归一化距离。
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+
+## 2026-05-06
+
+已完成：
+- 按用户确认修改 Stage1 terrain-column 课程升级/退级逻辑。
+- row 升级改为只由目标点命中触发，不再使用 `root_x - tile_start_x > 5.6 m` 的距离捷径。
+- 新增当前目标段初始距离缓存，并用 `row_progress = clip((d_start - d_now) / d_start, 0, 1)` 计算 row 内有效推进比例。
+- reset 时若 episode 失败/超时、未命中当前目标且 `row_progress < 0.30`，当前 terrain level 退一级；若进度达到 `0.30` 以上，则保持当前 row。
+- 新增 reset 日志 `terrain/row_progress_at_reset`、`terrain/move_down_ratio`、`terrain/reset_to_low_ratio`、`terrain/level_after_reset`，以及 step debug 指标 `Terrain/active_goal_start_distance_mean`、`Terrain/active_goal_progress_mean`。
+- 同步更新 Stage1 参数详情表、Stage1 指标说明和项目记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/Stage1参数详情表.md`
+- `docs/stage1评价指标.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 step 类地形不再可能只因从 tile origin 向前冲过旧阈值而假晋级。
+- 当前退级阈值为 `terrain_column_move_down_progress_ratio = 0.30`。
+
+## 2026-05-06
+
+已完成：
+- 按用户要求重新设计并实现 Stage1 `edge_speed_penalty`。
+- 检查 Stage1 terrain 生成函数后确认：`stairs up/down` 单级台阶相邻高度跳变约 `0.05-0.22 m`，`discrete obstacles` 相邻高度跳变从约 `0.10 m` 起，最高 row 可更大；`slope up` 最高 row 相邻高度差约 `0.04 m`。
+- `edge_speed_penalty` 使用局部高程图车头前方 `1.0 m`、侧向额外 `0.5 m` 的预览区域，计算相邻高度最大跳变并映射为 edge strength。
+- 当前 edge strength 阈值设为 `0.04-0.10 m`；平地不额外限速，强突变安全前进速度设为 `0.5 m/s`。
+- 增加 Stage1 TensorBoard debug 指标：`EdgeSpeed/*`。
+- 同步更新 Stage1 参数详情表、奖励函数设计草案、Stage1 指标说明和项目记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/Stage1参数详情表.md`
+- `docs/Stage1奖励函数设计草案.md`
+- `docs/stage1评价指标.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage1 `edge_speed_penalty_weight = -6.0`、`edge_height_low_threshold_m = 0.04`、`edge_height_high_threshold_m = 0.10`、`edge_speed_limit_mps = 0.5`。
+- edge speed 只惩罚地形突变前正向超速，不惩罚倒车，不在平地额外限速。
+
+## 2026-05-06
+
+已完成：
+- 按用户要求为 Stage1 添加 `contact_support_penalty`。
+- 将 Stage1 `slip_penalty` 改为复用底层接触权重 masked mean，只主要惩罚有效接地轮滑移。
+- `contact_support_penalty` 使用前、中、后三段模块支撑，不强制六轮同时接地。
+- 增加 Stage1 TensorBoard debug 指标：`ContactSupport/*`、`Slip/masked_*` 与 `Slip/contact_weight_sum_raw`。
+- 同步更新 Stage1 参数详情表、奖励函数设计草案、Stage1 指标说明和项目记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/Stage1参数详情表.md`
+- `docs/Stage1奖励函数设计草案.md`
+- `docs/stage1评价指标.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage1 `slip_penalty` 形式为 `-2.0 * (5.0 * sum_i c_i |kappa_i| / max(sum_i c_i, 1.0) + 1.0 * sum_i c_i |alpha_i| / max(sum_i c_i, 1.0)) / N`。
+- 当前 Stage1 `contact_support_penalty_weight = -4.0`，最低模块支撑要求 `contact_support_min_weight = 0.3`。
+- `edge_speed_penalty` 本轮仅解释设计逻辑，尚未写入源码。
+
+## 2026-05-06
+
+已完成：
+- 按用户确认，将 Stage1 动作变化惩罚加入当前 reward 主干。
+- 在共享 reward 参数中新增 `action_rate_penalty_weight`、`action_rate_base_ratio`、`action_rate_joint_ratio`，默认权重为 `0.0`，保持 Stage0 默认不受影响。
+- Stage1 设置 `action_rate_penalty_weight = -10.0`、底盘动作变化权重 `0.5`、球铰姿态动作变化权重 `1.0`。
+- `env.py` reward 调用传入 `actions` / `last_actions`，并增加 `Reward/action_rate_penalty` 诊断输出；Stage1 通过既有 `Debug/Stage1/Reward/*` 路径写入 TensorBoard。
+- 同步更新 Stage1 参数详情表、奖励函数设计草案、Stage1 指标说明和项目记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/Stage1参数详情表.md`
+- `docs/Stage1奖励函数设计草案.md`
+- `docs/stage1评价指标.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage1 动作变化惩罚形式为 `-10.0 * ((1/8) * sum_j rho_j * (a_j,t - a_j,t-1)^2) / N`，其中 `rho = [0.5, 0.5, 1, 1, 1, 1, 1, 1]`，`N = 2400`。
+- 该项用于抑制前后动作幅度过大和持续抖动，不等同于球铰极限惩罚，也不包含动作软限幅惩罚。
+
+## 2026-05-06
+
+已完成：
+- 按用户要求启用 Stage1 `r_reached`，参数与 Stage0 一致：`reached_target_base_reward = 2.0`、`reached_target_weight = 6.0`。
+- 新增 `slip_longitudinal_penalty_ratio` 参数，默认 `1.0`，避免改变 Stage0 现有滑移惩罚语义。
+- 将 Stage1 `r_slip` 设置为纵滑率系数 `5.0`、侧滑角系数 `1.0`，总权重仍为 `-2.0`。
+- 同步更新 Stage1 参数详情表、奖励函数设计草案、Stage1 指标说明和项目记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `docs/Stage1参数详情表.md`
+- `docs/Stage1奖励函数设计草案.md`
+- `docs/stage1评价指标.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage1 目标命中不触发 success termination，但会贡献 `reached_target` 稀疏奖励并触发 terrain row / target 推进。
+- 当前 Stage1 滑移惩罚形式为 `-2.0 * (5.0 * mean(|kappa|) + 1.0 * mean(|alpha|)) / N`。
+
+## 2026-05-06
+
+已完成：
+- 按用户要求将 Stage1 reward 名义距离 `nominal_goal_distance_m` 从 `16.0 m` 改为 `8.0 m`。
+- 按用户要求将 step 类地形 reset xy 改为当前 tile origin，不再从 tile start 前 `0.3-0.8 m` 的 approach 区域出生。
+- 移除废弃的 step approach spawn back / lateral 配置项，避免配置层继续表达旧出生策略。
+- 同步更新 Stage1 参数详情表、Stage1 奖励函数设计草案、当前状态和长期结论记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_runtime.py`
+- `docs/Stage1参数详情表.md`
+- `docs/Stage1奖励函数设计草案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 progress 归一化距离改为 `8.0 m`，far-from-target 阈值改为 `16.0 m`。
+- 当前 `stairs down`、`stairs up`、`discrete obstacles` reset 都在当前 tile origin 的 xy 坐标出生，spawn z 仍由 heightfield 采样高度加 `0.30 m` 得到。
+
+## 2026-05-06
+
+已完成：
+- 按用户补充的奖励函数原则，整理 Stage1 奖励函数数学公式草案。
+- 按用户要求补充当前 Stage1 源码实际 reward 公式，并尽量与草案公式保持统一符号。
+- 修正 `docs/Stage1参数详情表.md` 中 `turn_speed_penalty_weight` 的旧值：当前源码为 `0.0`，该项只计算但不贡献总 reward。
+- 明确动作变化/动作软限幅参考 MGDP 的 action rate 思路，但不加入球铰极限惩罚。
+- 明确暂不加入非轮体碰撞或前端 clearance 惩罚。
+- 同步更新当前状态和长期结论记忆。
+
+修改文件：
+- `docs/Stage1奖励函数设计草案.md`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage1 奖励函数草案由稳定前进、有效 row advance、接地滑移、悬空空转、模块支撑、相对地形姿态、地形突变前高速冲击、动作变化、动作软限幅和无推进失败组成。
+- 该草案尚未写入源码；后续若实现到 Stage1 reward，需要同步更新 `docs/Stage1参数详情表.md`。
+
+## 2026-05-06
+
+已完成：
+- 按用户给定提示词联网检索双目相机、LiDAR、高度图、地形可通行性、感知式强化学习 locomotion、Isaac Lab height scanner、MGDP 和轮式/铰接车复杂地形 RL 相关文献与开源项目。
+- 将检索结果按“综述文献”“方法综述”“研究论文”“开源 GitHub 项目”四类整理。
+- 按用户追加要求，进一步围绕 Google Scholar 和 CNKI 线索筛选“双目/相机 + LiDAR 融合作为感知”的综述文献，并按质量和时效性排序。
+- 同步更新当前状态和长期结论记忆。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 未找到成熟综述专门以“双目相机与 LiDAR 融合作为强化学习外感知模型”为中心；应拆成地形可通行性/传感器融合、感知式 RL locomotion、相机/LiDAR 到 elevation 或 traversability map 的开源实现三条文献链。
+- 当前 CompleteCar Stage1 不应直接替换为双目/LiDAR 原始感知输入；更合理的后续路线是 Stage2 将传感器融合结果整理为局部高程图、可通行性图或低维感知 token 后再接入策略。
+- 英文侧最贴合“双目 RGB + LiDAR 稀疏深度融合”的综述是 Marsh 等 2022；CNKI 侧优先使用王荣儿、伍济钢 2026 和马建红等 2022 两篇图像点云融合综述。
+
+## 2026-05-06
+
+已完成：
+- 按用户要求撰写正式 LaTeX 第一章 `1.4 论文主要研究内容`。
+- 根据当前第一章上下文和项目边界，将该节组织为“总述 + 四项研究内容”。
+- 按用户给定章节结构撰写正式 LaTeX 第二章正文初稿。
+- 根据用户澄清，撤回第三章 3-RRR 正逆运动学替换稿，恢复并保留原来的“车辆运动学建模”主线。
+- 撰写正式 LaTeX 第四章正文初稿，覆盖分层控制框架、RL 问题定义、Stage0、Stage1、PPO warm-start 和结果边界。
+- 同步更新当前状态和长期结论记忆。
+
+修改文件：
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter01.tex`
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter02.tex`
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter03.tex`
+- `毕业论文/毕业论文模板/LaTeX/chapters/chapter04.tex`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `1.4` 当前包含四项研究内容：等效建模与仿真平台、底层运动控制链路、强化学习任务构建、Stage0 到 Stage1 阶段化训练与评价。
+- 该节明确保持研究边界：不预设主动铰接结构必然优于其他移动结构，重点写成建立可运行、可训练、可评价的研究闭环。
+- 第二章当前定位为系统结构与仿真建模，重点说明三节车体、主动球铰、六轮驱动、USD/Isaac Sim 架构和闭环并联机构串联等效。
+- 第三章当前保留原“球铰姿态规划器 + 名义轮速解析分配 + 低滑移执行层”技术主线，不再把 3-RRR 正逆运动学推导写入正文。
+- 第四章当前保持结果边界：Stage0 可说明基础分层控制链路可行，但不能声称低滑移已经解决；Stage1 可说明 warm-start 和高度 patch 地形课程链路跑通，但复杂地形通过能力仍需改进。
+
+验证：
+- 在 `毕业论文/毕业论文模板/LaTeX` 下执行 `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex`，恢复第三章后编译成功生成 `main.pdf`；仅保留模板既有字体、少量 overfull、caption 和 BibTeX 空页警告。
+
+## 2026-05-05
+
+已完成：
+- 按用户要求联网检索铰接式越野车辆综述，覆盖国外公开来源、Google Scholar 方向检索和 CNKI 题名线索。
+- 初步区分“车辆发展脉络综述”“型号/装备发展述评”“控制方法综述”和“粗糙地形移动机器人 broader survey”四类材料。
+- 将本轮可继承的文献判断同步写入当前状态和长期结论记忆。
+- 查询 SAE 2023《Actively Articulated Wheeled Architectures for Autonomous Ground Vehicles - Opportunities and Challenges》的合法公开全文来源。
+- 从 NSF PAGES / NSF Public Access Repository 下载该论文 Accepted Manuscript PDF。
+- 使用 OpenDataLoader 将 `无人驾驶铰接转向车辆路径跟踪控制研究综述_祝青园.pdf` 转换为 Markdown。
+
+修改文件：
+- `docs/literature/综述论文/Mehta 等 - 2023 - Actively Articulated Wheeled Architectures for Autonomous Ground Vehicles - Opportunities and Challenges.pdf`
+- `docs/literature/output/无人驾驶铰接转向车辆路径跟踪控制研究综述_祝青园.md`
+- `docs/literature/output/无人驾驶铰接转向车辆路径跟踪控制研究综述_祝青园_images/`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Holm 1970《Articulated, wheeled off-the-road vehicles》仍是最直接的早期铰接轮式越野车辆发展综述。
+- 成龙 2018《铰接履带式全地形车技术发展对比解析》、李补莲和叶晓彤 2011《俄罗斯铰接式全地形车》、曲学春等 2014《国外履带式全地形车发展现状》适合作为中文发展脉络和型号对比来源。
+- SAE 2023 主动铰接轮式架构论文、2024 年路径跟踪控制综述和 Euro-SD 2025 装备述评适合作为近年补充，但不能直接替代发展历史主线综述。
+- SAE 2023 主动铰接轮式架构论文可通过 NSF PAGES 合法获取 accepted manuscript，已保存为 `11` 页、约 `2.1M` 的 PDF。
+- `无人驾驶铰接转向车辆路径跟踪控制研究综述_祝青园.md` 已生成，输出 `966` 行、`16` 张图片；该 CNKI PDF 存在字体/CMap 映射警告，正文整体可读，但公式变量和部分参考编号需要在正式使用前回查源 PDF。
+
+验证：
+- OpenDataLoader 识别 `无人驾驶铰接转向车辆路径跟踪控制研究综述_祝青园.pdf` 为 `21` 页，并创建目标 Markdown。
+- `wc -l docs/literature/output/无人驾驶铰接转向车辆路径跟踪控制研究综述_祝青园.md` 返回 `966`。
+- `find docs/literature/output/无人驾驶铰接转向车辆路径跟踪控制研究综述_祝青园_images -type f` 返回 `16` 个图片文件。
+
+## 2026-05-04
+
+已完成：
+- 按用户要求清理 `docs/literature/lunwen` 中的重复 PDF。
+- 使用 SHA-256 内容哈希判定重复，删除 `20` 个完全一致的 `-1.pdf` 副本。
+- 按用户追加要求删除 `14` 个 `_zh-CN_dual.pdf` 双语版本，只保留英文/原始版本。
+- 保留同名近似但哈希不同的文件。
+- 按第一章“形态—牵引—感知”协同控制写作主线，将剩余 `41` 个 PDF 分入 `6` 个子文件夹。
+- 生成第一章各小节参考文献选择、使用理由和写作思路整理文档。
+- 根据 `第一章文献分类与写作思路.md` 生成第一章绪论 Markdown 初稿，并在正文末尾整理 `39` 条参考文献。
+- 根据用户对初稿的反馈，调研硕博论文绪论 / 文献综述开头写法，定位当前初稿问题并形成重写原则。
+- 检查 `/home/lbz/MGDP` 官方 GitHub 远端更新状态，确认本地 `master` 相对 `origin/master` 为“领先 1、落后 1”。
+- 对照 MGDP 论文和本地代码，梳理深度感知模型实现方式、训练接入方式，以及迁移到 CompleteCar 的工程可行性和工作量边界。
+- 使用 OpenDataLoader 将 `Wang 等 - 2024 - A Survey on Path Planning for Autonomous Ground Vehicles in Unstructured Environments.pdf` 转换为 Markdown。
+- 按用户要求扫描 `docs/literature/**/*.pdf`，生成全部文献 LaTeX 引用清单，并按同一题名去重。
+
+修改文件：
+- `docs/literature/lunwen/`
+- `docs/literature/lunwen/第一章文献分类与写作思路.md`
+- `docs/literature/lunwen/第一章绪论初稿.md`
+- `docs/literature/lunwen/第一章写作风格调研.md`
+- `docs/literature/全部文献LaTeX引用.md`
+- `README.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `docs/literature/output/Wang 等 - 2024 - A Survey on Path Planning for Autonomous Ground Vehicles in Unstructured Environments.md`
+- `docs/literature/output/Wang 等 - 2024 - A Survey on Path Planning for Autonomous Ground Vehicles in Unstructured Environments_images/`
+
+产出/结论：
+- `docs/literature/lunwen` 当前保留 `41` 个 PDF。
+- 当前目录内已无 `_zh-CN_dual.pdf` 双语版本。
+- 清理后未发现内容哈希重复组。
+- 当前 `lunwen` 目录包含六类：发展与应用、形态结构与机构、模型控制、地形感知规划、复杂地形 RL、课程/迁移学习。
+- 第一章写作建议为：复杂地形需求 -> 铰接结构价值 -> 结构与控制难点 -> 模型方法边界 -> RL 方法现状 -> 本文形态—牵引—感知协同控制思路。
+- 第一章初稿已按用户给定的 `1.1-1.8` 结构完成，当前定位为可审阅 Markdown 草稿，后续需迁移到正式论文模板并校准参考文献格式。
+- 用户反馈表明当前初稿不宜小修小补；下一步应先重写 `1.1` 与 `1.6`，用“复杂地形如何破坏普通轮式移动 -> 铰接结构为什么有价值 -> 为什么需要形态—牵引—感知协同”的问题链重建第一章。
+- MGDP 官方远端新增提交 `dc0e4ef Uupdate author info`，只涉及 `index.html` 作者信息；本地提交 `cb0b9b5 publish mgdp project` 尚未进入官方远端。
+- MGDP 完整感知迁移到 CompleteCar 工程上可行，但不属于当前 Stage1 最短闭环路径；更适合作为用户确认后的 Stage2/后续增强。
+- `docs/literature/综述论文/` 与 `docs/literature/lunwen/` 下的 Wang 2024 同名 PDF 内容哈希一致；本次使用综述论文目录下文件作为输入，输出 Markdown `851` 行，并生成 `12` 张图片资源。
+- `docs/literature/全部文献LaTeX引用.md` 覆盖 `158` 个 PDF，按规范化题名合并跨目录副本、`-1` 副本和 `_zh-CN_dual` 双语副本后得到 `95` 个唯一文献引用键；该清单不是正式 BibTeX 数据库。
+
+验证：
+- `find docs/literature/lunwen -maxdepth 1 -type f | wc -l` 返回 `41`。
+- `find docs/literature/lunwen -maxdepth 1 -type f -name '*_zh-CN_dual.pdf'` 无输出。
+- 重新计算 SHA-256 并分组检查，未输出重复组。
+- `find docs/literature/lunwen -type f -name '*.pdf' | wc -l` 返回 `41`。
+- `find docs/literature/lunwen -maxdepth 1 -type f -name '*.pdf'` 无输出，说明 PDF 已全部进入子文件夹。
+- `wc -l docs/literature/lunwen/第一章绪论初稿.md` 返回 `176` 行。
+- `git diff --check -- docs/literature/lunwen/第一章绪论初稿.md` 通过。
+- `docs/literature/lunwen/第一章写作风格调研.md` 已生成，记录调研样本、当前初稿问题和重写原则。
+- `git fetch --all --prune` 成功获取 `origin`，`personal` 因 GitHub 凭据缺失未能获取。
+- `sha256sum` 确认两份 Wang 2024 PDF 内容一致。
+- `wc -l docs/literature/output/Wang 等 - 2024 - A Survey on Path Planning for Autonomous Ground Vehicles in Unstructured Environments.md` 返回 `851`。
+- `docs/literature/全部文献LaTeX引用.md` 校验得到 `95` 行文献表、`95` 个唯一行内引用键，无重复键。
+- `git diff --check -- docs/literature/全部文献LaTeX引用.md` 通过。
+
 ## 2026-05-03
 
 已完成：
@@ -14427,3 +14752,142 @@
 - 精简 zip：约 `1.5M`，`12` 个 zip 条目，内部 `10` 个实际文件。
 - 精简包保留：核心宽表、flat 表、global 表、training/reward/action 表、10 个地形列长表、指标摘要、地形列映射、训练链路 manifest 和 ChatGPT 分析提示。
 - 已通过 `unzip -t` 完整性检查。
+
+## 2026-05-04
+
+已完成：
+- 按用户要求重新输出 `docs/literature/lunwen/第一章写作风格调研.md`。
+- 新增纳入本地论文样本：宁悦《双铰接轮式越野工程车辆机液复合驱动系统研究》、任志勇《矿山铰接车辆折腰随动及转向横摆性能调控研究》、Mehta《Hybrid Learning for Rough Terrain Navigation of Actively Articulated Wheeled Vehicles》。
+- 新增纳入 `基于双目视觉的多自由度机械臂避障与运动规划 (2).pdf`，该文件为图像型 PDF，本次根据目录、绪论前几页和后续章节页面提炼写作结构。
+- 同步更新 `docs/current_status.md` 与 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/literature/lunwen/第一章写作风格调研.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 新版调研明确第一章应先建立“复杂地形如何破坏普通轮式移动”的问题发生过程，再引出三节主动铰接机器人中的形态、牵引和感知协同控制。
+- 后续重写建议先处理 `1.1` 和 `1.6`，不要在原初稿上做局部润色。
+
+## 2026-05-04
+
+已完成：
+- 按 `docs/literature/lunwen/第一章写作风格调研.md` 的结论重写第一章绪论初稿。
+- 将开头改为先讲复杂地形对普通轮式移动的破坏，再引出铰接结构、三节主动铰接和“形态—牵引—感知”协同控制问题。
+- 将 `1.6` 改为按结构层、控制层、感知层和学习层分析现有研究不足，并明确本文只建立仿真建模、强化学习任务构建和复杂地形训练验证路径，不提前声称方法优越性。
+- 同步更新 `docs/current_status.md` 与 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/literature/lunwen/第一章绪论初稿.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 新版第一章保留 `1.1` 至 `1.8` 结构，正文末尾保留 `39` 条顺序编码参考文献。
+- 参考文献条目仍需后续按学校格式补齐出版信息、页码、学位授予单位和 DOI。
+
+## 2026-05-04
+
+已完成：
+- 根据用户最新反馈再次覆盖重写 `docs/literature/lunwen/第一章绪论初稿.md`。
+- 新版开头改为先写轮式移动机器人应用背景与需求，再分析结构化环境和非结构化环境运行差异，随后引出复杂地形对通过性、牵引、姿态和感知的要求。
+- 在此基础上引出铰接式移动机器人，再收束到三节主动铰接移动机器人中的“形态—牵引—感知”协同控制挑战。
+- 按用户要求联网补充更适合第一章论证的文献，并将参考文献扩展到 `42` 条。
+- 同步更新 `docs/current_status.md` 与 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/literature/lunwen/第一章绪论初稿.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 新稿保留 `1.1` 至 `1.8` 结构，删除旧稿“一上来讲复杂地形问题”的开头方式。
+- 新增文献重点支撑结构化/非结构化环境差异、地形可通行性、轮地牵引、铰接工程车辆地形自适应规划和复杂地形强化学习控制。
+- 后续仍需按学校格式逐条核对参考文献元数据。
+
+## 2026-05-04
+
+已完成：
+- 按用户要求仿照硕博论文写作风格再次覆盖重写 `docs/literature/lunwen/第一章绪论初稿.md`。
+- 第一章开头改为宏观背景切入，依次区分结构化环境与非结构化环境，指出普通轮式/履带平台在横向自由度和几何适应性上的限制，再引出主动铰接轮式车辆。
+- `1.2` 按全地形车辆、林业/农业/矿山车辆、管道/狭窄空间机器人、工程车辆和学习控制方向组织国内外现状，并归纳从被动铰接到主动形态调节、路径规划和智能控制的发展趋势。
+- `1.4` 按模型控制基本路径、运动学/动力学建模、MPC/预测控制、路径跟踪、稳定性控制、牵引/折腰协调控制、优势与局限重写。
+- `1.5` 按强化学习适用原因、粗糙地形车辆、主动铰接/履带机器人、轮腿机器人和仿真训练平台重写，并收束到三节主动铰接机器人任务表达差异。
+- 同步更新 `docs/current_status.md` 与 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/literature/lunwen/第一章绪论初稿.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 新稿保留 `1.1` 至 `1.8` 结构和 `42` 条参考文献。
+- 贡献表述保持边界：只写仿真建模、强化学习任务构建和复杂地形训练验证路径，不提前声称方法或结构优越性。
+- 后续仍需按学校格式逐条核对参考文献元数据。
+
+## 2026-05-04
+
+已完成：
+- 按用户逐节评价继续润色 `docs/literature/lunwen/第一章绪论初稿.md`。
+- `1.1` 改为从复杂地形失效机制切入，删除研究意义中过早出现的具体工具平台表述，将“感知”收窄为局部地形观测。
+- `1.2` 增加二级结构：从折腰转向到全地形运输车辆、从工程车辆到铰接移动机器人、从被动适应到主动形态调节、从模型控制到学习控制。
+- `1.3` 改为三节主动铰接机器人的复杂地形控制难点，并加入台阶地形中前车体抬升、中车体支撑、后车体推进和轮端牵引耦合的具体例子。
+- `1.4` 改为按问题、方法、局限组织，并明确模型方法在本文中用于运动映射、动作边界、奖励项和评价指标。
+- `1.5` 增加课程学习和 Stage0 到 Stage1 阶段训练逻辑。
+- `1.6` 明确“形态—牵引—感知”三个概念的论文内边界，并补充等效串联球铰保留和舍弃内容。
+- `1.7` 降调为“本文主要研究内容”，避免把流程性工作写成过强贡献。
+- 同步更新 `docs/current_status.md` 与 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/literature/lunwen/第一章绪论初稿.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 新稿保留 `42` 条参考文献，并新增 `1.2`、`1.3`、`1.4`、`1.5` 的二级小节结构。
+- 后续仍需按学校格式逐条核对参考文献元数据。
+
+## 2026-05-04
+
+已完成：
+- 按用户澄清重新输出 `docs/literature` 全部文献的 BibTeX 条目，而不是 LaTeX 正文引用键清单。
+- 扫描 `docs/literature/**/*.pdf` 共 `158` 个 PDF，按规范化题名合并跨目录副本、`-1` 副本和 `_zh-CN_dual` 双语副本后生成 `95` 个唯一 BibTeX 条目。
+- 清理自动抽取中明显错误的 DOI 值，如局部图片名误识别出的 `10.png` 和不完整的 `10.3390/`。
+- 同步更新 `docs/current_status.md` 与 `docs/conversation_history.md`，明确 `全部文献LaTeX引用.md` 只是此前误生成的引用键清单。
+
+修改文件：
+- `docs/literature/全部文献BibTeX.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 新增 BibTeX 草稿文件 `docs/literature/全部文献BibTeX.md`。
+- 已检查 BibTeX 条目数为 `95`，未发现重复 citation key，未发现 Obsidian 不兼容数学分隔符。
+- 缺少完整元数据的条目仍以本地 PDF 文件名推断，正式进入论文参考文献库前需要逐条核对。
+
+## 2026-05-05
+
+已完成：
+- 基于本地 `docs/literature/` 语料筛选铰接式越野车辆、中心铰接车辆、主动铰接悬架和 AAWV 相关文献。
+- 使用 OpenDataLoader 将 Mehta 2023 AAWV 综述和 Mehta 2025 AAWV 学位论文转换为 Markdown，并复用已有铰接车发展历史转换结果。
+- 新增整理文件 `docs/literature/铰接式越野车辆与AAWV发展脉络整理.md`。
+- 文件中整理了核心文献表、国内外发展脉络、`21` 个车辆/图谱条目、图片来源、文献本地引用位置/引用状态、第一章可用综述段落草稿和引用位置索引。
+- 已检查该 Markdown 中全部图片相对路径，未发现断图。
+- 同步更新 `docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/literature/铰接式越野车辆与AAWV发展脉络整理.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 第一章综述可按“工程车辆/全地形运输线”和“机器人/AAWV 主动调姿线”组织发展脉络。
+- 当前文献支持把 RL 表述为本项目要探索的研究路线和缺口，不能写成已有本地文献已经验证三节主动铰接移动机器人 RL 控制有效。

@@ -150,7 +150,17 @@ class RewardParamsCfg:
     angle_diff_weight: float = 6.0
     turn_speed_penalty_weight: float = -2.0
     slip_penalty_weight: float = -2.0
+    slip_longitudinal_penalty_ratio: float = 1.0
     slip_angle_penalty_ratio: float = 6.0
+    action_rate_penalty_weight: float = 0.0
+    action_rate_base_ratio: float = 0.5
+    action_rate_joint_ratio: float = 1.0
+    contact_support_penalty_weight: float = 0.0
+    contact_support_min_weight: float = 0.3
+    edge_speed_penalty_weight: float = 0.0
+    edge_height_low_threshold_m: float = 0.04
+    edge_height_high_threshold_m: float = 0.10
+    edge_speed_limit_mps: float = 0.5
     progress_gate_longitudinal_k: float = 3.0
     progress_gate_slip_angle_scale_rad: float = 1.5
     progress_gate_min_multiplier: float = 0.25
@@ -221,6 +231,7 @@ class CurriculumCfg:
     move_up_distance_ratio: float = 0.5
     move_down_command_ratio: float = 0.5
     move_up_uses_forward_x: bool = False
+    terrain_column_move_down_progress_ratio: float = 0.30
 
 
 @configclass

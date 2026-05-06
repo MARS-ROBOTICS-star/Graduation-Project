@@ -58,6 +58,7 @@ The temporary parallel directory created in the previous round has been removed.
 - `docs/literature/`
   - Local paper corpus and converted markdown outputs.
   - Source PDFs are organized under `综述论文/` and `研究论文/`; converted Markdown stays in `opendataloader_output/`.
+  - `lunwen/` currently stores the Chapter 1 thesis-reading corpus, grouped by writing function into development/application, morphology/structure, model-based control, terrain perception/planning, RL terrain control, and learning-transfer subfolders.
 - `毕业论文/`
   - Thesis template, LaTeX sources, and compiled artifacts.
 

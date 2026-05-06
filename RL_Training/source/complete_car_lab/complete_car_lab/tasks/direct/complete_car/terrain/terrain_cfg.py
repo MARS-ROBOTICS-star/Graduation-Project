@@ -49,8 +49,6 @@ class CompleteCarTerrainRuntimeCfg:
     height_scanner_update_period: float = 0.02
     height_scanner_offset: tuple[float, float, float] = (0.0, 0.0, 20.0)
     step_spawn_back_range: tuple[float, float] = (2.0, 3.0)
-    step_approach_spawn_back_range: tuple[float, float] = (0.3, 0.8)
-    step_approach_spawn_lateral_range: tuple[float, float] = (-0.2, 0.2)
     base_spawn_clearance: float = 0.30
     gap_spawn_back_range: tuple[float, float] = (0.0, 0.4)
     other_spawn_xy_range: tuple[float, float] = (-0.5, 0.5)

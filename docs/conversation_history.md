@@ -2,6 +2,26 @@
 
 This file stores durable conclusions from past Codex sessions so that future sessions can continue work without relying on ephemeral chat history alone.
 
+## 2026-05-07
+
+### Stage1 第二次训练测试已在 model_1500 后停止并打包分析数据
+- Context:
+  - 用户要求当前 Stage1 第二次训练测试跑到 `1500` 后保存模型，然后停止训练，并把 TensorBoard 各项数据和 Stage1 RL 环境参数配置打包供 ChatGPT 分析。
+- Execution:
+  - run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-06_23-51-57_stage1_second_training_test_128env_450_to_1600_overnight`
+  - 该 run 从 `2026-05-06_21-41-43_stage1_second_training_test_128env_resume_to_700/model_450.pt` resume，`128` env，原计划继续到 `1600` iteration。
+  - `model_1500.pt` 已在 `2026-05-07 09:10:30` 落盘；为确认保存完成后再停止，随后发送 `SIGINT`，训练进程正常退出并释放 GPU；TensorBoard 缓冲数据覆盖到 step `1508`。
+  - 已用 `tensorboard_export.py` 导出该 run 的全部非空 TensorBoard scalar，共 `343` 个逐项 CSV，另有 `summary.json`、`latest_values.csv`、`group_summary.csv`。
+  - 已生成 ChatGPT 无模型分析包：`results/stage1_1500_chatgpt_analysis_no_models_2026-05-07.zip`，大小约 `13M`，`467` 个条目，`unzip -tq` 通过；包内包含全部 iteration 曲线数据、参数/源码/说明文档和分析提示词，不包含任何 `.pt` 模型权重文件。
+- Durable conclusion:
+  - 到 `1500` 附近，Stage1 已能反复推进到 row 10 左右；`1500` 时 `current_level_mean = 10.1306`，`rows_advanced_mean = 1.5704`，`flat/retention_score = 0.9297`，`flat/row_advance_rate = 0.8681`，`effective_failure_rate = 0.0000`。
+  - 平地、上下坡和粗糙地形已不是主要训练瓶颈；台阶上/下仍是主瓶颈，`1500` 时 `col05-col08` 难度约 `0.5357-0.5532`，其中 `col08_stairs_up = 0.5532` 最难。
+  - 运动质量尚不能判断为完全收敛：`1500` 时 `longitudinal_slip_abs_mean = 4.2330`、`pitch_abs_mean = 11.0940`、`action_saturation_rate = 0.3869`，说明策略在台阶等难地形上仍存在大动作、较高俯仰和滑移。
+  - 全曲线复核后，`current_level_mean` 在 `450-1508` 的峰值为 `10.8296`，末 `50` step 均值为 `9.7618`；末 `50` step 中全局 `action_saturation_rate = 0.3721`、`pitch_abs_mean = 10.9846`、`longitudinal_slip_abs_mean = 4.2912`。因此当前策略是“可推进到 row 10 附近但未稳定收敛”，不是可靠通过全部高 row 地形。
+  - 末段地形分层：平地 / 坡地 row advance 仍高，粗糙地形中等可用，障碍与台阶是瓶颈；其中台阶上下 `row_advance_rate` 接近 `0`，需要通过长时回放区分“速度慢导致 timeout”和“真实到不了目标”。
+- Status:
+  - training stopped, checkpoint saved, analysis package created.
+
 ## 2026-05-06
 
 ### Stage1 last_action 观测滞后一拍已修复；Stage0 progress 未除以 episode 长度

@@ -14891,3 +14891,57 @@
 产出/结论：
 - 第一章综述可按“工程车辆/全地形运输线”和“机器人/AAWV 主动调姿线”组织发展脉络。
 - 当前文献支持把 RL 表述为本项目要探索的研究路线和缺口，不能写成已有本地文献已经验证三节主动铰接移动机器人 RL 控制有效。
+
+## 2026-05-07
+
+已完成：
+- 按用户要求监控 Stage1 第二次训练测试至 `1500` checkpoint，并确认 `model_1500.pt` 已保存。
+- 训练 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-06_23-51-57_stage1_second_training_test_128env_450_to_1600_overnight`。
+- `model_1500.pt` 保存后发送 `SIGINT` 停止训练；GPU 训练进程已释放。
+- 使用 `tensorboard_export.py` 导出该 run 的全部非空 TensorBoard scalar，共 `343` 个逐项 CSV，并生成 `summary.json`、`latest_values.csv` 和 `group_summary.csv`；曲线 step 覆盖 `450-1508`。
+- 新增分析包说明文件 `results/stage1_1500_analysis_package_README_2026-05-07.md`。
+- 生成 ChatGPT 无模型分析包 `results/stage1_1500_chatgpt_analysis_no_models_2026-05-07.zip`，大小约 `13M`，`467` 个条目，`unzip -tq` 校验通过；包内不含任何 `.pt` 文件。
+- 同步更新 `docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `results/stage1_1500_analysis_package_README_2026-05-07.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 分析包包含原始 TensorBoard event、导出的全部 iteration scalar CSV/JSON、run 参数快照、git diff 快照、Stage1 环境源码配置、训练/回放入口脚本、Stage1 参数/指标文档和给 ChatGPT 的分析提示词。
+- `1500` 附近 Stage1 已能推进到 row 10 左右，平地、坡地、粗糙地形基本可用；台阶上/下仍是主瓶颈。
+- `1500` 时动作饱和、pitch 和纵向滑移仍偏高，因此当前策略不能判断为完全收敛。
+
+## 2026-05-07
+
+已完成：
+- 针对回放中 `stairs_up` 因训练 timeout 提前 reset、但可能继续行驶即可到达下一个目标点的问题，给 `RL_Training/scripts/play.py` 增加 `--replay_episode_length_s` 参数。
+- 该参数只覆盖回放 episode 时长，不改变训练配置、不改变模型权重。
+- 已执行 `python3 -m py_compile RL_Training/scripts/play.py`，通过。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 可用长时回放观察策略是否只是“速度慢导致训练 timeout”，但长时回放下的 reward / timeout 相关指标不应和原训练 TensorBoard 曲线直接混作同一评价口径。
+
+## 2026-05-07
+
+已完成：
+- 基于 `2026-05-06_23-51-57_stage1_second_training_test_128env_450_to_1600_overnight/tensorboard_export/scalars` 的 `343` 个 CSV，对 Stage1 第二次训练测试 `450-1508` step 做全曲线统计分析。
+- 核对 `params/env.yaml`、`params/agent.yaml`、`complete_car_stage1_cfg.py`、`mdp/rewards.py` 和 Stage1 指标/奖励文档。
+- 同步更新 `docs/current_status.md` 和 `docs/conversation_history.md` 中的全曲线复核结论。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 全局 `current_level_mean` 峰值为 `10.8296`，末 `50` step 均值为 `9.7618`，说明策略可反复触达 row 10 但未稳定继续上推。
+- 末段地形分层：平地、坡地基本可用；粗糙地形中等可用；离散障碍和台阶仍是瓶颈，台阶上下末段 `row_advance_rate` 接近 `0`。
+- 末段运动质量仍偏紧：全局 `action_saturation_rate = 0.3721`、`pitch_abs_mean = 10.9846`、`longitudinal_slip_abs_mean = 4.2912`，不能判断为完全收敛。

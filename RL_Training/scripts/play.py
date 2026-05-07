@@ -87,6 +87,15 @@ parser.add_argument(
         "or terrain names such as 'flat', 'slope_up', 'stairs_up'."
     ),
 )
+parser.add_argument(
+    "--replay_episode_length_s",
+    type=float,
+    default=None,
+    help=(
+        "Override episode length only for playback. This is useful for inspecting whether a policy "
+        "can eventually reach terrain-column targets after the training timeout."
+    ),
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
 
@@ -314,6 +323,11 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     agent_cfg = _update_agent_cfg(agent_cfg)
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+    if args_cli.replay_episode_length_s is not None:
+        if args_cli.replay_episode_length_s <= 0.0:
+            raise ValueError("--replay_episode_length_s must be positive.")
+        env_cfg.episode_length_s = args_cli.replay_episode_length_s
+        print(f"[INFO] Replay episode length override: {env_cfg.episode_length_s:.2f}s", flush=True)
     env_cfg.debug.enable_debug_draw = (not args_cli.hide_goal_vis) or args_cli.show_wheel_slip_vis or args_cli.create_follow_views
     env_cfg.debug.visualize_goal_heading = not args_cli.hide_goal_heading
     env_cfg.debug.visualize_wheel_slip = args_cli.show_wheel_slip_vis

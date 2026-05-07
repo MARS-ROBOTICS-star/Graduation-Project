@@ -29,6 +29,15 @@
 
 ## 当前 Stage1 地形训练状态
 
+- 最新 Stage1 第二次训练测试已按用户要求在 `1500` checkpoint 后停止：
+  - run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-06_23-51-57_stage1_second_training_test_128env_450_to_1600_overnight`
+  - 启动方式：从 `2026-05-06_21-41-43_stage1_second_training_test_128env_resume_to_700/model_450.pt` resume，`128` env，原计划补跑到 `1600` iteration。
+  - 停止状态：`model_1500.pt` 已在 `2026-05-07 09:10:30` 保存；为确认保存完成后发送 `SIGINT`，GPU 训练进程已退出；TensorBoard 缓冲数据覆盖到 step `1508`。
+  - TensorBoard 已导出到该 run 下 `tensorboard_export/`，共 `343` 个非空 scalar CSV 和 `3` 个汇总文件。
+  - ChatGPT 无模型分析包：`results/stage1_1500_chatgpt_analysis_no_models_2026-05-07.zip`，大小约 `13M`，`467` 个条目，`unzip -tq` 通过；包内包含全部 iteration 曲线数据、参数/源码/说明文档和分析提示词，不包含任何 `.pt` 模型权重文件。
+  - 1500 时关键指标：`current_level_mean = 10.1306`，`rows_advanced_mean = 1.5704`，`flat/retention_score = 0.9297`，`flat/row_advance_rate = 0.8681`，`effective_failure_rate = 0.0000`。
+  - 1500 时主要瓶颈仍为台阶：`col05_stairs_down = 0.5374`、`col06_stairs_down = 0.5357`、`col07_stairs_up = 0.5432`、`col08_stairs_up = 0.5532`；动作饱和 `0.3869`、pitch `11.0940`，说明策略已能推进到 row 10 附近，但运动质量尚未充分收敛。
+  - 全曲线复核结论：`450-1508` step 内 `current_level_mean` 峰值为 `10.8296`，末 `50` step 均值为 `9.7618`，说明 row 10 可反复触达但不能稳定继续上推；末段台阶上下 `difficulty_score` 约 `0.539-0.540` 且 `row_advance_rate` 近 `0`，是当前主要瓶颈。
 - 当前 Stage1 已进入 `best_baseline_2` warm-start 地形训练阶段。
 - warm-start 来源：
   - Stage0 run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2`
@@ -76,6 +85,7 @@
   - `all` 表示按 env id 轮转分配到 `0-9` 全部地形列，要求 `--num_envs >= 10`。
   - 可指定单列编号，如 `--terrain_replay_columns 7`，使所有 env 出生在该地形列。
   - 可指定列编号列表，如 `--terrain_replay_columns 5,6`，也可指定地形名，如 `flat`、`slope_up`、`stairs_up`；重复地形名会映射到对应多列。
+  - `scripts/play.py` 新增 `--replay_episode_length_s`，只覆盖回放 episode 时长，用于观察策略在超过训练 timeout 后是否仍能到达 terrain-column 目标；该参数不改变已训练模型权重，也不应与训练 TensorBoard reward 曲线直接混作同一口径。
   - `scripts/play.py` 已修正 checkpoint 解析：`--checkpoint model_699.pt` 这类裸文件名会结合 `--load_run` 在 run 目录下查找；绝对路径、带目录的相对路径或 URI 仍按显式路径读取。
 - 为避免 terrain-column target 与自由 waypoint 采样语义混淆，Stage1 cfg 不再显式写入 `commands.goal_distance` / `commands.goal_direction_max_deg`；其 reward 名义尺度改由 `rewards.params.nominal_goal_distance_m = 8.0` 和 `turn_speed_angle_scale_deg` 表达。
 - 当前 Stage1 `reached_target` 奖励已启用，参数与 Stage0 相同：`reached_target_base_reward = 2.0`、`reached_target_weight = 6.0`。

@@ -59,6 +59,21 @@ parser.add_argument(
     help="Draw wheel rolling directions in green and actual planar velocity directions in red.",
 )
 parser.add_argument(
+    "--show_height_patch_vis",
+    action="store_true",
+    default=False,
+    help="Draw Stage1 local height-map patch sample points in the Isaac Sim viewport.",
+)
+parser.add_argument(
+    "--height_patch_vis_envs",
+    type=str,
+    default="0",
+    help="Env ids for height-patch visualization, such as '0', '0,7', or 'all'.",
+)
+parser.add_argument("--height_patch_vis_radius", type=float, default=0.035)
+parser.add_argument("--height_patch_vis_height_offset", type=float, default=0.035)
+parser.add_argument("--height_patch_vis_color_range_m", type=float, default=0.30)
+parser.add_argument(
     "--slip_vis_close_view",
     action="store_true",
     default=False,
@@ -277,6 +292,27 @@ def _format_stage1_replay_columns(columns: list[int], terrain_runtime) -> str:
     return ", ".join(f"{column}:{_terrain_column_name(terrain_runtime, column)}" for column in columns)
 
 
+def _parse_env_indices(raw_selector: str, num_envs: int) -> tuple[int, ...]:
+    selector = _normalize_selector(raw_selector)
+    if selector in {"", "all", "*"}:
+        return ()
+
+    selected_env_ids: list[int] = []
+    for token in selector.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if not token.isdigit():
+            raise ValueError(f"Env id selector must be an integer, comma list, or 'all', got '{token}'.")
+        env_id = int(token)
+        if env_id < 0 or env_id >= num_envs:
+            raise ValueError(f"Env id for visualization must be in [0, {num_envs - 1}], got {env_id}.")
+        selected_env_ids.append(env_id)
+    if not selected_env_ids:
+        raise ValueError("No env ids were selected for visualization.")
+    return tuple(sorted(set(selected_env_ids)))
+
+
 def _configure_stage1_replay_terrain(raw_env, raw_selector: str) -> bool:
     terrain_runtime = getattr(raw_env, "_terrain_runtime", None)
     if terrain_runtime is None or not getattr(terrain_runtime, "generator_enabled", False):
@@ -328,9 +364,29 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
             raise ValueError("--replay_episode_length_s must be positive.")
         env_cfg.episode_length_s = args_cli.replay_episode_length_s
         print(f"[INFO] Replay episode length override: {env_cfg.episode_length_s:.2f}s", flush=True)
-    env_cfg.debug.enable_debug_draw = (not args_cli.hide_goal_vis) or args_cli.show_wheel_slip_vis or args_cli.create_follow_views
+    if args_cli.height_patch_vis_radius <= 0.0:
+        raise ValueError("--height_patch_vis_radius must be positive.")
+    if args_cli.height_patch_vis_height_offset < 0.0:
+        raise ValueError("--height_patch_vis_height_offset must be non-negative.")
+    if args_cli.height_patch_vis_color_range_m <= 0.0:
+        raise ValueError("--height_patch_vis_color_range_m must be positive.")
+
+    env_cfg.debug.enable_debug_draw = (
+        (not args_cli.hide_goal_vis)
+        or args_cli.show_wheel_slip_vis
+        or args_cli.show_height_patch_vis
+        or args_cli.create_follow_views
+    )
     env_cfg.debug.visualize_goal_heading = not args_cli.hide_goal_heading
     env_cfg.debug.visualize_wheel_slip = args_cli.show_wheel_slip_vis
+    env_cfg.debug.visualize_height_patch = args_cli.show_height_patch_vis
+    env_cfg.debug.height_patch_visualization_env_indices = _parse_env_indices(
+        args_cli.height_patch_vis_envs,
+        env_cfg.scene.num_envs,
+    )
+    env_cfg.debug.height_patch_marker_radius = args_cli.height_patch_vis_radius
+    env_cfg.debug.height_patch_marker_height_offset = args_cli.height_patch_vis_height_offset
+    env_cfg.debug.height_patch_color_range_m = args_cli.height_patch_vis_color_range_m
     env_cfg.debug.create_follow_views = args_cli.create_follow_views
     env_cfg.debug.follow_view_top_height = args_cli.follow_view_top_height
     env_cfg.debug.follow_view_chase_env_index = args_cli.follow_view_chase_env

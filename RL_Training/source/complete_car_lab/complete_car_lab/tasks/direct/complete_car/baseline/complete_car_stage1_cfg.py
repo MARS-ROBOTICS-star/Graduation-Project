@@ -218,6 +218,11 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.debug.enable_debug_draw = True
         self.debug.visualize_goal_heading = True
         self.debug.visualize_wheel_slip = True
+        self.debug.visualize_height_patch = False
+        self.debug.height_patch_visualization_env_indices = (0,)
+        self.debug.height_patch_marker_radius = 0.035
+        self.debug.height_patch_marker_height_offset = 0.035
+        self.debug.height_patch_color_range_m = 0.30
         self.debug.create_follow_views = True
         self.debug.follow_view_top_height = 8.0
         self.debug.follow_view_chase_env_index = 0

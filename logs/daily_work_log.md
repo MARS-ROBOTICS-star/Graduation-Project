@@ -1,5 +1,33 @@
 # 每日工作日志
 
+## 2026-05-07
+
+已完成：
+- 为 Stage1 回放增加局部高度图 patch 视口可视化。
+- `play.py` 新增 `--show_height_patch_vis`、`--height_patch_vis_envs`、`--height_patch_vis_radius`、`--height_patch_vis_height_offset` 和 `--height_patch_vis_color_range_m`。
+- `env.py` 基于当前 `_last_critic_height_patch` 反算采样点世界坐标，保证显示的点与 policy 实际使用的局部高度 patch 对齐。
+- `debug_draw.py` 新增 `/Visuals/HeightPatch/sample_points` marker，显示采样点位置并用颜色表达 patch 内地形相对高低。
+- 同步更新 Stage1 参数详情表、当前状态和长期记忆。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 可在 Isaac Sim GUI 回放时通过 `--show_height_patch_vis --height_patch_vis_envs 0` 显示 `env_0` 的局部高度 patch。
+- 该功能只影响视口 debug marker，不改变训练配置、模型权重、观测内容或 reward。
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `git diff --check`
+
 ## 2026-05-06
 
 已完成：

@@ -258,6 +258,11 @@ class DebugCfg:
     enable_debug_draw: bool = False
     visualize_goal_heading: bool = True
     visualize_wheel_slip: bool = False
+    visualize_height_patch: bool = False
+    height_patch_visualization_env_indices: tuple[int, ...] = (0,)
+    height_patch_marker_radius: float = 0.035
+    height_patch_marker_height_offset: float = 0.035
+    height_patch_color_range_m: float = 0.30
     create_follow_views: bool = False
     follow_view_top_height: float = 2.5
     follow_view_chase_env_index: int = 0

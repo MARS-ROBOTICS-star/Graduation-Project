@@ -4,6 +4,20 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-05-07
 
+### Stage1 回放已支持局部高度图 patch 视口可视化
+- User request:
+  - 用户询问是否能在 Isaac Sim 中看到当前 policy 使用的局部高度图 patch。
+- Implementation:
+  - `DebugCfg` 新增 `visualize_height_patch`、`height_patch_visualization_env_indices`、`height_patch_marker_radius`、`height_patch_marker_height_offset` 和 `height_patch_color_range_m`。
+  - `CompleteCarDebugDraw` 新增 `/Visuals/HeightPatch/sample_points` 点云式 marker，可用 5 档颜色显示局部 patch 内相对高低。
+  - `env.py` 基于当前 `_last_critic_height_patch` 反算采样点世界坐标：x/y 使用与观测相同的中车 yaw 对齐局部网格，z 使用 `root_z - relative_height` 还原地形采样高度。
+  - `scripts/play.py` 新增 `--show_height_patch_vis`、`--height_patch_vis_envs`、`--height_patch_vis_radius`、`--height_patch_vis_height_offset` 和 `--height_patch_vis_color_range_m`。
+- Durable conclusion:
+  - 当前高度 patch 可视化只影响 Isaac Sim 视口，不改变 policy 输入、reward、termination 或已训练模型。
+  - 可视化点的位置对应 policy 实际使用的 `34 * 17 = 578` 个局部高度采样点；颜色以当前 patch 平均地形高度为中心，低处偏蓝、高处偏红。
+- Status:
+  - implemented and documented.
+
 ### Stage1 第二次训练测试已在 model_1500 后停止并打包分析数据
 - Context:
   - 用户要求当前 Stage1 第二次训练测试跑到 `1500` 后保存模型，然后停止训练，并把 TensorBoard 各项数据和 Stage1 RL 环境参数配置打包供 ChatGPT 分析。

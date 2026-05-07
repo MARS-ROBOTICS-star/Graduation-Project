@@ -20,16 +20,45 @@ GOAL_SPHERE_MARKER_CFG = VisualizationMarkersCfg(
 )
 
 
+HEIGHT_PATCH_COLORS = (
+    (0.05, 0.18, 1.0),
+    (0.0, 0.75, 1.0),
+    (0.0, 0.9, 0.25),
+    (1.0, 0.86, 0.0),
+    (1.0, 0.12, 0.02),
+)
+
+
+def _make_height_patch_marker_cfg(radius: float) -> VisualizationMarkersCfg:
+    return VisualizationMarkersCfg(
+        prim_path="/Visuals/HeightPatch/sample_points",
+        markers={
+            f"bin_{index}": sim_utils.SphereCfg(
+                radius=radius,
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color),
+            )
+            for index, color in enumerate(HEIGHT_PATCH_COLORS)
+        },
+    )
+
+
 class CompleteCarDebugDraw:
     """集中放置可选调试可视化入口，避免 env.py 直接依赖绘图细节。"""
 
-    def __init__(self, enabled: bool = False, visualize_goal_heading: bool = True):
+    def __init__(
+        self,
+        enabled: bool = False,
+        visualize_goal_heading: bool = True,
+        height_patch_marker_radius: float = 0.035,
+    ):
         self.enabled = enabled
         self.visualize_goal_heading = visualize_goal_heading
         self._goal_arrow_visualizer: VisualizationMarkers | None = None
         self._goal_sphere_visualizer: VisualizationMarkers | None = None
         self._wheel_forward_visualizer: VisualizationMarkers | None = None
         self._wheel_velocity_visualizer: VisualizationMarkers | None = None
+        self._height_patch_visualizer: VisualizationMarkers | None = None
+        self._height_patch_marker_radius = height_patch_marker_radius
         self._goal_arrow_height_offset = 0.25
         self._wheel_arrow_height_offset = 0.0
         self._view_root_path = "/view"
@@ -64,6 +93,8 @@ class CompleteCarDebugDraw:
             self._wheel_forward_visualizer.set_visibility(visible)
         if self._wheel_velocity_visualizer is not None:
             self._wheel_velocity_visualizer.set_visibility(visible)
+        if self._height_patch_visualizer is not None:
+            self._height_patch_visualizer.set_visibility(visible)
 
     def draw_goal_pose(self, goal_positions_w: torch.Tensor, goal_headings_w: torch.Tensor) -> None:
         if not self.enabled:
@@ -131,6 +162,41 @@ class CompleteCarDebugDraw:
             translations=velocity_positions,
             orientations=velocity_orientations,
             scales=velocity_scales,
+        )
+
+    def draw_height_patch(
+        self,
+        patch_points_w: torch.Tensor,
+        *,
+        height_offset: float,
+        color_range_m: float,
+    ) -> None:
+        """Draw sampled local height-patch points at their world-space terrain height."""
+        if not self.enabled:
+            return
+        if patch_points_w.numel() == 0:
+            return
+
+        self._ensure_height_patch_visualizer()
+
+        marker_positions = patch_points_w.reshape(-1, 3).clone()
+        marker_positions[:, 2] += float(height_offset)
+
+        terrain_z = patch_points_w[..., 2]
+        centered_height = terrain_z - torch.mean(terrain_z, dim=1, keepdim=True)
+        normalized = torch.clamp(
+            (centered_height + float(color_range_m)) / max(2.0 * float(color_range_m), 1.0e-6),
+            min=0.0,
+            max=1.0,
+        )
+        marker_indices = torch.clamp(
+            torch.floor(normalized.reshape(-1) * len(HEIGHT_PATCH_COLORS)).long(),
+            min=0,
+            max=len(HEIGHT_PATCH_COLORS) - 1,
+        )
+        self._height_patch_visualizer.visualize(
+            translations=marker_positions,
+            marker_indices=marker_indices,
         )
 
     def update_follow_views(
@@ -210,6 +276,11 @@ class CompleteCarDebugDraw:
             velocity_cfg.prim_path = "/Visuals/WheelMotion/actual_velocity"
             velocity_cfg.markers["arrow"].scale = (1.0, 0.12, 0.12)
             self._wheel_velocity_visualizer = VisualizationMarkers(velocity_cfg)
+
+    def _ensure_height_patch_visualizer(self) -> None:
+        if self._height_patch_visualizer is None:
+            radius = max(float(self._height_patch_marker_radius), 1.0e-4)
+            self._height_patch_visualizer = VisualizationMarkers(_make_height_patch_marker_cfg(radius))
 
     def _ensure_follow_view_paths(self, view_env_ids: tuple[int, ...], chase_env_index: int) -> None:
         if self._follow_view_env_ids == view_env_ids and self._follow_view_chase_env_index == chase_env_index:

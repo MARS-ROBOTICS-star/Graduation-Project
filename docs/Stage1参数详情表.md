@@ -76,6 +76,11 @@
 | `debug.enable_debug_draw` | `True` | 开启目标点 marker 等 debug draw |
 | `debug.visualize_goal_heading` | `True` | 绘制目标方向箭头 |
 | `debug.visualize_wheel_slip` | `True` | 源码默认绘制 wheel-slip 箭头，训练命令可临时关闭 |
+| `debug.visualize_height_patch` | `False` | 源码默认不绘制局部高度图 patch；回放时可用 `--show_height_patch_vis` 开启 |
+| `debug.height_patch_visualization_env_indices` | `(0,)` | 局部高度图 patch 可视化默认只显示 `env_0`，空元组表示显示全部 env |
+| `debug.height_patch_marker_radius` | `0.035 m` | 高度 patch 采样点球形 marker 半径 |
+| `debug.height_patch_marker_height_offset` | `0.035 m` | 采样点 marker 相对真实采样地形高度的上抬量，避免与地形表面重合 |
+| `debug.height_patch_color_range_m` | `0.30 m` | 高度 patch 颜色映射范围；以当前 patch 平均高度为中心，低处偏蓝，高处偏红 |
 | `debug.create_follow_views` | `True` | 创建 top / chase 跟踪视角 |
 
 ## 2. PPO 与 warm-start
@@ -166,6 +171,11 @@ python scripts/train.py --task CompleteCar-Stage1 --headless --device cuda:0 --n
 | 参数 | 默认值 | 含义 |
 |---|---|---|
 | `--terrain_replay_columns` | `all` | Stage1 回放出生地形列选择；可取 `all`、单列编号、列编号列表或地形名 |
+| `--show_height_patch_vis` | `False` | 在 Isaac Sim 视口中显示局部高度图 patch 的采样点 |
+| `--height_patch_vis_envs` | `0` | 指定显示哪些 env 的高度 patch，可取 `0`、`0,7` 或 `all` |
+| `--height_patch_vis_radius` | `0.035` | 高度 patch 采样点 marker 半径 |
+| `--height_patch_vis_height_offset` | `0.035` | marker 相对采样地形高度的上抬量 |
+| `--height_patch_vis_color_range_m` | `0.30` | 颜色映射范围；以当前 patch 平均高度为中心，低处偏蓝，高处偏红 |
 
 当前地形列编号仍为：
 
@@ -200,6 +210,18 @@ python scripts/play.py --task CompleteCar-Stage1 --device cuda:0 --num_envs 4 --
 ```bash
 python scripts/play.py --task CompleteCar-Stage1 --device cuda:0 --num_envs 4 --load_run 2026-05-03_02-17-59_stage1_resume_from125_ppo_guard_to700 --checkpoint model_699.pt --terrain_replay_columns stairs_up --create_follow_views
 ```
+
+显示 `env_0` 局部高度图 patch 的回放示例：
+
+```bash
+python scripts/play.py --task CompleteCar-Stage1 --device cuda:0 --num_envs 4 --load_run <stage1_run_name> --checkpoint <model_checkpoint.pt> --terrain_replay_columns stairs_up --create_follow_views --follow_view_chase_env 0 --show_height_patch_vis --height_patch_vis_envs 0
+```
+
+可视化语义：
+
+- 采样点位置：显示在当前策略实际使用的局部高度 patch 采样点世界坐标处，z 坐标来自 `terrain_runtime.sample_heights_world_xy(...)` 的地形高度，并额外上抬 `height_patch_vis_height_offset`。
+- 采样点范围：当前 Stage1 为 `34 * 17 = 578` 个点，对应 actor / critic 观测中 `54` 维本体观测之后的高度图部分。
+- 颜色：以当前 patch 平均地形高度为中心，低处偏蓝，高处偏红；颜色只用于观察局部地形起伏，不改变 policy 输入。
 
 ## 3. 场景与仿真
 

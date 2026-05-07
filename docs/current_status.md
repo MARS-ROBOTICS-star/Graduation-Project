@@ -86,6 +86,7 @@
   - 可指定单列编号，如 `--terrain_replay_columns 7`，使所有 env 出生在该地形列。
   - 可指定列编号列表，如 `--terrain_replay_columns 5,6`，也可指定地形名，如 `flat`、`slope_up`、`stairs_up`；重复地形名会映射到对应多列。
   - `scripts/play.py` 新增 `--replay_episode_length_s`，只覆盖回放 episode 时长，用于观察策略在超过训练 timeout 后是否仍能到达 terrain-column 目标；该参数不改变已训练模型权重，也不应与训练 TensorBoard reward 曲线直接混作同一口径。
+  - `scripts/play.py` 新增 `--show_height_patch_vis`，可在 Isaac Sim 视口显示指定 env 的局部高度图 patch 采样点；采样点位置使用当前 policy 实际高度 patch 的世界坐标，颜色以 patch 平均地形高度为中心，低处偏蓝、高处偏红。
   - `scripts/play.py` 已修正 checkpoint 解析：`--checkpoint model_699.pt` 这类裸文件名会结合 `--load_run` 在 run 目录下查找；绝对路径、带目录的相对路径或 URI 仍按显式路径读取。
 - 为避免 terrain-column target 与自由 waypoint 采样语义混淆，Stage1 cfg 不再显式写入 `commands.goal_distance` / `commands.goal_direction_max_deg`；其 reward 名义尺度改由 `rewards.params.nominal_goal_distance_m = 8.0` 和 `turn_speed_angle_scale_deg` 表达。
 - 当前 Stage1 `reached_target` 奖励已启用，参数与 Stage0 相同：`reached_target_base_reward = 2.0`、`reached_target_weight = 6.0`。

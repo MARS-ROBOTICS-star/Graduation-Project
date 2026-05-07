@@ -44,6 +44,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._debug_draw = CompleteCarDebugDraw(
             cfg.debug.enable_debug_draw,
             visualize_goal_heading=cfg.debug.visualize_goal_heading,
+            height_patch_marker_radius=cfg.debug.height_patch_marker_radius,
         )
         super().__init__(cfg, render_mode, **kwargs)
 
@@ -195,6 +196,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 wheel_forward_axis_w=quat_rotate(wheel_body_quat_w, wheel_forward_axis_local),
                 wheel_velocity_w=self.robot.data.body_lin_vel_w[:, self._wheel_body_ids],
             )
+        if self.cfg.debug.visualize_height_patch:
+            self._draw_height_patch()
         if self.cfg.debug.create_follow_views:
             self._update_follow_views()
         extras["metrics"] = self._collect_step_metrics()
@@ -596,6 +599,45 @@ class CompleteCarDirectEnv(DirectRLEnv):
 
         relative_height = root_pos_w[:, 2:3] - terrain_height
         return torch.nan_to_num(relative_height, nan=0.0, posinf=0.0, neginf=0.0)
+
+    def _compute_height_patch_world_points(self, relative_height_patch: torch.Tensor) -> torch.Tensor:
+        local_points = self._critic_height_patch_local.unsqueeze(0).expand(self.num_envs, -1, -1)
+
+        root_pos_w = self.robot.data.root_link_pos_w
+        yaw = quaternion_to_rpy(self.robot.data.root_link_quat_w)[:, 2]
+
+        cos_yaw = torch.cos(yaw).unsqueeze(1)
+        sin_yaw = torch.sin(yaw).unsqueeze(1)
+
+        x_local = local_points[..., 0]
+        y_local = local_points[..., 1]
+
+        x_world = root_pos_w[:, 0:1] + cos_yaw * x_local - sin_yaw * y_local
+        y_world = root_pos_w[:, 1:2] + sin_yaw * x_local + cos_yaw * y_local
+        z_world = root_pos_w[:, 2:3] - relative_height_patch
+
+        patch_points_w = torch.stack((x_world, y_world, z_world), dim=-1)
+        return torch.nan_to_num(patch_points_w, nan=0.0, posinf=0.0, neginf=0.0)
+
+    def _draw_height_patch(self) -> None:
+        if self._last_critic_height_patch is None or not self.cfg.terrain.measure_heights:
+            return
+
+        configured_env_indices = tuple(int(i) for i in self.cfg.debug.height_patch_visualization_env_indices)
+        if configured_env_indices:
+            valid_env_indices = [i for i in configured_env_indices if 0 <= i < self.num_envs]
+            if not valid_env_indices:
+                return
+            env_ids = torch.tensor(valid_env_indices, device=self.device, dtype=torch.long)
+        else:
+            env_ids = torch.arange(self.num_envs, device=self.device, dtype=torch.long)
+
+        patch_points_w = self._compute_height_patch_world_points(self._last_critic_height_patch).index_select(0, env_ids)
+        self._debug_draw.draw_height_patch(
+            patch_points_w,
+            height_offset=float(self.cfg.debug.height_patch_marker_height_offset),
+            color_range_m=float(self.cfg.debug.height_patch_color_range_m),
+        )
 
     def _compute_edge_preview(self) -> tuple[torch.Tensor, torch.Tensor]:
         zeros = torch.zeros(self.num_envs, device=self.device, dtype=self.robot.data.root_link_pos_w.dtype)

@@ -60,14 +60,20 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.control.contact_force_off_threshold = 0.01
         self.control.contact_force_on_threshold = 0.08
         self.control.wheel_torque_tracking_gain = 2.0
-        self.control.wheel_slip_feedback_gain = 4.0
+        self.control.wheel_slip_feedback_gain = 8.0
         self.control.wheel_slip_velocity_epsilon = 0.1
+        self.control.terrain_speed_limit_enabled = True
+        self.control.terrain_speed_step_up_mps = 0.45
+        self.control.terrain_speed_step_up_climb_mps = 0.80
+        self.control.terrain_speed_step_down_mps = 0.30
+        self.control.terrain_speed_gap_mps = 0.35
 
         self.observations.use_history = False
         self.observations.history_length = 1
         self.observations.clip_observations = 100.0
         self.observations.wheel_slip_epsilon = 0.1
         self.observations.wheel_slip_angle_clip_rad = math.pi / 2.0
+        self.observations.terrain_feature_height_scale_m = 0.25
         self.observations.scales.base_lin_vel = 1.0
         self.observations.scales.base_ang_vel = 1.0
         self.observations.scales.ball_joint_pos = 1.0
@@ -111,12 +117,41 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.rewards.params.action_rate_penalty_weight = -10.0
         self.rewards.params.action_rate_base_ratio = 0.5
         self.rewards.params.action_rate_joint_ratio = 1.0
-        self.rewards.params.contact_support_penalty_weight = -4.0
+        self.rewards.params.contact_support_penalty_weight = -20.0
         self.rewards.params.contact_support_min_weight = 0.3
-        self.rewards.params.edge_speed_penalty_weight = -6.0
+        self.rewards.params.contact_support_lr_balance_ratio = 0.15
+        self.rewards.params.edge_speed_penalty_weight = 0.0
         self.rewards.params.edge_height_low_threshold_m = 0.04
         self.rewards.params.edge_height_high_threshold_m = 0.10
         self.rewards.params.edge_speed_limit_mps = 0.5
+        self.rewards.params.terrain_aware_edge_speed_penalty_weight = -20.0
+        self.rewards.params.stuck_penalty_weight = -3.0
+        self.rewards.params.stuck_gate_threshold = 0.3
+        self.rewards.params.stuck_speed_threshold_mps = 0.20
+        self.rewards.params.stuck_goal_ahead_threshold_m = 0.5
+        self.rewards.params.stuck_penalty_grace_s = 1.0
+        self.rewards.params.stuck_timeout_s = 10.0
+        self.rewards.params.airborne_spin_penalty_weight = -20.0
+        self.rewards.params.airborne_spin_velocity_scale_radps = 20.0
+        self.rewards.params.hard_terrain_spin_penalty_weight = -4.0
+        self.rewards.params.hard_terrain_spin_speed_threshold_mps = 0.40
+        self.rewards.params.hard_terrain_spin_slip_threshold = 3.0
+        self.rewards.params.hard_terrain_spin_slip_scale = 3.0
+        self.rewards.params.action_soft_limit_penalty_weight = -80.0
+        self.rewards.params.action_soft_limit_threshold = 0.8
+        self.rewards.params.step_up_front_posture_penalty_weight = -20.0
+        self.rewards.params.front_pitch_height_gain_rad_per_m = 4.0
+        self.rewards.params.front_pitch_max_ref_rad = 0.35
+        self.rewards.params.front_pitch_sigma_rad = 0.15
+        self.rewards.params.step_up_approach_distance_min_m = 0.20
+        self.rewards.params.step_up_approach_distance_max_m = 1.20
+        self.rewards.params.step_up_goal_ahead_threshold_m = 0.5
+        self.rewards.params.step_up_progress_quality_min_multiplier = 1.00
+        self.rewards.params.drop_anti_dive_penalty_weight = -50.0
+        self.rewards.params.drop_theta_safe_rad = 0.0
+        self.rewards.params.drop_pitch_sigma_rad = 0.20
+        self.rewards.params.drop_pitch_rate_sigma_radps = 1.0
+        self.rewards.params.drop_vz_down_sigma_mps = 0.5
         self.rewards.params.progress_gate_longitudinal_k = 3.0
         self.rewards.params.progress_gate_slip_angle_scale_rad = 1.5
         self.rewards.params.progress_gate_min_multiplier = 0.25
@@ -198,6 +233,11 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
 
         self.curriculum.enabled = True
         self.curriculum.max_init_terrain_level = 5
+        self.curriculum.initial_min_terrain_level_by_name = {
+            "stairs down": 1,
+            "stairs up": 1,
+            "discrete obstacles": 1,
+        }
         self.curriculum.initial_max_terrain_level_by_name = {
             "stairs down": 1,
             "stairs up": 1,

@@ -25,6 +25,7 @@ from ..mdp.observations import (
 )
 from ..mdp.rewards import REWARD_TERM_NAMES, compute_reward_terms
 from ..mdp.stage1_eval import compute_stage1_eval_metrics
+from ..mdp.terrain_features import compute_terrain_features
 from ..mdp.terminations import compute_done_terms
 from ..sensors.sensor_cfg import CompleteCarSensorSuiteRuntime
 from ..terrain.terrain_runtime import CompleteCarTerrainRuntime
@@ -48,8 +49,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
         )
         super().__init__(cfg, render_mode, **kwargs)
 
-        self._ball_joint_ids, _ = self.robot.find_joints(BALL_JOINT_NAMES)
-        self._wheel_joint_ids, _ = self.robot.find_joints(WHEEL_JOINT_NAMES)
+        self._ball_joint_ids, _ = self.robot.find_joints(BALL_JOINT_NAMES, preserve_order=True)
+        self._wheel_joint_ids, _ = self.robot.find_joints(WHEEL_JOINT_NAMES, preserve_order=True)
         self._wheel_body_ids, _ = self.robot.find_bodies(WHEEL_BODY_NAMES, preserve_order=True)
         gravity_magnitude = abs(float(self.cfg.sim.gravity[2]))
         self._total_vehicle_weight = (
@@ -82,6 +83,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._episode_terrain_target_advances = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._last_stage1_max_row_reached = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._last_stage1_valid_target_masked = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._stage1_training_active = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
+        self._stage1_transition_train_mask = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
         self._previous_goal_distance = torch.zeros(self.num_envs, device=self.device)
         self._active_goal_start_distance = torch.ones(self.num_envs, device=self.device)
 
@@ -91,6 +94,14 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._last_ball_joint_rate_targets = torch.zeros_like(self._last_ball_joint_desired_targets)
         self._last_wheel_speed_reference = torch.zeros((self.num_envs, len(WHEEL_JOINT_NAMES)), device=self.device)
         self._last_wheel_torque_targets = torch.zeros_like(self._last_wheel_speed_reference)
+        self._last_raw_planar_command = torch.zeros((self.num_envs, 2), device=self.device)
+        self._last_limited_planar_command = torch.zeros_like(self._last_raw_planar_command)
+        self._last_terrain_speed_safe = torch.full(
+            (self.num_envs,),
+            float(self.cfg.control.base_forward_velocity_max),
+            device=self.device,
+        )
+        self._last_terrain_speed_limit_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._last_desired_planar_command = torch.zeros((self.num_envs, 2), device=self.device)
         self._last_shaped_planar_command = torch.zeros((self.num_envs, 2), device=self.device)
         self._last_contact_weights = torch.zeros_like(self._last_wheel_speed_reference)
@@ -116,11 +127,50 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "contact_support_mid": torch.zeros(self.num_envs, device=self.device),
             "contact_support_rear": torch.zeros(self.num_envs, device=self.device),
             "contact_support_score": torch.zeros(self.num_envs, device=self.device),
+            "contact_support_w_all": torch.zeros(self.num_envs, device=self.device),
+            "contact_support_w_up": torch.zeros(self.num_envs, device=self.device),
+            "contact_support_w_drop": torch.zeros(self.num_envs, device=self.device),
+            "contact_support_lr_balance": torch.zeros(self.num_envs, device=self.device),
+            "contact_support_all_module_penalty": torch.zeros(self.num_envs, device=self.device),
+            "contact_support_step_up_penalty": torch.zeros(self.num_envs, device=self.device),
+            "contact_support_drop_penalty": torch.zeros(self.num_envs, device=self.device),
             "edge_strength": torch.zeros(self.num_envs, device=self.device),
             "edge_height_jump": torch.zeros(self.num_envs, device=self.device),
             "edge_safe_speed": torch.zeros(self.num_envs, device=self.device),
             "edge_forward_speed": torch.zeros(self.num_envs, device=self.device),
             "edge_speed_excess": torch.zeros(self.num_envs, device=self.device),
+            "terrain_gate_step_up": torch.zeros(self.num_envs, device=self.device),
+            "terrain_gate_step_down": torch.zeros(self.num_envs, device=self.device),
+            "terrain_gate_gap": torch.zeros(self.num_envs, device=self.device),
+            "terrain_gate_rough": torch.zeros(self.num_envs, device=self.device),
+            "terrain_gate_flat": torch.ones(self.num_envs, device=self.device),
+            "terrain_gate_edge": torch.zeros(self.num_envs, device=self.device),
+            "terrain_speed_safe": torch.zeros(self.num_envs, device=self.device),
+            "terrain_speed_raw_vx": torch.zeros(self.num_envs, device=self.device),
+            "terrain_speed_limited_vx": torch.zeros(self.num_envs, device=self.device),
+            "terrain_speed_actual_vx": torch.zeros(self.num_envs, device=self.device),
+            "terrain_speed_raw_excess": torch.zeros(self.num_envs, device=self.device),
+            "terrain_speed_actual_excess": torch.zeros(self.num_envs, device=self.device),
+            "terrain_speed_limit_active": torch.zeros(self.num_envs, device=self.device),
+            "stuck_time_s": torch.zeros(self.num_envs, device=self.device),
+            "stuck_penalty_active": torch.zeros(self.num_envs, device=self.device),
+            "airborne_spin_penalty_raw": torch.zeros(self.num_envs, device=self.device),
+            "hard_terrain_spin_gate": torch.zeros(self.num_envs, device=self.device),
+            "hard_terrain_low_speed": torch.zeros(self.num_envs, device=self.device),
+            "hard_terrain_slip_excess": torch.zeros(self.num_envs, device=self.device),
+            "hard_terrain_spin_penalty_raw": torch.zeros(self.num_envs, device=self.device),
+            "action_soft_limit_penalty_raw": torch.zeros(self.num_envs, device=self.device),
+            "front_pitch_ref": torch.zeros(self.num_envs, device=self.device),
+            "front_pitch_actual": torch.zeros(self.num_envs, device=self.device),
+            "front_pitch_error": torch.zeros(self.num_envs, device=self.device),
+            "step_up_distance_m": torch.zeros(self.num_envs, device=self.device),
+            "step_up_approach_mask": torch.zeros(self.num_envs, device=self.device),
+            "step_up_posture_badness": torch.zeros(self.num_envs, device=self.device),
+            "step_up_progress_quality_multiplier": torch.ones(self.num_envs, device=self.device),
+            "step_up_front_posture_penalty_raw": torch.zeros(self.num_envs, device=self.device),
+            "drop_pitch_rate_abs": torch.zeros(self.num_envs, device=self.device),
+            "drop_vz_down": torch.zeros(self.num_envs, device=self.device),
+            "drop_anti_dive_penalty_raw": torch.zeros(self.num_envs, device=self.device),
         }
         self._last_total_reward = torch.zeros(self.num_envs, device=self.device)
         self._episode_total_reward_sum = torch.zeros(self.num_envs, device=self.device)
@@ -132,9 +182,14 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "far_from_target": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             "ball_joint_out_of_bounds": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             "time_out": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
+            "stuck_timeout": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             "terrain_column_completed": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
         }
+        self._stage1_stuck_time = torch.zeros(self.num_envs, device=self.device)
+        self._last_stage1_stuck_now = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._last_critic_height_patch: torch.Tensor | None = None
+        self._last_terrain_features: torch.Tensor | None = None
+        self._last_terrain_feature_diagnostics: dict[str, torch.Tensor] = {}
         self._cached_step_raw_obs_terms: dict[str, torch.Tensor] | None = None
         self._cached_step_relative_goal_commands: torch.Tensor | None = None
 
@@ -171,6 +226,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
         ).flatten()
 
     def step(self, action: torch.Tensor):
+        if self._uses_stage1_train_retirement():
+            self._stage1_transition_train_mask.copy_(self._stage1_training_active)
+        else:
+            self._stage1_transition_train_mask.fill_(True)
         observations, rewards, terminated, time_outs, extras = super().step(action)
         for group_name in ("actor", "critic"):
             observations[group_name] = torch.nan_to_num(
@@ -200,6 +259,14 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._draw_height_patch()
         if self.cfg.debug.create_follow_views:
             self._update_follow_views()
+        next_train_mask = (
+            self._stage1_training_active.clone()
+            if self._uses_stage1_train_retirement()
+            else torch.ones_like(self._stage1_transition_train_mask)
+        )
+        extras["train_mask"] = self._stage1_transition_train_mask.clone()
+        extras["next_train_mask"] = next_train_mask
+        extras["all_train_envs_retired"] = bool(not torch.any(next_train_mask).item())
         extras["metrics"] = self._collect_step_metrics()
         self._last_stage1_max_row_reached.zero_()
         self._last_stage1_valid_target_masked.zero_()
@@ -235,6 +302,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self.last_actions.copy_(self.actions)
         self.actions.copy_(torch.nan_to_num(actions, nan=0.0, posinf=1.0, neginf=-1.0))
+        if self._uses_stage1_train_retirement():
+            self.actions[~self._stage1_training_active] = 0.0
 
         if (
             not self.cfg.commands.use_terrain_column_targets
@@ -296,6 +365,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self.cfg.control.base_yaw_rate_max,
             allow_reverse=self.cfg.control.base_allow_reverse,
         )
+        planar_command = self._apply_stage1_terrain_speed_limit(planar_command)
         ball_joint_pos = self.robot.data.joint_pos[:, self._ball_joint_ids]
         wheel_joint_vel = self.robot.data.joint_vel[:, self._wheel_joint_ids]
         low_level_outputs = self._wheel_speed_allocator.compute_low_slip_control_targets(
@@ -486,8 +556,13 @@ class CompleteCarDirectEnv(DirectRLEnv):
             done_terms["far_from_target"]
             | done_terms["ball_joint_out_of_bounds"]
             | done_terms["time_out"]
+            | done_terms.get("stuck_timeout", torch.zeros_like(waypoint_hit))
         )
-        progress_hit = waypoint_hit & ~blocked
+        if self._uses_stage1_train_retirement():
+            active_mask = self._stage1_training_active
+        else:
+            active_mask = torch.ones_like(waypoint_hit)
+        progress_hit = waypoint_hit & ~blocked & active_mask
         advance_mask = progress_hit & can_advance
         max_row_reached_mask = progress_hit & reaches_max_row
         return progress_hit, advance_mask, max_row_reached_mask
@@ -569,9 +644,12 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._cached_step_raw_obs_terms = raw_obs_terms
         terrain_height_patch = self._compute_critic_height_patch()
         self._last_critic_height_patch = terrain_height_patch
-        current_actor_obs = compute_actor_observation_from_raw_terms(self.cfg, raw_obs_terms, terrain_height_patch)
+        terrain_features, terrain_feature_diagnostics = compute_terrain_features(self.cfg, terrain_height_patch)
+        self._last_terrain_features = terrain_features
+        self._last_terrain_feature_diagnostics = terrain_feature_diagnostics
+        current_actor_obs = compute_actor_observation_from_raw_terms(self.cfg, raw_obs_terms, terrain_features)
         actor_obs = update_history(self._obs_history, current_actor_obs)
-        critic_obs = compute_critic_observation(actor_obs)
+        critic_obs = compute_critic_observation(actor_obs, terrain_height_patch)
         if self._sensor_runtime is not None and self.cfg.debug.log_sensor_outputs:
             self.extras["sensors"] = self._sensor_runtime.get_raw_output()
         return {"actor": actor_obs, "critic": critic_obs}
@@ -633,10 +711,20 @@ class CompleteCarDirectEnv(DirectRLEnv):
             env_ids = torch.arange(self.num_envs, device=self.device, dtype=torch.long)
 
         patch_points_w = self._compute_height_patch_world_points(self._last_critic_height_patch).index_select(0, env_ids)
+        root_yaw = quaternion_to_rpy(self.robot.data.root_link_quat_w.index_select(0, env_ids))[:, 2]
+        positive_y_axis_w = torch.stack(
+            (
+                -torch.sin(root_yaw),
+                torch.cos(root_yaw),
+                torch.zeros_like(root_yaw),
+            ),
+            dim=1,
+        )
         self._debug_draw.draw_height_patch(
             patch_points_w,
             height_offset=float(self.cfg.debug.height_patch_marker_height_offset),
             color_range_m=float(self.cfg.debug.height_patch_color_range_m),
+            positive_y_axis_w=positive_y_axis_w,
         )
 
     def _compute_edge_preview(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -713,12 +801,33 @@ class CompleteCarDirectEnv(DirectRLEnv):
             edge_strength,
             edge_height_jump,
             self._last_done_terms["waypoint_hit"],
+            terrain_gates=self._last_terrain_feature_diagnostics,
+            raw_planar_command=self._last_raw_planar_command,
+            limited_planar_command=self._last_limited_planar_command,
+            terrain_speed_safe=self._last_terrain_speed_safe,
+            terrain_speed_limit_active=self._last_terrain_speed_limit_active,
+            wheel_joint_vel=self.robot.data.joint_vel[:, self._wheel_joint_ids],
+            ball_joint_pos=self.robot.data.joint_pos[:, self._ball_joint_ids],
+            root_lin_vel_w=self._root_lin_vel_w(),
+            root_ang_vel_b=self.robot.data.root_com_ang_vel_b,
+            stuck_time_s=self._stage1_stuck_time,
         )
+        if self._uses_stage1_train_retirement():
+            inactive_mask = ~self._stage1_training_active
+            if torch.any(inactive_mask):
+                total_reward = total_reward.clone()
+                total_reward[inactive_mask] = 0.0
+                for name, value in tuple(components.items()):
+                    masked_value = value.clone()
+                    masked_value[inactive_mask] = 0.0
+                    components[name] = masked_value
         self._previous_goal_distance.copy_(torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1))
         for name, value in components.items():
             self._episode_sums[name] += value
             self._last_reward_components[name].copy_(value)
         for name, value in diagnostics.items():
+            if name not in self._last_reward_diagnostics:
+                self._last_reward_diagnostics[name] = torch.zeros_like(value)
             self._last_reward_diagnostics[name].copy_(value)
 
         self._episode_total_reward_sum += total_reward
@@ -734,7 +843,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
             & ~self._last_done_terms["is_success"]
             & ~self._last_done_terms["far_from_target"]
             & ~self._last_done_terms["ball_joint_out_of_bounds"]
-            & ~self._last_done_terms["time_out"],
+            & ~self._last_done_terms["time_out"]
+            & ~self._last_done_terms["stuck_timeout"],
             as_tuple=False,
         ).flatten()
         if advance_env_ids.numel() > 0:
@@ -767,6 +877,12 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "terrain_column_completed",
             torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
         )
+        done_terms["stuck_timeout"] = self._update_stage1_stuck_state(relative_goal_commands)
+        already_retired_mask = (
+            ~self._stage1_training_active
+            if self._uses_stage1_train_retirement()
+            else torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        )
         self._last_stage1_max_row_reached.zero_()
         self._last_stage1_valid_target_masked.zero_()
         if (
@@ -787,9 +903,13 @@ class CompleteCarDirectEnv(DirectRLEnv):
             )
             if torch.any(max_row_reached_mask):
                 done_terms["terrain_column_completed"] = max_row_reached_mask
-                done_terms["time_out"] = done_terms["time_out"] | max_row_reached_mask
                 self._episode_terrain_target_advances[max_row_reached_mask] += 1
                 self._last_stage1_max_row_reached.copy_(max_row_reached_mask)
+                self._stage1_training_active[max_row_reached_mask] = False
+        if self._uses_stage1_train_retirement():
+            if torch.any(already_retired_mask):
+                for value in done_terms.values():
+                    value[already_retired_mask] = False
         waypoint_hit_env_ids = torch.nonzero(done_terms["waypoint_hit"], as_tuple=False).flatten()
         if waypoint_hit_env_ids.numel() > 0:
             self._episode_waypoints_completed[waypoint_hit_env_ids] += 1
@@ -799,6 +919,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
             done_terms["is_success"]
             | done_terms["far_from_target"]
             | done_terms["ball_joint_out_of_bounds"]
+            | done_terms["stuck_timeout"]
+            | done_terms["terrain_column_completed"]
         )
         return terminated, done_terms["time_out"]
 
@@ -849,10 +971,14 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._last_done_terms["is_success"][env_ids]
             | self._last_done_terms["far_from_target"][env_ids]
             | self._last_done_terms["ball_joint_out_of_bounds"][env_ids]
+            | self._last_done_terms["stuck_timeout"][env_ids]
         )
         extras["Termination/terminated_rate"] = float(torch.mean(terminated.float()).item())
         extras["Termination/success_rate"] = float(torch.mean(self._last_done_terms["is_success"][env_ids].float()).item())
         extras["Termination/time_out_rate"] = float(torch.mean(self._last_done_terms["time_out"][env_ids].float()).item())
+        extras["Termination/stuck_timeout_rate"] = float(
+            torch.mean(self._last_done_terms["stuck_timeout"][env_ids].float()).item()
+        )
         extras["Termination/terrain_column_completed_rate"] = float(
             torch.mean(self._last_done_terms["terrain_column_completed"][env_ids].float()).item()
         )
@@ -868,6 +994,117 @@ class CompleteCarDirectEnv(DirectRLEnv):
 
     def _is_stage1(self) -> bool:
         return str(getattr(self.cfg, "stage_name", "")).lower() == "stage1"
+
+    def _uses_stage1_train_retirement(self) -> bool:
+        return self._is_stage1() and bool(getattr(self.cfg.commands, "use_terrain_column_targets", False))
+
+    def _stage1_terrain_feature_value(self, name: str, *, default: float = 0.0) -> torch.Tensor:
+        value = self._last_terrain_feature_diagnostics.get(name)
+        if value is None:
+            return torch.full((self.num_envs,), float(default), device=self.device)
+        return torch.nan_to_num(value.to(device=self.device).reshape(self.num_envs), nan=0.0, posinf=0.0, neginf=0.0)
+
+    def _compute_stage1_terrain_speed_safe(self) -> tuple[torch.Tensor, torch.Tensor]:
+        flat_speed_limit = max(float(self.cfg.control.base_forward_velocity_max), 1.0e-6)
+        if not (self._is_stage1() and bool(getattr(self.cfg.control, "terrain_speed_limit_enabled", False))):
+            return (
+                torch.full((self.num_envs,), flat_speed_limit, device=self.device),
+                torch.zeros(self.num_envs, device=self.device),
+            )
+        g_step_up = torch.clamp(self._stage1_terrain_feature_value("g_step_up"), min=0.0, max=1.0)
+        g_step_down = torch.clamp(self._stage1_terrain_feature_value("g_step_down"), min=0.0, max=1.0)
+        g_gap = torch.clamp(self._stage1_terrain_feature_value("g_gap"), min=0.0, max=1.0)
+        v_up = min(max(float(getattr(self.cfg.control, "terrain_speed_step_up_mps", 0.50)), 0.0), flat_speed_limit)
+        v_up_climb = min(
+            max(float(getattr(self.cfg.control, "terrain_speed_step_up_climb_mps", 0.80)), 0.0),
+            flat_speed_limit,
+        )
+        v_down = min(max(float(getattr(self.cfg.control, "terrain_speed_step_down_mps", 0.35)), 0.0), flat_speed_limit)
+        v_gap = min(max(float(getattr(self.cfg.control, "terrain_speed_gap_mps", 0.40)), 0.0), flat_speed_limit)
+        max_preview_distance_m = max(
+            float(getattr(self.cfg.terrain, "patch_front_extent", 0.0))
+            + float(getattr(self.cfg.terrain, "patch_preview_length", 1.0)),
+            1.0e-6,
+        )
+        step_up_distance_m = self._stage1_terrain_feature_value("step_up_distance_norm", default=1.0) * max_preview_distance_m
+        approach_min = float(getattr(self.cfg.rewards.params, "step_up_approach_distance_min_m", 0.20))
+        approach_max = float(getattr(self.cfg.rewards.params, "step_up_approach_distance_max_m", 1.20))
+        g_step_up_approach = g_step_up * (
+            (step_up_distance_m > approach_min) & (step_up_distance_m < approach_max)
+        ).float()
+        g_step_up_climb = g_step_up * (step_up_distance_m <= approach_min).float()
+        v_safe_up = torch.minimum(
+            flat_speed_limit - g_step_up_approach * (flat_speed_limit - v_up),
+            flat_speed_limit - g_step_up_climb * (flat_speed_limit - v_up_climb),
+        )
+        v_safe_down = flat_speed_limit - g_step_down * (flat_speed_limit - v_down)
+        v_safe_gap = flat_speed_limit - g_gap * (flat_speed_limit - v_gap)
+        v_safe = torch.minimum(torch.minimum(v_safe_up, v_safe_down), v_safe_gap)
+        g_edge = torch.maximum(g_step_up, torch.maximum(g_step_down, g_gap))
+        return torch.nan_to_num(v_safe, nan=flat_speed_limit, posinf=flat_speed_limit, neginf=0.0), g_edge
+
+    def _apply_stage1_terrain_speed_limit(self, planar_command: torch.Tensor) -> torch.Tensor:
+        raw_planar_command = planar_command.clone()
+        v_safe, g_edge = self._compute_stage1_terrain_speed_safe()
+        limited_planar_command = planar_command.clone()
+        if self._is_stage1() and bool(getattr(self.cfg.control, "terrain_speed_limit_enabled", False)):
+            vx_cmd_raw = raw_planar_command[:, 0]
+            vx_forward = torch.clamp(vx_cmd_raw, min=0.0)
+            vx_reverse = torch.clamp(vx_cmd_raw, max=0.0)
+            vx_forward_limited = torch.minimum(vx_forward, v_safe)
+            limited_planar_command[:, 0] = vx_forward_limited + vx_reverse
+            self._last_terrain_speed_limit_active.copy_(
+                (vx_forward > vx_forward_limited + 1.0e-4) & (g_edge > 0.05)
+            )
+        else:
+            self._last_terrain_speed_limit_active.zero_()
+        self._last_raw_planar_command.copy_(raw_planar_command)
+        self._last_limited_planar_command.copy_(limited_planar_command)
+        self._last_terrain_speed_safe.copy_(v_safe)
+        return limited_planar_command
+
+    def _root_lin_vel_w(self) -> torch.Tensor:
+        root_lin_vel_w = getattr(self.robot.data, "root_com_lin_vel_w", None)
+        if root_lin_vel_w is None:
+            root_lin_vel_w = getattr(self.robot.data, "root_link_lin_vel_w", None)
+        if root_lin_vel_w is None:
+            return torch.zeros_like(self.robot.data.root_com_lin_vel_b)
+        return torch.nan_to_num(root_lin_vel_w, nan=0.0, posinf=0.0, neginf=0.0)
+
+    def _update_stage1_stuck_state(self, relative_goal_commands: torch.Tensor) -> torch.Tensor:
+        if not self._is_stage1():
+            self._stage1_stuck_time.zero_()
+            self._last_stage1_stuck_now.zero_()
+            return torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        params = self.cfg.rewards.params
+        timeout_s = float(getattr(params, "stuck_timeout_s", 0.0))
+        g_step_up = torch.clamp(self._stage1_terrain_feature_value("g_step_up"), min=0.0, max=1.0)
+        g_step_down = torch.clamp(self._stage1_terrain_feature_value("g_step_down"), min=0.0, max=1.0)
+        g_gap = torch.clamp(self._stage1_terrain_feature_value("g_gap"), min=0.0, max=1.0)
+        hard_gate = torch.maximum(g_step_up, torch.maximum(g_step_down, g_gap))
+        v_forward = self.robot.data.root_com_lin_vel_b[:, 0]
+        low_forward_speed = torch.abs(v_forward) < float(getattr(params, "stuck_speed_threshold_mps", 0.05))
+        target_still_ahead = relative_goal_commands[:, 0] > float(
+            getattr(params, "stuck_goal_ahead_threshold_m", 0.5)
+        )
+        active_mask = self._stage1_training_active if self._uses_stage1_train_retirement() else torch.ones(
+            self.num_envs,
+            dtype=torch.bool,
+            device=self.device,
+        )
+        stuck_now = (
+            (hard_gate > float(getattr(params, "stuck_gate_threshold", 0.3)))
+            & low_forward_speed
+            & target_still_ahead
+            & active_mask
+        )
+        self._stage1_stuck_time.copy_(
+            torch.where(stuck_now, self._stage1_stuck_time + self.step_dt, torch.zeros_like(self._stage1_stuck_time))
+        )
+        self._last_stage1_stuck_now.copy_(stuck_now)
+        if timeout_s <= 0.0:
+            return torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        return self._stage1_stuck_time > timeout_s
 
     @staticmethod
     def _sanitize_scalar_metrics(metrics: dict[str, float]) -> dict[str, float]:
@@ -894,6 +1131,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "ContactSupport/",
             "Slip/",
             "EdgeSpeed/",
+            "Stuck/",
+            "Posture/",
+            "Drop/",
             "Action/",
             "LowLevel/",
             "Command/",
@@ -922,35 +1162,42 @@ class CompleteCarDirectEnv(DirectRLEnv):
             return None
 
         levels = self._terrain_runtime.terrain_levels[env_ids]
+        min_row_offset = max(int(getattr(self.cfg.commands, "terrain_goal_min_row_offset", 1)), 1)
         max_target_level = max(int(self._terrain_runtime.max_terrain_level) - 1, 0)
+        max_advance_source_level = max(max_target_level - min_row_offset, 0)
         completed = self._last_done_terms["terrain_column_completed"][env_ids]
-        max_level_without_valid_next_target = levels >= max_target_level
-        reset_to_low = completed | max_level_without_valid_next_target
+        clamp_to_last_source = levels > max_advance_source_level
         row_progress = self._compute_active_goal_progress(env_ids)
+        stuck_timeout = self._last_done_terms["stuck_timeout"][env_ids]
+        min_levels = mdp_curriculum.get_min_initial_terrain_levels(
+            self.cfg.curriculum,
+            self._terrain_runtime,
+            self._terrain_runtime.terrain_types[env_ids],
+        )
         row_failed = (
             (
                 self._last_done_terms["far_from_target"][env_ids]
                 | self._last_done_terms["ball_joint_out_of_bounds"][env_ids]
                 | self._last_done_terms["time_out"][env_ids]
+                | stuck_timeout
             )
             & ~self._last_done_terms["waypoint_hit"][env_ids]
-            & ~reset_to_low
+            & ~completed
+            & ~clamp_to_last_source
         )
         move_down_threshold = float(getattr(self.cfg.curriculum, "terrain_column_move_down_progress_ratio", 0.30))
-        move_down = row_failed & (row_progress < move_down_threshold) & (levels > 0)
+        progress_move_down = row_failed & (row_progress < move_down_threshold)
+        stuck_move_down = stuck_timeout & ~completed & ~clamp_to_last_source
+        move_down = (progress_move_down | stuck_move_down) & (levels > min_levels)
 
-        if torch.any(reset_to_low):
-            reset_low_env_ids = env_ids[reset_to_low]
-            self._terrain_runtime.terrain_levels[reset_low_env_ids] = mdp_curriculum.sample_initial_terrain_levels(
-                self.cfg.curriculum,
-                self._terrain_runtime,
-                self._terrain_runtime.terrain_types[reset_low_env_ids],
-            )
+        if torch.any(clamp_to_last_source):
+            clamp_env_ids = env_ids[clamp_to_last_source]
+            self._terrain_runtime.terrain_levels[clamp_env_ids] = max_advance_source_level
         if torch.any(move_down):
             move_down_env_ids = env_ids[move_down]
             self._terrain_runtime.terrain_levels[move_down_env_ids] = torch.clamp(
                 self._terrain_runtime.terrain_levels[move_down_env_ids] - 1,
-                min=0,
+                min=min_levels[move_down],
             )
 
         self._terrain_runtime.sync_env_origins(self.scene, env_ids)
@@ -958,7 +1205,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
             {
                 "terrain/row_progress_at_reset": row_progress,
                 "terrain/move_down_ratio": move_down.float(),
-                "terrain/reset_to_low_ratio": reset_to_low.float(),
+                "terrain/stuck_move_down_ratio": stuck_move_down.float(),
+                "terrain/terrain_column_completed_ratio": completed.float(),
+                "terrain/clamp_to_last_source_ratio": clamp_to_last_source.float(),
                 "terrain/level_after_reset": self._terrain_runtime.terrain_levels[env_ids].float(),
             }
         )
@@ -1001,6 +1250,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
         middle_rpy = quaternion_to_rpy(self.robot.data.root_link_quat_w)
         middle_roll_deg = torch.rad2deg(middle_rpy[:, 0])
         middle_pitch_deg = torch.rad2deg(middle_rpy[:, 1])
+        root_lin_vel_w = self._root_lin_vel_w()
+        pitch_rate_abs = torch.abs(raw_obs_terms["base_ang_vel"][:, 1])
+        vz_down = torch.clamp(-root_lin_vel_w[:, 2], min=0.0)
         active_waypoint_pos_error = torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1)
         active_waypoint_bearing_abs = torch.abs(relative_goal_commands[:, 3])
         active_goal_start_distance = self._active_goal_start_distance.clamp(min=1.0e-6)
@@ -1052,6 +1304,25 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Reward/edge_speed_penalty": float(
                 torch.mean(self._last_reward_components["edge_speed_penalty"]).item()
             ),
+            "Reward/terrain_aware_edge_speed_penalty": float(
+                torch.mean(self._last_reward_components["terrain_aware_edge_speed_penalty"]).item()
+            ),
+            "Reward/stuck_penalty": float(torch.mean(self._last_reward_components["stuck_penalty"]).item()),
+            "Reward/airborne_spin_penalty": float(
+                torch.mean(self._last_reward_components["airborne_spin_penalty"]).item()
+            ),
+            "Reward/hard_terrain_spin_penalty": float(
+                torch.mean(self._last_reward_components["hard_terrain_spin_penalty"]).item()
+            ),
+            "Reward/action_soft_limit_penalty": float(
+                torch.mean(self._last_reward_components["action_soft_limit_penalty"]).item()
+            ),
+            "Reward/step_up_front_posture_penalty": float(
+                torch.mean(self._last_reward_components["step_up_front_posture_penalty"]).item()
+            ),
+            "Reward/drop_anti_dive_penalty": float(
+                torch.mean(self._last_reward_components["drop_anti_dive_penalty"]).item()
+            ),
             "ProgressGate/ungated_progress_raw": float(
                 torch.mean(self._last_reward_diagnostics["progress_ungated"]).item()
             ),
@@ -1081,6 +1352,12 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "ContactSupport/score_raw": float(
                 torch.mean(self._last_reward_diagnostics["contact_support_score"]).item()
             ),
+            "ContactSupport/w_all": float(torch.mean(self._last_reward_diagnostics["contact_support_w_all"]).item()),
+            "ContactSupport/w_up": float(torch.mean(self._last_reward_diagnostics["contact_support_w_up"]).item()),
+            "ContactSupport/w_drop": float(torch.mean(self._last_reward_diagnostics["contact_support_w_drop"]).item()),
+            "ContactSupport/lr_balance_raw": float(
+                torch.mean(self._last_reward_diagnostics["contact_support_lr_balance"]).item()
+            ),
             "Slip/masked_longitudinal_abs_mean_raw": float(
                 torch.mean(self._last_reward_diagnostics["slip_masked_longitudinal"]).item()
             ),
@@ -1098,6 +1375,62 @@ class CompleteCarDirectEnv(DirectRLEnv):
             ),
             "EdgeSpeed/excess_speed_mps_raw": float(
                 torch.mean(self._last_reward_diagnostics["edge_speed_excess"]).item()
+            ),
+            "EdgeSpeed/g_step_up": float(torch.mean(self._last_reward_diagnostics["terrain_gate_step_up"]).item()),
+            "EdgeSpeed/g_step_down": float(torch.mean(self._last_reward_diagnostics["terrain_gate_step_down"]).item()),
+            "EdgeSpeed/g_gap": float(torch.mean(self._last_reward_diagnostics["terrain_gate_gap"]).item()),
+            "EdgeSpeed/g_edge": float(torch.mean(self._last_reward_diagnostics["terrain_gate_edge"]).item()),
+            "EdgeSpeed/v_safe": float(torch.mean(self._last_reward_diagnostics["terrain_speed_safe"]).item()),
+            "EdgeSpeed/vx_cmd_raw": float(torch.mean(self._last_reward_diagnostics["terrain_speed_raw_vx"]).item()),
+            "EdgeSpeed/vx_cmd_limited": float(
+                torch.mean(self._last_reward_diagnostics["terrain_speed_limited_vx"]).item()
+            ),
+            "EdgeSpeed/vx_actual": float(torch.mean(self._last_reward_diagnostics["terrain_speed_actual_vx"]).item()),
+            "EdgeSpeed/raw_excess": float(torch.mean(self._last_reward_diagnostics["terrain_speed_raw_excess"]).item()),
+            "EdgeSpeed/actual_excess": float(
+                torch.mean(self._last_reward_diagnostics["terrain_speed_actual_excess"]).item()
+            ),
+            "EdgeSpeed/speed_limit_active_rate": float(
+                torch.mean(self._last_terrain_speed_limit_active.float()).item()
+            ),
+            "Stuck/stuck_time_mean": float(torch.mean(self._stage1_stuck_time).item()),
+            "Stuck/stuck_now_rate": float(torch.mean(self._last_stage1_stuck_now.float()).item()),
+            "Stuck/stuck_penalty_active_rate": float(
+                torch.mean(self._last_reward_diagnostics["stuck_penalty_active"]).item()
+            ),
+            "HardTerrainSpin/gate": float(torch.mean(self._last_reward_diagnostics["hard_terrain_spin_gate"]).item()),
+            "HardTerrainSpin/low_speed": float(
+                torch.mean(self._last_reward_diagnostics["hard_terrain_low_speed"]).item()
+            ),
+            "HardTerrainSpin/slip_excess": float(
+                torch.mean(self._last_reward_diagnostics["hard_terrain_slip_excess"]).item()
+            ),
+            "HardTerrainSpin/penalty_raw": float(
+                torch.mean(self._last_reward_diagnostics["hard_terrain_spin_penalty_raw"]).item()
+            ),
+            "Termination/stuck_timeout_rate": float(torch.mean(self._last_done_terms["stuck_timeout"].float()).item()),
+            "Posture/front_pitch_ref": float(torch.mean(self._last_reward_diagnostics["front_pitch_ref"]).item()),
+            "Posture/front_pitch_actual": float(
+                torch.mean(self._last_reward_diagnostics["front_pitch_actual"]).item()
+            ),
+            "Posture/front_pitch_error": float(torch.mean(self._last_reward_diagnostics["front_pitch_error"]).item()),
+            "Posture/step_up_distance_m": float(torch.mean(self._last_reward_diagnostics["step_up_distance_m"]).item()),
+            "Posture/approach_mask_rate": float(
+                torch.mean(self._last_reward_diagnostics["step_up_approach_mask"]).item()
+            ),
+            "Posture/step_up_posture_badness": float(
+                torch.mean(self._last_reward_diagnostics["step_up_posture_badness"]).item()
+            ),
+            "Posture/progress_quality_multiplier": float(
+                torch.mean(self._last_reward_diagnostics["step_up_progress_quality_multiplier"]).item()
+            ),
+            "Posture/posture_penalty_raw": float(
+                torch.mean(self._last_reward_diagnostics["step_up_front_posture_penalty_raw"]).item()
+            ),
+            "Drop/pitch_rate_abs_mean": float(torch.mean(self._last_reward_diagnostics["drop_pitch_rate_abs"]).item()),
+            "Drop/vz_down_mean": float(torch.mean(self._last_reward_diagnostics["drop_vz_down"]).item()),
+            "Drop/anti_dive_penalty_raw": float(
+                torch.mean(self._last_reward_diagnostics["drop_anti_dive_penalty_raw"]).item()
             ),
             "Tracking/active_waypoint_pos_error": float(torch.mean(active_waypoint_pos_error).item()),
             "Tracking/active_waypoint_bearing_abs": float(torch.mean(active_waypoint_bearing_abs).item()),
@@ -1119,6 +1452,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Action/desired_planar_command_abs_mean_raw": float(
                 torch.mean(torch.abs(self._last_desired_planar_command)).item()
             ),
+            "Action/raw_planar_command_abs_mean_raw": float(torch.mean(torch.abs(self._last_raw_planar_command)).item()),
+            "Action/limited_planar_command_abs_mean_raw": float(
+                torch.mean(torch.abs(self._last_limited_planar_command)).item()
+            ),
             "Action/shaped_planar_command_abs_mean_raw": float(
                 torch.mean(torch.abs(self._last_shaped_planar_command)).item()
             ),
@@ -1126,7 +1463,11 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 torch.mean(torch.abs(planar_command_delta)).item()
             ),
             "Action/desired_planar_vx_raw": float(torch.mean(self._last_desired_planar_command[:, 0]).item()),
+            "Action/raw_planar_vx_raw": float(torch.mean(self._last_raw_planar_command[:, 0]).item()),
+            "Action/limited_planar_vx_raw": float(torch.mean(self._last_limited_planar_command[:, 0]).item()),
             "Action/desired_planar_wz_raw": float(torch.mean(self._last_desired_planar_command[:, 1]).item()),
+            "Action/raw_planar_wz_raw": float(torch.mean(self._last_raw_planar_command[:, 1]).item()),
+            "Action/limited_planar_wz_raw": float(torch.mean(self._last_limited_planar_command[:, 1]).item()),
             "Action/shaped_planar_vx_raw": float(torch.mean(self._last_shaped_planar_command[:, 0]).item()),
             "Action/shaped_planar_wz_raw": float(torch.mean(self._last_shaped_planar_command[:, 1]).item()),
             "Action/planar_command_delta_vx_raw": float(torch.mean(planar_command_delta[:, 0]).item()),
@@ -1187,6 +1528,12 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "LowLevel/tau1_abs_mean_raw": float(torch.mean(torch.abs(self._last_wheel_tau1)).item()),
         }
 
+        for name, value in self._last_terrain_feature_diagnostics.items():
+            if name.startswith("g_"):
+                metrics[f"TerrainGate/{name.removeprefix('g_')}"] = float(torch.mean(value).item())
+            else:
+                metrics[f"TerrainFeature/{name}"] = float(torch.mean(value).item())
+
         if (
             self._is_stage1()
             and self._terrain_runtime is not None
@@ -1229,7 +1576,22 @@ class CompleteCarDirectEnv(DirectRLEnv):
                     last_actions=self.last_actions,
                     active_waypoint_distance=active_waypoint_pos_error,
                     terrain_length=float(self._terrain_runtime._terrain_cfg.terrain_length),
+                    train_active_mask=self._stage1_transition_train_mask,
+                    stuck_time_s=self._stage1_stuck_time,
+                    stuck_timeout_mask=self._last_done_terms["stuck_timeout"],
+                    pitch_rate_abs=pitch_rate_abs,
+                    vz_down=vz_down,
+                    speed_limit_active_mask=self._last_terrain_speed_limit_active,
                 )
+            )
+            metrics["Stage1Eval/global/train_active_rate"] = float(
+                torch.mean(self._stage1_training_active.float()).item()
+            )
+            metrics["Stage1Eval/global/train_retired_rate"] = float(
+                torch.mean((~self._stage1_training_active).float()).item()
+            )
+            metrics["Stage1Eval/global/train_sample_rate"] = float(
+                torch.mean(self._stage1_transition_train_mask.float()).item()
             )
         self._add_stage1_debug_metrics(metrics)
 
@@ -1269,6 +1631,39 @@ class CompleteCarDirectEnv(DirectRLEnv):
                     )
         for joint_index, joint_name in enumerate(BALL_JOINT_NAMES):
             metrics[f"Observation/{joint_name}_pos_raw"] = float(torch.mean(ball_joint_pos[:, joint_index]).item())
+            metrics[f"Observation/{joint_name}_target_error_raw"] = float(
+                torch.mean(raw_obs_terms["ball_joint_target_error"][:, joint_index]).item()
+            )
+            metrics[f"Action/{joint_name}_policy_raw"] = float(
+                torch.mean(self.actions[:, 2 + joint_index]).item()
+            )
+            metrics[f"Action/{joint_name}_desired_target_raw"] = float(
+                torch.mean(self._last_ball_joint_desired_targets[:, joint_index]).item()
+            )
+            metrics[f"Action/{joint_name}_rate_target_raw"] = float(
+                torch.mean(self._last_ball_joint_rate_targets[:, joint_index]).item()
+            )
+            metrics[f"Action/{joint_name}_position_target_raw"] = float(
+                torch.mean(self._joint_pos_targets[:, self._ball_joint_ids[joint_index]]).item()
+            )
+            metrics[f"Debug/Stage1/BallJoint/{joint_name}/policy_action"] = float(
+                torch.mean(self.actions[:, 2 + joint_index]).item()
+            )
+            metrics[f"Debug/Stage1/BallJoint/{joint_name}/desired_target"] = float(
+                torch.mean(self._last_ball_joint_desired_targets[:, joint_index]).item()
+            )
+            metrics[f"Debug/Stage1/BallJoint/{joint_name}/rate_target"] = float(
+                torch.mean(self._last_ball_joint_rate_targets[:, joint_index]).item()
+            )
+            metrics[f"Debug/Stage1/BallJoint/{joint_name}/position_target"] = float(
+                torch.mean(self._joint_pos_targets[:, self._ball_joint_ids[joint_index]]).item()
+            )
+            metrics[f"Debug/Stage1/BallJoint/{joint_name}/actual_pos"] = float(
+                torch.mean(ball_joint_pos[:, joint_index]).item()
+            )
+            metrics[f"Debug/Stage1/BallJoint/{joint_name}/target_error"] = float(
+                torch.mean(raw_obs_terms["ball_joint_target_error"][:, joint_index]).item()
+            )
             metrics[f"Observation/{joint_name}_limit_usage_mean_raw"] = float(
                 torch.mean(ball_joint_limit_usage[:, joint_index]).item()
             )
@@ -1354,11 +1749,42 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._active_waypoint_index[env_ids] = 0
         self._episode_waypoints_completed[env_ids] = 0
         self._episode_terrain_target_advances[env_ids] = 0
-        self._sample_waypoint_queue(
-            env_ids,
-            reset_pos_xy_w,
-            reset_yaw_w,
-        )
+        if self._uses_stage1_train_retirement():
+            active_reset_mask = self._stage1_training_active[env_ids]
+        else:
+            active_reset_mask = torch.ones(env_ids.numel(), dtype=torch.bool, device=self.device)
+        active_env_ids = env_ids[active_reset_mask]
+        if active_env_ids.numel() > 0:
+            self._sample_waypoint_queue(
+                active_env_ids,
+                reset_pos_xy_w[active_reset_mask],
+                reset_yaw_w[active_reset_mask],
+            )
+        retired_reset_mask = ~active_reset_mask
+        retired_env_ids = env_ids[retired_reset_mask]
+        if retired_env_ids.numel() > 0:
+            parked_targets = torch.zeros(
+                (retired_env_ids.numel(), self.cfg.commands.num_commands),
+                device=self.device,
+                dtype=self.command_targets_w.dtype,
+            )
+            parked_targets[:, :2] = reset_pos_xy_w[retired_reset_mask]
+            if self.cfg.commands.num_commands > 2:
+                parked_targets[:, 2] = root_state[retired_reset_mask, 2]
+            if self.cfg.commands.num_commands > 3:
+                parked_targets[:, 3] = reset_yaw_w[retired_reset_mask]
+            self._waypoint_targets_w[retired_env_ids] = parked_targets.unsqueeze(1).expand(
+                -1,
+                self._num_waypoints_per_episode,
+                -1,
+            )
+            self._waypoint_direction_offsets[retired_env_ids] = 0.0
+            self._waypoint_heading_offsets[retired_env_ids] = 0.0
+            self._goal_direction_offsets[retired_env_ids] = 0.0
+            self._goal_heading_offsets[retired_env_ids] = 0.0
+            self._command_time_left[retired_env_ids] = 0.0
+            self.command_targets_w[retired_env_ids] = parked_targets
+            self._active_goal_start_distance[retired_env_ids] = 1.0e-6
         self.commands[env_ids] = mdp_commands.compute_relative_goal_commands(
             self.command_targets_w[env_ids],
             reset_pos_xy_w,
@@ -1377,6 +1803,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._last_ball_joint_rate_targets[env_ids] = 0.0
         self._last_wheel_speed_reference[env_ids] = 0.0
         self._last_wheel_torque_targets[env_ids] = 0.0
+        self._last_raw_planar_command[env_ids] = 0.0
+        self._last_limited_planar_command[env_ids] = 0.0
+        self._last_terrain_speed_safe[env_ids] = float(self.cfg.control.base_forward_velocity_max)
+        self._last_terrain_speed_limit_active[env_ids] = False
         self._last_desired_planar_command[env_ids] = 0.0
         self._last_shaped_planar_command[env_ids] = 0.0
         self._last_contact_weights[env_ids] = 0.0
@@ -1385,6 +1815,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._last_wheel_delta_v[env_ids] = 0.0
         self._last_wheel_tau0[env_ids] = 0.0
         self._last_wheel_tau1[env_ids] = 0.0
+        self._stage1_stuck_time[env_ids] = 0.0
+        self._last_stage1_stuck_now[env_ids] = False
         for key in self._last_done_terms:
             self._last_done_terms[key][env_ids] = False
 

@@ -4,7 +4,7 @@
 
 本文档不记录底层运动学模型，不展开轮速分配、low-slip 平面命令整形、车轮牵引力矩分配或球铰规划器内部公式。本文只记录 policy 与环境交互层面的配置。
 
-当前 Stage1 定义为：`best_baseline_2` warm-start terrain curriculum 阶段。
+当前 Stage1 定义为：`best_baseline_2` warm-start terrain curriculum 阶段；2026-05-07 起，Stage1 actor 已从直接输入完整 height patch 改为输入 28 维确定性低维地形特征，critic 保留完整 height patch 作为 privileged information。
 
 当前 `complete_car_stage1_cfg.py` 采用本阶段显式配置风格，但只保留 Stage1 直接相关或当前 active 的参数。terrain-column target 不再在 Stage1 配置中显式写入自由 waypoint 采样参数，例如 `commands.goal_distance` 和 `commands.goal_direction_max_deg`。
 
@@ -18,7 +18,7 @@
 
 该 run 使用 `32` env、headless、`700` iterations、`best_baseline_2` warm-start，并启用按地形选择最佳 env 后依次录制 `120 s` chase 视频。2026-04-28 的 GUI run `2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter` 已按用户要求在 PPO iteration `18/700` 后停止，只作为历史启动验证记录。
 
-注意：上述 run 的 `env.yaml` 是启动时快照。2026-05-02 起，当前源码中的 Stage1 terrain column 映射已调整为第 `0` 列 `flat`，Stage1 源码默认动作映射也已调整为与 Stage0 相同的底盘物理速度输出范围；此前已经启动的 run 的 `params/env.yaml` 不会因源码修改自动改变，新启动的 Stage1 run 才会使用下文当前源码配置。
+注意：上述 run 的 `env.yaml` 是启动时快照。2026-05-02 起，当前源码中的 Stage1 terrain column 映射已调整为第 `0` 列 `flat`，Stage1 源码默认动作映射也已调整为与 Stage0 相同的底盘物理速度输出范围；2026-05-07 起，当前源码中的 Stage1 观测结构已变为 actor `82` 维、critic `660` 维。此前已经启动的 run 的 `params/env.yaml` 不会因源码修改自动改变，新启动的 Stage1 run 才会使用下文当前源码配置。
 
 本文档中的“当前值”默认表示当前源码配置；若某个值来自训练命令覆盖或历史 run 快照，会在说明中单独标明。
 
@@ -33,6 +33,7 @@
 | 动作映射 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/actions.py` |
 | 目标点采样 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/commands.py` |
 | 观测拼接 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py` |
+| 低维地形特征 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terrain_features.py` |
 | reward 计算 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py` |
 | termination 计算 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terminations.py` |
 | curriculum 更新 | `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py` |
@@ -54,8 +55,8 @@
 | `scene.num_envs` | `32` | Stage1 源码默认并行环境数，训练入口可用 `--num_envs` 覆盖 |
 | `scene.env_spacing` | `2.0 m` | 环境克隆间距 |
 | `action_space` | `8` | policy 动作维度 |
-| `observation_space.actor` | `632` | actor 观测维度 |
-| `observation_space.critic` | `632` | critic 观测维度 |
+| `observation_space.actor` | `82` | actor 观测维度，即 `54` 维基础观测加 `28` 维低维地形特征 |
+| `observation_space.critic` | `660` | critic 观测维度，即 actor 观测加 `578` 维完整 height patch |
 | `state_space` | `0` | 当前不使用额外 privileged state |
 | `episode_length_s` | `40.0 s` | 单个 episode 最大时长 |
 | `control.sim_dt` | `1 / 120 s` | PhysX 仿真步长 |
@@ -66,7 +67,7 @@
 | `terrain.enabled` | `True` | 启用地形 |
 | `terrain.mode` | `generator` | 使用 Stage1 terrain generator |
 | `curriculum.enabled` | `True` | 启用地形课程 |
-| `terrain.measure_heights` | `True` | 向 actor / critic 拼入地形高度 patch |
+| `terrain.measure_heights` | `True` | 生成完整 height patch；actor 使用由 patch 提取的低维地形特征，critic 额外保留完整 patch |
 | `observations.noise.enabled` | `False` | 当前不注入观测噪声 |
 | `randomization.enable_action_randomization` | `False` | 当前不注入 action 随机化 |
 | `sensors.imu.enabled` | `False` | IMU 不参与策略输入 |
@@ -144,24 +145,27 @@
 | Stage0 来源 run | `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2` |
 | Stage0 来源 checkpoint | `model_699.pt` |
 | Stage0 actor / critic obs dim | `54` |
-| Stage1 actor / critic obs dim | `632` |
-| Stage1 warm-start checkpoint | `RL_Training/logs/rsl_rl/complete_car_stage1/warmstart_best_baseline_2/model_0.pt` |
+| Stage1 actor obs dim | `82` |
+| Stage1 critic obs dim | `660` |
+| Stage1 warm-start checkpoint | `RL_Training/logs/rsl_rl/complete_car_stage1/warmstart_best_baseline_2_terrain_features/model_0.pt` |
 | Stage1 warm-start 加载方式 | `--warmstart` |
 
 Stage0 checkpoint 不能直接作为 Stage1 resume 使用，因为 actor / critic 第一层输入维度和 obs normalizer 维度不同。当前转换方式是：
 
-- actor / critic 第一层从 `54` 维扩展到 `632` 维。
+- actor 第一层从 `54` 维扩展到 `82` 维。
+- critic 第一层从 `54` 维扩展到 `660` 维。
 - 前 `54` 维继承 Stage0 权重。
-- 新增高度图维度的第一层权重初始化为 `0`。
+- actor 新增 `28` 维低维地形特征的第一层权重初始化为 `0`。
+- critic 新增 `28` 维低维地形特征和 `578` 维完整 height patch 的第一层权重初始化为 `0`。
 - obs normalizer 的新增维度均值为 `0`，方差和标准差为 `1`。
 - `--warmstart` 只加载 actor / critic，不加载 optimizer 和 iteration。
 
-当前 `convert_stage0_to_stage1_warmstart.py` 的默认 `target_obs_dim` 已同步为 `632`。按当前 Stage1 环境重新生成 warm-start checkpoint 时，不再需要额外传入 `--target_obs_dim 632`。若后续 Stage1 观测维度再次变化，必须同步修改转换脚本默认值和本文档。
+当前 `convert_stage0_to_stage1_warmstart.py` 默认输出 `warmstart_best_baseline_2_terrain_features/model_0.pt`，并使用 `--target_actor_obs_dim 82`、`--target_critic_obs_dim 660` 两个目标维度。旧 `warmstart_best_baseline_2/model_0.pt` 是 `632` 维结构，不能用于当前新观测结构。
 
 当前 headless warm-start 训练命令口径：
 
 ```bash
-python scripts/train.py --task CompleteCar-Stage1 --headless --device cuda:0 --num_envs 32 --resume --warmstart --load_run warmstart_best_baseline_2 --checkpoint model_0.pt --max_iterations 700 --run_name stage1_warmstart_best_baseline_2_32env_best_per_terrain_chase_700iter --record_terrain_chase_videos --terrain_chase_video_length_s 120 --terrain_chase_video_mode per_name --terrain_chase_selection_steps 600 --follow_all_envs --hide_goal_heading --hide_wheel_slip_vis
+python scripts/train.py --task CompleteCar-Stage1 --headless --device cuda:0 --num_envs 32 --resume --warmstart --load_run warmstart_best_baseline_2_terrain_features --checkpoint model_0.pt --max_iterations 700 --run_name stage1_terrain_features_actor82_critic660_warmstart_700iter
 ```
 
 ### 2.5 Stage1 回放列选择
@@ -327,7 +331,7 @@ Stage1 目标点逻辑：
 
 - 当前目标距离小于 `target_position_tolerance = 0.5 m` 时，触发 terrain row 推进。
 - 目标重采样后仍保持同列，目标 row 继续取当前 row 的 `+1`。
-- 若本次推进会进入没有合法下一目标的最高 row 区域，则本段记为完成，通过 reset 回到新的低 row，不再采样被夹紧到同一最后 row 的假目标。
+- 若本次推进会进入没有合法下一目标的最高 row 区域，则本段记为完成，不再通过 reset 回到低 row，也不再采样被夹紧到同一最后 row 的假目标。
 - 目标命中不会触发 Stage1 success termination。
 
 ### 5.3 继承但当前不参与 Stage1 terrain-column 目标采样的 command 字段
@@ -415,16 +419,19 @@ origin 的 z 坐标取 tile 中心区域高度的非负最大值，用于 reset 
 |---|---:|---|
 | `curriculum.enabled` | `True` | 启用课程 |
 | `curriculum.max_init_terrain_level` | `5` | 默认初始 row 从 `0-5` 随机 |
-| `curriculum.initial_max_terrain_level_by_name["stairs down"]` | `1` | `stairs down` 初始 row 限制为 `0-1` |
-| `curriculum.initial_max_terrain_level_by_name["stairs up"]` | `1` | `stairs up` 初始 row 限制为 `0-1` |
-| `curriculum.initial_max_terrain_level_by_name["discrete obstacles"]` | `2` | `discrete obstacles` 初始 row 限制为 `0-2` |
+| `curriculum.initial_min_terrain_level_by_name["stairs down"]` | `1` | `stairs down` 初始 row 不低于 `1` |
+| `curriculum.initial_min_terrain_level_by_name["stairs up"]` | `1` | `stairs up` 初始 row 不低于 `1` |
+| `curriculum.initial_min_terrain_level_by_name["discrete obstacles"]` | `1` | `discrete obstacles` 初始 row 不低于 `1` |
+| `curriculum.initial_max_terrain_level_by_name["stairs down"]` | `1` | `stairs down` 初始 row 限制为 `1` |
+| `curriculum.initial_max_terrain_level_by_name["stairs up"]` | `1` | `stairs up` 初始 row 限制为 `1` |
+| `curriculum.initial_max_terrain_level_by_name["discrete obstacles"]` | `2` | `discrete obstacles` 初始 row 限制为 `1-2` |
 | `curriculum.default_terrain_name` | `flat` | 默认地形名，仅用于初始化检查和默认类型索引 |
 
 初始化时：
 
 - `flat`、`slope down`、`slope up`、`uneven rough` 仍按默认 `0-5` 均匀随机采样。
-- `stairs down`、`stairs up` 按 `0-1` 均匀随机采样。
-- `discrete obstacles` 按 `0-2` 均匀随机采样。
+- `stairs down`、`stairs up` 固定从 row `1` 开始，不再采样 row `0`。
+- `discrete obstacles` 按 `1-2` 均匀随机采样，不再采样 row `0`。
 - `terrain_types` 按 env id 均匀分配到 `0-9` 全部地形列。
 - `scene.env_origins` 同步到每个 env 当前 row / column 对应 tile origin。
 
@@ -442,7 +449,7 @@ Stage1 terrain-column 目标的 row 推进发生在 episode 内，而不是 rese
 - 若当前目标点被命中，terrain level 加 `1`。
 - row 推进后，`scene.env_origins` 同步到新 row / 同 column 的 tile origin。
 - row 推进后立刻重采样下一目标点。
-- 若推进会进入没有合法下一目标的最高 row 区域，本段记为 `terrain_column_completed`，本 step 通过 time-limit reset 回到按当前地形类别重新采样的低 row。
+- 若推进会进入没有合法下一目标的最高 row 区域，本段记为 `terrain_column_completed`，本 step 作为终止结束；reset 时不再重新采样低 row。
 - 若 episode 因 far、球铰越界或 timeout 结束，本步不会触发 row 推进。
 
 Stage1 terrain-column 的 row 退级发生在 episode reset 时。当前目标段进度定义为：
@@ -462,9 +469,18 @@ $$
 
 reset 时的 terrain level 更新逻辑为：
 
-- 若 `terrain_column_completed=True` 或当前 row 已没有合法下一目标，则按当前地形类别重新采样低 row。
-- 若 episode 因 `far_from_target`、`ball_joint_out_of_bounds` 或 `time_out` 结束，且没有命中目标，同时 $p_{\mathrm{row}} < 0.30$，则 terrain level 减 `1`。
+- 若 `terrain_column_completed=True`，terrain level 保持在当前最高有效 source row，不再回到低 row 重新采样。
+- 若由于旧状态或手动设置导致当前 row 已超过最高有效 source row，则只夹紧到最高有效 source row，不进行低 row 重采样。
+- 若 episode 因 `far_from_target`、`ball_joint_out_of_bounds` 或 `time_out` 结束，且没有命中目标，同时 $p_{\mathrm{row}} < 0.30$，则 terrain level 减 `1`，但不会低于该地形的最小初始 row；因此 step 类地形不会退回 row `0`。
 - 若 episode 失败/超时但 $p_{\mathrm{row}} \ge 0.30$，保持当前 row 不变，让策略继续在当前难度练习。
+
+最高 row 完成后的训练样本处理：
+
+- 当 env 触发 `terrain_column_completed=True` 时，该完成 step 仍作为当前 episode 的 terminal transition 写入一次训练样本。
+- reset 后该 env 标记为 retired，并停放在最高有效 source row；后续动作置零，目标点固定在当前位置附近，不再推进 row。
+- retired env 后续 transition 的 `train_mask=False`，不会进入 PPO mini-batch，不更新 actor / critic / obs normalizer。
+- `Stage1Eval/*` 默认只统计 `train_mask=True` 的 active env，并额外输出 `Stage1Eval/global/train_active_rate`、`train_retired_rate` 和 `train_sample_rate`。
+- 如果所有 terrain-column env 都 retired，runner 在当前 rollout/update 结束后停止训练并保存最终模型。
 
 ### 7.3 reset 初值
 
@@ -513,16 +529,21 @@ $$
 
 ### 8.1 总维度
 
-Stage1 actor 和 critic 使用同一份观测：
+Stage1 actor 和 critic 使用不同观测维度：
 
 $$
-632 = 54 + 34 \times 17
+\mathrm{actor} = 54 + 28 = 82
+$$
+
+$$
+\mathrm{critic} = 82 + 34 \times 17 = 660
 $$
 
 其中：
 
-- `54` 是 Stage0 继承来的 proprioception / command / last action 观测。
-- `34 * 17 = 578` 是 Stage1 地形高度 patch。
+- `54` 是 Stage0 继承来的 proprioception / command / last action 基础观测。
+- `28` 是从完整 height patch 中确定性提取的低维地形特征 `z_terrain`。
+- `34 * 17 = 578` 是 Stage1 完整 height patch，只追加到 critic 观测中。
 
 ### 8.2 观测分量顺序
 
@@ -538,9 +559,10 @@ $$
 | `wheel_normal_contact_force` | `6` | `1.0` | 6 个车轮归一化法向接触力 |
 | `goal_relative_command` | `4` | `1.0` | 车体系相对目标命令 |
 | `last_action` | `8` | `1.0` | 上一控制步已经执行的 policy action |
-| `terrain_height_patch` | `578` | 原始米制值 | Stage1 地形高度 patch |
+| `terrain_features` | `28` | 内部缩放 | actor 使用的确定性低维地形特征 |
+| `terrain_height_patch` | `578` | 原始米制值 | 仅 critic 额外使用的完整 Stage1 地形高度 patch |
 
-当前配置类中仍存在 `projected_gravity`、`ball_joint_target_error`、`module_roll_pitch` 等 scale 字段，但当前 `build_observation_descriptor()` 和 `compute_actor_observation_from_raw_terms()` 不把这些项拼入 actor / critic 观测。
+actor 观测包含表中前 `11` 项，即 `54 + 28 = 82` 维。critic 观测为 actor 观测再追加完整 `terrain_height_patch`，即 `660` 维。当前配置类中仍存在 `projected_gravity`、`ball_joint_target_error`、`module_roll_pitch` 等 scale 字段，但当前 `build_observation_descriptor()` 和 `compute_actor_observation_from_raw_terms()` 不把这些项拼入 actor / critic 观测。
 
 ### 8.3 观测裁剪与噪声
 
@@ -549,6 +571,7 @@ $$
 | `observations.clip_observations` | `100.0` | actor / critic 观测输出后统一 clip 到 `[-100, 100]` |
 | `observations.use_history` | `False` | 不使用观测历史堆叠 |
 | `observations.history_length` | `1` | 单帧观测 |
+| `observations.terrain_feature_height_scale_m` | `0.25 m` | 地形高度类特征进入 actor 前的归一化尺度 |
 | `observations.noise.enabled` | `False` | 当前不注入观测噪声 |
 | `observations.wheel_slip_epsilon` | `0.1` | 纵滑 / 侧滑计算的低速分母保护 |
 | `observations.wheel_slip_angle_clip_rad` | `pi / 2` | 侧滑角 clip 范围 |
@@ -597,7 +620,15 @@ $$
 h_{\mathrm{patch}} = z_{\mathrm{root}} - h_{\mathrm{terrain}}(x, y)
 $$
 
-该值保持米制单位，不额外乘 scale，不额外 clip 到 `[-1, 1]`。actor 和 critic 使用同一份 height patch。PPO 的 obs normalizer 负责训练过程中的统计归一化。
+该值保持米制单位，不额外乘 scale，不额外 clip 到 `[-1, 1]`。当前 actor 不再直接输入完整 height patch；环境先将该 patch 转换为相对地形高度：
+
+$$
+H_{\mathrm{rel}} = D_{\mathrm{ref}} - D_{\mathrm{patch}}
+$$
+
+其中 `D_patch = z_root - terrain_height`，`D_ref` 使用中车附近支撑区域的中位数。转换后，地形越高，`H_rel` 越大。actor 输入的低维 `terrain_features` 中，高度类特征会除以 `observations.terrain_feature_height_scale_m = 0.25 m` 后 clip 到 `[-1, 1]`；critic 则额外保留原始完整 `D_patch`。
+
+当前已通过回放可视化确认：patch 局部 `+Y` 位于车体左侧。因此 `left_track` 使用 `y > 0`，`right_track` 使用 `y < 0`，`left_right_height_diff_m > 0` 表示左侧轮路径预瞄地形更高。
 
 ## 10. Reward 配置
 
@@ -1066,9 +1097,9 @@ Stage1 cfg 不显式设置目标 yaw tolerance、整车姿态阈值、首尾模�
 | `PerWheel/*` | 每个车轮的速度、滑移、接触、执行摘要 |
 | `Terrain/*` | 当前 terrain level、tile start / origin / end、root x、target x、forward x 诊断，以及 active goal start distance / progress |
 | `Termination/*` | success、timeout、far、ball-joint-limit 等终止率 |
-| `Stage1Eval/global/*` | Stage1 全局地形列评价指标，包括 max-row reached、valid-target masked、tile x 调试值 |
+| `Stage1Eval/global/*` | Stage1 全局地形列评价指标，包括 max-row reached、valid-target masked、active / retired 训练样本比例和 tile x 调试值 |
 | `Stage1Eval/colXX/*` | 各地形列评价指标，包括 `max_row_reached_rate` 和 `valid_target_masked` |
 
 其中 `Action/*`、`LowLevel/*`、`PerWheel/*` 中会出现底层执行摘要指标，但本文档不解释其底层运动学计算过程。
 
-说明：共享 curriculum 代码仍能在普通 waypoint 路径中输出小写 `terrain/*` reset 指标；当前 Stage1 terrain-column 目标路径额外输出 reset-time 的 `terrain/row_progress_at_reset`、`terrain/move_down_ratio`、`terrain/reset_to_low_ratio` 和 `terrain/level_after_reset`，用于检查 row 退级逻辑。
+说明：共享 curriculum 代码仍能在普通 waypoint 路径中输出小写 `terrain/*` reset 指标；当前 Stage1 terrain-column 目标路径额外输出 reset-time 的 `terrain/row_progress_at_reset`、`terrain/move_down_ratio`、`terrain/terrain_column_completed_ratio`、`terrain/clamp_to_last_source_ratio` 和 `terrain/level_after_reset`，用于检查 row 退级与最高 row 完成逻辑。

@@ -15,3 +15,11 @@ results/training_stage_num_envs10.usda
 .~lock*
 docs/literature/
 毕业论文/
+
+# Generated analysis archives and replay videos stay local unless explicitly requested.
+results/Videos/
+results/*.zip
+results/*.tar.gz
+results/stage1_*_analysis*/
+results/stage1_tensorboard_*/
+results/stage1_reward_experiments/

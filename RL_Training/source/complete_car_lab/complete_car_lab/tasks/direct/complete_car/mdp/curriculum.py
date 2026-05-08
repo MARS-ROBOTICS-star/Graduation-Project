@@ -5,21 +5,61 @@ from __future__ import annotations
 import torch
 
 
+def _terrain_type_indices_for_names(terrain_runtime, terrain_types: torch.Tensor) -> torch.Tensor:
+    row0 = torch.zeros_like(terrain_types, dtype=torch.long, device=terrain_runtime.device)
+    return terrain_runtime.get_tile_type_indices(row0, terrain_types.to(torch.long))
+
+
+def _apply_per_name_level_limits(
+    levels: torch.Tensor,
+    per_name_limits: dict[str, int],
+    terrain_runtime,
+    terrain_types: torch.Tensor,
+) -> torch.Tensor:
+    if not per_name_limits:
+        return levels
+
+    terrain_names = tuple(getattr(terrain_runtime._terrain_cfg, "terrain_names", ()))
+    terrain_type_indices = _terrain_type_indices_for_names(terrain_runtime, terrain_types)
+    max_level = terrain_runtime._terrain_cfg.num_rows - 1
+    for terrain_name, terrain_level in per_name_limits.items():
+        if terrain_name not in terrain_names:
+            continue
+        terrain_index = terrain_names.index(terrain_name)
+        terrain_level = min(max(int(terrain_level), 0), max_level)
+        levels = torch.where(
+            terrain_type_indices == terrain_index,
+            torch.full_like(levels, terrain_level),
+            levels,
+        )
+    return levels
+
+
+def get_min_initial_terrain_levels(curriculum_cfg, terrain_runtime, terrain_types: torch.Tensor) -> torch.Tensor:
+    min_levels = torch.zeros_like(terrain_types, dtype=torch.long, device=terrain_runtime.device)
+    per_name_min_limits = (
+        getattr(curriculum_cfg, "initial_min_terrain_level_by_name", {}) or {}
+        if curriculum_cfg.enabled
+        else {}
+    )
+    return _apply_per_name_level_limits(min_levels, per_name_min_limits, terrain_runtime, terrain_types)
+
+
 def sample_initial_terrain_levels(curriculum_cfg, terrain_runtime, terrain_types: torch.Tensor) -> torch.Tensor:
     max_init_level = min(curriculum_cfg.max_init_terrain_level, terrain_runtime._terrain_cfg.num_rows - 1)
     if not curriculum_cfg.enabled:
         max_init_level = terrain_runtime._terrain_cfg.num_rows - 1
     max_levels = torch.full_like(terrain_types, max_init_level, dtype=torch.long, device=terrain_runtime.device)
-    per_name_limits = (
+    min_levels = get_min_initial_terrain_levels(curriculum_cfg, terrain_runtime, terrain_types)
+    per_name_max_limits = (
         getattr(curriculum_cfg, "initial_max_terrain_level_by_name", {}) or {}
         if curriculum_cfg.enabled
         else {}
     )
-    if per_name_limits:
+    if per_name_max_limits:
         terrain_names = tuple(getattr(terrain_runtime._terrain_cfg, "terrain_names", ()))
-        row0 = torch.zeros_like(terrain_types, dtype=torch.long, device=terrain_runtime.device)
-        terrain_type_indices = terrain_runtime.get_tile_type_indices(row0, terrain_types.to(torch.long))
-        for terrain_name, terrain_max_level in per_name_limits.items():
+        terrain_type_indices = _terrain_type_indices_for_names(terrain_runtime, terrain_types)
+        for terrain_name, terrain_max_level in per_name_max_limits.items():
             if terrain_name not in terrain_names:
                 continue
             terrain_index = terrain_names.index(terrain_name)
@@ -29,8 +69,10 @@ def sample_initial_terrain_levels(curriculum_cfg, terrain_runtime, terrain_types
                 torch.full_like(max_levels, terrain_max_level),
                 max_levels,
             )
+    max_levels = torch.maximum(max_levels, min_levels)
     u = torch.rand(terrain_types.shape, device=terrain_runtime.device)
-    return torch.floor(u * (max_levels.float() + 1.0)).to(torch.long).clamp(min=0)
+    level_span = (max_levels - min_levels).clamp(min=0)
+    return min_levels + torch.floor(u * (level_span.float() + 1.0)).to(torch.long)
 
 
 def _build_initial_terrain_types(terrain_runtime) -> torch.Tensor:
@@ -91,4 +133,9 @@ def update_terrain_curriculum(curriculum_cfg, terrain_runtime, scene, robot, env
     }
 
 
-__all__ = ["initialize_terrain_curriculum", "sample_initial_terrain_levels", "update_terrain_curriculum"]
+__all__ = [
+    "get_min_initial_terrain_levels",
+    "initialize_terrain_curriculum",
+    "sample_initial_terrain_levels",
+    "update_terrain_curriculum",
+]

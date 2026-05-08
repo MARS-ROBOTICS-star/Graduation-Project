@@ -1,4 +1,4 @@
-from . import actions, commands, curriculum, observations, randomization, resets, rewards, terminations
+from . import actions, commands, curriculum, observations, randomization, resets, rewards, terrain_features, terminations
 
 __all__ = [
     "actions",
@@ -8,5 +8,6 @@ __all__ = [
     "randomization",
     "resets",
     "rewards",
+    "terrain_features",
     "terminations",
 ]

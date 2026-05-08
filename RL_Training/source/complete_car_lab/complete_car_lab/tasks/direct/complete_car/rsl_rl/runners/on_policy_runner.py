@@ -78,6 +78,7 @@ class OnPolicyRunner:
         total_it = start_it + num_learning_iterations
         for it in range(start_it, total_it):
             start = time.time()
+            all_train_envs_retired = False
             # Rollout
             with torch.inference_mode():
                 for _ in range(self.cfg["num_steps_per_env"]):
@@ -96,6 +97,7 @@ class OnPolicyRunner:
                     intrinsic_rewards = self.alg.intrinsic_rewards if self.cfg["algorithm"]["rnd_cfg"] else None
                     # Book keeping
                     self.logger.process_env_step(rewards, dones, extras, intrinsic_rewards)
+                    all_train_envs_retired = bool(extras.get("all_train_envs_retired", False))
 
                 stop = time.time()
                 collect_time = stop - start
@@ -127,6 +129,9 @@ class OnPolicyRunner:
             # Save model
             if self.logger.writer is not None and it % self.cfg["save_interval"] == 0:
                 self.save(os.path.join(self.logger.log_dir, f"model_{it}.pt"))  # type: ignore
+            if all_train_envs_retired:
+                print("All Stage1 terrain-column environments retired; stopping training.", flush=True)
+                break
 
         # Save the final model after training and stop the logging writer
         if self.logger.writer is not None:

@@ -42,6 +42,9 @@ class RolloutStorage:
             self.dones: torch.Tensor | None = None
             """Done flags indicating episode termination."""
 
+            self.train_mask: torch.Tensor | None = None
+            """Boolean mask indicating whether this transition should update the policy."""
+
             # For reinforcement learning
             self.values: torch.Tensor | None = None
             """Value estimates at the current step (RL only)."""
@@ -147,6 +150,7 @@ class RolloutStorage:
         self.rewards = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
         self.actions = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
         self.dones = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device).byte()
+        self.train_masks = torch.ones(num_transitions_per_env, num_envs, 1, device=self.device, dtype=torch.bool)
 
         # For distillation
         if training_type == "distillation":
@@ -178,6 +182,10 @@ class RolloutStorage:
         self.actions[self.step].copy_(transition.actions)  # type: ignore
         self.rewards[self.step].copy_(transition.rewards.view(-1, 1))
         self.dones[self.step].copy_(transition.dones.view(-1, 1))
+        if transition.train_mask is None:
+            self.train_masks[self.step].fill_(True)
+        else:
+            self.train_masks[self.step].copy_(transition.train_mask.view(-1, 1).bool())
 
         # For distillation
         if self.training_type == "distillation":
@@ -223,10 +231,6 @@ class RolloutStorage:
         """Yield shuffled flat mini-batches for feedforward RL updates."""
         if self.training_type != "rl":
             raise ValueError("This function is only available for reinforcement learning training.")
-        batch_size = self.num_envs * self.num_transitions_per_env
-        mini_batch_size = batch_size // num_mini_batches
-        indices = torch.randperm(num_mini_batches * mini_batch_size, requires_grad=False, device=self.device)
-
         # Flatten the data
         observations = self.observations.flatten(0, 1)
         actions = self.actions.flatten(0, 1)
@@ -235,13 +239,18 @@ class RolloutStorage:
         old_actions_log_prob = self.actions_log_prob.flatten(0, 1)
         advantages = self.advantages.flatten(0, 1)
         old_distribution_params = tuple(p.flatten(0, 1) for p in self.distribution_params)  # type: ignore
+        valid_indices = torch.nonzero(self.train_masks.flatten(0, 1).squeeze(-1), as_tuple=False).flatten()
+        if valid_indices.numel() == 0:
+            return
+        num_batches = min(max(int(num_mini_batches), 1), int(valid_indices.numel()))
 
         for epoch in range(num_epochs):
-            for i in range(num_mini_batches):
-                # Select the indices for the mini-batch
-                start = i * mini_batch_size
-                stop = (i + 1) * mini_batch_size
-                batch_idx = indices[start:stop]
+            indices = valid_indices[
+                torch.randperm(valid_indices.numel(), requires_grad=False, device=self.device)
+            ]
+            for batch_idx in torch.chunk(indices, num_batches):
+                if batch_idx.numel() == 0:
+                    continue
 
                 # Yield the mini-batch
                 yield RolloutStorage.Batch(

@@ -206,16 +206,23 @@ class PPO:
         self, obs: TensorDict, rewards: torch.Tensor, dones: torch.Tensor, extras: dict[str, torch.Tensor]
     ) -> None:
         """Record one environment step and update the normalizers."""
+        train_mask = extras.get("train_mask")
+        if train_mask is not None:
+            train_mask = train_mask.to(device=self.device, dtype=torch.bool).reshape(-1)
+        next_train_mask = extras.get("next_train_mask", train_mask)
+        if next_train_mask is not None:
+            next_train_mask = next_train_mask.to(device=self.device, dtype=torch.bool).reshape(-1)
         # Update the normalizers
-        self.actor.update_normalization(obs)
-        self.critic.update_normalization(obs)
+        self.actor.update_normalization(obs, train_mask=next_train_mask)
+        self.critic.update_normalization(obs, train_mask=next_train_mask)
         if self.rnd:
-            self.rnd.update_normalization(obs)
+            self.rnd.update_normalization(obs, train_mask=next_train_mask)
 
         # Record the rewards and dones
         # Note: We clone here because later on we bootstrap the rewards based on timeouts
         self.transition.rewards = rewards.clone()
         self.transition.dones = dones
+        self.transition.train_mask = train_mask
 
         # Compute the intrinsic rewards and add to extrinsic rewards
         if self.rnd:
@@ -259,7 +266,14 @@ class PPO:
         st.advantages = st.returns - st.values
         # Normalize the advantages if per minibatch normalization is not used
         if not self.normalize_advantage_per_mini_batch:
-            st.advantages = (st.advantages - st.advantages.mean()) / (st.advantages.std() + 1e-8)
+            valid_advantages = st.advantages[st.train_masks]
+            if valid_advantages.numel() == 0:
+                st.advantages.zero_()
+            else:
+                st.advantages = (st.advantages - valid_advantages.mean()) / (
+                    valid_advantages.std(unbiased=False) + 1e-8
+                )
+                st.advantages[~st.train_masks] = 0.0
 
     def update(self) -> dict[str, float]:
         """Run optimization epochs over stored batches and return mean losses."""
@@ -286,7 +300,7 @@ class PPO:
             # Check if we should normalize advantages per mini batch
             if self.normalize_advantage_per_mini_batch:
                 with torch.no_grad():
-                    batch.advantages = (batch.advantages - batch.advantages.mean()) / (batch.advantages.std() + 1e-8)  # type: ignore
+                    batch.advantages = (batch.advantages - batch.advantages.mean()) / (batch.advantages.std(unbiased=False) + 1e-8)  # type: ignore
 
             # Perform symmetric augmentation
             if self.symmetry and self.symmetry["use_data_augmentation"]:

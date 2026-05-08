@@ -22,7 +22,8 @@
 - 并行环境数：`32`
 - 控制频率：`60 Hz`
 - episode 时长：`40 s`
-- actor / critic 观测维度：`632`
+- actor 观测维度：`82`
+- critic 观测维度：`660`
 - 动作维度：`8`
 - 前两维动作映射为底盘平面命令：
   - `a0 -> vx_cmd`：`[-2.0, 2.0] m/s`
@@ -56,10 +57,10 @@ TensorBoard 输出由 `Logger.log()` 写入。每个 PPO iteration 结束后，l
 - policy 分布标准差：`Policy/mean_std`
 - 性能：`Perf/*`
 - 已完成 episode 的滑动统计：`Train/*`
-- 环境 step extra：reward、action、observation、low-slip、tracking、terrain、command、per-wheel 等
+- 环境 step extra：reward、action、observation、low-slip、tracking、terrain、terrain feature、terrain gate、command、per-wheel 等
 - episode extra：episode 累计 reward、每步 reward、终点误差、waypoint 完成等
 
-当前 logger 只把 curated extra scalar 写入 TensorBoard；不在白名单中的环境 extra 不会进入 TensorBoard。`PerWheel/*` 是例外，只要 tag 以 `PerWheel/` 开头就会写入。
+当前 logger 只把 curated extra scalar 写入 TensorBoard；不在白名单中的环境 extra 不会进入 TensorBoard。Stage1 中 `TerrainFeature/*` 和 `TerrainGate/*` 会写入 TensorBoard，但不进入终端高信号打印列表。`PerWheel/*` 默认不写入，只有 `logging.enable_stage1_per_wheel_debug = True` 时才写入筛选后的轮级调试项。
 
 TensorBoard 中部分重要 tag 会被重命名到带序号的前缀分组，例如：
 
@@ -230,17 +231,21 @@ reset 日志会额外输出小写 `terrain/*` 指标：
 
 - `terrain/row_progress_at_reset`：episode 结束时的当前目标段进度。
 - `terrain/move_down_ratio`：本次 reset 中触发 row 退级的比例。
-- `terrain/reset_to_low_ratio`：到达最高有效 row 或完成地形列后重新采样低 row 的比例。
+- `terrain/terrain_column_completed_ratio`：本次 reset 中由最高 row 完成触发 terminal 的比例。
+- `terrain/clamp_to_last_source_ratio`：旧状态或手动状态超过最高有效 source row 时，被夹回最高有效 source row 的比例。
 - `terrain/level_after_reset`：reset curriculum 更新后的 terrain level 均值。
 
 Stage1Eval 额外提供：
 
 - `Stage1Eval/global/max_row_reached_rate`
 - `Stage1Eval/global/valid_target_masked`
+- `Stage1Eval/global/train_active_rate`
+- `Stage1Eval/global/train_retired_rate`
+- `Stage1Eval/global/train_sample_rate`
 - `Stage1Eval/colXX/max_row_reached_rate`
 - `Stage1Eval/colXX/valid_target_masked`
 
-这些指标用于区分“真实不能前进”和“已经到达最高 row 语义边界，目标不应继续夹紧”的情况。
+这些指标用于区分“真实不能前进”、“已经到达最高 row 语义边界，目标不应继续夹紧”和“部分 env 已 retired，不再参与 PPO 样本”的情况。当前 `Stage1Eval/*` active 均值默认只统计 `train_sample_rate` 对应的有效样本。
 
 ## 5. Reward 与 progress gate 指标
 
@@ -425,24 +430,38 @@ episode 指标只在有环境 reset 后聚合，因此训练前期或 episode �
 
 对应还有 `episode_per_step/*` 指标，即把 episode 累计分量除以 episode 长度，便于比较不同长度 episode。
 
-## 9. Per-wheel 指标
+## 9. 地形特征指标
 
-所有 `PerWheel/*` tag 都会写入 TensorBoard，不打印到终端。格式为：
+当前 Stage1 actor 使用 `TerrainFeature/*` 对应的 28 维低维地形特征，critic 额外保留完整 height patch。TensorBoard 中会记录这些特征的跨环境均值，便于判断 actor 当前看到的地形语义是否合理。
+
+重点曲线：
+
+- `TerrainFeature/step_up_height_m`
+- `TerrainFeature/drop_depth_m`
+- `TerrainFeature/front_roughness_m`
+- `TerrainFeature/left_right_height_diff_m`
+- `TerrainFeature/support_height_std_m`
+- `TerrainGate/step_up`
+- `TerrainGate/step_down`
+- `TerrainGate/gap`
+- `TerrainGate/rough`
+- `TerrainGate/flat`
+
+这些曲线不直接代表训练成败，而是用于和 `Stage1Eval/*/row_advance_rate`、`v_forward_mean`、`pitch_abs_mean`、`longitudinal_slip_abs_mean`、`contact_loss_rate`、`action_saturation_rate` 交叉查看：如果某类 gate 已明显升高，但策略仍高滑移、动作饱和或停滞，说明“看到了地形语义”不等于“已经学会稳定通过”。
+
+### 9.1 Per-wheel 指标
+
+Stage1 默认不写入 `PerWheel/*`，只有 `logging.enable_stage1_per_wheel_debug = True` 时才写入筛选后的轮级调试项；这些指标不打印到终端。格式为：
 
 `PerWheel/<wheel_name>/<metric_name>`
 
-当前每个车轮会记录：
+开启后当前每个车轮会记录：
 
-- `wheel_joint_vel`
 - `wheel_speed_reference`
 - `wheel_torque_target`
-- `contact_weight`
 - `normal_force`
 - `v_parallel`
 - `v_perp`
-- `delta_v`
-- `tau0`
-- `tau1`
 - `longitudinal_slip`
 - `slip_angle`
 
@@ -451,7 +470,6 @@ episode 指标只在有环境 reset 后聚合，因此训练前期或 episode �
 - 某个轮子的 `normal_force` 长期接近 `0`，说明它经常离地或接触弱。
 - 某个轮子的 `longitudinal_slip` 长期显著高于其他轮，说明该轮可能在空转、打滑或被地形卡住。
 - `wheel_speed_reference` 高但 `v_parallel` 低，说明轮速命令没有转化成有效前进。
-- `tau1` 高说明滑移反馈正在强烈修正该轮。
 
 ## 10. 终端高频盯盘指标
 
@@ -507,7 +525,8 @@ episode 指标只在有环境 reset 后聚合，因此训练前期或 episode �
 
 终端快速判断建议：
 
-- 先看 `Stage1Eval/global/forward_x_mean`、`Stage1Eval/global/current_level_mean`、`Stage1Eval/global/max_row_reached_rate` 和 `Stage1Eval/global/valid_target_masked`：是否真的沿地形列向前推进，还是已经进入最高 row 语义边界。
+- 先看 `Stage1Eval/global/train_active_rate` / `train_retired_rate`，确认还有多少 env 在贡献训练样本。
+- 再看 `Stage1Eval/global/forward_x_mean`、`Stage1Eval/global/current_level_mean`、`Stage1Eval/global/max_row_reached_rate` 和 `Stage1Eval/global/valid_target_masked`：是否真的沿地形列向前推进，还是已经进入最高 row 语义边界。
 - 再看 `Termination/far_from_target_rate` 和 `ball_joint_limit_rate`：是否因偏离或姿态越界提前失败。
 - 再看 `Observation/wheel_longitudinal_slip_abs_mean_raw`、`Observation/wheel_slip_angle_abs_mean_raw`、`LowSlip/combined_pass_rate`：是否形成低滑移运动。
 - 最后看 `Action/*` 和 `LowLevel/*`：判断是 policy 命令问题、low-slip 整形问题、轮速分配问题，还是轮地接触问题。
@@ -533,6 +552,8 @@ episode 指标只在有环境 reset 后聚合，因此训练前期或 episode �
 - `Terrain/current_level_mean`
 - `Stage1Eval/global/max_row_reached_rate`
 - `Stage1Eval/global/valid_target_masked`
+- `Stage1Eval/global/train_active_rate`
+- `Stage1Eval/global/train_retired_rate`
 - `Tracking/terrain_target_advances_mean`
 - `Tracking/active_segment_completion_pct`
 - terrain chase 视频中的实际车体位移

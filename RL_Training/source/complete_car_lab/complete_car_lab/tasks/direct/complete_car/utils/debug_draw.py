@@ -58,6 +58,7 @@ class CompleteCarDebugDraw:
         self._wheel_forward_visualizer: VisualizationMarkers | None = None
         self._wheel_velocity_visualizer: VisualizationMarkers | None = None
         self._height_patch_visualizer: VisualizationMarkers | None = None
+        self._height_patch_positive_y_visualizer: VisualizationMarkers | None = None
         self._height_patch_marker_radius = height_patch_marker_radius
         self._goal_arrow_height_offset = 0.25
         self._wheel_arrow_height_offset = 0.0
@@ -95,6 +96,8 @@ class CompleteCarDebugDraw:
             self._wheel_velocity_visualizer.set_visibility(visible)
         if self._height_patch_visualizer is not None:
             self._height_patch_visualizer.set_visibility(visible)
+        if self._height_patch_positive_y_visualizer is not None:
+            self._height_patch_positive_y_visualizer.set_visibility(visible)
 
     def draw_goal_pose(self, goal_positions_w: torch.Tensor, goal_headings_w: torch.Tensor) -> None:
         if not self.enabled:
@@ -170,6 +173,7 @@ class CompleteCarDebugDraw:
         *,
         height_offset: float,
         color_range_m: float,
+        positive_y_axis_w: torch.Tensor | None = None,
     ) -> None:
         """Draw sampled local height-patch points at their world-space terrain height."""
         if not self.enabled:
@@ -197,6 +201,28 @@ class CompleteCarDebugDraw:
         self._height_patch_visualizer.visualize(
             translations=marker_positions,
             marker_indices=marker_indices,
+        )
+
+        if positive_y_axis_w is None:
+            return
+
+        self._ensure_height_patch_positive_y_visualizer()
+        axis = torch.nan_to_num(positive_y_axis_w, nan=0.0, posinf=0.0, neginf=0.0)
+        axis_xy_norm = torch.linalg.vector_norm(axis[:, :2], dim=1, keepdim=True).clamp(min=1.0e-6)
+        axis = axis / axis_xy_norm
+        patch_center_w = torch.mean(patch_points_w, dim=1)
+        arrow_positions = patch_center_w + 0.45 * axis
+        arrow_positions[:, 2] = torch.mean(patch_points_w[..., 2], dim=1) + float(height_offset) + 0.25
+        arrow_yaw = torch.atan2(axis[:, 1], axis[:, 0])
+        zero = torch.zeros_like(arrow_yaw)
+        arrow_orientations = quat_from_euler_xyz(zero, zero, arrow_yaw)
+        arrow_scales = torch.zeros((arrow_positions.shape[0], 3), device=arrow_positions.device, dtype=arrow_positions.dtype)
+        arrow_scales[:, 0] = 0.9
+        arrow_scales[:, 1:] = 0.16
+        self._height_patch_positive_y_visualizer.visualize(
+            translations=arrow_positions,
+            orientations=arrow_orientations,
+            scales=arrow_scales,
         )
 
     def update_follow_views(
@@ -281,6 +307,13 @@ class CompleteCarDebugDraw:
         if self._height_patch_visualizer is None:
             radius = max(float(self._height_patch_marker_radius), 1.0e-4)
             self._height_patch_visualizer = VisualizationMarkers(_make_height_patch_marker_cfg(radius))
+
+    def _ensure_height_patch_positive_y_visualizer(self) -> None:
+        if self._height_patch_positive_y_visualizer is None:
+            arrow_cfg = RED_ARROW_X_MARKER_CFG.copy()
+            arrow_cfg.prim_path = "/Visuals/HeightPatch/positive_y_axis"
+            arrow_cfg.markers["arrow"].scale = (0.9, 0.16, 0.16)
+            self._height_patch_positive_y_visualizer = VisualizationMarkers(arrow_cfg)
 
     def _ensure_follow_view_paths(self, view_env_ids: tuple[int, ...], chase_env_index: int) -> None:
         if self._follow_view_env_ids == view_env_ids and self._follow_view_chase_env_index == chase_env_index:

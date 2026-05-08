@@ -168,12 +168,17 @@ class MLPModel(nn.Module):
         """Return a version of the model compatible with ONNX export."""
         return _OnnxMLPModel(self, verbose)
 
-    def update_normalization(self, obs: TensorDict) -> None:
+    def update_normalization(self, obs: TensorDict, train_mask: torch.Tensor | None = None) -> None:
         """Update observation-normalization statistics from a batch of observations."""
         if self.obs_normalization:
             # Select and concatenate observations
             obs_list = [obs[obs_group] for obs_group in self.obs_groups]
             mlp_obs = torch.cat(obs_list, dim=-1)
+            if train_mask is not None:
+                train_mask = train_mask.to(device=mlp_obs.device, dtype=torch.bool).reshape(-1)
+                mlp_obs = mlp_obs[train_mask]
+                if mlp_obs.numel() == 0:
+                    return
             # Update the normalizer parameters
             self.obs_normalizer.update(mlp_obs)  # type: ignore
 

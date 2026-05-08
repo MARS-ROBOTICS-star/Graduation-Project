@@ -278,10 +278,14 @@ STAGE1_TERRAIN_COLUMNS = (
 )
 
 STAGE1_GLOBAL_EVAL_FIELDS = (
+    "env_count",
     "rows_advanced_mean",
     "row_advance_rate",
     "max_row_reached_rate",
     "valid_target_masked",
+    "train_active_rate",
+    "train_retired_rate",
+    "train_sample_rate",
     "current_level_mean",
     "forward_x_mean",
     "tile_start_x_mean",
@@ -293,8 +297,11 @@ STAGE1_GLOBAL_EVAL_FIELDS = (
     "far_rate",
     "ball_joint_limit_rate",
     "timeout_rate",
+    "stuck_time_mean",
+    "stuck_timeout_rate",
     "stagnation_rate",
     "v_forward_mean",
+    "speed_limit_active_rate",
     "v_lateral_abs_mean",
     "lateral_velocity_ratio",
     "longitudinal_slip_abs_mean",
@@ -304,6 +311,8 @@ STAGE1_GLOBAL_EVAL_FIELDS = (
     "normal_force_sum_mean",
     "roll_abs_mean",
     "pitch_abs_mean",
+    "pitch_rate_abs_mean",
+    "vz_down_mean",
     "ball_joint_limit_usage_max",
     "action_abs_mean",
     "action_rate_abs_mean",
@@ -314,6 +323,7 @@ STAGE1_GLOBAL_EVAL_FIELDS = (
 
 STAGE1_FLAT_EVAL_FIELDS = (
     "retention_score",
+    "env_count",
     "rows_advanced_mean",
     "row_advance_rate",
     "max_row_reached_rate",
@@ -325,17 +335,23 @@ STAGE1_FLAT_EVAL_FIELDS = (
     "effective_failure_rate",
     "far_rate",
     "ball_joint_limit_rate",
+    "stuck_time_mean",
+    "stuck_timeout_rate",
     "stagnation_rate",
+    "speed_limit_active_rate",
     "longitudinal_slip_abs_mean",
     "slip_angle_abs_mean",
     "combined_low_slip_pass_rate",
     "pitch_abs_mean",
+    "pitch_rate_abs_mean",
+    "vz_down_mean",
     "roll_abs_mean",
     "ball_joint_limit_usage_max",
     "action_saturation_rate",
 )
 
 STAGE1_PER_COLUMN_EVAL_FIELDS = (
+    "env_count",
     "rows_advanced_mean",
     "row_advance_rate",
     "max_row_reached_rate",
@@ -346,9 +362,12 @@ STAGE1_PER_COLUMN_EVAL_FIELDS = (
     "far_rate",
     "ball_joint_limit_rate",
     "timeout_rate",
+    "stuck_time_mean",
+    "stuck_timeout_rate",
     "stagnation_rate",
     "backward_rate",
     "v_forward_mean",
+    "speed_limit_active_rate",
     "v_lateral_abs_mean",
     "lateral_velocity_ratio",
     "yaw_rate_abs_mean",
@@ -359,6 +378,8 @@ STAGE1_PER_COLUMN_EVAL_FIELDS = (
     "normal_force_sum_mean",
     "roll_abs_mean",
     "pitch_abs_mean",
+    "pitch_rate_abs_mean",
+    "vz_down_mean",
     "ball_joint_limit_usage_max",
     "action_abs_mean",
     "action_rate_abs_mean",
@@ -381,6 +402,9 @@ STAGE1_CONSOLE_PRIORITY_TAGS = (
     "Stage1Eval/flat/row_advance_rate",
     "Stage1Eval/flat/v_forward_mean",
     "Stage1Eval/flat/effective_failure_rate",
+    "Stage1Eval/global/train_active_rate",
+    "Stage1Eval/global/train_retired_rate",
+    "Stage1Eval/global/train_sample_rate",
     "Stage1Eval/global/rows_advanced_mean",
     "Stage1Eval/global/max_row_reached_rate",
     "Stage1Eval/global/valid_target_masked",
@@ -393,11 +417,15 @@ STAGE1_CONSOLE_PRIORITY_TAGS = (
     "Stage1Eval/global/target_x_mean",
     "Stage1Eval/global/effective_failure_rate",
     "Stage1Eval/global/stagnation_rate",
+    "Stage1Eval/global/stuck_timeout_rate",
+    "Stage1Eval/global/speed_limit_active_rate",
     "Stage1Eval/global/longitudinal_slip_abs_mean",
     "Stage1Eval/global/slip_angle_abs_mean",
     "Stage1Eval/global/combined_low_slip_pass_rate",
     "Stage1Eval/global/contact_loss_rate",
     "Stage1Eval/global/pitch_abs_mean",
+    "Stage1Eval/global/pitch_rate_abs_mean",
+    "Stage1Eval/global/vz_down_mean",
     "Stage1Eval/global/roll_abs_mean",
     "Stage1Eval/global/action_saturation_rate",
     "Stage1Eval/global/hardest_col_index",
@@ -861,6 +889,8 @@ class Logger:
         if self.stage_name == "stage1":
             return (
                 tag in STAGE1_TENSORBOARD_EXTRA_TAGS
+                or tag.startswith("TerrainFeature/")
+                or tag.startswith("TerrainGate/")
                 or tag.startswith("Debug/Stage1/")
                 or self._should_write_stage1_per_wheel_debug(tag)
             )

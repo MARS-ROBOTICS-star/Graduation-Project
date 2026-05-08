@@ -165,11 +165,16 @@ class RandomNetworkDistillation(nn.Module):
         obs_list = [obs[obs_group] for obs_group in self.obs_groups["rnd_state"]]
         return torch.cat(obs_list, dim=-1)
 
-    def update_normalization(self, obs: TensorDict) -> None:
+    def update_normalization(self, obs: TensorDict, train_mask: torch.Tensor | None = None) -> None:
         """Update state-normalization statistics from observations."""
         # Normalize the state
         if self.state_normalization:
             rnd_state = self.get_rnd_state(obs)
+            if train_mask is not None:
+                train_mask = train_mask.to(device=rnd_state.device, dtype=torch.bool).reshape(-1)
+                rnd_state = rnd_state[train_mask]
+                if rnd_state.numel() == 0:
+                    return
             self.state_normalizer.update(rnd_state)  # type: ignore
 
     def _constant_weight_schedule(self, step: int, **kwargs: dict[str, Any]) -> float:

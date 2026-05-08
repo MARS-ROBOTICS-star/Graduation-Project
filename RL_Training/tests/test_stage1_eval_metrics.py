@@ -44,6 +44,13 @@ def main() -> None:
     terrain_levels = torch.tensor([2, 3, 4, 5], dtype=torch.float32)
     forward_x = torch.tensor([6.0, 4.0, 2.0, 1.0])
     rows_advanced = torch.tensor([2.0, 1.0, 0.0, 0.0])
+    max_row_reached_mask = torch.tensor([False, False, False, False])
+    valid_target_masked = torch.tensor([False, False, False, False])
+    tile_start_x = torch.tensor([0.0, 0.0, 0.0, 0.0])
+    tile_origin_x = torch.tensor([4.0, 4.0, 4.0, 4.0])
+    tile_end_x = torch.tensor([8.0, 8.0, 8.0, 8.0])
+    root_x = forward_x.clone()
+    target_x = torch.tensor([8.0, 8.0, 8.0, 8.0])
     far_mask = torch.tensor([False, True, False, False])
     ball_limit_mask = torch.tensor([False, False, True, False])
     timeout_mask = torch.tensor([False, False, True, False])
@@ -118,8 +125,15 @@ def main() -> None:
     metrics = stage1_eval.compute_stage1_eval_metrics(
         terrain_types=terrain_types,
         terrain_levels=terrain_levels,
-        forward_x_from_current_tile_origin=forward_x,
+        forward_x_from_current_tile_start=forward_x,
         rows_advanced=rows_advanced,
+        max_row_reached_mask=max_row_reached_mask,
+        valid_target_masked=valid_target_masked,
+        tile_start_x=tile_start_x,
+        tile_origin_x=tile_origin_x,
+        tile_end_x=tile_end_x,
+        root_x=root_x,
+        target_x=target_x,
         far_mask=far_mask,
         ball_joint_limit_mask=ball_limit_mask,
         timeout_mask=timeout_mask,
@@ -155,6 +169,44 @@ def main() -> None:
     assert metrics["Stage1Eval/col03_rough/rows_advanced_mean"] == 0.0
     assert metrics["Stage1Eval/col03_rough/difficulty_score"] == 0.0
     assert not any(not math.isfinite(value) for value in metrics.values())
+
+    masked_metrics = stage1_eval.compute_stage1_eval_metrics(
+        terrain_types=terrain_types,
+        terrain_levels=terrain_levels,
+        forward_x_from_current_tile_start=forward_x,
+        rows_advanced=rows_advanced,
+        max_row_reached_mask=max_row_reached_mask,
+        valid_target_masked=valid_target_masked,
+        tile_start_x=tile_start_x,
+        tile_origin_x=tile_origin_x,
+        tile_end_x=tile_end_x,
+        root_x=root_x,
+        target_x=target_x,
+        far_mask=far_mask,
+        ball_joint_limit_mask=ball_limit_mask,
+        timeout_mask=timeout_mask,
+        base_lin_vel=base_lin_vel,
+        base_ang_vel=base_ang_vel,
+        wheel_longitudinal_slip=wheel_longitudinal_slip,
+        wheel_slip_angle=wheel_slip_angle,
+        wheel_normal_contact_force=wheel_normal_contact_force,
+        roll_deg=roll_deg,
+        pitch_deg=pitch_deg,
+        ball_joint_limit_usage=ball_joint_limit_usage,
+        actions=actions,
+        last_actions=last_actions,
+        active_waypoint_distance=active_waypoint_distance,
+        terrain_length=8.0,
+        train_active_mask=torch.tensor([True, False, True, True]),
+    )
+    assert masked_metrics["Stage1Eval/global/env_count"] == 3.0
+    assert math.isclose(
+        masked_metrics["Stage1Eval/global/current_level_mean"],
+        (2.0 + 4.0 + 5.0) / 3.0,
+        rel_tol=1.0e-6,
+    )
+    assert masked_metrics["Stage1Eval/col01_slope_down/env_count"] == 0.0
+    assert masked_metrics["Stage1Eval/col01_slope_down/difficulty_score"] == 0.0
 
     squashed = distribution.SquashedGaussianDistribution(2, init_std=0.2, log_std_min=-4.0, log_std_max=0.0)
     squashed.update(torch.tensor([[float("nan"), float("inf")]], dtype=torch.float32))

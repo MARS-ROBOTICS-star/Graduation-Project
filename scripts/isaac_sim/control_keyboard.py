@@ -11,14 +11,16 @@ _THIS_FILE = Path(__file__).resolve()
 PROJECT_ROOT = next(parent for parent in _THIS_FILE.parents if (parent / "AGENTS.md").exists())
 RL_PROJECT_ROOT = PROJECT_ROOT / "RL_Training"
 ISAACLAB_SOURCE_ROOT = Path("/home/ubuntu/IsaacLab/source/isaaclab")
-STAGE1_TERRAIN_PATH = (
+STAGE1_TERRAIN_BUILDER_PATH = (
     RL_PROJECT_ROOT
-    / "complete_car_rl_training"
+    / "source"
+    / "complete_car_lab"
+    / "complete_car_lab"
     / "tasks"
     / "direct"
     / "complete_car"
     / "terrain"
-    / "terrain_generator.py"
+    / "terrain_builder.py"
 )
 DEFAULT_HEADLESS_FRAMES = 120
 ISAAC_SIM_ROOT = Path(os.environ.get("ISAAC_SIM_ROOT", "/home/ubuntu/isaacsim"))
@@ -92,7 +94,25 @@ def parse_args() -> argparse.Namespace:
         default=7,
         help="Random seed for obstacle-like terrain tiles.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--show-height-patch-vis",
+        action="store_true",
+        help="Draw Stage1 local height-patch sample points around the middle body during keyboard teleop.",
+    )
+    parser.add_argument("--height-patch-vis-radius", type=float, default=0.045)
+    parser.add_argument("--height-patch-vis-height-offset", type=float, default=0.05)
+    parser.add_argument("--height-patch-vis-color-range-m", type=float, default=0.30)
+    parser.add_argument("--height-patch-vis-update-interval", type=int, default=4)
+    args = parser.parse_args()
+    if args.height_patch_vis_radius <= 0.0:
+        parser.error("--height-patch-vis-radius must be positive.")
+    if args.height_patch_vis_height_offset < 0.0:
+        parser.error("--height-patch-vis-height-offset must be non-negative.")
+    if args.height_patch_vis_color_range_m <= 0.0:
+        parser.error("--height-patch-vis-color-range-m must be positive.")
+    if args.height_patch_vis_update_interval <= 0:
+        parser.error("--height-patch-vis-update-interval must be positive.")
+    return args
 
 
 ARGS = parse_args()
@@ -151,7 +171,7 @@ import carb
 import omni.appwindow
 import omni.usd
 
-from pxr import Gf, PhysxSchema, PhysicsSchemaTools, UsdPhysics, UsdShade
+from pxr import Gf, PhysxSchema, PhysicsSchemaTools, UsdGeom, UsdPhysics, UsdShade, Vt
 from isaacsim.core.api.world import World
 from isaacsim.core.prims import SingleArticulation
 from isaacsim.core.utils.stage import open_stage
@@ -168,6 +188,7 @@ TERRAIN_ROOT_PATH = "/World/terrain_preview"
 TRAINING_TERRAIN_ROOT_PATH = "/World/terrain"
 TERRAIN_ORIGIN = (-1.0, 0.0, 0.0)
 GROUND_PRIM_PATH = "/World/defaultGroundPlane"
+HEIGHT_PATCH_VIS_ROOT_PATH = "/World/height_patch_visualization"
 GROUND_COLLISION_PRIM_CANDIDATES = [
     "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
     "/World/defaultGroundPlane/CollisionPlane",
@@ -236,6 +257,22 @@ STATUS_PRINT_INTERVAL_STEPS = max(1, int(round(STATUS_PRINT_INTERVAL_SEC / TRAIN
 STATIC_FRICTION = 0.5  # 共享物理材质的静摩擦系数
 DYNAMIC_FRICTION = 0.5  # 共享物理材质的动摩擦系数
 GROUND_SIZE = 50.0  # 无地形模式下默认 ground plane 的尺寸，单位 m
+HEIGHT_PATCH_FRONT_EXTENT = 0.942209
+HEIGHT_PATCH_REAR_EXTENT = 0.942209
+HEIGHT_PATCH_HALF_WIDTH = 0.280374
+HEIGHT_PATCH_PREVIEW_LENGTH = 1.0
+HEIGHT_PATCH_REAR_MARGIN = 0.40
+HEIGHT_PATCH_SIDE_MARGIN = 0.5
+HEIGHT_PATCH_RESOLUTION_X = 0.10
+HEIGHT_PATCH_RESOLUTION_Y = 0.10
+HEIGHT_PATCH_ORIGIN_OFFSET_XY = (0.0, 0.0)
+HEIGHT_PATCH_COLOR_TABLE = (
+    (0.10, 0.25, 0.95),
+    (0.10, 0.70, 1.00),
+    (0.20, 0.95, 0.35),
+    (1.00, 0.78, 0.10),
+    (1.00, 0.12, 0.08),
+)
 
 # 数字小键盘键位映射
 BALL_JOINT_KEY_BINDINGS = [
@@ -267,6 +304,11 @@ keyboard = None
 input_iface = None
 keyboard_sub = None
 terrain_spawn_position = None
+stage1_terrain_cfg = None
+stage1_terrain_data = None
+height_patch_local_points = None
+height_patch_translate_ops = []
+height_patch_color_attrs = []
 
 if not RUN_HEADLESS:
     appwindow = omni.appwindow.get_default_app_window()
@@ -296,10 +338,10 @@ if input_iface is not None and keyboard is not None:
 
 
 def load_stage1_terrain_module():
-    """Load terrain_generator.py directly to avoid importing the full task package tree."""
-    spec = importlib.util.spec_from_file_location("stage1_terrain_local", STAGE1_TERRAIN_PATH)
+    """Load terrain_builder.py directly to avoid importing the full task package tree."""
+    spec = importlib.util.spec_from_file_location("stage1_terrain_local", STAGE1_TERRAIN_BUILDER_PATH)
     if spec is None or spec.loader is None:
-        raise ImportError(f"Unable to load stage1 terrain module from {STAGE1_TERRAIN_PATH}")
+        raise ImportError(f"Unable to load stage1 terrain module from {STAGE1_TERRAIN_BUILDER_PATH}")
 
     module = importlib.util.module_from_spec(spec)
     sys.modules.setdefault(spec.name, module)
@@ -326,7 +368,140 @@ def build_training_stage1_mesh():
 
     spawn_position = terrain_data.env_origins[0, 0].astype(np.float64).copy()
     spawn_position[2] += 0.30
-    return terrain_cfg, terrain_mesh, spawn_position
+    return terrain_cfg, terrain_data, terrain_mesh, spawn_position
+
+
+def build_axis_points(min_value: float, max_value: float, target_resolution: float) -> np.ndarray:
+    num_points = int(round((max_value - min_value) / target_resolution)) + 1
+    if num_points < 2:
+        return np.asarray([round(min_value, 6)], dtype=np.float64)
+    step = (max_value - min_value) / (num_points - 1)
+    return np.asarray([round(min_value + i * step, 6) for i in range(num_points)], dtype=np.float64)
+
+
+def build_height_patch_local_points() -> np.ndarray:
+    x_points = build_axis_points(
+        -(HEIGHT_PATCH_REAR_EXTENT + HEIGHT_PATCH_REAR_MARGIN),
+        HEIGHT_PATCH_FRONT_EXTENT + HEIGHT_PATCH_PREVIEW_LENGTH,
+        HEIGHT_PATCH_RESOLUTION_X,
+    )
+    y_points = build_axis_points(
+        -(HEIGHT_PATCH_HALF_WIDTH + HEIGHT_PATCH_SIDE_MARGIN),
+        HEIGHT_PATCH_HALF_WIDTH + HEIGHT_PATCH_SIDE_MARGIN,
+        HEIGHT_PATCH_RESOLUTION_Y,
+    )
+    grid_x, grid_y = np.meshgrid(x_points, y_points, indexing="ij")
+    local_points = np.stack((grid_x.reshape(-1), grid_y.reshape(-1)), axis=-1)
+    return local_points + np.asarray(HEIGHT_PATCH_ORIGIN_OFFSET_XY, dtype=np.float64)
+
+
+def yaw_from_quat_wxyz(quat_wxyz: np.ndarray) -> float:
+    quat = np.asarray(quat_wxyz, dtype=np.float64).reshape(-1)
+    if quat.size < 4:
+        return 0.0
+    w, x, y, z = quat[:4]
+    return float(np.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
+
+
+def sample_stage1_terrain_heights_world_xy(points_xy_w: np.ndarray) -> np.ndarray:
+    if stage1_terrain_cfg is None or stage1_terrain_data is None:
+        return np.zeros(points_xy_w.shape[0], dtype=np.float64)
+
+    hf = np.asarray(stage1_terrain_data.height_field_raw, dtype=np.float64)
+    max_x_index = hf.shape[0] - 1
+    max_y_index = hf.shape[1] - 1
+
+    x_index = (points_xy_w[:, 0] + float(stage1_terrain_cfg.border_size)) / float(stage1_terrain_cfg.horizontal_scale)
+    y_index = (points_xy_w[:, 1] + float(stage1_terrain_cfg.border_size)) / float(stage1_terrain_cfg.horizontal_scale)
+
+    x0 = np.clip(np.floor(x_index).astype(np.int64), 0, max_x_index - 1)
+    y0 = np.clip(np.floor(y_index).astype(np.int64), 0, max_y_index - 1)
+    x1 = np.clip(x0 + 1, 0, max_x_index)
+    y1 = np.clip(y0 + 1, 0, max_y_index)
+
+    wx = np.clip(x_index - x0.astype(np.float64), 0.0, 1.0)
+    wy = np.clip(y_index - y0.astype(np.float64), 0.0, 1.0)
+
+    h00 = hf[x0, y0]
+    h01 = hf[x0, y1]
+    h10 = hf[x1, y0]
+    h11 = hf[x1, y1]
+    height_raw = (
+        (1.0 - wx) * (1.0 - wy) * h00
+        + (1.0 - wx) * wy * h01
+        + wx * (1.0 - wy) * h10
+        + wx * wy * h11
+    )
+    return height_raw * float(stage1_terrain_cfg.vertical_scale)
+
+
+def compute_height_patch_world_points() -> np.ndarray:
+    if height_patch_local_points is None:
+        return np.zeros((0, 3), dtype=np.float64)
+
+    root_position, root_orientation = robot.get_world_pose()
+    root_position = np.asarray(root_position, dtype=np.float64).reshape(-1)
+    yaw = yaw_from_quat_wxyz(np.asarray(root_orientation, dtype=np.float64))
+    cos_yaw = np.cos(yaw)
+    sin_yaw = np.sin(yaw)
+
+    local_x = height_patch_local_points[:, 0]
+    local_y = height_patch_local_points[:, 1]
+    x_world = root_position[0] + cos_yaw * local_x - sin_yaw * local_y
+    y_world = root_position[1] + sin_yaw * local_x + cos_yaw * local_y
+    points_xy_w = np.stack((x_world, y_world), axis=-1)
+    z_world = sample_stage1_terrain_heights_world_xy(points_xy_w)
+    return np.stack((x_world, y_world, z_world), axis=-1)
+
+
+def height_patch_color_index(terrain_z: np.ndarray) -> np.ndarray:
+    if terrain_z.size == 0:
+        return np.zeros(0, dtype=np.int64)
+    centered = (terrain_z - float(np.mean(terrain_z))) / float(ARGS.height_patch_vis_color_range_m)
+    return np.digitize(centered, [-0.60, -0.20, 0.20, 0.60]).astype(np.int64)
+
+
+def ensure_height_patch_markers(stage, point_count: int) -> None:
+    if len(height_patch_translate_ops) >= point_count:
+        return
+
+    UsdGeom.Xform.Define(stage, HEIGHT_PATCH_VIS_ROOT_PATH)
+    marker_radius = float(ARGS.height_patch_vis_radius)
+    for marker_id in range(len(height_patch_translate_ops), point_count):
+        marker_path = f"{HEIGHT_PATCH_VIS_ROOT_PATH}/sample_{marker_id:03d}"
+        sphere = UsdGeom.Sphere.Define(stage, marker_path)
+        sphere.CreateRadiusAttr(1.0)
+        xformable = UsdGeom.Xformable(sphere.GetPrim())
+        xformable.ClearXformOpOrder()
+        translate_op = xformable.AddTranslateOp()
+        scale_op = xformable.AddScaleOp()
+        scale_op.Set(Gf.Vec3f(marker_radius, marker_radius, marker_radius))
+        color_attr = UsdGeom.Gprim(sphere.GetPrim()).CreateDisplayColorAttr()
+        color_attr.Set(Vt.Vec3fArray([Gf.Vec3f(*HEIGHT_PATCH_COLOR_TABLE[2])]))
+        height_patch_translate_ops.append(translate_op)
+        height_patch_color_attrs.append(color_attr)
+
+
+def update_height_patch_visualization(physics_step_counter: int) -> None:
+    if not ARGS.show_height_patch_vis:
+        return
+    if physics_step_counter % ARGS.height_patch_vis_update_interval != 0:
+        return
+
+    patch_points_w = compute_height_patch_world_points()
+    if patch_points_w.size == 0:
+        return
+
+    ensure_height_patch_markers(stage, patch_points_w.shape[0])
+    terrain_z = patch_points_w[:, 2]
+    color_indices = height_patch_color_index(terrain_z)
+    height_offset = float(ARGS.height_patch_vis_height_offset)
+
+    for point_id, point_w in enumerate(patch_points_w):
+        position = Gf.Vec3d(float(point_w[0]), float(point_w[1]), float(point_w[2] + height_offset))
+        color = Gf.Vec3f(*HEIGHT_PATCH_COLOR_TABLE[int(color_indices[point_id])])
+        height_patch_translate_ops[point_id].Set(position)
+        height_patch_color_attrs[point_id].Set(Vt.Vec3fArray([color]))
 
 
 def deactivate_default_ground(stage):
@@ -343,22 +518,28 @@ def deactivate_default_ground(stage):
 
 
 def maybe_build_terrain(stage):
-    global terrain_spawn_position
+    global terrain_spawn_position, stage1_terrain_cfg, stage1_terrain_data
 
     if ARGS.terrain == "none":
         print("[INFO] Terrain preview disabled for control_keyboard.py")
         terrain_spawn_position = None
+        stage1_terrain_cfg = None
+        stage1_terrain_data = None
         return None
 
     deactivate_default_ground(stage)
     terrain_spawn_position = None
+    stage1_terrain_cfg = None
+    stage1_terrain_data = None
 
     if ARGS.terrain == "stage1":
         ensure_isaaclab_source_on_path()
         import isaaclab.sim as sim_utils
         from isaaclab.terrains.utils import create_prim_from_mesh
 
-        terrain_cfg, terrain_mesh, terrain_spawn_position = build_training_stage1_mesh()
+        terrain_cfg, terrain_data, terrain_mesh, terrain_spawn_position = build_training_stage1_mesh()
+        stage1_terrain_cfg = terrain_cfg
+        stage1_terrain_data = terrain_data
         if stage.GetPrimAtPath(TRAINING_TERRAIN_ROOT_PATH).IsValid():
             stage.RemovePrim(TRAINING_TERRAIN_ROOT_PATH)
 
@@ -697,6 +878,12 @@ print("NUMPAD_2 / NUMPAD_MULTIPLY : SPM2 y +/-")
 print("NUMPAD_3 / NUMPAD_SUBTRACT : SPM2 x +/-")
 print(f"Active terrain              : {ARGS.terrain}")
 print(f"Terrain seed                : {ARGS.terrain_seed}")
+print(f"Height patch visualization  : {'on' if ARGS.show_height_patch_vis else 'off'}")
+if ARGS.show_height_patch_vis:
+    preview_point_count = build_height_patch_local_points().shape[0]
+    print(f"Height patch sample points  : {preview_point_count}")
+    print(f"Height patch marker radius  : {ARGS.height_patch_vis_radius:.3f} m")
+    print(f"Height patch color range    : +/- {ARGS.height_patch_vis_color_range_m:.3f} m around patch mean")
 print(f"Window mode                 : {'headless smoke run' if RUN_HEADLESS else 'interactive teleop'}")
 print(f"Physics dt                  : {TRAINING_PHYSICS_DT:.6f} s")
 print(f"Render dt                   : {TRAINING_RENDER_DT:.6f} s")
@@ -731,6 +918,8 @@ def apply_current_command() -> None:
     robot.apply_action(ball_action)
 
 
+height_patch_local_points = build_height_patch_local_points() if ARGS.show_height_patch_vis else None
+
 try:
     if RUN_HEADLESS:
         smoke_frames = ARGS.frames if ARGS.frames > 0 else DEFAULT_HEADLESS_FRAMES
@@ -743,6 +932,7 @@ try:
                 ball_position_cmd = compute_ball_position_targets()
                 wheel_velocity_cmd = compute_wheel_velocity_targets()
             apply_current_command()
+            update_height_patch_visualization(physics_step_counter)
             world.step(render=False)
             physics_step_counter += 1
             if physics_step_counter - last_status_print_step >= STATUS_PRINT_INTERVAL_STEPS:
@@ -787,6 +977,7 @@ try:
                 wheel_velocity_cmd = compute_wheel_velocity_targets()
 
             apply_current_command()
+            update_height_patch_visualization(physics_step_counter)
             world.step(render=True)
             physics_step_counter += 1
             if physics_step_counter - last_status_print_step >= STATUS_PRINT_INTERVAL_STEPS:

@@ -3,6 +3,69 @@
 ## 2026-05-07
 
 已完成：
+- 按用户要求将 `525` 这次低维地形特征 Stage1 训练的 TensorBoard 输出和环境配置打包为 ChatGPT 分析 zip。
+- 对 run `2026-05-07_17-14-44_stage1_terrain_features_actor82_critic660_warmstart_700iter_restart` 执行 TensorBoard scalar 导出。
+- 导出结果包含 `371` 个非空 scalar tag，导出目录共 `374` 个文件。
+- 新增包内 `README.md` 和 `chatgpt_analysis_prompt.md`，明确 run 口径、分析任务和“不包含权重文件”的边界。
+- 压缩包已通过 `unzip -tq` 校验，并检查没有 `.pt`、`.onnx`、`.onnx.data` 文件。
+
+输出：
+- `results/stage1_525_terrain_features_chatgpt_analysis_2026-05-07.zip`
+- 大小约 `6.9M`
+- 包内 `390` 个条目
+
+包内主要内容：
+- TensorBoard 原始 event 文件。
+- `tensorboard_export/` 的 scalar CSV、`summary.json`、`latest_values.csv` 和 `group_summary.csv`。
+- `params/env.yaml`、`params/agent.yaml`。
+- run 保存的 `Graduation-Project.diff`。
+- Stage1 参数详情、评价指标、奖励函数设计草案、低维地形特征优化方案和分析提示词。
+
+结论：
+- 该包可直接用于 ChatGPT 分析 `525` run 的训练曲线和环境配置。
+- 该 run 发生在最高 row retired / train-mask 修改之前，后续分析不能把 retired-mask 逻辑当作该 run 已生效配置。
+
+## 2026-05-07
+
+已完成：
+- 按用户要求补强 Stage1 最高 row 完成后的训练样本语义，避免 completed env 继续采样并参与 PPO 更新。
+- `env.py` 新增 Stage1 active / retired mask：触发 `terrain_column_completed` 的完成 transition 仍作为 terminal 样本；reset 后该 env retired，后续动作置零、目标停放，不再推进 row。
+- PPO 链路新增 `train_mask`：`RolloutStorage` 只把 active transition 放入 feedforward mini-batch；advantage 归一化只使用 active 样本；actor / critic / RND normalizer 只用 active next obs 更新。
+- `Stage1Eval/*` 改为按 active train mask 统计，并新增 `train_active_rate`、`train_retired_rate` 和 `train_sample_rate`。
+- runner 在所有 Stage1 terrain-column env 都 retired 后，于当前 rollout/update 完成后停止训练并保存最终模型。
+- 新增 `RL_Training/tests/test_rollout_train_mask.py`，验证 rollout mask 不会把 retired env 样本送入 mini-batch。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/stage1_eval.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/storage/rollout_storage.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/algorithms/ppo.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/models/mlp_model.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/extensions/rnd.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/runners/on_policy_runner.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `RL_Training/tests/test_stage1_eval_metrics.py`
+- `RL_Training/tests/test_rollout_train_mask.py`
+- `docs/Stage1参数详情表.md`
+- `docs/stage1评价指标.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 覆盖本轮修改的 env、Stage1Eval、PPO、storage、normalizer、runner 和测试文件，通过。
+- `python3 RL_Training/tests/test_stage1_eval_metrics.py` 通过；该测试按预期打印一次分布数值清理 warning。
+- `python3 RL_Training/tests/test_rollout_train_mask.py` 通过。
+- `python3 RL_Training/tests/test_stage1_curriculum.py` 通过。
+- `python3 RL_Training/tests/test_terrain_features.py` 通过。
+
+产出/结论：
+- 当前 Stage1 最高 row 完成后不再回低 row，也不再留在最高 row 继续贡献 PPO 样本。
+- 后续训练分析必须同时查看 `Stage1Eval/global/train_active_rate` 和 `train_retired_rate`，避免把 retired env 排除后的 active 均值误解为全部 env 均值。
+
+## 2026-05-07
+
+已完成：
 - 为 Stage1 回放增加局部高度图 patch 视口可视化。
 - `play.py` 新增 `--show_height_patch_vis`、`--height_patch_vis_envs`、`--height_patch_vis_radius`、`--height_patch_vis_height_offset` 和 `--height_patch_vis_color_range_m`。
 - `env.py` 基于当前 `_last_critic_height_patch` 反算采样点世界坐标，保证显示的点与 policy 实际使用的局部高度 patch 对齐。
@@ -14923,6 +14986,28 @@
 ## 2026-05-07
 
 已完成：
+- 按用户要求将 Stage1 局部高度图 patch 可视化加入 `scripts/isaac_sim/control_keyboard.py`。
+- 新增键盘脚本参数：`--show-height-patch-vis`、`--height-patch-vis-radius`、`--height-patch-vis-height-offset`、`--height-patch-vis-color-range-m`、`--height-patch-vis-update-interval`。
+- 键盘脚本现在按 Stage1 当前 patch 几何参数显示 `34 * 17 = 578` 个采样点；`--terrain stage1` 时采样高度来自 Stage1 heightfield，`--terrain none` 时显示在平面高度附近。
+- 修正键盘脚本 Stage1 terrain builder 路径，从旧 `complete_car_rl_training/.../terrain_generator.py` 指向当前 `RL_Training/source/complete_car_lab/.../terrain/terrain_builder.py`。
+- 执行 `python3 -m py_compile scripts/isaac_sim/control_keyboard.py`，通过。
+- 执行 Isaac Sim headless smoke：`--terrain none --show-height-patch-vis`，通过。
+- 执行 IsaacLab headless smoke：`--terrain stage1 --show-height-patch-vis`，通过。
+- 同步更新 `docs/current_status.md` 与 `docs/conversation_history.md`。
+
+修改文件：
+- `scripts/isaac_sim/control_keyboard.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 键盘手动控制时也可以查看 Stage1 局部高度 patch 点云；该功能只影响视口调试，不改变训练、回放策略输入、奖励、终止或模型权重。
+- Stage1 地形模式建议使用 `/home/ubuntu/IsaacLab/isaaclab.sh -p scripts/isaac_sim/control_keyboard.py --terrain stage1 --show-height-patch-vis` 启动。
+
+## 2026-05-07
+
+已完成：
 - 按用户要求监控 Stage1 第二次训练测试至 `1500` checkpoint，并确认 `model_1500.pt` 已保存。
 - 训练 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-06_23-51-57_stage1_second_training_test_128env_450_to_1600_overnight`。
 - `model_1500.pt` 保存后发送 `SIGINT` 停止训练；GPU 训练进程已释放。
@@ -14973,3 +15058,186 @@
 - 全局 `current_level_mean` 峰值为 `10.8296`，末 `50` step 均值为 `9.7618`，说明策略可反复触达 row 10 但未稳定继续上推。
 - 末段地形分层：平地、坡地基本可用；粗糙地形中等可用；离散障碍和台阶仍是瓶颈，台阶上下末段 `row_advance_rate` 接近 `0`。
 - 末段运动质量仍偏紧：全局 `action_saturation_rate = 0.3721`、`pitch_abs_mean = 10.9846`、`longitudinal_slip_abs_mean = 4.2912`，不能判断为完全收敛。
+
+## 2026-05-07
+
+已完成：
+- 按用户提供的 MGDP 启发提案，结合当前 Stage1 实际 patch、观测拼接和 reward 源码，新增优化方案文档。
+- 核对 `env.py`、`observations.py`、`rewards.py`、`complete_car_stage1_cfg.py`、`terrain_cfg.py` 和 `io_descriptors.py`。
+- 明确当前高度 patch 为 `root_z - terrain_height`，不是地形高度本身；文档中已写入后续特征提取必须先转换为相对地形高度的要求。
+- 执行 Markdown 数学格式检查和 `git diff --check -- docs/优化方案.md`，通过。
+- 同步更新 `docs/current_status.md` 与 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/优化方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 下一轮 Stage1 观测优化建议为 `actor = 54 维基础观测 + z_terrain`，`critic = actor_obs + 完整 34 * 17 高度 patch`。
+- `z_terrain` 第一版建议使用确定性几何特征，覆盖前方台阶/坑、左右轮路径高差、三车体支撑区域和连续地形 gate。
+- reward 后续不应直接奖励 learned token，而应通过确定性 terrain gate 调节速度、姿态、防俯冲、接触支撑和低滑移等真实运动行为约束。
+
+## 2026-05-07
+
+已完成：
+- 按用户要求继续查看 Stage1 观测、critic、PPO obs_groups、warm-start、logger、reward 和评估相关代码。
+- 在 `docs/优化方案.md` 中新增“落地执行细节”章节，明确具体文件修改清单、第一阶段观测结构改法、warm-start 转换方式、训练命令、测试命令、回放验收点和第二阶段 reward 接入位置。
+- 将第一版 `z_terrain` 固定为 `28` 维，actor obs dim 固定为 `82`，critic obs dim 固定为 `660`。
+- 明确旧 `632` 维 Stage1 checkpoint 不能直接 resume 到新结构，需从 Stage0 `54` 维 checkpoint 重新生成 actor/critic 分维度 warm-start。
+- 执行 Markdown 数学格式检查和 `git diff --check -- docs/优化方案.md`，通过。
+- 同步更新 `docs/current_status.md` 与 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/优化方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 RSL-RL `obs_groups` 已支持 actor/critic 不同 observation group，不需要改 PPO 主框架。
+- 第一阶段只改观测结构，先验证低维地形 actor 本身；terrain-gated reward 放在第二阶段单独接入，避免训练结果无法归因。
+
+## 2026-05-07
+
+已完成：
+- 按用户要求在 Stage1 高度 patch 可视化中加入红色局部 `+Y` 半区箭头，并启动 `scripts/play.py` 回放进行人工确认。
+- 用户在 Isaac Sim 视口确认红色 `+Y` 箭头位于车体左侧。
+- 将该坐标系结论写入 `docs/优化方案.md`、`docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/优化方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 Stage1 patch 局部坐标中，`+Y` 对应车体左侧，`-Y` 对应车体右侧。
+- 后续低维地形特征固定使用 `left_track = y_points > 0`、`right_track = y_points < 0`。
+- `left_right_height_diff = left_track_height_mean - right_track_height_mean`，该值大于 `0` 表示左侧轮路径预瞄地形高于右侧。
+
+## 2026-05-07
+
+已完成：
+- 按 `docs/优化方案.md` 落地 Stage1 第一阶段低维地形特征观测结构。
+- 新增 `mdp/terrain_features.py`，实现 `D_patch -> H_rel -> 28` 维 `z_terrain`，并输出 `TerrainFeature/*`、`TerrainGate/*` diagnostics。
+- 将 Stage1 观测链路改为 actor `54 + 28 = 82` 维，critic `82 + 578 = 660` 维。
+- 修改 warm-start 转换脚本，使 actor 和 critic 分别扩展到 `82` 与 `660` 维。
+- 新增 `RL_Training/tests/test_terrain_features.py`，覆盖平地、上台阶、下台阶、左高右低和粗糙地形人工 patch。
+- 同步修复 `RL_Training/tests/test_stage1_eval_metrics.py` 的 dry-run 入参，使其匹配当前 `compute_stage1_eval_metrics()` 签名。
+- 生成新的 warm-start checkpoint：`RL_Training/logs/rsl_rl/complete_car_stage1/warmstart_best_baseline_2_terrain_features/model_0.pt`。
+- 完成 `1` iteration headless smoke：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-07_16-55-38_stage1_terrain_features_smoke_1iter`。
+- 同步更新 Stage1 参数详情、评价指标说明、当前状态和 durable conversation memory。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/terrain_features.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/observations.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/__init__.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/io_descriptors.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/math_utils.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `RL_Training/scripts/convert_stage0_to_stage1_warmstart.py`
+- `RL_Training/tests/test_terrain_features.py`
+- `RL_Training/tests/test_stage1_eval_metrics.py`
+- `docs/优化方案.md`
+- `docs/Stage1参数详情表.md`
+- `docs/stage1评价指标.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- smoke 终端确认 Actor Model 第一层 `in_features=82`，Critic Model 第一层 `in_features=660`。
+- TensorBoard event 中已出现 `TerrainFeature/*` 和 `TerrainGate/*`。
+- 当前新主线不能 resume 旧 `632` 维 Stage1 checkpoint；正式训练应从 `warmstart_best_baseline_2_terrain_features/model_0.pt` warm-start。
+- 本轮只改观测结构，不同时改 reward；terrain-gated reward 留到第二阶段单独接入。
+
+## 2026-05-07
+
+已完成：
+- 按用户要求启动并监控低维地形特征 Stage1 正式测试 run：`2026-05-07_17-14-44_stage1_terrain_features_actor82_critic660_warmstart_700iter_restart`。
+- 训练使用 `128` env、headless、从 `warmstart_best_baseline_2_terrain_features/model_0.pt` warm-start，actor `82` 维、critic `660` 维。
+- 按用户要求在 `525` checkpoint 后停止训练；`model_525.pt` 已保存，因终端刷新滞后 event 最后写到 step `527`，随后发送 `SIGINT`，GPU 训练进程退出。
+- 同步更新 `docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- step `525`：`current_level_mean = 9.2296`，`rows_advanced_mean = 1.5870`，`flat/row_advance_rate = 0.9345`，`contact_loss_rate = 0.6582`，`pitch_abs_mean = 9.3597`，`action_saturation_rate = 0.3085`。
+- 该 run 已反复进入 row `9` 附近，平地能力保留较好；但台阶 difficulty 仍约 `0.51-0.55`，接触丢失、滑移和俯仰偏高，不能判断为收敛。
+- 下一步建议先导出并分析本 run 的 TensorBoard 曲线，再决定是否进入 terrain-gated reward / 接触支撑 / 台阶前速度约束优化。
+
+## 2026-05-07
+
+已完成：
+- 按用户要求修改 Stage1 terrain-column reset / completion 语义。
+- 新增 `curriculum.initial_min_terrain_level_by_name`，使初始 row 采样同时受按地形名设置的最小/最大 row 约束。
+- 将当前 Stage1 step 类相关地形设为从 row `1` 起：`stairs down`、`stairs up` 固定 row `1`，`discrete obstacles` 为 row `1-2`。
+- 修改失败退级逻辑，使 step 类地形 reset 后不会退回 row `0`。
+- 修改最高 row 语义：`terrain_column_completed` 不再作为 `time_out`，而是作为 terminal 结束；reset 时不再回到低 row 重新采样。
+- 新增 `RL_Training/tests/test_stage1_curriculum.py`，验证 step 类初始 row 下界。
+- 同步更新 `docs/Stage1参数详情表.md`、`docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/tests/test_stage1_curriculum.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过。
+- `python3 RL_Training/tests/test_stage1_curriculum.py` 通过。
+- `python3 RL_Training/tests/test_terrain_features.py` 通过。
+- `python3 RL_Training/tests/test_stage1_eval_metrics.py` 通过；该测试按预期打印一次分布数值清理 warning。
+- `git diff --check` 通过。
+
+## 2026-05-08
+
+已完成：
+- 按用户提供的下一轮 reward / control / curriculum 优化建议，结合当前 Stage1 真实代码链路重新整理 `docs/优化方案.md`。
+- 修正文档中旧的 `632` 维 actor 口径，更新为当前 actor `54 + 28 = 82`、critic `82 + 578 = 660`。
+- 新增“第二阶段 terrain-gated reward / control / reset 落地方案”，明确 A1-A4 实验顺序、代码入口、参数初值、TensorBoard 指标和需要人工确认的事项。
+- 同步更新 `docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/优化方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 下一轮 Stage1 主线建议从 terrain-gated speed hard clamp 开始，随后接入 gate-aware contact support、stuck penalty/reset，再在确认 pitch 符号后接入台阶姿态和下台阶 anti-dive。
+- 当前尚未实现代码改动；进入实现前需确认 `spm1/spm2_platform_joint_y` 正方向、Stage1b 专训是否建立、stuck reset 是否退级、球铰软限位是否只日志不进 reward，以及 A1/A2 是否分开训练验证。
+
+## 2026-05-08
+
+已完成：
+- 按用户确认更新 `docs/优化方案.md` 中第二阶段 Stage1 reward / control / reset 执行口径。
+- 写明 `spm1_platform_joint_y > 0` 表示前车体低头，因此前车体抬头参考应取负方向；`spm2_platform_joint_y > 0` 表示后车体抬头。
+- 将 `stuck_timeout_s` 默认方案从 `2.0 s` 改为 `10.0 s`，并写明触发后直接退级。
+- 写明不建立独立 `Stage1b` 专训配置，球铰软限位第一版只日志不进 reward，A1 速度硬限幅和 A2 gate-aware contact support 合并为同一次训练改动。
+- 同步更新 `docs/current_status.md` 与 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/优化方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 下一轮实现默认从合并的 A1+A2 开始：terrain-gated 速度硬限幅 + gate-aware contact support。
+- 上台阶姿态 reward 的符号已明确：若用 `spm1_platform_joint_y` 表示前车姿态，抬头参考必须为负值。

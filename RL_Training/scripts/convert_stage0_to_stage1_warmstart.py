@@ -11,8 +11,9 @@ import torch
 DEFAULT_SOURCE = (
     "logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2/model_699.pt"
 )
-DEFAULT_OUTPUT = "logs/rsl_rl/complete_car_stage1/warmstart_best_baseline_2/model_0.pt"
-DEFAULT_TARGET_OBS_DIM = 632
+DEFAULT_OUTPUT = "logs/rsl_rl/complete_car_stage1/warmstart_best_baseline_2_terrain_features/model_0.pt"
+DEFAULT_TARGET_ACTOR_OBS_DIM = 82
+DEFAULT_TARGET_CRITIC_OBS_DIM = 660
 
 
 def _expand_obs_vector(value: torch.Tensor, target_obs_dim: int, *, fill_value: float) -> torch.Tensor:
@@ -40,7 +41,10 @@ def _expand_first_linear_weight(
     return expanded
 
 
-def _convert_model_state_dict(state_dict: dict[str, torch.Tensor], target_obs_dim: int) -> dict[str, torch.Tensor]:
+def _convert_model_state_dict(
+    state_dict: dict[str, torch.Tensor],
+    target_obs_dim: int,
+) -> tuple[dict[str, torch.Tensor], int]:
     source_obs_dim = state_dict["obs_normalizer._mean"].shape[1]
     converted = dict(state_dict)
     converted["obs_normalizer._mean"] = _expand_obs_vector(
@@ -63,27 +67,32 @@ def _convert_model_state_dict(state_dict: dict[str, torch.Tensor], target_obs_di
         source_obs_dim,
         target_obs_dim,
     )
-    return converted
+    return converted, source_obs_dim
 
 
-def convert_checkpoint(source_checkpoint: Path, output_checkpoint: Path, target_obs_dim: int) -> None:
+def convert_checkpoint(
+    source_checkpoint: Path,
+    output_checkpoint: Path,
+    target_actor_obs_dim: int,
+    target_critic_obs_dim: int,
+) -> None:
     checkpoint = torch.load(source_checkpoint, map_location="cpu", weights_only=False)
     actor_state_dict = checkpoint["actor_state_dict"]
     critic_state_dict = checkpoint["critic_state_dict"]
-    source_actor_dim = actor_state_dict["obs_normalizer._mean"].shape[1]
-    source_critic_dim = critic_state_dict["obs_normalizer._mean"].shape[1]
-    if source_actor_dim != source_critic_dim:
-        raise ValueError(f"Actor obs dim {source_actor_dim} != critic obs dim {source_critic_dim}.")
+    converted_actor, source_actor_dim = _convert_model_state_dict(actor_state_dict, target_actor_obs_dim)
+    converted_critic, source_critic_dim = _convert_model_state_dict(critic_state_dict, target_critic_obs_dim)
 
     converted = {
-        "actor_state_dict": _convert_model_state_dict(actor_state_dict, target_obs_dim),
-        "critic_state_dict": _convert_model_state_dict(critic_state_dict, target_obs_dim),
+        "actor_state_dict": converted_actor,
+        "critic_state_dict": converted_critic,
         "iter": 0,
         "infos": {
             "warmstart": True,
             "source_checkpoint": str(source_checkpoint),
-            "source_obs_dim": int(source_actor_dim),
-            "target_obs_dim": int(target_obs_dim),
+            "source_actor_obs_dim": int(source_actor_dim),
+            "source_critic_obs_dim": int(source_critic_dim),
+            "target_actor_obs_dim": int(target_actor_obs_dim),
+            "target_critic_obs_dim": int(target_critic_obs_dim),
             "source_iter": int(checkpoint.get("iter", -1)),
         },
     }
@@ -91,8 +100,10 @@ def convert_checkpoint(source_checkpoint: Path, output_checkpoint: Path, target_
     torch.save(converted, output_checkpoint)
     print(f"source_checkpoint={source_checkpoint}")
     print(f"output_checkpoint={output_checkpoint}")
-    print(f"source_obs_dim={source_actor_dim}")
-    print(f"target_obs_dim={target_obs_dim}")
+    print(f"source_actor_obs_dim={source_actor_dim}")
+    print(f"source_critic_obs_dim={source_critic_dim}")
+    print(f"target_actor_obs_dim={target_actor_obs_dim}")
+    print(f"target_critic_obs_dim={target_critic_obs_dim}")
 
 
 def main() -> None:
@@ -100,17 +111,24 @@ def main() -> None:
     parser.add_argument("--source_checkpoint", type=Path, default=Path(DEFAULT_SOURCE))
     parser.add_argument("--output_checkpoint", type=Path, default=Path(DEFAULT_OUTPUT))
     parser.add_argument(
-        "--target_obs_dim",
+        "--target_actor_obs_dim",
         type=int,
-        default=DEFAULT_TARGET_OBS_DIM,
-        help="Target Stage1 actor/critic observation dimension. Current Stage1 default is 632.",
+        default=DEFAULT_TARGET_ACTOR_OBS_DIM,
+        help="Target Stage1 actor observation dimension. Current terrain-feature Stage1 default is 82.",
+    )
+    parser.add_argument(
+        "--target_critic_obs_dim",
+        type=int,
+        default=DEFAULT_TARGET_CRITIC_OBS_DIM,
+        help="Target Stage1 critic observation dimension. Current terrain-feature Stage1 default is 660.",
     )
     args = parser.parse_args()
 
     convert_checkpoint(
         source_checkpoint=args.source_checkpoint.expanduser().resolve(),
         output_checkpoint=args.output_checkpoint.expanduser().resolve(),
-        target_obs_dim=args.target_obs_dim,
+        target_actor_obs_dim=args.target_actor_obs_dim,
+        target_critic_obs_dim=args.target_critic_obs_dim,
     )
 
 

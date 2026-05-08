@@ -16,7 +16,13 @@ from ..assets.robot_cfg import BALL_JOINT_NAMES, WHEEL_JOINT_NAMES, WHEEL_RADIUS
 from ..mdp.observations import PerComponentUniformNoiseCfg
 from ..sensors.sensor_cfg import CompleteCarSensorSuiteCfg
 from ..terrain.terrain_cfg import CompleteCarTerrainRuntimeCfg
-from ..utils.io_descriptors import build_action_descriptor, build_observation_descriptor, build_state_descriptor, total_dim
+from ..utils.io_descriptors import (
+    build_action_descriptor,
+    build_critic_observation_descriptor,
+    build_observation_descriptor,
+    build_state_descriptor,
+    total_dim,
+)
 from ..utils.math_utils import compute_policy_obs_noise_magnitudes
 
 
@@ -76,6 +82,11 @@ class ControlCfg:
     wheel_torque_tracking_gain: float = 2.0
     wheel_slip_feedback_gain: float = 4.0
     wheel_slip_velocity_epsilon: float = 0.1
+    terrain_speed_limit_enabled: bool = False
+    terrain_speed_step_up_mps: float = 0.50
+    terrain_speed_step_up_climb_mps: float = 0.80
+    terrain_speed_step_down_mps: float = 0.35
+    terrain_speed_gap_mps: float = 0.40
 
 
 @configclass
@@ -126,6 +137,7 @@ class ObservationCfg:
     clip_observations: float = 100.0
     wheel_slip_epsilon: float = 0.1
     wheel_slip_angle_clip_rad: float = math.pi / 2.0
+    terrain_feature_height_scale_m: float = 0.25
     scales: ObservationScalesCfg = ObservationScalesCfg()
     noise: ObservationNoiseCfg = ObservationNoiseCfg()
 
@@ -157,10 +169,39 @@ class RewardParamsCfg:
     action_rate_joint_ratio: float = 1.0
     contact_support_penalty_weight: float = 0.0
     contact_support_min_weight: float = 0.3
+    contact_support_lr_balance_ratio: float = 0.15
     edge_speed_penalty_weight: float = 0.0
     edge_height_low_threshold_m: float = 0.04
     edge_height_high_threshold_m: float = 0.10
     edge_speed_limit_mps: float = 0.5
+    terrain_aware_edge_speed_penalty_weight: float = 0.0
+    stuck_penalty_weight: float = 0.0
+    stuck_gate_threshold: float = 0.3
+    stuck_speed_threshold_mps: float = 0.05
+    stuck_goal_ahead_threshold_m: float = 0.5
+    stuck_penalty_grace_s: float = 1.0
+    stuck_timeout_s: float = 0.0
+    airborne_spin_penalty_weight: float = 0.0
+    airborne_spin_velocity_scale_radps: float = 20.0
+    hard_terrain_spin_penalty_weight: float = 0.0
+    hard_terrain_spin_speed_threshold_mps: float = 0.40
+    hard_terrain_spin_slip_threshold: float = 3.0
+    hard_terrain_spin_slip_scale: float = 3.0
+    action_soft_limit_penalty_weight: float = 0.0
+    action_soft_limit_threshold: float = 0.8
+    step_up_front_posture_penalty_weight: float = 0.0
+    front_pitch_height_gain_rad_per_m: float = 2.5
+    front_pitch_max_ref_rad: float = 0.25
+    front_pitch_sigma_rad: float = 0.20
+    step_up_approach_distance_min_m: float = 0.20
+    step_up_approach_distance_max_m: float = 1.20
+    step_up_goal_ahead_threshold_m: float = 0.5
+    step_up_progress_quality_min_multiplier: float = 1.0
+    drop_anti_dive_penalty_weight: float = 0.0
+    drop_theta_safe_rad: float = 0.0
+    drop_pitch_sigma_rad: float = 0.20
+    drop_pitch_rate_sigma_radps: float = 1.0
+    drop_vz_down_sigma_mps: float = 0.5
     progress_gate_longitudinal_k: float = 3.0
     progress_gate_slip_angle_scale_rad: float = 1.5
     progress_gate_min_multiplier: float = 0.25
@@ -226,6 +267,7 @@ class CurriculumCfg:
 
     enabled: bool = False
     max_init_terrain_level: int = 0
+    initial_min_terrain_level_by_name: dict[str, int] = field(default_factory=dict)
     initial_max_terrain_level_by_name: dict[str, int] = field(default_factory=dict)
     default_terrain_name: str = "slope down"
     move_up_distance_ratio: float = 0.5
@@ -352,7 +394,11 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
             if self.observations.use_history and self.observations.history_length > 1
             else base_obs_dim
         )
-        critic_obs_dim = actor_obs_dim
+        critic_obs_dim = total_dim(build_critic_observation_descriptor(self))
+        if self.observations.use_history and self.observations.history_length > 1:
+            critic_obs_dim = actor_obs_dim
+            if self.terrain.measure_heights:
+                critic_obs_dim += self.terrain.get_num_height_points()
         self.observation_space = {
             "actor": actor_obs_dim,
             "critic": critic_obs_dim,

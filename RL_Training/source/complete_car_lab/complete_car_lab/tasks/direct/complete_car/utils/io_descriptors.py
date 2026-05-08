@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..assets.robot_cfg import WHEEL_JOINT_NAMES
+from ..mdp.terrain_features import TERRAIN_FEATURE_DIM
 
 
 def build_action_descriptor(cfg) -> list[tuple[str, int]]:
@@ -26,12 +27,15 @@ def build_observation_descriptor(cfg) -> list[tuple[str, int]]:
         ("last_action", cfg.action_space),
     ]
     if cfg.terrain.measure_heights:
-        descriptor.append(("terrain_height_patch", cfg.terrain.get_num_height_points()))
+        descriptor.append(("terrain_features", TERRAIN_FEATURE_DIM))
     return descriptor
 
 
 def build_critic_observation_descriptor(cfg) -> list[tuple[str, int]]:
-    return build_observation_descriptor(cfg).copy()
+    descriptor = build_observation_descriptor(cfg).copy()
+    if cfg.terrain.measure_heights:
+        descriptor.append(("terrain_height_patch", cfg.terrain.get_num_height_points()))
+    return descriptor
 
 
 def build_state_descriptor(_cfg) -> list[tuple[str, int]]:

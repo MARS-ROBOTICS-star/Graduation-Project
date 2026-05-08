@@ -131,7 +131,7 @@ def collect_raw_observation_terms(
 def compute_actor_observation_from_raw_terms(
     cfg,
     raw_terms: dict[str, torch.Tensor],
-    height_patch: torch.Tensor | None = None,
+    terrain_features: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Construct the actor observation from already collected raw observation terms."""
 
@@ -148,8 +148,8 @@ def compute_actor_observation_from_raw_terms(
         raw_terms["relative_goal_commands"] * scales.commands,
         raw_terms["last_actions"] * scales.last_action,
     ]
-    if height_patch is not None:
-        terms.append(_finite_tensor(height_patch))
+    if terrain_features is not None:
+        terms.append(_finite_tensor(terrain_features))
     return _finite_tensor(torch.cat(terms, dim=-1))
 
 
@@ -164,7 +164,7 @@ def compute_actor_observation(
     ball_joint_targets: torch.Tensor,
     relative_goal_commands: torch.Tensor,
     executed_actions: torch.Tensor,
-    height_patch: torch.Tensor | None = None,
+    terrain_features: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """构造 Actor 观测。"""
 
@@ -180,13 +180,19 @@ def compute_actor_observation(
         relative_goal_commands,
         executed_actions,
     )
-    return compute_actor_observation_from_raw_terms(cfg, raw_terms, height_patch)
+    return compute_actor_observation_from_raw_terms(cfg, raw_terms, terrain_features)
 
 
-def compute_critic_observation(actor_obs: torch.Tensor) -> torch.Tensor:
-    """构造 Critic 观测；当前与 Actor 使用同一份观测。"""
+def compute_critic_observation(
+    actor_obs: torch.Tensor,
+    height_patch: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """构造 Critic 观测；Stage1 追加完整局部高度 patch 作为 privileged information。"""
 
-    return _finite_tensor(actor_obs)
+    terms = [_finite_tensor(actor_obs)]
+    if height_patch is not None:
+        terms.append(_finite_tensor(height_patch))
+    return _finite_tensor(torch.cat(terms, dim=-1))
 
 
 # 传感器噪声注入

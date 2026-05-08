@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 
 from ..assets.robot_cfg import WHEEL_JOINT_NAMES
+from ..mdp.terrain_features import TERRAIN_FEATURE_DIM
 
 
 def sample_uniform_tensor(value_range: tuple[float, float], shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
@@ -114,7 +115,7 @@ def compute_policy_obs_noise_magnitudes(cfg) -> list[float]:
     magnitudes.extend([noise_level * noise_cfg.commands] * cfg.commands.num_commands)
     magnitudes.extend([0.0] * cfg.action_space)
     if cfg.terrain.measure_heights:
-        magnitudes.extend([0.0] * cfg.terrain.get_num_height_points())
+        magnitudes.extend([0.0] * TERRAIN_FEATURE_DIM)
 
     return magnitudes
 
@@ -133,7 +134,7 @@ def compute_policy_obs_dim(cfg) -> int:
         + cfg.action_space
     )
     if cfg.terrain.measure_heights:
-        proprio_dim += cfg.terrain.get_num_height_points()
+        proprio_dim += TERRAIN_FEATURE_DIM
     return proprio_dim
 
 __all__ = [

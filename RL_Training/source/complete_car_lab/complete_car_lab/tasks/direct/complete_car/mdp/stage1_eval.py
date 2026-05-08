@@ -77,6 +77,11 @@ def _group_stats(
     action_saturation_mask: torch.Tensor,
     stagnation_mask: torch.Tensor,
     backward_mask: torch.Tensor,
+    stuck_time_s: torch.Tensor,
+    stuck_timeout_mask: torch.Tensor,
+    pitch_rate_abs: torch.Tensor,
+    vz_down: torch.Tensor,
+    speed_limit_active_mask: torch.Tensor,
 ) -> dict[str, float]:
     far_rate = _masked_mean(far_mask.float(), mask)
     ball_limit_rate = _masked_mean(ball_joint_limit_mask.float(), mask)
@@ -92,9 +97,12 @@ def _group_stats(
         "far_rate": _safe_float(far_rate),
         "ball_joint_limit_rate": _safe_float(ball_limit_rate),
         "timeout_rate": _safe_float(_masked_mean(timeout_mask.float(), mask)),
+        "stuck_time_mean": _safe_float(_masked_mean(stuck_time_s, mask)),
+        "stuck_timeout_rate": _safe_float(_masked_mean(stuck_timeout_mask.float(), mask)),
         "stagnation_rate": _safe_float(_masked_mean(stagnation_mask.float(), mask)),
         "backward_rate": _safe_float(_masked_mean(backward_mask.float(), mask)),
         "v_forward_mean": _safe_float(_masked_mean(v_forward, mask)),
+        "speed_limit_active_rate": _safe_float(_masked_mean(speed_limit_active_mask.float(), mask)),
         "v_lateral_abs_mean": _safe_float(_masked_mean(v_lateral_abs, mask)),
         "lateral_velocity_ratio": _safe_float(_masked_mean(lateral_velocity_ratio, mask)),
         "yaw_rate_abs_mean": _safe_float(_masked_mean(yaw_rate_abs, mask)),
@@ -106,6 +114,8 @@ def _group_stats(
         "normal_force_sum_mean": _safe_float(_masked_mean(normal_force_sum, mask)),
         "roll_abs_mean": _safe_float(_masked_mean(roll_abs_deg, mask)),
         "pitch_abs_mean": _safe_float(_masked_mean(pitch_abs_deg, mask)),
+        "pitch_rate_abs_mean": _safe_float(_masked_mean(pitch_rate_abs, mask)),
+        "vz_down_mean": _safe_float(_masked_mean(vz_down, mask)),
         "attitude_bad_rate": _safe_float(_masked_mean(attitude_bad_mask.float(), mask)),
         "ball_joint_limit_usage_max": _safe_float(_masked_max(ball_joint_limit_usage_per_env, mask)),
         "joint_bad_rate": _safe_float(_masked_mean(joint_bad_mask.float(), mask)),
@@ -172,6 +182,12 @@ def compute_stage1_eval_metrics(
     active_waypoint_distance: torch.Tensor,
     terrain_length: float = 8.0,
     flat_reference_speed: float = STAGE1_FLAT_REFERENCE_SPEED,
+    train_active_mask: torch.Tensor | None = None,
+    stuck_time_s: torch.Tensor | None = None,
+    stuck_timeout_mask: torch.Tensor | None = None,
+    pitch_rate_abs: torch.Tensor | None = None,
+    vz_down: torch.Tensor | None = None,
+    speed_limit_active_mask: torch.Tensor | None = None,
 ) -> dict[str, float]:
     """Compute NaN-safe Stage1Eval scalars for terrain-column training."""
 
@@ -200,6 +216,30 @@ def compute_stage1_eval_metrics(
     actions = _clean(actions)
     last_actions = _clean(last_actions)
     active_waypoint_distance = _clean(active_waypoint_distance)
+    if stuck_time_s is None:
+        stuck_time_s = torch.zeros_like(terrain_levels)
+    else:
+        stuck_time_s = _clean(stuck_time_s)
+    if stuck_timeout_mask is None:
+        stuck_timeout_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        stuck_timeout_mask = stuck_timeout_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if pitch_rate_abs is None:
+        pitch_rate_abs = torch.zeros_like(terrain_levels)
+    else:
+        pitch_rate_abs = _clean(pitch_rate_abs)
+    if vz_down is None:
+        vz_down = torch.zeros_like(terrain_levels)
+    else:
+        vz_down = _clean(vz_down)
+    if speed_limit_active_mask is None:
+        speed_limit_active_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        speed_limit_active_mask = speed_limit_active_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if train_active_mask is None:
+        train_active_mask = torch.ones_like(terrain_types, dtype=torch.bool)
+    else:
+        train_active_mask = train_active_mask.to(device=terrain_types.device, dtype=torch.bool)
 
     v_forward = base_lin_vel[:, 0]
     v_lateral_abs = torch.abs(base_lin_vel[:, 1])
@@ -220,7 +260,7 @@ def compute_stage1_eval_metrics(
     attitude_bad_mask = (roll_abs_deg > 15.0) | (pitch_abs_deg > 20.0)
     joint_bad_mask = ball_joint_limit_mask | (ball_joint_limit_usage_per_env > 0.9)
 
-    all_mask = torch.ones_like(terrain_types, dtype=torch.bool)
+    all_mask = train_active_mask
     common_kwargs = {
         "terrain_levels": terrain_levels,
         "forward_x": forward_x,
@@ -250,11 +290,16 @@ def compute_stage1_eval_metrics(
         "action_saturation_mask": action_saturation_mask,
         "stagnation_mask": stagnation_mask,
         "backward_mask": backward_mask,
+        "stuck_time_s": stuck_time_s,
+        "stuck_timeout_mask": stuck_timeout_mask,
+        "pitch_rate_abs": pitch_rate_abs,
+        "vz_down": vz_down,
+        "speed_limit_active_mask": speed_limit_active_mask,
     }
     global_stats = _group_stats(all_mask, **common_kwargs)
     column_stats: dict[int, dict[str, float]] = {}
     for col_index, _col_name in STAGE1_TERRAIN_COLUMNS:
-        column_stats[col_index] = _group_stats(terrain_types == col_index, **common_kwargs)
+        column_stats[col_index] = _group_stats((terrain_types == col_index) & all_mask, **common_kwargs)
 
     flat_stats = column_stats[0]
     flat_rows_mean = flat_stats["rows_advanced_mean"]
@@ -265,19 +310,23 @@ def compute_stage1_eval_metrics(
         "Stage1Eval/global/row_advance_rate": global_stats["row_advance_rate"],
         "Stage1Eval/global/max_row_reached_rate": global_stats["max_row_reached_rate"],
         "Stage1Eval/global/valid_target_masked": global_stats["valid_target_masked"],
+        "Stage1Eval/global/env_count": global_stats["env_count"],
         "Stage1Eval/global/current_level_mean": global_stats["current_level_mean"],
         "Stage1Eval/global/forward_x_mean": global_stats["forward_x_mean"],
-        "Stage1Eval/global/tile_start_x_mean": _safe_float(torch.mean(tile_start_x)),
-        "Stage1Eval/global/tile_origin_x_mean": _safe_float(torch.mean(tile_origin_x)),
-        "Stage1Eval/global/tile_end_x_mean": _safe_float(torch.mean(tile_end_x)),
-        "Stage1Eval/global/root_x_mean": _safe_float(torch.mean(root_x)),
-        "Stage1Eval/global/target_x_mean": _safe_float(torch.mean(target_x)),
+        "Stage1Eval/global/tile_start_x_mean": _safe_float(_masked_mean(tile_start_x, all_mask)),
+        "Stage1Eval/global/tile_origin_x_mean": _safe_float(_masked_mean(tile_origin_x, all_mask)),
+        "Stage1Eval/global/tile_end_x_mean": _safe_float(_masked_mean(tile_end_x, all_mask)),
+        "Stage1Eval/global/root_x_mean": _safe_float(_masked_mean(root_x, all_mask)),
+        "Stage1Eval/global/target_x_mean": _safe_float(_masked_mean(target_x, all_mask)),
         "Stage1Eval/global/effective_failure_rate": global_stats["effective_failure_rate"],
         "Stage1Eval/global/far_rate": global_stats["far_rate"],
         "Stage1Eval/global/ball_joint_limit_rate": global_stats["ball_joint_limit_rate"],
         "Stage1Eval/global/timeout_rate": global_stats["timeout_rate"],
+        "Stage1Eval/global/stuck_time_mean": global_stats["stuck_time_mean"],
+        "Stage1Eval/global/stuck_timeout_rate": global_stats["stuck_timeout_rate"],
         "Stage1Eval/global/stagnation_rate": global_stats["stagnation_rate"],
         "Stage1Eval/global/v_forward_mean": global_stats["v_forward_mean"],
+        "Stage1Eval/global/speed_limit_active_rate": global_stats["speed_limit_active_rate"],
         "Stage1Eval/global/v_lateral_abs_mean": global_stats["v_lateral_abs_mean"],
         "Stage1Eval/global/lateral_velocity_ratio": global_stats["lateral_velocity_ratio"],
         "Stage1Eval/global/longitudinal_slip_abs_mean": global_stats["longitudinal_slip_abs_mean"],
@@ -287,6 +336,8 @@ def compute_stage1_eval_metrics(
         "Stage1Eval/global/normal_force_sum_mean": global_stats["normal_force_sum_mean"],
         "Stage1Eval/global/roll_abs_mean": global_stats["roll_abs_mean"],
         "Stage1Eval/global/pitch_abs_mean": global_stats["pitch_abs_mean"],
+        "Stage1Eval/global/pitch_rate_abs_mean": global_stats["pitch_rate_abs_mean"],
+        "Stage1Eval/global/vz_down_mean": global_stats["vz_down_mean"],
         "Stage1Eval/global/ball_joint_limit_usage_max": global_stats["ball_joint_limit_usage_max"],
         "Stage1Eval/global/action_abs_mean": global_stats["action_abs_mean"],
         "Stage1Eval/global/action_rate_abs_mean": global_stats["action_rate_abs_mean"],
@@ -297,6 +348,7 @@ def compute_stage1_eval_metrics(
     flat_fields = (
         "rows_advanced_mean",
         "row_advance_rate",
+        "env_count",
         "max_row_reached_rate",
         "valid_target_masked",
         "forward_x_mean",
@@ -306,11 +358,16 @@ def compute_stage1_eval_metrics(
         "effective_failure_rate",
         "far_rate",
         "ball_joint_limit_rate",
+        "stuck_time_mean",
+        "stuck_timeout_rate",
         "stagnation_rate",
+        "speed_limit_active_rate",
         "longitudinal_slip_abs_mean",
         "slip_angle_abs_mean",
         "combined_low_slip_pass_rate",
         "pitch_abs_mean",
+        "pitch_rate_abs_mean",
+        "vz_down_mean",
         "roll_abs_mean",
         "ball_joint_limit_usage_max",
         "action_saturation_rate",
@@ -320,6 +377,7 @@ def compute_stage1_eval_metrics(
 
     difficulty_by_col: dict[int, float] = {}
     per_column_fields = (
+        "env_count",
         "rows_advanced_mean",
         "row_advance_rate",
         "max_row_reached_rate",
@@ -330,9 +388,12 @@ def compute_stage1_eval_metrics(
         "far_rate",
         "ball_joint_limit_rate",
         "timeout_rate",
+        "stuck_time_mean",
+        "stuck_timeout_rate",
         "stagnation_rate",
         "backward_rate",
         "v_forward_mean",
+        "speed_limit_active_rate",
         "v_lateral_abs_mean",
         "lateral_velocity_ratio",
         "yaw_rate_abs_mean",
@@ -343,6 +404,8 @@ def compute_stage1_eval_metrics(
         "normal_force_sum_mean",
         "roll_abs_mean",
         "pitch_abs_mean",
+        "pitch_rate_abs_mean",
+        "vz_down_mean",
         "ball_joint_limit_usage_max",
         "action_abs_mean",
         "action_rate_abs_mean",
@@ -371,7 +434,7 @@ def compute_stage1_eval_metrics(
     for col_index, col_name in STAGE1_TERRAIN_COLUMNS:
         if col_name not in {"col01_slope_down", "col05_stairs_down", "col06_stairs_down"}:
             continue
-        col_mask = terrain_types == col_index
+        col_mask = (terrain_types == col_index) & all_mask
         overspeed_rate = _masked_mean((v_forward > overspeed_threshold).float(), col_mask)
         metrics[f"Debug/Stage1/{col_name}/overspeed_rate"] = _safe_float(overspeed_rate)
 

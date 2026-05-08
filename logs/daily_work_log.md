@@ -1,5 +1,24 @@
 # 每日工作日志
 
+## 2026-05-08
+
+已完成：
+- 按用户要求将当前项目同步到 GitHub。
+- 使用 SSH 远程 `git@github.com:MARS-ROBOTICS-star/Graduation-Project.git` 推送 `main` 分支。
+- 本轮提交前补充 `.gitignore`，将 `results/` 下生成的 Stage1 分析压缩包、TensorBoard 导出目录、视频目录和 reward 实验输出默认留在本地，避免误上传大型训练产物。
+- 推送前完成 Python 编译检查、Stage1 相关测试和 `git diff --check`。
+
+修改文件：
+- `.gitignore`
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+- 本次同步还包含已暂存的 Stage1 源码、测试、文档和项目记忆更新。
+
+产出/结论：
+- 主同步提交为 `1e0e7ba`：`Update Stage1 terrain adaptation workflow`。
+- 本条日志和状态补充将随同步收尾提交一并推送。
+- 生成的视频、zip/tar 分析包和 TensorBoard 导出目录仍保留在本地，不作为 GitHub 默认同步内容。
+
 ## 2026-05-07
 
 已完成：

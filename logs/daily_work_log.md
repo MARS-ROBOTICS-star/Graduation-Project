@@ -3,6 +3,25 @@
 ## 2026-05-08
 
 已完成：
+- 按用户追加要求，将 `results/Videos/` 下的 replay MP4 视频推送到 GitHub。
+- 由于 `rough_2.5x.mp4` 约 `121.5 MB`，超过 GitHub 普通 Git 单文件限制，本轮改用 Git LFS 上传视频。
+- 系统未安装 `git-lfs`，本轮下载并使用 `/tmp/git-lfs-3.6.1/git-lfs` 临时二进制完成本仓库 LFS 配置、暂存、提交和推送。
+
+修改文件：
+- `.gitattributes`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- 新增跟踪 `results/Videos/` 下 `6` 个 MP4 的 LFS 指针。
+
+产出/结论：
+- 视频提交：`f4ff58d`，提交信息 `Add replay videos via Git LFS`。
+- GitHub LFS 上传完成：`6/6` 个对象，合计约 `337 MB`。
+- `.gitignore` 仍默认忽略 `results/Videos/`，后续新增视频需用户明确要求后再 `git add -f`。
+
+## 2026-05-08
+
+已完成：
 - 按用户要求将当前项目同步到 GitHub。
 - 使用 SSH 远程 `git@github.com:MARS-ROBOTICS-star/Graduation-Project.git` 推送 `main` 分支。
 - 本轮提交前补充 `.gitignore`，将 `results/` 下生成的 Stage1 分析压缩包、TensorBoard 导出目录、视频目录和 reward 实验输出默认留在本地，避免误上传大型训练产物。

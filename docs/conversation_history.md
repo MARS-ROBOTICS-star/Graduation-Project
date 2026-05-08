@@ -4,6 +4,20 @@ This file stores durable conclusions from past Codex sessions so that future ses
 
 ## 2026-05-08
 
+### 回放视频已通过 Git LFS 上传 GitHub
+- User request:
+  - 用户在项目同步完成后追加要求“视频也要推送到 GitHub”。
+- Implementation:
+  - 新增 `.gitattributes`，将 `results/Videos/*.mp4` 配置为 Git LFS 对象。
+  - 通过 `git add -f` 纳入 `results/Videos/` 下 `6` 个 replay MP4：`best_baseline_2_chase_120s.mp4`、`discrete_obstacles_2.5x.mp4`、`flat_2.5x.mp4`、`rough_2.5x.mp4`、`slope_2.5x.mp4`、`stairs_2.5x.mp4`。
+  - `rough_2.5x.mp4` 大小约 `121.5 MB`，超过 GitHub 普通 Git 单文件限制，因此必须走 Git LFS。
+- Durable conclusion:
+  - 当前仓库已追踪上述 `6` 个视频的 LFS 指针，GitHub LFS 上传完成。
+  - 本机系统未安装 `git-lfs`，本轮使用 `/tmp/git-lfs-3.6.1/git-lfs` 临时二进制完成提交和推送；后续若继续操作 LFS 文件，应先确保当前环境可用 Git LFS。
+  - `.gitignore` 仍默认忽略 `results/Videos/`，后续新增视频不会自动入库，除非用户再次明确要求并使用 `git add -f`。
+- Status:
+  - pushed to GitHub via LFS.
+
 ### Stage1 第二阶段 terrain-gated reward / control / reset 方案已文件级细化
 - User request:
   - 用户要求基于 525 run 后的诊断建议，结合当前 Stage1 实际 RL 环境配置、PPO 算法、底层运动模型和参数配置，把下一轮 reward / control / curriculum 优化细节写入 `docs/优化方案.md`，并用通俗语言解释采用后的 reward 效果。

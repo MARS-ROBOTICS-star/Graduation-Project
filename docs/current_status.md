@@ -141,6 +141,7 @@
 - 当前 Git 上传规则：
   - Stage1 当前模型、checkpoint、TensorBoard event、run diff、输出目录默认不上传 GitHub。
   - `.gitignore` 已显式忽略 `RL_Training/logs/`、`RL_Training/outputs/`、`results/*.zip`、`results/*.tar.gz`、`results/Videos/`、`results/stage1_*_analysis*/`、`results/stage1_tensorboard_*/` 和 `results/stage1_reward_experiments/`。
+  - 2026-05-08 已按用户明确要求将 `results/Videos/` 下 `6` 个 replay MP4 通过 Git LFS 上传到 GitHub；`.gitattributes` 跟踪规则为 `results/Videos/*.mp4 filter=lfs diff=lfs merge=lfs -text`。
   - 只有当用户明确要求上传某一次 Stage1 训练结果时，才使用 `git add -f` 纳入对应 run。
 
 ## 当前 active Stage0 基准

@@ -1,5 +1,504 @@
 # 每日工作日志
 
+## 2026-05-11
+
+已完成：
+- 扩展 Stage1 回放 follow view：保留右后方 `/view/env_N/chase_camera`，新增对称左后方 `/view/env_N/left_chase_camera`，新增位于中车体上方 `3 m` 且看向车体前方的 `/view/env_N/forward_camera`。
+- 新增配置字段 `follow_view_forward_height_m = 3.0` 和 `follow_view_forward_distance_m = 4.0`；这些相机仍只在显式开启 `--create_follow_views` 时创建。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py RL_Training/scripts/play.py RL_Training/scripts/train.py` 通过。
+
+已完成：
+- 定位 Stage1 回放中小车左侧红线来源：局部高度图可视化的红色 `+Y` 方向轴 `/Visuals/HeightPatch/positive_y_axis`。
+- 按用户要求改为默认关闭、需要时显式开启：回放目标 marker 需要 `--show_goal_vis`，目标方向箭头需要 `--show_goal_heading`，局部高度图红色 `+Y` 方向轴需要 `--show_height_patch_axis`。
+- 底层 `DebugCfg` 与 Stage1 配置层保持 debug 可视化默认关闭，普通训练不默认开启目标 marker、轮滑箭头、局部高度图或 follow view。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py` 通过。
+
+已完成：
+- 确认 `80 env` Stage1 续训 run 已正常完成到 `1099/1100`，最后 checkpoint 为 `model_1099.pt`，当前无 Stage1 训练进程。
+- 横向比较该 run 的 `41` 个 checkpoint 在 hard terrain 五列上的 row、adv_rate 和关键行为质量。
+- 给出回放候选：综合 hard terrain 推进与质量优先 `model_900.pt`；单看 hard 平均 row 最高为 `model_825.pt`；全部 hard 列均超过 row `10` 的补充候选为 `model_950.pt`；障碍最高 row 候选为 `model_1099.pt`；台阶最高 row 候选为 `model_725.pt`。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+输出/结论：
+- `model_900.pt` 五个 hard 列 row 约 `[11.6, 11.6, 11.6, 13.8, 9.1]`，平均 adv_rate 约 `0.448`，平均 pitch 约 `13.6 deg`，rear follow 约 `0.442`，适合作为全 hard terrain 回放主候选。
+
+已完成：
+- 根据当前机器人配置、URDF/USD 几何、底层 `wheel_speed_allocator.py` 和 Stage1 地形配置，整理第一版台阶爬升准静态模型所需参数。
+- 新文档按车轮参数、三节车体几何、球铰姿态范围、质量与质心、接触摩擦、台阶参数、底部关键点、坐标系和初始姿态组织。
+- 明确标出 USD/CAD 实际装配几何与当前底层轮速分配器简化运动学几何不能混用；第一版台阶推导优先采用车体质心坐标系 + CAD/URDF 几何。
+
+修改文件：
+- `docs/台阶爬升准静态模型参数整理.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+输出/结论：
+- 关键确认值包括：车轮半径 `0.19 m`、单轮力矩上限 `20 N·m`、球铰 position drive `Kp=120, Kd=10, effort=60 N·m, velocity=2 rad/s`、pitch 范围 `[-1.6, 0.5] rad`、摩擦系数 `1.0/1.0`。
+- 台阶理论第一版建议使用理想垂直台阶；当前 Stage1 仿真中的 `stairs down` 是 heightfield 阶梯地形，不是单个孤立垂直台阶。
+
+已完成：
+- 修复 Stage1 指定地形回放时 `--terrain_replay_columns slope_down` 被首次 reset / completed-env recycling 改回其他列的问题。
+- 根因：`play.py` 在 env 创建后只改了 `terrain_runtime.terrain_types`，没有同步 Stage1 列完成目标和 recycling 状态；当 `num_envs=4` 时，`slope_down` 会被内部状态视为无目标 / 已完成列，reset 后被重分配到 flat / stairs_down 等初始化未完成列。
+- 修复：设置回放列后重新采样合法初始 row、重建 `_stage1_column_completion_targets`、清零 completion counts、重置 completed columns，并清空 active / recycled / recycle cursor 状态。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py` 通过。
+
+## 2026-05-11
+
+已完成：
+- 按用户补充要求重新生成不含 checkpoint 的 Stage1 `80 env` 训练结果配置包。
+- 新包排除 `model_*.pt` checkpoint、`exported/` 策略权重、`videos/` 回放视频、`__pycache__/` 和 `*.pyc`。
+
+产出：
+- `results/stage1_80env_resume_from_m100_results_config_no_checkpoints_2026-05-11.zip`
+- manifest：`results/stage1_80env_resume_from_m100_results_config_no_checkpoints_2026-05-11_manifest.md`
+
+验证：
+- `unzip -tq results/stage1_80env_resume_from_m100_results_config_no_checkpoints_2026-05-11.zip` 通过。
+- zip 大小约 `27M`，条目数 `843`。
+- `zipinfo` 检查未发现 `model_*.pt`、`exported/`、`videos/`、`__pycache__/` 或 `*.pyc`。
+
+## 2026-05-11
+
+已完成：
+- 按用户要求将 Stage1 `80 env` 完整训练结果和配置打包为 zip。
+- 先导出该 run 的 TensorBoard scalars 到 `tensorboard_export/`。
+- 打包内容包括：run 目录中的 checkpoint、TensorBoard event、`tensorboard_export/`、`params/`、`git/`、`exported/`，对应 runtime log，当前 Stage1 相关源码和 Stage1 参数 / 指标 / 优化文档。
+- 已排除 run 下 `videos/` 回放视频，避免训练结果包混入临时回放产物。
+
+产出：
+- `results/stage1_80env_resume_from_m100_results_config_2026-05-11.zip`
+- manifest：`results/stage1_80env_resume_from_m100_results_config_2026-05-11_manifest.md`
+
+验证：
+- `unzip -tq results/stage1_80env_resume_from_m100_results_config_2026-05-11.zip` 通过。
+- zip 大小约 `170M`，条目数 `975`。
+- 逻辑检查确认 `num_envs=4` + `slope_down` 时 `terrain_types=[1,1,1,1]`，未完成列只剩 `col01`。
+
+## 2026-05-10
+
+已完成：
+- 按用户确认的 Stage1 新落地方案修改 hard terrain 晋级逻辑和 reward 权重。
+- 将 `stairs_down`、`discrete obstacles` 的 row / level 晋级改为 quality-gated；低质量命中目标触发 `low_quality_terrain_hit`，但不升 row、不记 completed。
+- 新增 row-level 质量缓存：模块累计进展、near-edge actual overspeed、row 内最小支撑质量、row 内最大 stuck time。
+- 将 `step_up_module_progress_reward` 改为 row 内累计新增模块进展，权重从 `1.0` 提到 `10.0`。
+- 将 `step_up_front_posture_penalty_weight` 从 `-5.0` 提到 `-12.0`。
+- 将 actual overspeed 惩罚系数改为可配置，并在 Stage1 中设为 `2.0`。
+- 补充 Stage1Eval / Debug 日志：`hard_quality_advance_rate`、`low_quality_hit_rate`、`quality_advance_score`、`phase_module_progress_score`、`front/middle/rear climb success`、`actual_overspeed_near_edge_rate` 等。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/stage1_eval.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `docs/Stage1参数详情表.md`
+
+验证：
+- `python3 -m py_compile` 已通过上述 Stage1 相关 Python 文件。
+
+下一步：
+- 用 `best_baseline5/model_75.pt` 转换版 warm-start 启动 Stage1 短训，重点观察 `low_quality_hit_rate` 是否先暴露旧冲撞策略，再逐步下降；同时看 `hard_quality_advance_rate`、`phase_module_progress_score` 和 obstacles / stairs_down 的 row advance 是否变得可见。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求将本轮 Stage0 pitch gate 训练目录重命名为 `best_baseline5`。
+- 将 `RL_Training/logs/rsl_rl/complete_car_stage0/best_baseline5/model_75.pt` 转换为 Stage1 warm-start checkpoint。
+- 将 Stage1 PPO 默认 warm-start 改为 `warmstart_best_baseline5_model75_terrain_features/model_0.pt`。
+- 同步更新 Stage1 / Stage0 参数文档、当前状态和跨会话结论记录。
+
+产出/结论：
+- 新 warm-start checkpoint：`RL_Training/logs/rsl_rl/complete_car_stage1/warmstart_best_baseline5_model75_terrain_features/model_0.pt`。
+- checkpoint metadata 已核对：来源为 `best_baseline5/model_75.pt`，`source_iter = 75`，Stage1 actor / critic 维度为 `82 / 660`，`ball_joint_order_fix_io = False`。
+- 后续 Stage1 训练默认从 `best_baseline5/model_75.pt` 的转换版启动；上一版 `warmstart_best_baseline4_model375_terrain_features/model_0.pt` 仅作为历史对照保留。
+
+修改文件：
+- `RL_Training/scripts/convert_stage0_to_stage1_warmstart.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+- `RL_Training/logs/rsl_rl/complete_car_stage0/best_baseline5/params/agent.yaml`
+- `RL_Training/logs/rsl_rl/complete_car_stage0/best_baseline5/params/env.yaml`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `docs/Stage1参数详情表.md`
+- `docs/stage0_baseline参数详情表.md`
+
+下一步：
+- 启动 Stage1 时使用 `--resume --warmstart --load_run warmstart_best_baseline5_model75_terrain_features --checkpoint model_0.pt`，并重点观察 flat 保持、台阶/障碍推进、球铰跟踪误差和运动行为质量。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求保持 `progress_pitch_gate_k_rad = π / 32`，从 Stage0 原 run `2026-05-10_18-21-11_stage0_slip2_actionrate_m50_qmon_700iter/model_150.pt` 重新 warmstart 训练。
+- 新 run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-05-10_21-31-37_stage0_pitch_gate_k32_from150_to700`。
+- 持续监督成功率、episode length、`q_desired` 每步跳变、`qdot` 贴限比例、tracking error、pitch、pitch gate、接地、速度和 low-slip。
+- 在 `model_150.pt` 保存点后停止训练并释放 GPU；TensorBoard scalar 已导出。
+
+产出/结论：
+- 成功率从 `model_50.pt` 起持续为 `1.0`，训练已进入成功率平台。
+- `π / 32` gate 明显改善旧 gate 的前俯问题：pitch 稳定在约 `-1.4~-1.6 deg`，没有再向 `-2.8 deg` 漂移。
+- 但本轮没有达到 `best_baseline2` 的运动质量：末 `25` iteration tracking error 约 `0.0906 rad`、qdot 贴限约 `0.0241`、low-slip 约 `0.0757`，仍弱于 `best_baseline2`。
+- 当前本轮最平衡候选是 `model_75.pt`；`model_150.pt` 速度更快，但 tracking error 更高、low-slip 更低。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+下一步：
+- 建议 GUI 回放 `model_75.pt` 与 `model_150.pt`，确认体感姿态、目标捕获和球铰抖动，再决定是否继续调强 pitch gate 或加入更直接的 tracking / 姿态质量项。
+
+## 2026-05-10
+
+已完成：
+- 利用 Stage0 `2026-05-10_18-21-11_stage0_slip2_actionrate_m50_qmon_700iter/model_200.pt` 导出 flat 真实球铰时序轨迹。
+- 补齐 MATLAB 加载器对当前 direct-target 字段名的兼容：支持 `q_position_target_*` 和 `qdot_alloc_*`，同时保留旧 `q_position_target_old_*` / `qdot_cmd_old_*` 兼容。
+- 新增 Stage0 `model_200` 专用统一 `Kp/Kd` 扫参脚本，并完成 MATLAB 扫参。
+
+修改文件：
+- `scripts/matlab/stage1_ball_joint_pd/load_isaac_ball_joint_trace.m`
+- `scripts/matlab/stage1_ball_joint_pd/simulate_uniform_ball_joint_pd.m`
+- `scripts/matlab/stage1_ball_joint_pd/run_stage0_model200_pd_sweep.m`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 输出目录：`results/stage0_model200_ball_joint_pd_matlab/`
+- 导出轨迹：`raw_traces/stage0_model200_flat_combined.csv`、`raw_traces/stage0_model200_flat_col00_flat.csv`、`raw_traces/stage0_model200_flat_summary.json`。
+- 扫参结果：`metrics_stage0_model200_uniform_gain_sweep.csv`、`best_stage0_model200_uniform_gain_candidates.csv`、`best_stage0_model200_uniform_gain_by_case.csv`、`report_stage0_model200_ball_joint_pd_sweep.md`。
+- 当前 `Kp=120,Kd=10` 保守稳定、速度贴限低，但真实 tracking error 占 `q_desired` 平均幅值约 `53%`；下一步建议用 Isaac GUI 短回放对照 `120/16`、`160/16`，而不是直接采用激进的 `320/24`。
+
+验证：
+- MATLAB Code Analyzer 对修改的 `.m` 脚本无错误。
+- MATLAB 扫参已成功写出 CSV 和候选表；第二次刷新报告时 MCP 会话超时，但结果 CSV 已生成，最终报告已按 CSV 和真实 trace 统计修正。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求将 Stage0 调参短训 `2026-05-10_18-21-11_stage0_slip2_actionrate_m50_qmon_700iter` 监督到 `model_200.pt` 保存后停止。
+- 训练期间持续观察 `q_desired` 每步跳变、`|qdot|` 贴限比例、球铰 tracking error、waypoint 完成率、纵滑率、中车 pitch 和总接地法向力。
+- `model_200.pt` 确认落盘后，先发送 `TERM`，随后因 Isaac 进程仍残留 GPU 显存，发送 `KILL` 完成终止；最终 GPU 训练进程释放。
+
+产出/结论：
+- checkpoint：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-05-10_18-21-11_stage0_slip2_actionrate_m50_qmon_700iter/model_200.pt`
+- iteration `199` 控制台关键指标：`q_desired` 每步跳变 `0.1001 rad`、`qdot` 贴限比例 `0.0159`、tracking error `0.0800 rad`、纵滑率 `3.1066`、`success_rate = 1.0`、waypoint 完成率约 `23.7%`。
+- 当前判断：动作平滑和球铰跟踪趋势改善明显，但 waypoint 完成率和纵滑率仍平台化；下一步建议用 `model_200.pt` 做 GUI 回放和球铰目标幅值 / tracking error ratio / 分轮接地分析。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-10
+
+已完成：
+- 按 MATLAB 扩展扫参推荐，将 Stage0 / Stage1 / Base 的球铰底层控制统一落地为 `Kp=120, Kd=10, effort=60, velocity_limit=2, tau_v=0.04`。
+- 移除 active 旧一阶球铰规划器链路：`compute_low_slip_control_targets()` 现在直接使用 `q_target = clamp(q_desired)`，轮速分配姿态变化率由 env 维护的 `qdot_alloc = LPF(qdot_actual)` 提供。
+- 同步更新 allocator 验证工具、接触回放参数脚本、动力学辨识脚本和球铰轨迹导出脚本字段。
+- 完成短回放信号验证：用 `stage1_sec14_tune_v1_128env_700iter/model_699.pt` 导出 flat、stairs_down、discrete obstacles 的新链路轨迹。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/__init__.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py`
+- `RL_Training/scripts/evaluate_contact_replay.py`
+- `RL_Training/scripts/identify_ball_joint_dynamics.py`
+- `RL_Training/scripts/export_ball_joint_policy_trace.py`
+- `docs/stage0_baseline参数详情表.md`
+- `docs/Stage1参数详情表.md`
+- `docs/底层运动学轮速分配球铰规划与力矩分配.md`
+- `docs/Stage1球铰PD控制MATLAB预仿真方案.md`
+- `docs/Stage1球铰PD控制MATLAB真实轨迹仿真实验方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 短回放输出目录：`results/stage1_ball_joint_direct_target_replay_2026-05-10/raw_traces/`，共 `3240` 行有效样本。
+- flat、stairs_down、discrete obstacles 各列 `target_gap_mean = 0.0`、`target_gap_max = 0.0`，说明 `q_desired` 已直接进入球铰 position target。
+- `desired_actual_mean` 约 `0.132 ~ 0.173 rad`，`qdot_alloc_abs_mean` 约 `0.478 ~ 0.638 rad/s`；后续应通过 GUI 回放和短训观察新底层是否改善台阶 / 离散障碍协同爬越。
+
+验证：
+- `python3 -m py_compile` 覆盖本轮触达的 Python 文件，通过。
+- `validate_wheel_speed_allocator.py --run-smoke-cases` 通过。
+- `test_stage1_curriculum.py`、`test_terrain_features.py`、`test_stage1_eval_metrics.py`、`test_rollout_train_mask.py` 通过。
+
+## 2026-05-10
+
+已完成：
+- 按用户论文展示需求，重新优化 Stage1 球铰 PD Simulink 可视化排版：放大 `J1-J6` 显示子系统、Scope 块和字体，Scope 固定白色背景、黑色坐标前景、legend/grid、标题和 Y 轴标签。
+- 更新 `plot_trace_response.m` 的白底论文图样式：固定高对比曲线配色、加粗线宽、放大字体、浅灰网格和 `300 dpi` 导出。
+- 新增 `export_stage1_ball_joint_pd_publication_figures.m`，用同一 PD 仿真逻辑生成每个关节一张白底 PNG，避免直接截 Scope 时出现黑色背景。
+- 重新生成并保存 `stage1_ball_joint_pd_uniform.slx`，并在 MATLAB 中重新打开验证：Scope `bg=white`、`fg=black`、`legend=1`、`grid=1`、字体 `14`，默认参数仍为 `Kp=120, Kd=10, tau_v=0.04`。
+
+修改文件：
+- `scripts/matlab/stage1_ball_joint_pd/build_stage1_ball_joint_pd_simulink.m`
+- `scripts/matlab/stage1_ball_joint_pd/plot_trace_response.m`
+- `scripts/matlab/stage1_ball_joint_pd/export_stage1_ball_joint_pd_publication_figures.m`
+- `scripts/matlab/stage1_ball_joint_pd/stage1_ball_joint_pd_uniform.slx`
+- `results/stage1_ball_joint_pd_matlab/publication_figures/stage1_ball_joint_pd_j1_spm1_z_yaw.png`
+- `results/stage1_ball_joint_pd_matlab/publication_figures/stage1_ball_joint_pd_j2_spm1_y_pitch.png`
+- `results/stage1_ball_joint_pd_matlab/publication_figures/stage1_ball_joint_pd_j3_spm1_x_roll.png`
+- `results/stage1_ball_joint_pd_matlab/publication_figures/stage1_ball_joint_pd_j4_spm2_z_yaw.png`
+- `results/stage1_ball_joint_pd_matlab/publication_figures/stage1_ball_joint_pd_j5_spm2_y_pitch.png`
+- `results/stage1_ball_joint_pd_matlab/publication_figures/stage1_ball_joint_pd_j6_spm2_x_roll.png`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前 `.slx` 直接打开后，Scope 配置已经保存为论文截图友好的白底样式；若当前 MATLAB 里仍显示旧模型，需要关闭并重新打开该 `.slx`。
+- 论文图输出目录为 `results/stage1_ball_joint_pd_matlab/publication_figures/`，已生成 `6` 张白底 PNG。
+
+## 2026-05-10
+
+已完成：
+- 按扩展 plant 不确定性扫参结论，将 Stage1 球铰 PD Simulink 初始化默认值改为 `Kp=120, Kd=10, tau_v=0.04 s`。
+- 在 MATLAB 会话中重新运行初始化脚本并对 `stage1_ball_joint_pd_uniform` 执行 update，确认工作区默认参数为 `Kp=120, Kd=10, tau_v=0.04`。
+
+修改文件：
+- `scripts/matlab/stage1_ball_joint_pd/init_stage1_ball_joint_pd_workspace.m`
+- `scripts/matlab/stage1_ball_joint_pd/build_stage1_ball_joint_pd_simulink.m`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前手动打开或更新 Simulink 模型时，默认会加载扩展扫参推荐的鲁棒候选 `Kp=120, Kd=10, tau_v=0.04 s`。
+
+## 2026-05-10
+
+已完成：
+- 按用户追加的 `J/B/tau_load/tau_v` 范围重新完成扩展 plant 不确定性扫参。
+- 新增 `run_expanded_pd_sweep.py`，用 NumPy 离线批量计算 `18` 个真实轨迹 case 和 `15750` 个完整参数组合，共 `283500` 条仿真评估。
+- 输出六维参数平均表、鲁棒控制候选表、逐 case 最优表和扩展扫参报告。
+- 修订扩展报告，明确 `tau_v` 不改变 PD plant 跟踪，只影响 `qdot_alloc` 低通后的 allocator 输入。
+
+修改文件：
+- `scripts/matlab/stage1_ball_joint_pd/run_expanded_pd_sweep.py`
+- `results/stage1_ball_joint_pd_matlab/metrics_expanded_param_sweep_summary.csv`
+- `results/stage1_ball_joint_pd_matlab/robust_expanded_control_candidates.csv`
+- `results/stage1_ball_joint_pd_matlab/best_expanded_param_by_case.csv`
+- `results/stage1_ball_joint_pd_matlab/report_stage1_ball_joint_pd_expanded_sweep.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 扩展不确定性下，固定 plant 扫参推荐的 `Kp=120, Kd=24` 在低惯量等场景中速度贴限风险上升。
+- 鲁棒跟踪主推荐改为 `Kp=120, Kd=10`：`risk_score_mean = 0.783446`、`new_error_mean = 0.128695`、`error_reduction_ratio = 0.294598`、`sat_ratio = 0.016656`、`qdot_limit_rate = 0.325897`。
+- `tau_v=0.03/0.04/0.05` 对 PD 跟踪风险并列；当前建议 `tau_v=0.04 s` 作为低滞后与平滑性的折中，`0.03/0.05 s` 作为 Isaac 短回放对照。
+- 完整六维最小风险点 `Kp=120, Kd=32, J=0.15, B=5.0, tau_load=0, tau_v=0.03` 只是某个 plant 假设下的最小点，不能作为 Isaac 控制参数直接采用。
+
+## 2026-05-10
+
+已完成：
+- 基于已导出的 Stage1 真实 policy CSV 完成统一 `Kp/Kd` 跨地形 MATLAB 扫参。
+- 新增纯 MATLAB 扫参流水线，避免每组参数都通过 Simulink Scope 交互界面运行。
+- 参与数据为 `raw_traces` 中 `6` 个地形列 CSV 的全部 `env_id`，共 `18` 个 case；扫描 `42` 组统一 `Kp/Kd`，输出全量指标 `756` 行。
+- 生成候选表、逐 case 最优表和 Markdown 报告。
+
+修改文件：
+- `scripts/matlab/stage1_ball_joint_pd/simulate_uniform_ball_joint_pd.m`
+- `scripts/matlab/stage1_ball_joint_pd/compute_trace_metrics.m`
+- `scripts/matlab/stage1_ball_joint_pd/plot_trace_response.m`
+- `scripts/matlab/stage1_ball_joint_pd/run_real_trace_pd_sweep.m`
+- `results/stage1_ball_joint_pd_matlab/metrics_uniform_gain_sweep.csv`
+- `results/stage1_ball_joint_pd_matlab/best_uniform_gain_candidates.csv`
+- `results/stage1_ball_joint_pd_matlab/best_uniform_gain_by_case.csv`
+- `results/stage1_ball_joint_pd_matlab/report_stage1_ball_joint_pd_matlab.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 当前固定 plant 假设：`J = 0.10 kg*m^2`、`B = 0.5`、`tau_load = 0 N*m`、`tau_v = 0.05 s`。
+- 综合推荐第一候选为统一 `Kp=120, Kd=24`；该组 `new_error_mean = 0.127549`、`old_error_mean = 0.184318`、误差降低约 `30.4%`、`sat_ratio = 0.006686`、`qdot_limit_rate = 0.272548`。
+- `Kp=160, Kd=24` 可作为更激进的 Isaac 短回放对照；更高增益虽可能降低误差，但速度贴限、饱和和振荡风险更高，不作为第一落地候选。
+- 已将 Simulink 初始化默认参数从 `Kp=320, Kd=32` 改为扫参推荐的 `Kp=120, Kd=24`，重新生成并保存 `stage1_ball_joint_pd_uniform.slx`，fresh load 后确认工作区参数为 `Kp=120, Kd=24`。
+
+## 2026-05-10
+
+已完成：
+- 按 `docs/Stage1球铰PD控制MATLAB真实轨迹仿真实验方案.md` 搭建 Stage1 球铰 PD Simulink 初版仿真。
+- 在 MATLAB 中生成并打开 `stage1_ball_joint_pd_uniform.slx`，模型包含六轴独立单轴 plant、统一 `Kp/Kd`、目标限位、力矩/速度限幅和 `qdot_alloc` 低通滤波观察链路。
+- 为真实轨迹 CSV 增加 MATLAB 加载器，支持从多 env 长表中选择单个 `env_id` 作为 Simulink 输入。
+- 使用 `col08_discrete_obstacles` 的 `env_id=4` 真实轨迹完成一次 `19.983 s` 仿真验证。
+
+修改文件：
+- `.gitignore`
+- `README.md`
+- `scripts/matlab/stage1_ball_joint_pd/build_stage1_ball_joint_pd_simulink.m`
+- `scripts/matlab/stage1_ball_joint_pd/init_stage1_ball_joint_pd_workspace.m`
+- `scripts/matlab/stage1_ball_joint_pd/load_isaac_ball_joint_trace.m`
+- `scripts/matlab/stage1_ball_joint_pd/stage1_ball_joint_pd_uniform.slx`
+- `docs/Stage1球铰PD控制MATLAB真实轨迹仿真实验方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Simulink 验证输出：`6` 个球铰通道，`max_abs_q = 0.663702 rad`，`max_abs_qdot = 2.000000 rad/s`，`max_abs_tau = 60.000000 N*m`，`tau_saturation_ratio = 0.274211`。
+- 当前 Simulink 模型是统一增益预筛工具，不替代 Isaac 三车体接触动力学；下一步是基于真实 CSV 做跨地形统一增益扫参和结果报告。
+- 用户手动直接打开 `.slx` 后出现红色报错，原因是模型直接打开时基础工作区缺少 `tau_max`、`Kp`、`q_desired_ts` 等初始化变量；已给模型保存 `PostLoadFcn` / `InitFcn` 自动运行初始化脚本，fresh load 后 `SimulationCommand=update` 通过。
+- 按用户要求重排 Simulink 显示结构：删除原来混合 `24` 条角度曲线和 `30` 条驱动信号的两个总览 Scope；新增 `J1-J6` 六个关节显示子系统，每个子系统内部按单位分为 `Angle rad`、`Velocity radps`、`Torque Nm` 三个 Scope，避免 6 轴和不同单位信号混在同一 Scope 中。新版模型已用真实 `col08_discrete_obstacles`、`env_id=4` 轨迹完成 update 和仿真验证。
+- 继续按用户截图反馈优化 Scope 外观：所有关节子系统 Scope 已改为白色背景、黑色坐标前景、显示 grid 和 legend；进入 Scope 的信号线已命名为 `q desired`、`old target`、`old actual`、`new target`、`new sim` 等可读名称，便于论文截图和曲线辨认。
+
+## 2026-05-10
+
+已完成：
+- 新增 IsaacLab 球铰动力学辨识脚本 `RL_Training/scripts/identify_ball_joint_dynamics.py`。
+- 脚本以自动键盘控制思路驱动车辆前进并正弦激励六个球铰轴，记录 `q/qdot/qddot/computed_torque/applied_torque`，拟合 `J/B/tau_load`，并评估 `tau_v` 候选滤波效果。
+- 完成 smoke test 和正式 flat drive-lift 辨识运行。
+
+修改文件：
+- `RL_Training/scripts/identify_ball_joint_dynamics.py`
+- `docs/Stage1球铰PD控制MATLAB真实轨迹仿真实验方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 正式输出位于 `results/stage1_ball_joint_identification/flat_drive_lift_18env_1800_*`，包含 raw CSV、fit results、tau_v metrics 和 summary。
+- 正式数据为 `18` env、`180` warmup steps、`1800` export steps、flat row `0`，共 `32400` 行样本。
+- 六轴拟合 $J$ 约 `0.03 ~ 0.08 kg*m^2`，但 $R^2$ 仅约 `0.02 ~ 0.05`，部分 $B$ 为负；说明当前“行驶 + 抬升 + 地面接触”工况下单轴线性模型解释力弱。
+- 本轮辨识结果只能用于缩小 MATLAB 参数扫描范围，不能作为唯一真实参数；`tau_v` 仍作为滤波设计参数选择，当前主候选维持 `0.03 ~ 0.05 s`。
+
+## 2026-05-10
+
+已完成：
+- 新增 `RL_Training/scripts/export_ball_joint_policy_trace.py`，用于 Stage1 checkpoint 回放时逐 control step 导出球铰真实策略目标和实际响应轨迹。
+- 使用 `model_699.pt` 完成一次 flat、stairs_down、discrete obstacles 的真实轨迹导出。
+- 将导出脚本和本次导出结果同步写入 MATLAB 真实轨迹仿真实验方案。
+
+修改文件：
+- `RL_Training/scripts/export_ball_joint_policy_trace.py`
+- `docs/Stage1球铰PD控制MATLAB真实轨迹仿真实验方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 输出目录：`results/stage1_ball_joint_pd_matlab/raw_traces/`
+- 输出文件包括 combined CSV、`col00 flat`、`col05/06/07 stairs_down`、`col08/09 discrete_obstacles` 六个分列 CSV 和 summary JSON。
+- 本次导出使用 `18` env、`120` warmup steps、`1200` export steps；flat row `0`，stairs_down / discrete_obstacles row `11`；有效非 done 样本共 `21590` 行。
+- 这些逐 control step CSV 将作为后续 MATLAB 统一 $K_p,K_d$ 扫参的主输入。
+
+## 2026-05-10
+
+已完成：
+- 按用户修正，将 Stage1 球铰 MATLAB 调参主线改为优先使用 IsaacLab 真实 policy 逐 control step 轨迹，人工阶跃只保留为 sanity check / 压力测试。
+- 明确第一版球铰 PD gain 采用统一 $K_p,K_d$，不按 x/y/z 或前后球铰分别设置。
+- 将 MATLAB 仿真实验单独整理成独立文档，写明模型路径、数据路径、实验目标、输入工况、观察信号、评价指标、筛选流程和 IsaacLab 回灌验证步骤。
+
+修改文件：
+- `docs/Stage1球铰PD控制MATLAB真实轨迹仿真实验方案.md`
+- `docs/Stage1球铰PD控制MATLAB预仿真方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 后续应先实现或补齐 raw trace 导出脚本，用 `stage1_sec14_tune_v1_128env_700iter/model_699.pt` 导出 flat、stairs_down 和 discrete obstacles 的真实球铰目标轨迹，再进入 MATLAB 统一 gain 扫参。
+- MATLAB 参数默认同步当前源码：`sim_dt = 1/120 s`、`control_dt = 1/60 s`、`effort_limit_sim = 60 N*m`、`velocity_limit_sim = 2 rad/s`。
+
+## 2026-05-10
+
+已完成：
+- 按用户提供的外部方案建议，结合当前源码重新整理 Stage1 球铰直接目标 PD 控制落地方案。
+- 明确当前第一版不直接下发 ball joint velocity target，而是保留 Isaac / PhysX implicit position drive；轮速分配所需姿态变化率改为实际球铰角速度低通滤波。
+- 将 MATLAB 预仿真调参方案改为按当前已统一的 `effort_limit_sim = 60 N*m` 扫参，不采用外部建议中过时的 `20 N*m` 主线。
+
+修改文件：
+- `docs/Stage1球铰PD控制MATLAB预仿真方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 文档已给出代码级改动位置、allocator 解耦方式、reset 状态清理、测试项、MATLAB 单关节模型、候选参数族和 Isaac Sim 短验证顺序。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求，将 `ball_joint_effort_limit_sim` 统一改为 `60.0`。
+- 将 Stage0 的底层球铰和车轮控制参数拉齐 Stage1 / Base 当前主线，避免阶段切换时底层运动学和机器人驱动配置发生变化。
+- 同步更新 Stage0、Stage1、底层运动学总说明和 MATLAB 预仿真参数文档，明确标出 2026-05-10 新修改内容。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/stage0_baseline参数详情表.md`
+- `docs/Stage1参数详情表.md`
+- `docs/底层运动学轮速分配球铰规划与力矩分配.md`
+- `docs/Stage1球铰PD控制MATLAB预仿真方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- Stage0 / Stage1 现在统一使用 `ball_joint_planner_gains=(8,...,8)`、球铰 drive `1000/10/60`、`low_slip_lambda_lateral=5.0`、`wheel_torque_tracking_gain=2.0`、`wheel_slip_feedback_gain=4.0`。
+- 车轮底层仍统一为 effort target 链，车轮 torque limit 保持 `20.0 N*m`。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求，将 Stage1 球铰控制链路修改思路整理为 MATLAB 预仿真问题定义文档。
+- 明确 `ball_joint_stiffness` / `ball_joint_damping` 是 IsaacLab 伺服 PD 控制参数，不直接对应真实球铰机械被动刚度 / 阻尼。
+- 将当前优先验证路线记录为：取消旧球铰位置规划器，让 policy 的球铰目标位置直接进入 PD `position_target`；后续同日已修订为第一版不直接下发 velocity target，轮速分配使用实际球铰角速度低通滤波。
+
+修改文件：
+- `docs/Stage1球铰PD控制MATLAB预仿真方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- 新文档定义了单轴球铰伺服 MATLAB 预仿真模型、控制律、速度目标生成方式、参数扫描范围、实验组、评价指标和后续 Isaac Sim 落地检查标准。
+- 后续在实现 Stage1 控制链路修改前，应先用 MATLAB 预仿真筛选 $K_p$、$K_d$、$\tau_q$、$\dot q_{\max}$ 和 $\ddot q_{\max}$。
+
 ## 2026-05-08
 
 已完成：
@@ -327,6 +826,101 @@
 - 将检索结果按“综述文献”“方法综述”“研究论文”“开源 GitHub 项目”四类整理。
 - 按用户追加要求，进一步围绕 Google Scholar 和 CNKI 线索筛选“双目/相机 + LiDAR 融合作为感知”的综述文献，并按质量和时效性排序。
 - 同步更新当前状态和长期结论记忆。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-10
+
+已完成：
+- 按用户要求将 Stage1 默认 warm-start 改为 `best_baseline4/model_375.pt` 的 Stage1 转换版。
+- 重新生成 warm-start checkpoint：`RL_Training/logs/rsl_rl/complete_car_stage1/warmstart_best_baseline4_model375_terrain_features/model_0.pt`。
+- 将 `CompleteCarStage1PPORunnerCfg` 的默认 `load_run/load_checkpoint` 改为 `warmstart_best_baseline4_model375_terrain_features/model_0.pt`。
+- 将 `convert_stage0_to_stage1_warmstart.py` 的默认来源 / 输出改为 `best_baseline4/model_375.pt -> warmstart_best_baseline4_model375_terrain_features/model_0.pt`，并保留 `--apply_orderfix_io` 作为旧 `best_baseline_2` 转换的显式选项。
+
+修改文件：
+- `RL_Training/scripts/convert_stage0_to_stage1_warmstart.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/convert_stage0_to_stage1_warmstart.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py` 通过。
+- 新 checkpoint metadata：`source_iter = 375`、actor obs `54 -> 82`、critic obs `54 -> 660`、`ball_joint_order_fix_io = False`、`source_joint_order_assumption = current_preserve_order`。
+- 权重校验：actor / critic 第一层前 `54` 维与源 checkpoint 最大差异为 `0.0`，新增维度权重为 `0.0`；actor 输出层和 `log_std` 与源 checkpoint 最大差异为 `0.0`。
+
+下一步：
+- 重启 Stage1 时使用 `--resume --warmstart --load_run warmstart_best_baseline4_model375_terrain_features --checkpoint model_0.pt`，并重点观察姿态、低滑移和地形推进是否受 `best_baseline4/model_375.pt` 更激进行为影响。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求继续跟踪 `stage1_sec14_tune_v1_128env_700iter` 训练，确认训练未中断并完整跑到 `699/700`。
+- 训练进程正常退出，训练耗时约 `29052 s`；最终 checkpoint 为 `RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-09_16-48-52_stage1_sec14_tune_v1_128env_700iter/model_699.pt`。
+- 已重新导出 TensorBoard scalar 到该 run 的 `tensorboard_export/`。
+- 已修正此前中途监控时对 `step 679 / model_675` 的临时状态记录，当前项目状态以完整 `step 699 / model_699` 为准。
+
+结论：
+- 动态 env 回收正常生效，后期 128 env 全部集中到剩余 `5-7 stairs_down` 和 `8-9 discrete obstacles`。
+- step `699` 全局：`current_level_mean = 10.2160`、`rows_advanced_mean = 0.1126`、`row_advance_rate = 0.1055`、`stagnation_rate = 0.0689`、终端最终 `stuck_timeout_rate = 0.0000`、`contact_loss_rate = 0.4459`、`pitch_abs_mean = 13.6701`、`action_saturation_rate = 0.0220`。
+- 末 `25` step 全局均值：`current_level_mean = 10.2126`、`rows_advanced_mean = 0.1250`、`row_advance_rate = 0.1218`、`stagnation_rate = 0.0710`、`contact_loss_rate = 0.4501`、`action_saturation_rate = 0.0220`。
+- `stairs_down` 三列推进到 row `11` 左右，末段仍有有效推进；`discrete obstacles` 是主要瓶颈，`col08` 已接近 row `12` 但末段 advance 几乎停滞，`col09` 仍在 row `5.9` 左右。
+- 本轮运动质量为近期较好的一轮：低动作饱和、低滞留、无 stuck timeout，推进偏慢但没有退化成卡死或高动作硬顶。
+- 训练后段多次出现 PPO surrogate loss 大尖峰，后续继续长训或扩大实验前需要单独复核优化稳定性。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-10
+
+已完成：
+- 中途导出并检查 Stage1 调参训练 run `2026-05-09_16-48-52_stage1_sec14_tune_v1_128env_700iter` 的 TensorBoard 标量。
+- 当时 TensorBoard 暂到 step `679`、已落盘 checkpoint 暂到 `model_675.pt`；后续已确认训练仍在继续并最终完整跑到 `699/700`，最终状态以上方完整记录为准。
+- 中途汇总全局和剩余地形列指标：动态 env 回收正常，`128` env 后期全部集中到 `5-7 stairs_down` 与 `8-9 discrete obstacles`；step `679` 附近末 `25` step 全局 `current_level_mean = 10.1649`、`rows_advanced_mean = 0.1385`、`stagnation_rate = 0.0748`、`contact_loss_rate = 0.4512`、`action_saturation_rate = 0.0230`。
+- 中途判断：本轮运动质量较好，低卡滞、低动作饱和、无 stuck timeout；推进速度仍慢，主要瓶颈集中在离散障碍列，尤其 `col08` 到 row `12` 左右后末段 row advance 较低。
+- 中途记录风险：后段出现多次 PPO surrogate loss 大尖峰，后续完整训练仍确认该风险存在，需要复核 PPO 更新稳定性和 hard terrain reward 尺度。
+
+输出：
+- `RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-09_16-48-52_stage1_sec14_tune_v1_128env_700iter/tensorboard_export/`
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-09
+
+已完成：
+- 按用户要求对比 `best_baseline4/model_375.pt` 与 `best_baseline_2/model_699.pt` 的同窗口 Stage0 指标。
+- 核对当前 Stage1 默认 warm-start 文件 `warmstart_best_baseline_2_terrain_features_orderfix_io/model_0.pt` 的 checkpoint 结构和 metadata。
+
+结论：
+- `model_375.pt` 与 `best_baseline_2/model_699.pt` 均达到 `success_rate = 1.0000`，`model_375.pt` episode length 和前进速度略优。
+- `best_baseline_2/model_699.pt` 的低滑移通过率、pitch 和 `projected_gravity_xy_norm` 明显更好；`model_375.pt` 的球铰使用和 policy action 更激进。
+- 当前 Stage1 继续使用 `warmstart_best_baseline_2_terrain_features_orderfix_io/model_0.pt` 不属于配置错误；该文件已做 actor obs `54 -> 82`、critic obs `54 -> 660` 扩展，并带 `ball_joint_order_fix_io=True` 通道重排。
+- 残余风险仍是 `best_baseline_2` 旧 wheel allocator 几何造成的连续分布偏移，而不是 joint index / checkpoint 结构硬错误。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-09
+
+已完成：
+- 按用户要求在继续训练后的 `best_baseline4` 内部选择综合运动质量和任务推进最优 checkpoint。
+- 对 `RL_Training/logs/rsl_rl/complete_car_stage0/2026-05-09_14-22-59_best_baseline4` 的 checkpoint 按末 `25` iteration 窗口统计成功率、episode length、前进速度、低滑移通过率、纵滑、侧滑角、pitch、projected gravity xy、轮速参考和 torque。
+
+结论：
+- 当前推荐综合 checkpoint 为 `model_375.pt`。
+- 该 checkpoint 末 `25` iteration：`success_rate = 1.0000`、平均 episode length 约 `651.7` step、`v_parallel_abs` 约 `1.192 m/s`、`LowSlip/combined_pass_rate` 约 `0.0809`、`pitch_abs` 约 `2.77 deg`、`projected_gravity_xy_norm` 约 `0.0493`。
+- `model_675.pt` / `model_699.pt` 更快，但 pitch 和 gravity xy 明显更差；`model_600.pt` 是次级折中，但综合排序低于 `model_375.pt`。
 
 修改文件：
 - `docs/current_status.md`
@@ -15279,3 +15873,1336 @@
 产出/结论：
 - 下一轮实现默认从合并的 A1+A2 开始：terrain-gated 速度硬限幅 + gate-aware contact support。
 - 上台阶姿态 reward 的符号已明确：若用 `spm1_platform_joint_y` 表示前车姿态，抬头参考必须为负值。
+
+## 2026-05-08
+
+已完成：
+- 按用户要求停止当前 Stage1 R20 训练监控；检查 GPU 后确认没有训练进程继续占用。
+- 将 Stage1 默认 RL 配置恢复到第 `13` 节刚落地时的第一轮 A1+A2 口径：terrain-gated speed clamp + gate-aware contact support；关闭后续实验加入的 stuck、airborne spin、hard terrain spin、action soft limit、step-up posture 和 drop anti-dive reward 权重。
+- 将 Stage1 PPO 恢复为继承基础配置：`learning_rate = 1e-4`、`num_learning_epochs = 5`。
+- 导出 R15、R20 TensorBoard scalar，并整理 R1-R20 的修改与训练结果。
+- 新增复盘文档：`results/stage1_reward_experiments/Stage1_R1-R20训练修改与结果汇总_2026-05-08.md`。
+- 同步更新 `docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+- `results/stage1_reward_experiments/Stage1_R1-R20训练修改与结果汇总_2026-05-08.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- R1-R20 的核心瓶颈仍是台阶类地形，尤其上台阶 `col07/col08` 未形成稳定下降趋势。
+- R20 提高 `wheel_slip_feedback_gain` 后能增强推进，但纵滑、接触丢失和俯仰偏高，不适合作为 `700+` 长训配置。
+- 后续优化应聚焦台阶上的有效牵引、接触支撑、离地轮空转和落地冲击，而不是一味优化 surrogate。
+
+## 2026-05-08
+
+已完成：
+- 按用户要求将 Stage1 `28` 维低维地形特征计算方式和 terrain gate 计算方式详细写入 `docs/Stage1参数详情表.md`。
+- 新增第 `9.3` 节，说明完整 height patch 到相对地形高度 $H_{\mathrm{rel}}$ 的转换、局部区域划分、前方区域特征、左右轮路径特征、三车体支撑区域特征和 `28` 维输出顺序。
+- 新增第 `9.4` 节，说明 `g_step_up`、`g_step_down`、`g_gap`、`g_rough`、`g_flat` 的 sigmoid 公式、阈值和使用边界。
+- 同步修正 `docs/Stage1参数详情表.md` 中当前推荐 warm-start 为 `warmstart_best_baseline_2_terrain_features_orderfix_io/model_0.pt`，并将 reward 参数表同步到当前 A1+A2 恢复口径。
+- 同步更新 `docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `git diff --check -- docs/Stage1参数详情表.md` 通过。
+- 检查 `docs/Stage1参数详情表.md` 中未出现 Obsidian 不推荐的 `\\(...\\)` 或 `\\[...\\]` 数学公式写法。
+
+## 2026-05-08
+
+已完成：
+- 按用户要求用 Python 生成 Stage1 局部 height patch 与小车几何关系工程示意图。
+- 新增 `scripts/isaac_sim/draw_stage1_patch_layout.py`，使用当前 Stage1 patch 范围、小车轮径、左右轮路径、`support_y` 和前中后支撑区域定义绘制俯视正交图。
+- 输出图片 `results/stage1_patch_layout.png`，图中明确 `+X` 向前、`+Y` 向左，left/right track 为竖向条带，front/middle/rear support 沿 x 方向上下排列。
+- 按用户追加要求，参考 `ChatGPT Image 2026年5月8日 23_18_17.png` 的配色和排版方法重新生成图片：保持竖向排版，并在下方加入独立 legend 栏。
+- 按用户继续要求，明确突出 `center_track`：将其改为高对比黄色竖向带，并用橙色实线标出 `y = -0.20` 与 `y = +0.20` 两侧边界；脚本字体优先设置为 `Times New Roman`，本机字体映射使用 `Liberation Serif`。
+- 按用户提供的真实车辆几何参数继续修正图片：车体总长 `1.884419 m`、总宽 `0.560747 m`，前/中/后轴 x 改为 `+0.552977 / 0 / -0.552977 m`，轮中心 y 改为约 `±0.2695 m`，并在 `docs/Stage1参数详情表.md` 补充这些几何参数和 track mask 解释。
+- 同步更新 `docs/current_status.md`。
+
+修改文件：
+- `scripts/isaac_sim/draw_stage1_patch_layout.py`
+- `results/stage1_patch_layout.png`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile scripts/isaac_sim/draw_stage1_patch_layout.py` 通过。
+- `python3 scripts/isaac_sim/draw_stage1_patch_layout.py` 成功生成 PNG。
+- 已人工预览图片，确认坐标方向和区域划分符合当前 Stage1 patch 约定。
+
+## 2026-05-08
+
+已完成：
+- 按用户要求，根据 Stage1 地形生成器画出四类地形的 terrain feature 分布。
+- 新增 `scripts/isaac_sim/plot_stage1_terrain_feature_distributions.py`，直接采样 `terrain_builder.py`，不依赖 Isaac Sim。
+- 采样四组地形：`flat`、`uneven rough`、`stairs up+down`、`discrete obstacles`，每个样本为沿 tile x 方向扫过的 `34 x 17` 局部 patch。
+- 生成分布图 `results/stage1_terrain_feature_distributions.png`，并导出 `results/stage1_terrain_feature_distribution_samples.csv` 和 `results/stage1_terrain_feature_distribution_summary.csv`。
+- 同步更新 `docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `scripts/isaac_sim/plot_stage1_terrain_feature_distributions.py`
+- `results/stage1_terrain_feature_distributions.png`
+- `results/stage1_terrain_feature_distribution_samples.csv`
+- `results/stage1_terrain_feature_distribution_summary.csv`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+产出/结论：
+- `0.02 m` 边缘距离阈值对 rough 较敏感，rough 的 edge detection 会较频繁触发。
+- `0.08 m` step gate 阈值仍能把 rough 的 `g_step_up/g_step_down` 压在较低水平。
+- `-0.06 m` gap 深度阈值对 stairs / obstacles 有明显响应，但 rough 存在少量低洼误触发风险，后续需结合训练和回放判断是否调到 `-0.08 m`。
+
+验证：
+- `python3 -m py_compile scripts/isaac_sim/plot_stage1_terrain_feature_distributions.py` 通过。
+- `python3 scripts/isaac_sim/plot_stage1_terrain_feature_distributions.py` 成功生成 PNG 和 CSV。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求画出当前 Stage1 terrain gate 的函数曲线。
+- 新增 `scripts/isaac_sim/plot_stage1_gate_functions.py`，按 `mdp/terrain_features.py` 当前公式绘制 `g_step_up/g_step_down`、`g_gap`、`g_rough` 和 `g_flat`。
+- 生成图片 `results/stage1_terrain_gate_functions.png`。
+- 按用户追加要求将物理量横坐标统一为 m：step/drop、rough 使用 m，gap 从 `gap_width_norm` 换算为等效低洼宽度 m；`g_flat` 输入不是物理长度，保留无量纲 gate sum。
+- 按用户指出的问题修正 `Gap gate` 虚线 legend：由易误解的 `norm width=0.15` 改为 `width=0.28 m (norm=0.15)`。
+- 同步更新 `docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `scripts/isaac_sim/plot_stage1_gate_functions.py`
+- `results/stage1_terrain_gate_functions.png`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile scripts/isaac_sim/plot_stage1_gate_functions.py` 通过。
+- `python3 scripts/isaac_sim/plot_stage1_gate_functions.py` 成功生成 PNG。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求将当前 Stage0 源码 `complete_car_stage0_cfg.py` 中 `control.base_allow_reverse` 从 `False` 改为 `True`。
+- 核对历史 `best_baseline_2/params/env.yaml`：该历史 run 的 `base_allow_reverse: true`，因此本次改动使当前 Stage0 倒车口径重新与 `best_baseline_2` 一致。
+- 更新 `docs/stage0_baseline参数详情表.md`、`docs/current_status.md` 和 `docs/conversation_history.md`，移除“Stage0 当前不允许倒车”这一过时结论。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/stage0_baseline参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py` 通过。
+
+## 2026-05-10
+
+已完成：
+- 按用户确认的 Stage0 姿态质量方案新增中车 pitch progress gate。
+- 先复核 `2026-05-10_19-52-05_stage0_slip2_actionrate_m50_qmon_resume200_to_quality` 的实际 reward 尺度：iteration `301` 末 `25` 轮窗口中，`Reward/progress_to_target ≈ +0.0238/step`、`Reward/slip_penalty ≈ -0.00457/step`、中车 pitch 约 `-6.0 deg`。
+- 按用户修正，将 pitch gate 改为平方指数形式：`exp(-0.5 * (|pitch| / k)^2)`。
+- 选择 `progress_pitch_gate_k_rad = π / 16`：当 `|pitch|≈6 deg` 时 gate 约 `0.867`，progress 降幅约 `0.00316/step`，约为当前滑移惩罚的 `69%`；当 `|pitch|≈6.294 deg` 时 gate 约 `0.855`，progress 降幅约 `0.00345/step`，约为当前滑移惩罚的 `75%`。
+- Stage0 启用：`progress_pitch_gate_deadband_deg = 2.0`、`progress_pitch_gate_k_rad = π / 16`。
+- Stage1 显式关闭：`progress_pitch_gate_k_rad = 0.0`，避免复杂地形训练时误伤必要的中车姿态变化。
+- 新增 `ProgressGate/pitch_gate` 日志，TensorBoard alias 为 `00_Behavior/39_progress_pitch_gate`。
+- 同步更新 Stage0 / Stage1 参数文档、当前状态和长期记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/stage0_baseline参数详情表.md`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 覆盖本轮修改的 Python 文件，通过。
+- 公式 sanity check 通过：`k=π/16 rad` 时 `|pitch|=3/5/6/6.294 deg` 对应 gate 约 `0.9651/0.9060/0.8674/0.8551`；Stage1 `k=0` 时 gate 恒为 `1.0`。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求，用当前 Stage0 配置对 `best_baseline4/model_375.pt` 回放计算 reward 分量实际大小，重点评估 `action_rate_penalty_weight = -50.0` 的尺度。
+- 扩展 `RL_Training/scripts/evaluate_contact_replay.py` 的 summary 输出，新增 `Reward/total` 及各 reward 分量 step 均值。
+- 统计输出保存到 `results/stage0_model375_gui_replay_2026-05-10/reward_scale_action_rate_m50_summary.txt`。
+
+关键数据：
+- `Reward/action_rate_penalty = -0.001761 / step`，按 `2400` 步折算约 `-4.23 / episode`。
+- `Reward/progress_to_target = +0.017507 / step`，约 `+42.02 / episode`。
+- `Reward/reached_target = +0.020031 / step`，约 `+48.07 / episode`。
+- `Reward/slip_penalty = -0.002885 / step`，约 `-6.92 / episode`。
+- `Reward/distance_to_target = +0.002011 / step`，约 `+4.83 / episode`。
+- `Reward/angle_diff = +0.001977 / step`，约 `+4.74 / episode`。
+
+结论：
+- `-50` 是一个明显但不过量的第一版动作平滑权重：与距离 / 朝向奖励同档，低于推进和到点主奖励，不建议在第一轮 Stage0 重训前继续加大。
+
+修改文件：
+- `RL_Training/scripts/evaluate_contact_replay.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/evaluate_contact_replay.py` 通过。
+- Isaac Lab headless 回放统计正常完成。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求判断并移除 `turn_speed_penalty`。
+- 依据当前回放统计，该项在 Stage0 只有约 `-0.000251 / step`、折算完整 episode 约 `-0.60`，Stage1 中此前权重已为 `0.0`，与 `angle_diff` 和 `action_rate_penalty` 存在约束重叠。
+- 从源码中删除 `turn_speed_penalty` reward term、计算公式、配置字段、metrics、logger tag 和 replay summary 统计项。
+- 删除 `turn_speed_angle_scale_deg` 配置字段；Stage1 reward 名义距离尺度继续由 `nominal_goal_distance_m` 表达。
+- 同步更新 Stage0 / Stage1 参数文档、Stage1 指标文档、Reward 设计草案、优化方案、当前状态和长期记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `RL_Training/scripts/evaluate_contact_replay.py`
+- `docs/stage0_baseline参数详情表.md`
+- `docs/Stage1参数详情表.md`
+- `docs/stage1评价指标.md`
+- `docs/Stage1奖励函数设计草案.md`
+- `docs/优化方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 覆盖本轮修改的 Python 文件，通过。
+- `python3 RL_Training/tests/test_stage1_eval_metrics.py` 通过；按预期打印一次既有非有限 action mean 清理 warning。
+- `python3 RL_Training/tests/test_rollout_train_mask.py` 通过。
+- `python3 RL_Training/tests/test_terrain_features.py` 通过。
+- `python3 RL_Training/tests/test_stage1_curriculum.py` 通过。
+- 源码路径下 `turn_speed_penalty` / `turn_speed_angle_scale` 已无残留引用。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求修改 Stage0 滑移惩罚口径：
+  - `slip_longitudinal_penalty_ratio = 3.0`
+  - `slip_angle_penalty_ratio = 1.0`
+  - `slip_penalty_weight` 保持 `-2.0`
+- 使用 `best_baseline4/model_375.pt` 和当前 Stage0 配置重新回放统计 reward 分量。
+- 统计输出保存到 `results/stage0_model375_gui_replay_2026-05-10/reward_scale_slip_long3_angle1_summary.txt`。
+
+关键数据：
+- `Reward/total = +0.015857 / step`，约 `+38.06 / episode`。
+- `Reward/progress_to_target = +0.012002 / step`，约 `+28.81 / episode`。
+- `Reward/reached_target = +0.010817 / step`，约 `+25.96 / episode`。
+- `Reward/distance_to_target = +0.002191 / step`，约 `+5.26 / episode`。
+- `Reward/angle_diff = +0.001642 / step`，约 `+3.94 / episode`。
+- `Reward/slip_penalty = -0.009168 / step`，约 `-22.00 / episode`。
+- `Reward/action_rate_penalty = -0.001627 / step`，约 `-3.91 / episode`。
+
+结论：
+- 新滑移惩罚已成为 Stage0 主负项之一，明显强于动作变化惩罚；下一轮 Stage0 重训要同步观察 waypoint 完成率、progress 和运动是否被压得过慢。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/stage0_baseline参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- Isaac Lab headless 回放统计正常完成。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求将 Stage0 纵滑率惩罚系数从 `3.0` 改为 `2.0`，侧滑角系数保持 `1.0`。
+- 为本轮 Stage0 训练补齐四个重点监控指标中的缺口：
+  - `Action/ball_joint_desired_delta_abs_mean_raw`：policy 给出的 `q_desired` 每步平均跳变。
+  - `Action/ball_joint_desired_delta_l2_raw`：六维球铰目标跳变 L2。
+  - `Observation/ball_joint_vel_limit_rate_raw`：`|qdot| >= 0.95 * velocity_limit` 的比例。
+  - `Observation/ball_joint_target_error_abs_mean_raw`：已有 tracking error 指标，保持打印。
+- 启动新一轮 Stage0 训练：
+  - run：`RL_Training/logs/rsl_rl/complete_car_stage0/2026-05-10_18-21-11_stage0_slip2_actionrate_m50_qmon_700iter`
+  - runtime log：`RL_Training/logs/runtime/stage0_slip2_actionrate_m50_qmon_700iter.log`
+  - 训练口径：`CompleteCar-Stage0`、`64` env、`700` iteration、headless、`cuda:0`、从当前配置重新训练。
+
+早期观察：
+- iteration `2-4` 新增指标已正常打印。
+- `q_desired` 每步跳变约 `0.1375-0.1380 rad`。
+- `qdot` 贴近 `2 rad/s` 比例约 `3.55%-3.68%`。
+- 球铰 tracking error 约 `0.1035-0.1042 rad`。
+- waypoint 完成率 / success rate 暂为 `0%`，当前只作为启动 sanity check，不作为收敛判断。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/stage0_baseline参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 覆盖本轮修改的 Python 文件，通过。
+- `python3 RL_Training/tests/test_rollout_train_mask.py` 通过。
+- `python3 RL_Training/tests/test_stage1_eval_metrics.py` 通过；按预期打印一次既有非有限 action mean 清理 warning。
+- 新训练已进入 PPO iteration，TensorBoard event 和 runtime log 正常生成。
+- `git diff --check -- RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py docs/stage0_baseline参数详情表.md docs/current_status.md docs/conversation_history.md logs/daily_work_log.md` 通过。
+
+## 2026-05-09
+
+已完成：
+- 修复 `scripts/play.py` 回放 warm-start checkpoint 时的 `KeyError: 'optimizer_state_dict'`。
+- 新增自动检测逻辑：若 checkpoint 包含 `actor_state_dict` / `critic_state_dict` 且缺少 `optimizer_state_dict`，回放时按 actor/critic-only 加载，不再尝试恢复 optimizer 或 iteration。
+- 核对 `warmstart_best_baseline_2_terrain_features_orderfix_io/model_0.pt`：该文件有 actor / critic 权重，无 optimizer，修复后会走 warm-start 回放加载分支。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py` 通过。
+- `git diff --check -- RL_Training/scripts/play.py` 通过。
+- 轻量读取 checkpoint 结构确认 `will_load_actor_critic_only = True`。
+
+## 2026-05-09
+
+已完成：
+- 按用户澄清，将当前 Stage1 后续训练默认 warm-start 口径改回新一轮 Stage0 训练之前的原修正版：`warmstart_best_baseline_2_terrain_features_orderfix_io/model_0.pt`。
+- 核对该 checkpoint metadata：来源为 `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2/model_699.pt`，`source_iter = 699`，actor `82` 维、critic `660` 维，`ball_joint_order_fix_io = True`。
+- 确认 `convert_stage0_to_stage1_warmstart.py` 默认输入 / 输出已经是 `best_baseline_2 -> warmstart_best_baseline_2_terrain_features_orderfix_io/model_0.pt`，无需改脚本。
+- 明确 `best_baseline3` 生成的 warm-start 和 Stage1 `model_375.pt` 仅作为历史对照，不作为当前默认 warm-start。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- 本次为状态口径修正和 checkpoint metadata 核对，未修改训练代码。
+
+## 2026-05-09
+
+已完成：
+- 修复回放目标 marker 初始化崩溃问题：IsaacLab 内置方向箭头 marker 会访问 Omniverse 远程 `arrow_x.usd`，离线环境下报 `FileNotFoundError`。
+- 修改 `debug_draw.py`：目标方向、轮速方向和高度 patch `+Y` 指示均改为本地 primitive cylinder marker；目标红色 sphere marker 保持不变。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py` 通过。
+- `git diff --check -- RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py` 通过。
+- `debug_draw.py` 中已无 `GREEN_ARROW_X_MARKER_CFG`、`RED_ARROW_X_MARKER_CFG` 或 `arrow_x.usd` 引用。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求启动并完成当前 Stage0 配置下的 `best_baseline3` 训练：run 为 `RL_Training/logs/rsl_rl/complete_car_stage0/2026-05-09_02-31-58_best_baseline3`，最终 checkpoint 为 `model_699.pt`。
+- 修复 Stage0 启动时误进入 Stage1 terrain-column 指标路径导致的 `IndexError`：`env.py` 中 terrain tile 指标现在只在 Stage1 train-retirement 且 terrain generator enabled 时计算。
+- 使用 `best_baseline3/model_699.pt` 生成 Stage1 warm-start：`RL_Training/logs/rsl_rl/complete_car_stage1/warmstart_best_baseline3_terrain_features_orderfix_io/model_0.pt`，已核对 actor `82` 维、critic `660` 维和 `8` 维动作输出。
+- 启动 Stage1 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-09_05-42-25_stage1_warmstart_best_baseline3_128env_800iter`；按用户后续停止要求结束，最新 checkpoint 为 `model_375.pt`，TensorBoard 最后 Stage1Eval 到 step `381`，GPU 训练进程已退出。
+- 复核 step `381` active terrain 指标：当前 active terrain 仍主要卡在上台阶，`col07/08 row_advance_rate = 0`；下台阶和离散障碍能少量推进但滑移、接触丢失和俯仰仍偏高。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+输出：
+- `RL_Training/logs/rsl_rl/complete_car_stage0/2026-05-09_02-31-58_best_baseline3/model_699.pt`
+- `RL_Training/logs/rsl_rl/complete_car_stage1/warmstart_best_baseline3_terrain_features_orderfix_io/model_0.pt`
+- `RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-09_05-42-25_stage1_warmstart_best_baseline3_128env_800iter/model_375.pt`
+
+下一步：
+- 优先回放 Stage0 `model_699.pt` 和 Stage1 `model_375.pt`，结合视频确认运动行为质量，再决定是否继续长训或调整 Stage1 奖励 / curriculum。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求整体审计当前 Stage1 RL 环境参数、PPO 算法参数和底层控制 / 物理参数。
+- 检查范围覆盖 Stage1 cfg、env、reward、terrain feature、PPO cfg、PPO update、rollout storage、wheel allocator、robot/actuator cfg、sensor contact runtime 和 train.py 启动覆盖逻辑。
+- 结论：PPO 参数未发现明显硬错误；当前主要潜在风险在底层几何/物理一致性、reward 分量实际量级、warm-start orderfix 资产使用和 actor 观测中接触/滑移信息的论文表述边界。
+- 修正 `docs/current_status.md` 中旧的 `contact_support=-4`、`edge_speed=-6` 过时表述，改为当前源码口径。
+- 将本次审计的可继承结论写入 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- 本次为源码/配置审计和文档同步，未修改 RL 运行代码。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求将当前 Stage1 terrain-gated speed limit 统一为 `0.50 m/s`。
+- 修改 `complete_car_stage1_cfg.py`：`terrain_speed_step_down_mps` 和 `terrain_speed_gap_mps` 从此前当前默认的 `0.35 / 0.40` 改为 `0.50 / 0.50`；`terrain_speed_step_up_mps` 和 `terrain_speed_step_up_climb_mps` 保持 `0.50`。
+- 按用户追加要求进一步收敛配置项：删除四个分地形速度字段，改为单一 `terrain_speed_limit_mps = 0.50`；`env.py` 和 `mdp/rewards.py` 均统一读取该字段。
+- 同步修正 `docs/Stage1参数详情表.md` 中 `contact_support_penalty` 和 `terrain_aware_edge_speed_penalty` 的公式说明，使其匹配当前 gate-aware contact support 与统一 terrain speed limit 源码。
+- 同步更新 `docs/Stage1参数详情表.md`、`docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py` 通过。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求将上台阶前车姿态惩罚和下台阶 / gap anti-dive 惩罚函数加回当前 Stage1 默认配置。
+- 选择轻量初始权重：`step_up_front_posture_penalty_weight = -5.0`，`drop_anti_dive_penalty_weight = -10.0`；未沿用 R3 的 `-20.0 / -20.0` 强权重。
+- 更新 `docs/Stage1参数详情表.md`：同步参数值，并补充 step-up posture 和 drop anti-dive 的当前源码公式与使用边界。
+- 同步更新 `docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py` 通过。
+- `git diff --check -- RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py docs/Stage1参数详情表.md docs/current_status.md docs/conversation_history.md logs/daily_work_log.md` 通过。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求将 `stuck penalty / reset` 写入 `docs/Stage1参数详情表.md`。
+- 文档新增 stuck 判定条件、stuck time 累计公式、reward 惩罚公式、`stuck_timeout` 触发条件和 terrain-column reset 退级逻辑。
+- 明确区分当前默认值和 R2 实验值：当前默认已按用户要求启用为 `stuck_penalty_weight = -3.0`、`stuck_timeout_s = 8.0 s`；R2 使用 `-3.0` 和 `10.0 s`。
+- 同步更新 `docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `git diff --check -- docs/Stage1参数详情表.md` 通过。
+- 检查 `docs/Stage1参数详情表.md` 中未出现 Obsidian 不推荐的 `\\(...\\)` 或 `\\[...\\]` 数学公式写法。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求启用当前 Stage1 默认配置中的 `stuck penalty / reset`。
+- 修改 `complete_car_stage1_cfg.py`：`stuck_penalty_weight = -3.0`，`stuck_timeout_s = 8.0 s`；其余 stuck 判定阈值保持不变。
+- 同步更新 `docs/Stage1参数详情表.md`、`docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py` 通过。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求优先处理参数审计中的问题 1 和问题 4。
+- 问题 1：将 `wheel_speed_allocator.py` 中底层轮速分配几何的前 / 中 / 后三轴左右轮距 `d1/d2/d3` 从旧值 `0.447 m` 修正为用户确认的 `0.539 m`。
+- 问题 4：将 `convert_stage0_to_stage1_warmstart.py` 默认输出改为修正过输入 / 输出通道顺序的 `warmstart_best_baseline_2_terrain_features_orderfix_io/model_0.pt`，并在脚本中显式执行 actor/critic 输入、actor 输出和 obs normalizer 的通道 permutation。
+- 同步更新 Stage0 / Stage1 参数文档、当前状态、优化方案和长期记忆，明确后续 Stage1 warm-start 默认使用 orderfix_io checkpoint。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py`
+- `RL_Training/scripts/convert_stage0_to_stage1_warmstart.py`
+- `docs/stage0_baseline参数详情表.md`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/优化方案.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `CompleteCarWheelAllocatorGeometry()` 打印确认 `d1/d2/d3 = 0.539 / 0.539 / 0.539`。
+- `python3 -m py_compile RL_Training/scripts/convert_stage0_to_stage1_warmstart.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/kinematics/wheel_speed_allocator.py` 通过。
+- 转换脚本生成的 `/tmp/orderfix_io_check.pt` 与现有 `warmstart_best_baseline_2_terrain_features_orderfix_io/model_0.pt` 的 actor / critic 权重最大差异为 `0.0`。
+- `git diff --check` 针对本次修改文件通过。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求将机器人 articulation root 的 `solver_velocity_iteration_count` 从 `0` 改为 `4`。
+- 该值已与 Stage0 / Stage1 场景级 PhysX `max_velocity_iteration_count = 4` 对齐，用于避免 articulation 级速度约束求解次数低于场景级设置。
+- 同步更新 Stage0 / Stage1 参数详情表、当前状态和长期记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py`
+- `docs/stage0_baseline参数详情表.md`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/assets/robot_cfg.py` 通过。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求确认“现在重启 Stage0 是否与之前 bestline 配置一致”。
+- 对照当前 `complete_car_stage0_cfg.py`、PPO cfg、robot cfg、wheel allocator，以及历史 `2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter` 和 `2026-04-28_15-28-38_best_baseline_2` 的 `params/env.yaml` / `agent.yaml`。
+- 结论：当前直接重启 Stage0 不是历史 bestline / `best_baseline_2` 的严格逐项复现；PPO 主参数和任务大框架一致，但底层控制、reward progress gate、轮距和 articulation velocity solver 存在关键差异。
+- 同步更新 `docs/current_status.md` 和 `docs/conversation_history.md`，记录该复核结论，避免后续误把新训练当成旧 baseline 复现。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- 本次为配置对照和文档记录，未修改 RL 运行代码。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求全面复核当前 Stage0 配置与历史 `best_baseline_2` 配置是否一致。
+- 复核口径：历史配置使用 `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2/params/env.yaml` 和 `agent.yaml`；当前配置使用当前 Stage0 源码，并参考最新 `best_baseline3` run 参数快照，同时叠加已修正的 `base_allow_reverse = True`。
+- 结论：当前 Stage0 与历史 `best_baseline_2` 不完全一致；倒车、任务主框架和 PPO 主参数已一致，但球铰控制 / 执行器参数、车轮力矩上限、低滑移反馈、progress gate、轮距和 articulation velocity solver 仍存在关键差异。
+
+修改文件：
+- `logs/daily_work_log.md`
+
+验证：
+- 本次为配置审计和日志记录，未修改 RL 运行代码。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求将最新 Stage1 训练 run `2026-05-09_05-42-25_stage1_warmstart_best_baseline3_128env_800iter` 的结果数据打包为 ChatGPT 分析 zip。
+- 对该 run 执行 TensorBoard scalar 导出，生成 `503` 个非空 scalar CSV，最新 Stage1Eval 数据到 step `381`。
+- 新增包内 `README.md` 和 `chatgpt_analysis_prompt.md`，明确该 run 是 `best_baseline3` 历史对照、不是当前默认 Stage1 warm-start，并说明不包含模型权重。
+
+输出：
+- `results/stage1_latest_best_baseline3_chatgpt_analysis_no_models_2026-05-09.zip`
+- 大小约 `7.8M`
+- zip 条目数 `528`
+
+包内主要内容：
+- TensorBoard 原始 event 文件。
+- `tensorboard_export/` 的 scalar CSV、`summary.json`、`latest_values.csv` 和 `group_summary.csv`。
+- `params/env.yaml`、`params/agent.yaml`。
+- run 保存的 `Graduation-Project.diff`。
+- Stage1 参数、评价指标、奖励设计、优化方案文档。
+- Stage1 patch / terrain gate / terrain feature 分布辅助图和分析提示词。
+
+验证：
+- `unzip -tq results/stage1_latest_best_baseline3_chatgpt_analysis_no_models_2026-05-09.zip` 通过。
+- 已检查包内不包含 `.pt`、`.onnx`、`.onnx.data` 文件。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求将 Stage0 中未接线的 `ball_joint_planner_qddot_limits` 和 `ball_joint_planner_track_error_limit` 从配置和接触回放评估脚本中移除。
+- 将 Stage0 `ball_joint_planner_gains` 恢复为 `(10.0, ..., 10.0)`。
+- 将 Stage0 球铰 actuator 恢复为 `stiffness = 8000.0`、`damping = 1000.0`。
+- 将 Stage0 `wheel_joint_effort_limit_sim` 恢复为 `20.0`。
+- 将 Stage0 `progress_gate_min_multiplier` 恢复为 `0.25`。
+- 同步更新 Stage0 参数详情表、当前状态和长期记忆，明确本轮点名项已恢复，但 qdot limit、球铰 velocity limit、low-slip 参数、轮距和 articulation velocity solver 仍是当前源码口径。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/scripts/evaluate_contact_replay.py`
+- `docs/stage0_baseline参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py RL_Training/scripts/evaluate_contact_replay.py` 通过。
+- `rg` 确认 `ball_joint_planner_qddot_limits` / `ball_joint_planner_track_error_limit` / 对应 CLI 参数已不再出现在 `RL_Training/source/.../complete_car` 和 `RL_Training/scripts` 运行代码路径中。
+- `git diff --check -- RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py RL_Training/scripts/evaluate_contact_replay.py docs/stage0_baseline参数详情表.md docs/current_status.md docs/conversation_history.md logs/daily_work_log.md` 通过。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求将 Stage1 当前训练列 `7,8` 改为 `stairs down` 和 `discrete obstacles`。
+- 修改 Stage1 地形权重：`stairs down = 0.30`、`stairs up = 0.00`、`discrete obstacles = 0.20`，因此当前 10 列映射为 `0 flat`、`1 slope down`、`2 slope up`、`3-4 uneven rough`、`5-7 stairs down`、`8-9 discrete obstacles`。
+- 同步更新 Stage1Eval / logger 列名：`col07_stairs_down`、`col08_obstacles`、`col09_obstacles`。
+- 同步更新 Stage1 参数详情表、当前状态、优化方案和长期记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/stage1_eval.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `RL_Training/scripts/play.py`
+- `RL_Training/tests/test_stage1_curriculum.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/优化方案.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- 已用地形映射检查脚本确认当前列 `7` 为 `stairs down`，列 `8` 和 `9` 为 `discrete obstacles`。
+- 已运行 Stage1 相关 Python 编译检查和课程测试。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求修改 `scripts/train.py`，训练默认不再开启可视化 debug draw。
+- 新增训练显式开关：`--show_goal_vis` 用于显示目标 marker / heading，`--show_wheel_slip_vis` 用于显示轮滑箭头。
+- 修改 debug draw 链路：新增 `visualize_goal_position`，目标 sphere 与目标 heading arrow 可分别控制，follow-view / terrain chase video 不再自动打开目标 marker。
+- 同步修正 `scripts/play.py` 的 `--hide_goal_vis` 语义，避免回放只开轮滑或高度 patch 时误显示目标 marker。
+- 同步更新当前状态和长期记忆。
+
+修改文件：
+- `RL_Training/scripts/train.py`
+- `RL_Training/scripts/play.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 已针对上述 Python 文件通过。
+- `rg` 已确认 `train.py` 默认逻辑改为 `show_*` 显式启用，而不是默认因 `not hide_goal_vis` 开启。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求审计 Stage1 中冗余代码、参数和不活跃配置是否拖慢训练。
+- 核对当前 Stage1 源码路径：`complete_car_stage1_cfg.py`、`env.py`、`mdp/rewards.py`、`mdp/stage1_eval.py`、`mdp/terrain_features.py`、`terrain_builder.py`、`logger.py` 和历史 run 参数快照。
+- 结论：Stage1 慢的主因是 rollout/env step 和采样量，不是未启用配置本身；Stage1 128 env、`512` steps/env 每 iteration 采样 `65536` 条 transition，历史末次 `collection_time ≈ 30.98 s/iter`，`learning_time ≈ 0.30 s/iter`。
+- 识别到可清理但非主瓶颈的冗余：5 个零权重 reward 原始项仍被计算；旧 terrain_dict 分支仍保留但当前 10 列不会采样；大量 step metrics 与 Stage1Eval 每步统计会带来 CPU/GPU 同步开销；轮地接触力存在多路径重复查询。
+- 同步更新当前状态和长期记忆。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- 本次为代码审计和文档记录，未修改 RL 运行代码。
+
+## 2026-05-09
+
+已完成：
+- 回答并记录 `best_baseline_2` 旧 wheel allocator 几何对当前 Stage1 warm-start 的影响判断。
+- 核对当前源码：`wheel_speed_allocator.py` 已使用实测 `d1/d2/d3 = 0.539 m`；历史 `best_baseline_2` 训练时使用约 `0.447 m`。
+- 明确该差异会影响轮心位置、横摆分配、轮速参考和低滑移 torque target，但属于连续几何分布偏移，不是 ball joint index 通道错位。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+输出或结论：
+- 当前 `best_baseline_2` orderfix warm-start 仍可用于 Stage1；旧 `0.447 m` 不会作为 checkpoint 参数加载进当前 allocator。
+- 风险主要是 warm-start actor 的动作分布来自旧几何训练反馈，进入当前 `0.539 m` allocator 后可能在初期速度、转向、滑移和接触质量上有中等程度偏移。
+- 若要彻底消除该偏移，需要用当前 `0.539 m` 几何和严格匹配配置重新训练 Stage0 到约 `700` iteration 后再转换 warm-start。
+
+验证：
+- 已检查 `wheel_speed_allocator.py`、Stage1 控制调用链和当前状态文档中的几何记录。
+
+## 2026-05-09
+
+已完成：
+- 对比 `best_baseline_2/model_699.pt` 与 `best_baseline4/model_225.pt` 的 TensorBoard 标量和 checkpoint metadata。
+- 确认 `best_baseline4/model_225.pt` 相比最终 `best_baseline_2/model_699.pt` 速度更慢、成熟度更低；用户回放中的慢速感受与数据一致。
+- 确认当前 Stage1 默认应继续使用 `warmstart_best_baseline_2_terrain_features_orderfix_io/model_0.pt`，而不是裸加载 `best_baseline_2/model_699.pt` 或改用 `best_baseline4/model_225.pt`。
+- 核对 `convert_stage0_to_stage1_warmstart.py`：该 orderfix warm-start 已完成 actor/critic 观测维度扩展，并对旧球铰 / 车轮顺序做输入、输出和 obs normalizer 通道重排。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+输出或结论：
+- `best_baseline_2/model_699.pt` 末 25 step：`success_rate = 1.0`，平均 episode length 约 `669` step，`v_parallel_abs` 约 `1.18 m/s`，`shaped_vx` 约 `1.65 m/s`。
+- `best_baseline4/model_225.pt` 末 25 step：平均 `success_rate` 约 `0.829`，平均 episode length 约 `1040` step，`v_parallel_abs` 约 `0.84 m/s`，`shaped_vx` 约 `1.08 m/s`。
+- 结论：Stage1 继续加载修正版 `best_baseline_2` orderfix warm-start 不会把旧 Stage0 index 错误直接带入 Stage1；`best_baseline4` 只是早停平台 checkpoint，不应替代最终 `best_baseline_2` warm-start。
+
+验证：
+- 已完成 TensorBoard scalar 导出和 checkpoint metadata 核对。
+
+## 2026-05-09
+
+已完成：
+- 按用户确认方案，将 Stage1 最高 row 完成后的 env 处理从“永久 retired”改为 completed-env recycling。
+- 当前每个 terrain column 会按初始化时该列 env 配额维护完成目标；完成次数达到目标后，该列才标记为已完成。
+- 完成 env 的 terminal transition 仍写入 PPO；reset 后若仍有未完成列，则按当前 active env 数把该 env 均衡分配到剩余未完成列，并从目标列 active env 的 row 分布中采样新 row。
+- 若后期只剩 `5-7 stairs down` 和 `8-9 discrete obstacles`，新增 env 按列均分，对应地形大类比例约 `3:2`。
+- 按用户追加要求，将 Stage1 `stuck_timeout_s` 从 `8.0 s` 改为 `4.0 s`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `RL_Training/tests/test_stage1_curriculum.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 覆盖本轮 Stage1 env / cfg / curriculum / logger / test 修改，通过。
+- `python3 RL_Training/tests/test_stage1_curriculum.py` 通过。
+- `python3 RL_Training/tests/test_rollout_train_mask.py` 通过。
+- `python3 RL_Training/tests/test_stage1_eval_metrics.py` 通过；按预期打印一次非有限分布参数清理 warning。
+- `python3 RL_Training/tests/test_terrain_features.py` 通过。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求打包最新完整 Stage1 run `2026-05-09_16-48-52_stage1_sec14_tune_v1_128env_700iter` 的训练结果数据。
+- 重新导出 TensorBoard scalar，生成 `673` 个非零 scalar CSV。
+- 生成分析报告 `results/stage1_sec14_tune_v1_analysis_2026-05-10/stage1_sec14_tune_v1_analysis_2026-05-10.md`，重点分析台阶 / 离散障碍仍靠低 row 冲越、高 row 缺少球铰协同爬越的问题。
+- 生成 ChatGPT 二次分析提示词，并将原始 event、导出 CSV、参数快照、run git diff 和当前 Stage1 文档打包。
+
+输出：
+- `results/stage1_sec14_tune_v1_analysis_2026-05-10.zip`
+- 包大小约 `17M`，共 `695` 个条目，`unzip -tq` 通过。
+- 包内不包含 `.pt`、`.onnx`、`.onnx.data` 模型文件。
+
+结论：
+- 本轮训练不是完全不能推进：`stairs_down` 三列到 row `11` 左右，整体末段动作饱和和 stuck timeout 较低。
+- 主要失败模式是低质量冲越：障碍 `col08` 到 row `12` 后末段几乎不再推进，`col09` 停在 row `6` 左右；`quality_row_advance_rate` 近 `0`，`front_pitch_ref` 与 `front_pitch_actual` 差距大，模块高度推进 reward 太弱。
+- 下一轮应优先做 quality-gated curriculum 和相位化球铰爬越 reward，而不是只继续提高 progress 或继续降速。
+
+修改文件：
+- `results/stage1_sec14_tune_v1_analysis_2026-05-10/README.md`
+- `results/stage1_sec14_tune_v1_analysis_2026-05-10/stage1_sec14_tune_v1_analysis_2026-05-10.md`
+- `results/stage1_sec14_tune_v1_analysis_2026-05-10/chatgpt_analysis_prompt.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+- `git diff --check` 通过。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求实现单步轮地接触力缓存，避免同一 control step 内 `_pre_physics_step()`、观测、reward 和 metrics 路径重复查询 contact view。
+- 缓存按 `pre_physics` / `post_physics` 分相位复用，并在 `step()` 开始和 reset 后清空，避免跨步或 reset 后复用旧接触力。
+- `compute_reward_terms()` 对当前权重为 `0` 的 `turn_speed_penalty`、旧 `edge_speed_penalty`、`airborne_spin_penalty`、`hard_terrain_spin_penalty`、`action_soft_limit_penalty` 跳过原始项计算。
+- 清理 Stage1 默认 `terrain_dict`，只保留当前实际采样的 `flat`、`slope down`、`slope up`、`uneven rough`、`stairs down`、`discrete obstacles`。
+- 同步更新 Stage1 参数详情、当前状态和长期记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/tests/test_stage1_curriculum.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 覆盖本轮修改的 Python 文件，通过。
+- `python3 RL_Training/tests/test_stage1_curriculum.py` 通过。
+- `python3 RL_Training/tests/test_stage1_eval_metrics.py` 通过；按预期打印一次非有限分布参数清理 warning。
+- `python3 RL_Training/tests/test_rollout_train_mask.py` 通过。
+- `python3 RL_Training/tests/test_terrain_features.py` 通过。
+- `git diff --check` 通过。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求启动新的 Stage0 训练，run 名为 `best_baseline4`。
+- 训练命令口径：`CompleteCar-Stage0`、headless、`cuda:0`、`64` env、`--max_iterations 700 --run_name best_baseline4`。
+- 持续监控终端日志；在 `206-225` 区间确认 success_rate 进入高位平台，`225` 时为 `1.0000`。
+- 确认 `model_225.pt` 已落盘后发送 `SIGINT` 停止训练，训练进程已退出。
+- 记录结论：`best_baseline4/model_225.pt` 可作为当前 Stage0 高成功率平台期 checkpoint；但末段仍存在高纵滑和激进速度输出，不能解释为低滑移控制收敛。
+
+输出：
+- `RL_Training/logs/rsl_rl/complete_car_stage0/2026-05-09_12-12-50_best_baseline4/model_225.pt`
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- 已用 `ls -lh` 确认 `model_225.pt` 存在。
+
+## 2026-05-09
+
+已完成：
+- 根据用户提供的最新 Stage1 结果分析，结合当前 Stage1 实际地形列、reward、stuck、速度限制、spin penalty 和日志代码，整理下一轮优化方案。
+- 已在 `docs/优化方案.md` 追加第 `14` 节，明确当前没有 `stairs_up` 训练列，分析中的 step-up 应按当前 `g_step_up` 正高度突变 / 离散障碍爬升相位理解。
+- 已将下一轮实验拆分为 A-D 短训：先增强 stuck/no-progress，再做地形 + 相位速度限制，再轻量启用 spin penalty，最后加入 progress quality multiplier 和 quality row advance reward；若障碍仍卡滞，再考虑 recovery。
+- 同步更新当前状态和长期记忆，记录不能单独用 `difficulty_score` 判断 Stage1 成功。
+
+修改文件：
+- `docs/优化方案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- 文档已按当前源码口径校正 `stuck_timeout_s = 4.0 s` 和 `5-7 stairs_down`、`8-9 discrete obstacles` 列映射。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求，将 `docs/优化方案.md` 第 `14` 节七项 Stage1 优化全部落地到当前源码默认配置。
+- 速度限制从统一 `0.50 m/s` 改为地形 + 相位速度：step-up approach `0.45 m/s`、step-up climb `0.75 m/s`、step-down `0.35 m/s`、obstacle/gap approach `0.40 m/s`。
+- 增强 stuck/no-progress：`stuck_speed_threshold_mps = 0.10`、`stuck_penalty_grace_s = 0.5 s`、`stuck_timeout_s = 4.0 s`，新增 `no_progress_penalty`，并让 stuck penalty 按 `control_dt` 生效。
+- 轻量启用 `airborne_spin_penalty` 和 `hard_terrain_spin_penalty`，启用 `progress_quality_multiplier = 0.5`、`step_up_module_progress_reward`、`quality_row_advance_reward` 和离散障碍 recovery 状态机。
+- 补齐 Stage1Eval 全局 / flat / 列级日志，包括 stuck penalty active、no-progress active、原始/限幅/实际速度、前后车 pitch、空转、quality row advance 和 recovery 指标。
+- 同步更新 `docs/Stage1参数详情表.md`，并明确用【本轮新增】/【本轮修改】标出新增或变化内容。
+- 同步更新当前状态和长期记忆，记录当前 Stage1 新 run 必须按七项机制全部启用口径解释。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/stage1_eval.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 已覆盖本轮 Stage1 cfg / env / rewards / eval / logger 修改，通过。
+- `python3 RL_Training/tests/test_stage1_eval_metrics.py` 通过；按预期打印一次非有限分布参数清理 warning。
+- `python3 RL_Training/tests/test_stage1_curriculum.py` 通过。
+- `python3 RL_Training/tests/test_rollout_train_mask.py` 通过。
+- `python3 RL_Training/tests/test_terrain_features.py` 通过。
+
+下一步：
+- 新 Stage1 run 启动前建议先做 `1` iteration smoke，确认新增 `Stage1Eval/*` 和 `Debug/Stage1/*` tag 正常写出，再跑短训观察七项机制是否按预期改变障碍卡滞、下台阶滑移和 128 env 样本利用率。
+
+## 2026-05-09
+
+已完成：
+- 按用户要求从 `2026-05-09_12-12-50_best_baseline4/model_225.pt` 继续训练 Stage0 `best_baseline4`，不提前停止，直到总 `699/700` iteration。
+- 训练命令口径：`CompleteCar-Stage0`、headless、`cuda:0`、`64` env、`--resume --load_run 2026-05-09_12-12-50_best_baseline4 --checkpoint model_225.pt --max_iterations 475 --run_name best_baseline4`。
+- 训练进程正常退出，训练耗时约 `7184 s`，新 run 为 `RL_Training/logs/rsl_rl/complete_car_stage0/2026-05-09_14-22-59_best_baseline4`。
+- 已确认保存 `model_250.pt` 到 `model_699.pt`，并刷新 TensorBoard scalar 导出到 `tensorboard_export/`。
+- 按用户追加要求把车体姿态纳入评价项，使用 `roll_deg`、`pitch_deg`、`projected_gravity_xy_norm` 与 `best_baseline_2/model_699.pt` 对比。
+
+输出：
+- `RL_Training/logs/rsl_rl/complete_car_stage0/2026-05-09_14-22-59_best_baseline4/model_699.pt`
+- `RL_Training/logs/rsl_rl/complete_car_stage0/2026-05-09_14-22-59_best_baseline4/tensorboard_export/`
+
+结论：
+- `best_baseline4/model_699.pt` 末 `25` iteration：`success_rate = 1.0000`，平均 episode length 约 `619.9` step，`v_parallel_abs` 约 `1.2507 m/s`，`LowSlip/combined_pass_rate` 约 `0.0755`，`pitch_deg` 约 `-4.124`，`projected_gravity_xy_norm` 约 `0.0723`。
+- `best_baseline_2/model_699.pt` 末 `25` iteration：`success_rate = 1.0000`，平均 episode length 约 `669.1` step，`v_parallel_abs` 约 `1.1821 m/s`，`LowSlip/combined_pass_rate` 约 `0.0886`，`pitch_deg` 约 `-0.573`，`projected_gravity_xy_norm` 约 `0.0175`。
+- 继续训练后的 `best_baseline4` 速度和完成效率超过 `best_baseline_2`，但低滑移通过率更低，车体 pitch 明显更前倾；姿态差异主要来自 pitch，roll 差异很小。
+- `best_baseline4` 内部候选：速度优先为 `model_675.pt` / `model_699.pt`，综合速度与姿态优先复核 `model_600.pt`，低滑移通过率优先复核 `model_375.pt`。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- 已确认训练进程退出码为 `0`。
+- 已用 `ls -lh` 确认 `model_699.pt` 存在。
+- 已重新导出 TensorBoard scalar 并用末 `25` iteration 窗口完成对比统计。
+
+## 2026-05-09
+
+已完成：
+- 按用户现场反馈诊断 `best_baseline_2/model_699.pt` GUI 回放运动质量差的问题。
+- 确认回放加载路径正确，checkpoint 为 `RL_Training/logs/rsl_rl/complete_car_stage0/2026-04-28_15-28-38_best_baseline_2/model_699.pt`，actor / critic 输入维度为 `54`，actor 输出维度为 `8`。
+- 停止当前这次错配 GUI 回放，避免继续按错误口径观察。
+- 记录结论：当前 `scripts/play.py` 只加载 checkpoint 权重，不自动恢复历史 run 的 `params/env.yaml` 或旧源码快照；因此原始 `best_baseline_2/model_699.pt` 在当前源码下回放变差，优先按“旧权重 + 当前环境 / 底层控制 / joint 顺序语义错配”解释。
+
+结论：
+- 这次回放现象不能直接否定历史 `best_baseline_2` 的训练效果。
+- 关键错配风险包括当前 `0.539 m` 轮距 vs 历史约 `0.447 m`、部分 ball/low-slip 参数不一致、articulation root velocity solver `4` vs 历史 `0`，以及原始 Stage0 checkpoint 未经过 Stage1 使用的 orderfix 通道重排。
+- 后续若要看历史真实表现，应做历史严格回放；若要判断 Stage1 warm-start，应回放或使用 `warmstart_best_baseline_2_terrain_features_orderfix_io/model_0.pt`。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-10
+
+已完成：
+- 按用户要求修改 Stage1 completed-env recycling 机制：completed / retired 列不再完全退出训练样本。
+- 新增 `curriculum.terrain_column_completed_retention_ratio = 0.40`，回收候选会优先补足约 40% active env 到 completed / retired 列低 row；剩余 env 继续按未完成列 active 数均衡回收。
+- completed / retired 列保留采样使用 `sample_initial_terrain_levels()` 返回低 row；未完成列回收仍沿用当前 active row 分布采样。
+- 新增 Stage1Eval / reset 日志，用于观察 completed 列保留比例、completed 列 active env 数、回收到 retired 列和回收到未完成列的比例。
+- 同步更新 Stage1 参数详情、当前状态和长期记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/curriculum.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `RL_Training/tests/test_stage1_curriculum.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 覆盖本轮修改的 Python 文件，通过。
+- `python3 RL_Training/tests/test_stage1_curriculum.py` 通过。
+- `python3 RL_Training/tests/test_rollout_train_mask.py` 通过。
+- `python3 RL_Training/tests/test_stage1_eval_metrics.py` 通过；按预期打印一次非有限分布参数清理 warning。
+- `python3 RL_Training/tests/test_terrain_features.py` 通过。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求新增当前底层运动学轮速分配、球铰规划器和轮级力矩分配的详细 Markdown 文档。
+- 文档基于当前源码重新梳理 active 控制链：policy action 到 `vx_cmd / yaw_rate_cmd`、球铰目标姿态、一阶 `q_cmd / qdot_cmd` 规划、low-slip 平面命令整形、轮速参考、纵滑率和车轮 effort target。
+- 明确当前球铰只下发 position target，`qdot_cmd` 用于规划和轮心速度预测；当前车轮不是 velocity target，而是下发 effort target。
+- 明确 runtime 车轮顺序为中左 / 中右 / 前左 / 前右 / 后左 / 后右，并记录当前纵滑率源码符号口径。
+
+修改文件：
+- `docs/底层运动学轮速分配球铰规划与力矩分配.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- Markdown 数学分隔符检查通过，未使用旧式反斜杠圆括号或方括号数学分隔符。
+- `python3 RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/validate_wheel_speed_allocator.py --run-smoke-cases` 通过。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求回放 Stage0 `best_baseline4/model_375.pt`，GUI 启动时开启 follow view 并保留目标点 marker。
+- 将 GUI 回放日志保存到 `results/stage0_model375_gui_replay_2026-05-10/gui_play.log`。
+- 补齐 `RL_Training/scripts/export_ball_joint_policy_trace.py` 的 Stage0 兼容逻辑：非生成地形环境下跳过 Stage1 terrain-column 配置，导出默认 flat 环境 trace。
+- 用同一 checkpoint 导出逐 step 数据到 `results/stage0_model375_gui_replay_2026-05-10/raw_trace/`，共 `4794` 行有效 flat 样本。
+- 用 `evaluate_contact_replay.py` 生成统计摘要 `results/stage0_model375_gui_replay_2026-05-10/contact_replay_summary.txt`。
+
+关键数据：
+- `active_segment_completion_pct_tail = 67.3931`
+- `pitch_deg_mean = 0.5828`
+- `roll_deg_mean = 0.4852`
+- `ball_joint_target_error_abs_mean = 0.1525 rad`
+- `ball_joint_vel_abs_mean = 0.8301 rad/s`
+- `v_parallel_abs_mean = 1.0149 m/s`
+- `v_perp_abs_mean = 0.0818 m/s`
+
+修改文件：
+- `RL_Training/scripts/export_ball_joint_policy_trace.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/export_ball_joint_policy_trace.py` 通过。
+- Stage0 trace 导出、contact replay 汇总和 GUI 回放命令均正常完成。
+
+补充分析：
+- 结合用户 GUI 观察，复查 Stage0 375 当前 direct-target PD 回放数据。
+- `q_desired` 每 control step 绝对变化均值约 `0.138 rad`、p95 约 `0.412 rad`，明显超过当前 `2 rad/s` 速度上限对应的约 `0.033 rad/step` 可跟踪变化。
+- 实际球铰速度 `|qdot|` p95 约 `1.986 rad/s`，`|qdot| >= 1.8 rad/s` 样本比例约 `11.6%`；球铰目标跟踪误差均值约 `0.160 rad`。
+- 补充导出包含 done 行的 trace 到 `results/stage0_model375_gui_replay_2026-05-10/raw_trace_include_done/`；该 20 s 回放中 `env0` 未完成 episode，其余 env 有 `1-2` 次 done，但当前 exporter 的 `done_reason` 仍为空。
+- 结论：GUI 抖动与数据一致，主要原因是旧 policy 在新 direct-target 链路下暴露出高频球铰目标跳变；下一步应优先重训 / fine-tune Stage0 并加入球铰目标变化率、跟踪误差和速度贴限约束，而不是先提高 `Kp` 或放宽球铰速度限制。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求，先在 Stage0 中启用已有 `action_rate_penalty`，用于抑制 policy 连续控制步之间的动作跳变。
+- Stage0 当前参数设为：
+  - `action_rate_penalty_weight = -50.0`
+  - `action_rate_base_ratio = 0.2`
+  - `action_rate_joint_ratio = 1.0`
+- 该配置重点压制六个球铰姿态动作变化，对底盘前进 / 偏航动作只施加轻量平滑约束。
+- 同步更新 `docs/stage0_baseline参数详情表.md`、`docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `docs/stage0_baseline参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py` 通过。
+
+## 2026-05-10
+
+已完成：
+- 按用户要求停止从 `150.pt` warmstart 的 Stage0 pitch gate 调参训练。
+- 训练 run 为 `RL_Training/logs/rsl_rl/complete_car_stage0/2026-05-10_20-39-29_stage0_pitch_gate_gauss_from150_to700`，已确认保存到 `model_150.pt`，并清理残留 GPU 训练进程。
+- 监控结论：该 run 成功率和推进速度很快进入高平台，但中车 pitch 持续向负方向偏；`model_125` 窗口 pitch 约 `-2.60 deg`，`model_150` 前后终端可见 pitch 约 `-2.82 deg`，而原 `ProgressGate/pitch_gate` 仍约 `0.963`，说明 gate 太温和。
+- 按用户要求将 Stage0 pitch progress gate 改为更敏感口径：`progress_pitch_gate_deadband_deg = 1.0`、`progress_pitch_gate_k_rad = π / 32`；Stage1 仍保持 `progress_pitch_gate_k_rad = 0.0` 关闭该 gate。
+- 补充 `ProgressGate/pitch_gate` 到 Stage0 TensorBoard 白名单，后续训练可直接导出该指标。
+- 同步更新 `docs/stage0_baseline参数详情表.md`、`docs/Stage1参数详情表.md`、`docs/current_status.md` 和 `docs/conversation_history.md`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/stage0_baseline参数详情表.md`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+下一步：
+- 建议从 `model_150.pt` 或更稳的早期保存点继续短训，重点看成功率、episode length、`q_desired` 跳变、tracking error、`ProgressGate/pitch_gate` 和中车 pitch 是否回稳。
+
+## 2026-05-11
+
+已完成：
+- 解释上一轮 Stage1 `96 env / 1000 iteration` 被系统杀掉的原因：系统内存 OOM，内核日志确认为 `Out of memory: Killed process 217031 (python)`，不是 PPO 或 Isaac 主动正常退出。
+- 按用户要求从上一轮最后可靠 checkpoint `model_100.pt` 继续训练。
+- 为降低重复 OOM 风险，新 run 使用 `80 env`。
+
+新 run：
+- `RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-11_12-20-55_stage1_80env_resume_from_m100_1000iter_20260511_1220`
+- runtime log：`RL_Training/logs/runtime/stage1_80env_resume_from_m100_1000iter_20260511_1220.log`
+- 启动口径：`CompleteCar-Stage1`、headless、`cuda:0`、`80 env`、`--resume --load_run 2026-05-11_11-24-20_stage1_96env_1000iter_20260511_112415 --checkpoint model_100.pt --max_iterations 1000`。
+
+验证：
+- scene creation `5.641 s`，simulation start `2.013 s`。
+- 已确认加载旧 run 的 `model_100.pt`。
+- 已打印到 `iteration 103/1100`，GPU 训练进程仍在运行。
+
+说明：
+- 当前 resume 继承策略 / 优化器 checkpoint，但不继承上一轮环境中的 terrain-column row / completed-column 状态；新 run 的 `completed_column_rate` 从 `0` 开始。
+- `80 env` 运行时系统内存仍紧张，可用内存约 `2.5-2.6 GiB`，swap 为 `0 B`。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-11
+
+已完成：
+- 持续监督新一轮 Stage1 `96 env / 1000 iteration` 训练的 remaining row 推进和运动行为质量。
+- run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-11_11-24-20_stage1_96env_1000iter_20260511_112415`。
+- runtime log：`RL_Training/logs/runtime/stage1_96env_1000iter_20260511_112415.log`。
+
+结果：
+- 训练最后完整打印到 `iteration 121/1000`，随后被系统 OOM killer 杀死，GPU 训练进程已释放。
+- 内核日志确认：`Out of memory: Killed process 217031 (python)`；被杀时 Python `anon-rss` 约 `18.0 GiB`，swap 为 `0 kB`。
+- 最后确认落盘 checkpoint 为 `model_100.pt`。
+- 最后 TensorBoard step `122`：`completed_column_rate = 0.5`、`unfinished_column_count = 5`；completed-column retention 正常，flat / slope / rough 仍各保留约 `7.4-8.0` 个 env。
+- remaining row / adv_rate：`col05 stairs_down row 7.72 / adv 0.281`，`col06 stairs_down row 8.01 / adv 0.466`，`col07 stairs_down row 7.64 / adv 0.295`，`col08 obstacles row 8.88 / adv 0.302`，`col09 obstacles row 1.75 / adv 0.750`。
+- 行为质量：stuck timeout 为 `0`，动作饱和低；台阶列 pitch 偏大、边缘超速高、支撑最低值接近 `0`，说明 row 推进已有改善但台阶通过质量仍差。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+下一步：
+- 后续若继续长训，应先处理系统内存 / swap 或降低并发 / 后台内存占用；本轮复盘和回放优先使用 `model_100.pt`。
+
+## 2026-05-11
+
+已完成：
+- 按用户要求结束 Stage1 `96 env / 1400 iteration` 长训。
+- 训练 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-11_01-04-27_stage1_best_baseline5_m75_debug_off_metrics16_96env_1400iter`。
+- runtime log：`RL_Training/logs/runtime/stage1_best_baseline5_m75_debug_off_metrics16_96env_1400iter_2026-05-11_01-04-14.log`。
+- 2026-05-11 `10:27` 左右向训练进程发送 `SIGINT`，GPU 训练进程已释放；训练对应的后台监督循环也已停止。
+
+结果：
+- 最后完整控制台打印为 `iteration 1315/1400`，不是完整 `1400` iteration 训练。
+- 最后确认落盘 checkpoint 为 `model_1300.pt`。
+- 中止前全局指标显示 flat 保留较好，但 hard terrain 晋级失败：`completed_column_rate = 0.5`、`unfinished_column_count = 5`、`current_level_mean = 3.7425`、`rows_advanced_mean = 1.7923`；`col05-col07 stairs_down` 基本停在 row `1`，`col08-col09 obstacles` 也未形成稳定晋级。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+下一步：
+- 后续若分析本轮训练，应以 `model_1300.pt` 为最后可靠 checkpoint；是否修改 hard-terrain quality gate、奖励或 curriculum，需先由用户做研究层判断。
+
+## 2026-05-11
+
+已完成：
+- 按用户要求用 `best_baseline5/model_75.pt` 的 Stage1 warm-start 转换版启动 `20` iteration 机制检验短训。
+- 训练命令使用 `CompleteCar-Stage1`、headless、`cuda:0`、`32` env、`--resume --warmstart --load_run warmstart_best_baseline5_model75_terrain_features --checkpoint model_0.pt --max_iterations 20`。
+- run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-11_00-11-15_stage1_mechanism_check_best_baseline5_m75_32env_20iter`。
+- 训练完整跑到 `19/20`，退出码 `0`，耗时约 `991.58 s`，已保存 `model_0.pt` 和 `model_19.pt`。
+- 已导出 TensorBoard scalar 到 `tensorboard_export/`，共 `615` 个 scalar CSV。
+
+关键结论：
+- warm-start、direct-target 球铰控制链、completed-column retention、logger 和 PPO 短训链路均正常运行。
+- flat 迁移能力保留较好，末轮 `Stage1Eval/col00_flat/row_advance_rate ≈ 0.836`。
+- completed-column retention 已触发，末轮 `completed_column_rate = 0.1`、`completed_column_active_rate = 0.09375`。
+- hard terrain 在 `20` iteration 内几乎没有有效命中 / 晋级事件，不能据此声称爬越能力已经改善。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+下一步：
+- 可优先回放 `model_19.pt` 的 `stairs_down` / `discrete_obstacles` 指定列，或继续做更长但受控的 Stage1 短训来观察 hard terrain quality gate 是否产生足够事件。
+
+## 2026-05-11
+
+已完成：
+- 按用户要求补齐 Stage1 hard-quality 指标的 TensorBoard / Stage1Eval 日志白名单。
+- 修正位置：`RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`。
+- 补入 global、flat、colXX 三类 Stage1Eval 字段：`hard_quality_advance_rate`、`low_quality_hit_rate`、`raw_hard_hit_rate`、`row_advance_without_quality_rate`、`quality_advance_score`、`phase_module_progress_score`、`front_climb_success_rate`、`middle_climb_success_rate`、`rear_follow_success_rate`、`actual_overspeed_near_edge_rate`、`row_contact_support_min`、`row_stuck_time_max`。
+- 同步将这些字段的 global 版本加入 Stage1 控制台优先显示列表。
+- 同步更新 `docs/current_status.md`、`docs/conversation_history.md` 和 `docs/Stage1参数详情表.md`。
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py` 通过。
+- AST 检查确认上述字段已进入 `STAGE1_GLOBAL_EVAL_FIELDS`、`STAGE1_FLAT_EVAL_FIELDS`、`STAGE1_PER_COLUMN_EVAL_FIELDS` 和 `STAGE1_CONSOLE_PRIORITY_TAGS`。
+
+说明：
+- 本次只改变日志写出范围，不改变 reward、termination、curriculum 或策略输入输出。
+- 旧 run 不会自动补出缺失的 TensorBoard scalar；后续新 run 会生成完整 Stage1Eval hard-quality CSV。
+
+## 2026-05-11
+
+已完成：
+- 导出并复盘最新 Stage1 长训 `2026-05-11_01-04-27_stage1_best_baseline5_m75_debug_off_metrics16_96env_1400iter` 的 TensorBoard scalar。
+- 确认该 run 手动停止在 `1315/1400` 附近，最后可靠 checkpoint 为 `model_1300.pt`。
+
+关键结论：
+- 末段 `col05-col07 stairs_down current_level_mean = 1`，`col08 obstacles ≈ 1.36`，`col09 obstacles = 1`。
+- hard terrain 上 `raw_hard_hit_rate` 与 `row_advance_without_quality_rate` 基本相等，说明少量目标命中事件被 quality gate 拦下，不能晋级。
+- 用户判断应去掉 hard terrain 质量晋级机制，奖励函数中的质量相关项可以保留。
+- 后续默认落地方向：将质量机制从 row / level 晋级硬门槛改为 reward / diagnostics 信号，避免课程推进入口被 gate 卡死。
+
+产出：
+- 新增导出目录：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-11_01-04-27_stage1_best_baseline5_m75_debug_off_metrics16_96env_1400iter/tensorboard_export/`
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-11
+
+已完成：
+- 按用户要求将 Stage1 默认 `logging.step_metrics_interval` 从 `16` 提高到 `64`，进一步降低 `Stage1Eval/*` 和 step metrics 的日志同步频率。
+- 同步更新 `docs/Stage1参数详情表.md`、`docs/current_status.md` 和 `docs/conversation_history.md`，明确该修改只影响日志 / 诊断采样频率，不改变训练逻辑。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py` 通过。
+
+## 2026-05-11
+
+已完成：
+- 全面检查 RL 环境配置与 Stage1 env step 热路径，确认当前 Stage1 长训默认未启用 IMU / 双目 / LiDAR / height scanner / debug draw / follow view / sensor raw extras。
+- 修复 `env.py` 中确定等价的重复计算：同一步 `_get_dones()` 计算的相对目标命令复用到 `_get_rewards()`；`_get_rewards()` 为 edge preview 采样的局部 height patch 复用到随后 `_get_observations()`，reset 或 terrain row advance 的 env 局部重算；关闭 debug draw 时不再每步调用 goal pose 绘制入口。
+- 记录剩余性能热点：轮地接触力读取、height patch / terrain feature、reward diagnostics 和降频后的 Stage1Eval；另发现 Isaac smoke run 提示 CPU 处于 `powersave` 模式。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py` 通过。
+- `CompleteCar-Stage1 / 4 env / 1 iteration` headless 烟测通过：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-11_11-11-26_stage1_env_perf_cache_smoke`。
+- `python3 -m unittest discover -s RL_Training/tests -v` 当前发现 `0` 个 unittest 用例，不能作为功能回归依据。
+
+## 2026-05-11
+
+已完成：
+- 按用户确认关闭 hard terrain 质量晋级硬门槛。
+- Stage1 默认 `quality_gated_terrain_advance = False`。
+- hard terrain 命中目标后按普通 terrain-column 逻辑升 row / completed。
+- `low_quality_terrain_hit` 在当前默认配置下不再触发 episode termination。
+- 保留 `quality_advance_score`、`hard_quality_advance`、`quality_row_advance_reward` 和 `row_advance_without_quality_rate`，分别用于奖励高质量通过和观察低质量晋级比例。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py` 通过。
+- 静态检查确认：配置为 `False`、`low_quality_hit` disabled 时为零、`quality_advance` 仍按 `hard_hit & quality_ok` 计算、`row_advance_without_quality` 仍按 `hard_hit & can_advance & ~quality_ok` 计算。
+
+## 2026-05-11
+
+已完成：
+- 按用户要求对 Stage1 `200 env / 1000 iteration` 长训先做启动检验。
+- 使用当前默认 `best_baseline5/model_75.pt` Stage1 warm-start 口径，依次测试 `200`、`160`、`144`、`128`、`112` 和 `96` env 的 `1` iteration 冒烟。
+
+结果：
+- `200 env`、`160 env`、`144 env`、`128 env`、`112 env` 均在 Isaac 场景创建早期被系统 kill，退出码 `137`，未进入 PPO iteration。
+- `96 env` 成功完成 `1` iteration：
+  - run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-11_00-48-08_stage1_smoke_best_baseline5_m75_96env_1iter`
+  - 训练耗时约 `50.18 s`
+  - `collection_time = 40.198 s`
+  - `learning_time = 0.394 s`
+  - `steps_per_second = 1210`
+- 新补齐的 `Stage1Eval/global/*` hard-quality 指标在 `96 env` 冒烟中正常打印。
+
+结论：
+- 本机当前推荐最大 Stage1 长训 env 数为 `96`。
+- 未启动 `200 env / 1000 iteration` 长训，因为 `200 env` 启动检验未通过。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-11
+
+已完成：
+- 按用户追问检查 `128 env` 被 kill 的系统与代码原因。
+- 通过 `journalctl -k` 确认多次失败均为系统 OOM killer 杀死 Python 训练进程；swap 为 `0 kB`，被杀时 Python anon RSS 约 `19.7-20.7 GiB`。
+- 检查训练入口、Stage1 配置、sensor runtime、env step、terrain runtime 和 logger 链路，确认普通训练不默认开启 debug draw / follow view / video / camera，IMU / stereo camera / lidar / height scanner 也均为 disabled。
+- 将 Stage1 配置层 debug 默认改为关闭，并关闭 `debug.log_sensor_outputs`。
+- 新增 `logging.step_metrics_interval`，Stage1 默认设为 `16`，降低每步大量 TensorBoard / Stage1Eval 指标的 CPU 同步频率。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 检查上述三个 Python 文件通过。
+- `96 env / 1 iteration` 验证 run 正常完成：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-11_00-55-37_stage1_smoke_debug_off_metrics16_96env_1iter`。
+- 本次验证 `collection_time = 16.990 s`、`learning_time = 0.382 s`、`steps_per_second = 2829`、训练耗时约 `26.48 s`；上一轮同口径 `96 env` 冒烟为 `collection_time = 40.198 s`、`steps_per_second = 1210`。
+
+结论：
+- `128 env` 被 kill 的根因是场景创建阶段系统内存峰值触发 OOM，不是 debug 可视化或 PPO / reward 的运行时冗余计算。
+- 日志降频对 `96 env` rollout 性能提升明显；当前长训默认仍建议使用 `96 env`。
+
+## 2026-05-11
+
+已完成：
+- 按用户要求在关闭 Stage1 配置层 debug、并启用 `step_metrics_interval=16` 后重新测试 `128 env`。
+- 命令口径：`CompleteCar-Stage1`、headless、`cuda:0`、`128` env、`--resume --warmstart --load_run warmstart_best_baseline5_model75_terrain_features --checkpoint model_0.pt --max_iterations 1`。
+- 结果：进程仍在 Isaac 场景创建阶段退出，未打印 `Time taken for scene creation`，未进入 PPO iteration。
+- 内核日志确认仍为 OOM killer 杀死 Python：`Out of memory: Killed process ... (python)`，被杀时 Python anon RSS 约 `20.6 GiB`，swap 为 `0 kB`。
+- 复测后 GPU 训练进程已释放。
+
+结论：
+- `128 env` 在当前机器和当前 USD / PhysX / Fabric scene creation 口径下仍不可用。
+- 因 `128 env` 已再次 OOM，未继续运行 `160 env` / `200 env`；当前 Stage1 长训最大可靠配置仍为 `96 env`。
+
+## 2026-05-11
+
+已完成：
+- 按用户授权启动 Stage1 `96 env / 1400 iteration` 长训。
+- 启动命令口径：`CompleteCar-Stage1`、headless、`cuda:0`、`96` env、`--resume --warmstart --load_run warmstart_best_baseline5_model75_terrain_features --checkpoint model_0.pt --max_iterations 1400`。
+- run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-11_01-04-27_stage1_best_baseline5_m75_debug_off_metrics16_96env_1400iter`。
+- runtime log：`RL_Training/logs/runtime/stage1_best_baseline5_m75_debug_off_metrics16_96env_1400iter_2026-05-11_01-04-14.log`。
+- 已启动独立监督摘要 log：`RL_Training/logs/runtime/stage1_best_baseline5_m75_96env_1400iter_monitor_2026-05-11_01-04-14.log`，每 10 分钟记录 GPU / 内存和 Stage1Eval 关键指标。
+
+启动验证：
+- scene creation `6.312 s`，simulation start `2.167 s`。
+- warm-start checkpoint 正常加载。
+- 已完成 `iteration 0/1400` 和 `1/1400`。
+- iteration `0`：`collection_time = 17.753 s`、`learning_time = 0.385 s`。
+- iteration `1`：`collection_time = 16.958 s`、`learning_time = 0.300 s`。
+- 初始 ETA 约 `6 h 53 min`。
+
+早期观察：
+- flat row advance 从 `0.4187` 升到 `0.9688`，平地迁移正常。
+- global stuck timeout 仍为 `0`，action saturation 约 `0.012-0.014`。
+- hard terrain early difficulty 仍主要集中在 `col05-col09`，后续需持续观察 stairs_down 与 obstacles 的 row advance、stagnation、contact loss、pitch 和 action saturation。
+
+## 2026-05-11
+
+已完成：
+- 为 Stage1 GUI 回放视频录制增加 follow camera 选择参数。
+- `scripts/play.py` 新增 `--record_camera_view {chase,left_chase,forward,right_side,top_down}`，配合 `--record_chase_view --stream_video` 可直接录制右后、左后、前向、右侧正对或俯视相机。
+- `scripts/play.py` 新增 `--video_resolution WIDTHxHEIGHT`、`--video_crf` 和 `--video_preset`，用于高分辨率 / 高码率 mp4 录制。
+- `--video_length` 默认改为 `0`，表示 `--stream_video` 下不限时录制，直到关闭 GUI 或中断进程才停止并封装视频；非 stream 的 Gym RecordVideo 仍要求显式正数长度。
+- 保持 debug 可视化默认关闭；录制视频是否显示目标点、局部高度图等仍由显式 `--show_*` 参数控制。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py` 通过。
+
+## 2026-05-11
+
+已完成：
+- 按用户要求新增 Stage1 回放右侧正对相机。
+- 新相机路径为 `/view/env_N/right_side_camera`，位置为中车体 articulation root 右侧 `1.5 m`，即车体系 offset `(0.0, -1.5, 0.0)`，目标点为 articulation root。
+- `scripts/play.py` 的 `--record_camera_view` 新增 `right_side` 选项，可直接录制该视角。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py`
+- `RL_Training/scripts/play.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/utils/debug_draw.py` 通过。
+
+## 2026-05-11
+
+已完成：
+- 为 `scripts/play.py` 增加多视角并行录制能力。
+- 新增 `--record_camera_views` 参数，支持逗号分隔多个 follow camera，例如 `chase,right_side`。
+- 多视角录制要求同时使用 `--record_chase_view --stream_video`；脚本会为每个视角各自创建 Replicator render product、RGB annotator 和 imageio writer，互不抢占单个 viewer camera。
+- 若设置 `--video_output_name foo.mp4` 且录制 `chase,right_side`，输出文件自动变为 `foo_chase.mp4` 和 `foo_right_side.mp4`。
+- `--record_chase_view` 已直接纳入 debug draw 启用条件，因此录制 follow camera 时不再必须额外传 `--create_follow_views`。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py` 通过。

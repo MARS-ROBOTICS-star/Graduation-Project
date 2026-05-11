@@ -91,20 +91,19 @@ $$
 
 ## 2. 当前 Stage1 源码实际奖励
 
-当前 `rewards.py` 仍使用与 Stage0 共享的目标导向 reward 主干。Stage1 会计算 `10` 个 reward 分量：
+当前 `rewards.py` 仍使用与 Stage0 共享的目标导向 reward 主干。Stage1 会计算以下 reward 分量：
 
 1. `distance_to_target`
 2. `progress_to_target`
 3. `reached_target`
 4. `far_from_target`
 5. `angle_diff`
-6. `turn_speed_penalty`
-7. `slip_penalty`
-8. `action_rate_penalty`
-9. `contact_support_penalty`
-10. `edge_speed_penalty`
+6. `slip_penalty`
+7. `action_rate_penalty`
+8. `contact_support_penalty`
+9. `edge_speed_penalty`
 
-其中 `turn_speed_penalty_weight = 0.0`，所以转向速度惩罚虽然会被计算和记录，但当前不贡献总 reward。`reached_target` 已启用，参数与 Stage0 相同。`action_rate_penalty` 已按 episode 最大步数归一化后接入 Stage1。`slip_penalty` 当前使用底层接触权重 mask，`contact_support_penalty` 已作为独立模块支撑惩罚接入 Stage1，`edge_speed_penalty` 已按前方局部高程突变强度接入 Stage1。
+`turn_speed_penalty` 已从当前源码中删除；`reached_target` 已启用，参数与 Stage0 相同。`action_rate_penalty` 已按 episode 最大步数归一化后接入 Stage1。`slip_penalty` 当前使用底层接触权重 mask，`contact_support_penalty` 已作为独立模块支撑惩罚接入 Stage1，`edge_speed_penalty` 已按前方局部高程突变强度接入 Stage1。
 
 当前总 reward 可写为：
 
@@ -120,8 +119,6 @@ w_{\mathrm{hit}} R_{\mathrm{hit},t}
 w_{\mathrm{far}} P_{\mathrm{far},t}
 +
 w_{\psi} R_{\psi,t}
--
-w_{\mathrm{turn}} P_{\mathrm{turn},t}
 -
 w_{\mathrm{slip}}^{\mathrm{cur}} P_{\mathrm{slip},t}^{\mathrm{cur}}
 -
@@ -141,7 +138,6 @@ $$
 | 目标命中奖励 | $w_{\mathrm{hit}}$ | $6.0$ |
 | 远离目标惩罚 | $w_{\mathrm{far}}$ | $2.0$ |
 | 朝向奖励 | $w_{\psi}$ | $6.0$ |
-| 转向速度惩罚 | $w_{\mathrm{turn}}$ | $0.0$ |
 | 滑移惩罚 | $w_{\mathrm{slip}}^{\mathrm{cur}}$ | $2.0$ |
 | 动作变化惩罚 | $w_{\Delta a}^{\mathrm{cur}}$ | $10.0$ |
 | 模块支撑惩罚 | $w_{\mathrm{contact}}^{\mathrm{cur}}$ | $4.0$ |
@@ -427,50 +423,7 @@ r_{\psi,t}
 \frac{1}{N}
 $$
 
-### 2.6 转向速度惩罚
-
-当前源码仍计算转向速度惩罚：
-
-$$
-P_{\mathrm{turn},t}
-=
-I_{\mathrm{turn},t}
-\frac{\|\mathbf v_{xy,t}\|_2}{v_{\max}}
-\frac{1}{N}
-$$
-
-其中：
-
-$$
-I_{\mathrm{turn},t}
-=
-\operatorname{clip}
-\left(
-\frac{|\psi_t|}{\max(\theta_{\mathrm{turn}},10^{-6})},
-0,
-1
-\right)
-$$
-
-Stage1 当前配置为：
-
-$$
-\theta_{\mathrm{turn}} = 0^\circ,\qquad v_{\max}=2.0\ \mathrm{m/s}
-$$
-
-但当前 Stage1：
-
-$$
-w_{\mathrm{turn}} = 0.0
-$$
-
-所以：
-
-$$
-r_{\mathrm{turn},t}=0
-$$
-
-### 2.7 滑移惩罚
+### 2.6 滑移惩罚
 
 当前滑移惩罚复用底层力矩分配中的车轮接触权重：
 

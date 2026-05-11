@@ -119,21 +119,8 @@ class CompleteCarStage0PPORunnerCfg(CompleteCarBasePPORunnerCfg):
 @configclass
 class CompleteCarStage1PPORunnerCfg(CompleteCarBasePPORunnerCfg):
     experiment_name = "complete_car_stage1"
-    algorithm = LocalPpoAlgorithmCfg(
-        value_loss_coef=0.5,
-        use_clipped_value_loss=True,
-        clip_param=0.2,
-        entropy_coef=5.0e-4,
-        num_learning_epochs=3,
-        num_mini_batches=16,
-        learning_rate=1.0e-5,
-        adam_eps=1.0e-5,
-        schedule="adaptive",
-        gamma=0.99,
-        lam=0.95,
-        desired_kl=0.008,
-        max_grad_norm=0.5,
-    )
+    load_run = "warmstart_best_baseline5_model75_terrain_features"
+    load_checkpoint = "model_0.pt"
 
 
 @configclass

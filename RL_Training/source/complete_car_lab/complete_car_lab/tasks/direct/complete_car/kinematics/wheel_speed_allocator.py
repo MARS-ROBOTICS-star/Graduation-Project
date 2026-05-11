@@ -1,4 +1,4 @@
-"""Low-slip low-level ball-joint planner and traction allocator."""
+"""Low-slip low-level ball-joint target handling and traction allocator."""
 
 from __future__ import annotations
 
@@ -46,9 +46,9 @@ class CompleteCarWheelAllocatorGeometry:
     l1: float = -0.00989449
     l2: float = 0.00000932
     l3: float = 0.00968251
-    d1: float = 0.44737875
-    d2: float = 0.44737968
-    d3: float = 0.44737875
+    d1: float = 0.539
+    d2: float = 0.539
+    d3: float = 0.539
     h1: float = -0.043083285
     h2: float = -0.02578188
     h3: float = -0.043100655
@@ -59,8 +59,8 @@ class CompleteCarWheelAllocatorGeometry:
 
 
 @dataclass
-class BallJointPlannerOutputs:
-    """Planner outputs from Chapter03 equations (3.26) and (3.27)."""
+class BallJointCommandOutputs:
+    """Ball-joint position target and posture-rate input used by the allocator."""
 
     ball_joint_position_targets: Any
     ball_joint_rate_targets: Any
@@ -112,8 +112,8 @@ class WheelTractionOutputs:
 
 
 @dataclass
-class LowSlipControlOutputs(BallJointPlannerOutputs):
-    """Complete outputs for posture planner + low-slip traction allocator."""
+class LowSlipControlOutputs(BallJointCommandOutputs):
+    """Complete outputs for direct posture targets and low-slip traction allocator."""
 
     desired_planar_command: Any
     shaped_planar_command: Any
@@ -329,33 +329,29 @@ class NumpyWheelSpeedAllocator:
         )
         return rotation, d_rotation_d_psi, d_rotation_d_theta, d_rotation_d_phi
 
-    def compute_ball_joint_planner_outputs(
+    def compute_ball_joint_command_outputs(
         self,
-        ball_joint_pos,
         desired_ball_joint_pos,
-        control_dt: float,
-        planner_gains,
-        planner_qdot_limits,
+        ball_joint_rate_targets,
         q_lower_limits,
         q_upper_limits,
-    ) -> BallJointPlannerOutputs:
-        ball_joint_pos, squeeze_pos = self._ensure_2d(ball_joint_pos, 6, "ball_joint_pos")
+    ) -> BallJointCommandOutputs:
         desired_ball_joint_pos, squeeze_desired = self._ensure_2d(desired_ball_joint_pos, 6, "desired_ball_joint_pos")
-        (ball_joint_pos, desired_ball_joint_pos), _ = self._broadcast_batch(ball_joint_pos, desired_ball_joint_pos)
+        ball_joint_rate_targets, squeeze_qdot = self._ensure_2d(ball_joint_rate_targets, 6, "ball_joint_rate_targets")
+        (desired_ball_joint_pos, ball_joint_rate_targets), _ = self._broadcast_batch(
+            desired_ball_joint_pos,
+            ball_joint_rate_targets,
+        )
 
-        gains = self._ensure_vector(planner_gains, 6, "planner_gains").reshape(1, 6)
-        qdot_limits = self._ensure_vector(planner_qdot_limits, 6, "planner_qdot_limits").reshape(1, 6)
         q_lower = self._ensure_vector(q_lower_limits, 6, "q_lower_limits").reshape(1, 6)
         q_upper = self._ensure_vector(q_upper_limits, 6, "q_upper_limits").reshape(1, 6)
 
-        qdot_cmd_raw = gains * (desired_ball_joint_pos - ball_joint_pos)
-        qdot_cmd = self._sat(qdot_cmd_raw, -qdot_limits, qdot_limits)
-        q_cmd = self._sat(ball_joint_pos + float(control_dt) * qdot_cmd, q_lower, q_upper)
+        q_target = self._sat(desired_ball_joint_pos, q_lower, q_upper)
 
-        squeeze_output = squeeze_pos and squeeze_desired
-        return BallJointPlannerOutputs(
-            ball_joint_position_targets=self._squeeze_if_needed(q_cmd, squeeze_output),
-            ball_joint_rate_targets=self._squeeze_if_needed(qdot_cmd, squeeze_output),
+        squeeze_output = squeeze_desired and squeeze_qdot
+        return BallJointCommandOutputs(
+            ball_joint_position_targets=self._squeeze_if_needed(q_target, squeeze_output),
+            ball_joint_rate_targets=self._squeeze_if_needed(ball_joint_rate_targets, squeeze_output),
         )
 
     def _compute_front_rear_wheel_kinematics(self, ball_joint_pos: np.ndarray) -> dict[str, np.ndarray]:
@@ -744,14 +740,12 @@ class NumpyWheelSpeedAllocator:
         self,
         ball_joint_pos,
         desired_ball_joint_pos,
+        ball_joint_rate_targets,
         desired_planar_command,
         wheel_normal_contact_force,
         wheel_joint_vel,
         rolling_speed_actual,
         lateral_speed_actual,
-        control_dt: float,
-        planner_gains,
-        planner_qdot_limits,
         q_lower_limits,
         q_upper_limits,
         lambda_tracking: float,
@@ -766,6 +760,7 @@ class NumpyWheelSpeedAllocator:
     ) -> LowSlipControlOutputs:
         ball_joint_pos, squeeze_pos = self._ensure_2d(ball_joint_pos, 6, "ball_joint_pos")
         desired_ball_joint_pos, squeeze_desired = self._ensure_2d(desired_ball_joint_pos, 6, "desired_ball_joint_pos")
+        ball_joint_rate_targets, squeeze_qdot = self._ensure_2d(ball_joint_rate_targets, 6, "ball_joint_rate_targets")
         desired_planar_command, squeeze_cmd = self._ensure_2d(desired_planar_command, 2, "desired_planar_command")
         wheel_normal_contact_force, squeeze_force = self._ensure_2d(
             wheel_normal_contact_force,
@@ -782,6 +777,7 @@ class NumpyWheelSpeedAllocator:
         (
             ball_joint_pos,
             desired_ball_joint_pos,
+            ball_joint_rate_targets,
             desired_planar_command,
             wheel_normal_contact_force,
             wheel_joint_vel,
@@ -790,6 +786,7 @@ class NumpyWheelSpeedAllocator:
         ), _ = self._broadcast_batch(
             ball_joint_pos,
             desired_ball_joint_pos,
+            ball_joint_rate_targets,
             desired_planar_command,
             wheel_normal_contact_force,
             wheel_joint_vel,
@@ -797,20 +794,17 @@ class NumpyWheelSpeedAllocator:
             lateral_speed_actual,
         )
 
-        planner_outputs = self.compute_ball_joint_planner_outputs(
-            ball_joint_pos,
+        command_outputs = self.compute_ball_joint_command_outputs(
             desired_ball_joint_pos,
-            control_dt,
-            planner_gains,
-            planner_qdot_limits,
+            ball_joint_rate_targets,
             q_lower_limits,
             q_upper_limits,
         )
-        q_cmd = planner_outputs.ball_joint_position_targets
-        qdot_cmd = planner_outputs.ball_joint_rate_targets
-        if np.asarray(q_cmd).ndim == 1:
-            q_cmd = q_cmd.reshape(1, 6)
-            qdot_cmd = qdot_cmd.reshape(1, 6)
+        q_target = command_outputs.ball_joint_position_targets
+        qdot_alloc = command_outputs.ball_joint_rate_targets
+        if np.asarray(q_target).ndim == 1:
+            q_target = q_target.reshape(1, 6)
+            qdot_alloc = qdot_alloc.reshape(1, 6)
 
         wheel_state = self.compute_wheel_kinematic_state(ball_joint_pos)
         if np.asarray(wheel_state.wheel_positions).ndim == 2:
@@ -824,7 +818,7 @@ class NumpyWheelSpeedAllocator:
         shaped_outputs = self.shape_planar_command_for_low_slip(
             wheel_state=wheel_state,
             desired_planar_command=desired_planar_command,
-            ball_joint_rate_targets=qdot_cmd,
+            ball_joint_rate_targets=qdot_alloc,
             wheel_normal_contact_force=wheel_normal_contact_force,
             lambda_tracking=lambda_tracking,
             lambda_lateral=lambda_lateral,
@@ -841,7 +835,7 @@ class NumpyWheelSpeedAllocator:
         reference_outputs = self.compute_wheel_speed_references(
             wheel_state=wheel_state,
             shaped_planar_command=shaped_planar_command,
-            ball_joint_rate_targets=qdot_cmd,
+            ball_joint_rate_targets=qdot_alloc,
         )
         wheel_speed_reference = reference_outputs.wheel_speed_reference
         if np.asarray(wheel_speed_reference).ndim == 1:
@@ -862,6 +856,7 @@ class NumpyWheelSpeedAllocator:
         squeeze_output = (
             squeeze_pos
             and squeeze_desired
+            and squeeze_qdot
             and squeeze_cmd
             and squeeze_force
             and squeeze_joint_vel
@@ -871,8 +866,8 @@ class NumpyWheelSpeedAllocator:
         wheel_speed_jacobian = self.compute_wheel_speed_jacobian(ball_joint_pos)
         posture_rate_jacobian = self.compute_posture_rate_jacobian(ball_joint_pos)
         return LowSlipControlOutputs(
-            ball_joint_position_targets=self._squeeze_if_needed(q_cmd, squeeze_output),
-            ball_joint_rate_targets=self._squeeze_if_needed(qdot_cmd, squeeze_output),
+            ball_joint_position_targets=self._squeeze_if_needed(q_target, squeeze_output),
+            ball_joint_rate_targets=self._squeeze_if_needed(qdot_alloc, squeeze_output),
             desired_planar_command=self._squeeze_if_needed(desired_planar_command, squeeze_output),
             shaped_planar_command=self._squeeze_if_needed(shaped_planar_command, squeeze_output),
             contact_weights=self._squeeze_if_needed(contact_weights, squeeze_output),
@@ -1063,34 +1058,30 @@ class TorchWheelSpeedAllocator:
         )
         return rotation, d_rotation_d_psi, d_rotation_d_theta, d_rotation_d_phi
 
-    # 球铰姿态规划器
-    def compute_ball_joint_planner_outputs(
+    # 球铰位置目标直接来自 policy，姿态变化率来自实际球铰速度滤波。
+    def compute_ball_joint_command_outputs(
         self,
-        ball_joint_pos,
         desired_ball_joint_pos,
-        control_dt: float,
-        planner_gains,
-        planner_qdot_limits,
+        ball_joint_rate_targets,
         q_lower_limits,
         q_upper_limits,
-    ) -> BallJointPlannerOutputs:
-        ball_joint_pos, squeeze_pos = self._ensure_2d(ball_joint_pos, 6, "ball_joint_pos")
+    ) -> BallJointCommandOutputs:
         desired_ball_joint_pos, squeeze_desired = self._ensure_2d(desired_ball_joint_pos, 6, "desired_ball_joint_pos")
-        (ball_joint_pos, desired_ball_joint_pos), _ = self._broadcast_batch(ball_joint_pos, desired_ball_joint_pos)
+        ball_joint_rate_targets, squeeze_qdot = self._ensure_2d(ball_joint_rate_targets, 6, "ball_joint_rate_targets")
+        (desired_ball_joint_pos, ball_joint_rate_targets), _ = self._broadcast_batch(
+            desired_ball_joint_pos,
+            ball_joint_rate_targets,
+        )
 
-        gains = self._ensure_vector(planner_gains, 6, "planner_gains").reshape(1, 6)
-        qdot_limits = self._ensure_vector(planner_qdot_limits, 6, "planner_qdot_limits").reshape(1, 6)
         q_lower = self._ensure_vector(q_lower_limits, 6, "q_lower_limits").reshape(1, 6)
         q_upper = self._ensure_vector(q_upper_limits, 6, "q_upper_limits").reshape(1, 6)
 
-        qdot_cmd_raw = gains * (desired_ball_joint_pos - ball_joint_pos)
-        qdot_cmd = self._sat(qdot_cmd_raw, -qdot_limits, qdot_limits)
-        q_cmd = self._sat(ball_joint_pos + float(control_dt) * qdot_cmd, q_lower, q_upper)
+        q_target = self._sat(desired_ball_joint_pos, q_lower, q_upper)
 
-        squeeze_output = squeeze_pos and squeeze_desired
-        return BallJointPlannerOutputs(
-            ball_joint_position_targets=self._squeeze_if_needed(q_cmd, squeeze_output),
-            ball_joint_rate_targets=self._squeeze_if_needed(qdot_cmd, squeeze_output),
+        squeeze_output = squeeze_desired and squeeze_qdot
+        return BallJointCommandOutputs(
+            ball_joint_position_targets=self._squeeze_if_needed(q_target, squeeze_output),
+            ball_joint_rate_targets=self._squeeze_if_needed(ball_joint_rate_targets, squeeze_output),
         )
 
     def _compute_front_rear_wheel_kinematics(self, ball_joint_pos):
@@ -1490,14 +1481,12 @@ class TorchWheelSpeedAllocator:
         self,
         ball_joint_pos,
         desired_ball_joint_pos,
+        ball_joint_rate_targets,
         desired_planar_command,
         wheel_normal_contact_force,
         wheel_joint_vel,
         rolling_speed_actual,
         lateral_speed_actual,
-        control_dt: float,
-        planner_gains,
-        planner_qdot_limits,
         q_lower_limits,
         q_upper_limits,
         lambda_tracking: float,
@@ -1512,6 +1501,7 @@ class TorchWheelSpeedAllocator:
     ) -> LowSlipControlOutputs:
         ball_joint_pos, squeeze_pos = self._ensure_2d(ball_joint_pos, 6, "ball_joint_pos")
         desired_ball_joint_pos, squeeze_desired = self._ensure_2d(desired_ball_joint_pos, 6, "desired_ball_joint_pos")
+        ball_joint_rate_targets, squeeze_qdot = self._ensure_2d(ball_joint_rate_targets, 6, "ball_joint_rate_targets")
         desired_planar_command, squeeze_cmd = self._ensure_2d(desired_planar_command, 2, "desired_planar_command")
         wheel_normal_contact_force, squeeze_force = self._ensure_2d(
             wheel_normal_contact_force,
@@ -1528,6 +1518,7 @@ class TorchWheelSpeedAllocator:
         (
             ball_joint_pos,
             desired_ball_joint_pos,
+            ball_joint_rate_targets,
             desired_planar_command,
             wheel_normal_contact_force,
             wheel_joint_vel,
@@ -1536,6 +1527,7 @@ class TorchWheelSpeedAllocator:
         ), _ = self._broadcast_batch(
             ball_joint_pos,
             desired_ball_joint_pos,
+            ball_joint_rate_targets,
             desired_planar_command,
             wheel_normal_contact_force,
             wheel_joint_vel,
@@ -1543,20 +1535,17 @@ class TorchWheelSpeedAllocator:
             lateral_speed_actual,
         )
 
-        planner_outputs = self.compute_ball_joint_planner_outputs(
-            ball_joint_pos,
+        command_outputs = self.compute_ball_joint_command_outputs(
             desired_ball_joint_pos,
-            control_dt,
-            planner_gains,
-            planner_qdot_limits,
+            ball_joint_rate_targets,
             q_lower_limits,
             q_upper_limits,
         )
-        q_cmd = planner_outputs.ball_joint_position_targets
-        qdot_cmd = planner_outputs.ball_joint_rate_targets
-        if q_cmd.ndim == 1:
-            q_cmd = q_cmd.reshape(1, 6)
-            qdot_cmd = qdot_cmd.reshape(1, 6)
+        q_target = command_outputs.ball_joint_position_targets
+        qdot_alloc = command_outputs.ball_joint_rate_targets
+        if q_target.ndim == 1:
+            q_target = q_target.reshape(1, 6)
+            qdot_alloc = qdot_alloc.reshape(1, 6)
 
         wheel_state = self.compute_wheel_kinematic_state(ball_joint_pos)
         if wheel_state.wheel_positions.ndim == 2:
@@ -1570,7 +1559,7 @@ class TorchWheelSpeedAllocator:
         shaped_outputs = self.shape_planar_command_for_low_slip(
             wheel_state=wheel_state,
             desired_planar_command=desired_planar_command,
-            ball_joint_rate_targets=qdot_cmd,
+            ball_joint_rate_targets=qdot_alloc,
             wheel_normal_contact_force=wheel_normal_contact_force,
             lambda_tracking=lambda_tracking,
             lambda_lateral=lambda_lateral,
@@ -1587,7 +1576,7 @@ class TorchWheelSpeedAllocator:
         reference_outputs = self.compute_wheel_speed_references(
             wheel_state=wheel_state,
             shaped_planar_command=shaped_planar_command,
-            ball_joint_rate_targets=qdot_cmd,
+            ball_joint_rate_targets=qdot_alloc,
         )
         wheel_speed_reference = reference_outputs.wheel_speed_reference
         if wheel_speed_reference.ndim == 1:
@@ -1608,6 +1597,7 @@ class TorchWheelSpeedAllocator:
         squeeze_output = (
             squeeze_pos
             and squeeze_desired
+            and squeeze_qdot
             and squeeze_cmd
             and squeeze_force
             and squeeze_joint_vel
@@ -1617,8 +1607,8 @@ class TorchWheelSpeedAllocator:
         wheel_speed_jacobian = self.compute_wheel_speed_jacobian(ball_joint_pos)
         posture_rate_jacobian = self.compute_posture_rate_jacobian(ball_joint_pos)
         return LowSlipControlOutputs(
-            ball_joint_position_targets=self._squeeze_if_needed(q_cmd, squeeze_output),
-            ball_joint_rate_targets=self._squeeze_if_needed(qdot_cmd, squeeze_output),
+            ball_joint_position_targets=self._squeeze_if_needed(q_target, squeeze_output),
+            ball_joint_rate_targets=self._squeeze_if_needed(qdot_alloc, squeeze_output),
             desired_planar_command=self._squeeze_if_needed(desired_planar_command, squeeze_output),
             shaped_planar_command=self._squeeze_if_needed(shaped_planar_command, squeeze_output),
             contact_weights=self._squeeze_if_needed(contact_weights, squeeze_output),
@@ -1641,7 +1631,7 @@ class TorchWheelSpeedAllocator:
 
 __all__ = [
     "BALL_JOINT_NAMES",
-    "BallJointPlannerOutputs",
+    "BallJointCommandOutputs",
     "CompleteCarWheelAllocatorGeometry",
     "DEFAULT_COMPLETE_CAR_GEOMETRY",
     "LowSlipControlOutputs",

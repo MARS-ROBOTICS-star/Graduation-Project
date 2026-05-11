@@ -49,6 +49,8 @@ The temporary parallel directory created in the previous round has been removed.
   - Current active Isaac Lab RL refactor project.
 - `scripts/isaac_sim/`
   - Isaac Sim validation, keyboard control, USD inspection, and asset-repair helpers.
+- `scripts/matlab/`
+  - MATLAB and Simulink validation scripts for thesis experiments.
 - `USD/`
   - Active USD assets and configuration sublayers.
 - `results/`
@@ -68,6 +70,8 @@ The temporary parallel directory created in the previous round has been removed.
   - `RL_Training/`
 - Isaac Sim validation and teleoperation:
   - `scripts/isaac_sim/`
+- MATLAB / Simulink validation:
+  - `scripts/matlab/`
 - Robot USD assets:
   - `USD/`
 - Literature notes and PDFs:

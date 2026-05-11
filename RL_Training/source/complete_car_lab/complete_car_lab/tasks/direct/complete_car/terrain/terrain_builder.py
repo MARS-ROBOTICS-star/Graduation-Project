@@ -32,15 +32,8 @@ class Stage1TerrainCfg:
             "slope down": 0.10,
             "slope up": 0.10,
             "uneven rough": 0.20,
-            "stairs down": 0.20,
-            "stairs up": 0.20,
-            "discrete obstacles": 0.10,
-            "hurdle": 0.20,
-            "gap": 1.20,
-            "ramp": 1.10,
-            "beam": 0.0,
-            "new stairs down": 0.30,
-            "pit": 1.0,
+            "stairs down": 0.30,
+            "discrete obstacles": 0.20,
         }
     )
 

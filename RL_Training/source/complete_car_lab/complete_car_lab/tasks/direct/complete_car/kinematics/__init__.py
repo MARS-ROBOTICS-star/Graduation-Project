@@ -10,7 +10,7 @@ from .wheel_speed_allocator import (
     BALL_JOINT_NAMES,
     DEFAULT_COMPLETE_CAR_GEOMETRY,
     OUTPUT_WHEEL_JOINT_NAMES,
-    BallJointPlannerOutputs,
+    BallJointCommandOutputs,
     CompleteCarWheelAllocatorGeometry,
     compute_longitudinal_slip_torch,
     LowSlipControlOutputs,
@@ -24,7 +24,7 @@ from .wheel_speed_allocator import (
 
 __all__ = [
     "BALL_JOINT_NAMES",
-    "BallJointPlannerOutputs",
+    "BallJointCommandOutputs",
     "CompleteCarForwardKinematics",
     "CompleteCarInverseKinematics",
     "CompleteCarWheelAllocatorGeometry",

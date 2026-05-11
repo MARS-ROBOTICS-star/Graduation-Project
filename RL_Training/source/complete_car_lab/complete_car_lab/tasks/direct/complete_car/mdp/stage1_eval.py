@@ -13,8 +13,8 @@ STAGE1_TERRAIN_COLUMNS: tuple[tuple[int, str], ...] = (
     (4, "col04_rough"),
     (5, "col05_stairs_down"),
     (6, "col06_stairs_down"),
-    (7, "col07_stairs_up"),
-    (8, "col08_stairs_up"),
+    (7, "col07_stairs_down"),
+    (8, "col08_obstacles"),
     (9, "col09_obstacles"),
 )
 
@@ -79,9 +79,34 @@ def _group_stats(
     backward_mask: torch.Tensor,
     stuck_time_s: torch.Tensor,
     stuck_timeout_mask: torch.Tensor,
+    stuck_penalty_active_mask: torch.Tensor,
+    no_progress_active_mask: torch.Tensor,
     pitch_rate_abs: torch.Tensor,
     vz_down: torch.Tensor,
     speed_limit_active_mask: torch.Tensor,
+    vx_cmd_raw: torch.Tensor,
+    vx_cmd_limited: torch.Tensor,
+    vx_actual: torch.Tensor,
+    front_pitch_ref: torch.Tensor,
+    front_pitch_actual: torch.Tensor,
+    rear_pitch_actual: torch.Tensor,
+    wheel_spin_airborne_mean: torch.Tensor,
+    quality_row_advance_mask: torch.Tensor,
+    hard_quality_advance_mask: torch.Tensor,
+    low_quality_hit_mask: torch.Tensor,
+    raw_hard_hit_mask: torch.Tensor,
+    row_advance_without_quality_mask: torch.Tensor,
+    quality_advance_score: torch.Tensor,
+    phase_module_progress_score: torch.Tensor,
+    front_climb_success_mask: torch.Tensor,
+    middle_climb_success_mask: torch.Tensor,
+    rear_follow_success_mask: torch.Tensor,
+    actual_overspeed_near_edge_mask: torch.Tensor,
+    row_contact_support_min: torch.Tensor,
+    row_stuck_time_max: torch.Tensor,
+    recovery_active_mask: torch.Tensor,
+    recovery_reverse_mask: torch.Tensor,
+    recovery_success_mask: torch.Tensor,
 ) -> dict[str, float]:
     far_rate = _masked_mean(far_mask.float(), mask)
     ball_limit_rate = _masked_mean(ball_joint_limit_mask.float(), mask)
@@ -99,10 +124,15 @@ def _group_stats(
         "timeout_rate": _safe_float(_masked_mean(timeout_mask.float(), mask)),
         "stuck_time_mean": _safe_float(_masked_mean(stuck_time_s, mask)),
         "stuck_timeout_rate": _safe_float(_masked_mean(stuck_timeout_mask.float(), mask)),
+        "stuck_penalty_active_rate": _safe_float(_masked_mean(stuck_penalty_active_mask.float(), mask)),
+        "no_progress_active_rate": _safe_float(_masked_mean(no_progress_active_mask.float(), mask)),
         "stagnation_rate": _safe_float(_masked_mean(stagnation_mask.float(), mask)),
         "backward_rate": _safe_float(_masked_mean(backward_mask.float(), mask)),
         "v_forward_mean": _safe_float(_masked_mean(v_forward, mask)),
         "speed_limit_active_rate": _safe_float(_masked_mean(speed_limit_active_mask.float(), mask)),
+        "vx_cmd_raw": _safe_float(_masked_mean(vx_cmd_raw, mask)),
+        "vx_cmd_limited": _safe_float(_masked_mean(vx_cmd_limited, mask)),
+        "vx_actual": _safe_float(_masked_mean(vx_actual, mask)),
         "v_lateral_abs_mean": _safe_float(_masked_mean(v_lateral_abs, mask)),
         "lateral_velocity_ratio": _safe_float(_masked_mean(lateral_velocity_ratio, mask)),
         "yaw_rate_abs_mean": _safe_float(_masked_mean(yaw_rate_abs, mask)),
@@ -116,12 +146,32 @@ def _group_stats(
         "pitch_abs_mean": _safe_float(_masked_mean(pitch_abs_deg, mask)),
         "pitch_rate_abs_mean": _safe_float(_masked_mean(pitch_rate_abs, mask)),
         "vz_down_mean": _safe_float(_masked_mean(vz_down, mask)),
+        "front_pitch_ref": _safe_float(_masked_mean(front_pitch_ref, mask)),
+        "front_pitch_actual": _safe_float(_masked_mean(front_pitch_actual, mask)),
+        "rear_pitch_actual": _safe_float(_masked_mean(rear_pitch_actual, mask)),
         "attitude_bad_rate": _safe_float(_masked_mean(attitude_bad_mask.float(), mask)),
         "ball_joint_limit_usage_max": _safe_float(_masked_max(ball_joint_limit_usage_per_env, mask)),
         "joint_bad_rate": _safe_float(_masked_mean(joint_bad_mask.float(), mask)),
         "action_abs_mean": _safe_float(_masked_mean(action_abs_mean, mask)),
         "action_rate_abs_mean": _safe_float(_masked_mean(action_rate_abs_mean, mask)),
         "action_saturation_rate": _safe_float(_masked_mean(action_saturation_mask.float(), mask)),
+        "wheel_spin_airborne_mean": _safe_float(_masked_mean(wheel_spin_airborne_mean, mask)),
+        "quality_row_advance_rate": _safe_float(_masked_mean(quality_row_advance_mask.float(), mask)),
+        "hard_quality_advance_rate": _safe_float(_masked_mean(hard_quality_advance_mask.float(), mask)),
+        "low_quality_hit_rate": _safe_float(_masked_mean(low_quality_hit_mask.float(), mask)),
+        "raw_hard_hit_rate": _safe_float(_masked_mean(raw_hard_hit_mask.float(), mask)),
+        "row_advance_without_quality_rate": _safe_float(_masked_mean(row_advance_without_quality_mask.float(), mask)),
+        "quality_advance_score": _safe_float(_masked_mean(quality_advance_score, mask)),
+        "phase_module_progress_score": _safe_float(_masked_mean(phase_module_progress_score, mask)),
+        "front_climb_success_rate": _safe_float(_masked_mean(front_climb_success_mask.float(), mask)),
+        "middle_climb_success_rate": _safe_float(_masked_mean(middle_climb_success_mask.float(), mask)),
+        "rear_follow_success_rate": _safe_float(_masked_mean(rear_follow_success_mask.float(), mask)),
+        "actual_overspeed_near_edge_rate": _safe_float(_masked_mean(actual_overspeed_near_edge_mask.float(), mask)),
+        "row_contact_support_min": _safe_float(_masked_mean(row_contact_support_min, mask)),
+        "row_stuck_time_max": _safe_float(_masked_mean(row_stuck_time_max, mask)),
+        "recovery_active_rate": _safe_float(_masked_mean(recovery_active_mask.float(), mask)),
+        "recovery_reverse_rate": _safe_float(_masked_mean(recovery_reverse_mask.float(), mask)),
+        "recovery_success_rate": _safe_float(_masked_mean(recovery_success_mask.float(), mask)),
     }
 
 
@@ -188,6 +238,31 @@ def compute_stage1_eval_metrics(
     pitch_rate_abs: torch.Tensor | None = None,
     vz_down: torch.Tensor | None = None,
     speed_limit_active_mask: torch.Tensor | None = None,
+    stuck_penalty_active_mask: torch.Tensor | None = None,
+    no_progress_active_mask: torch.Tensor | None = None,
+    vx_cmd_raw: torch.Tensor | None = None,
+    vx_cmd_limited: torch.Tensor | None = None,
+    vx_actual: torch.Tensor | None = None,
+    front_pitch_ref: torch.Tensor | None = None,
+    front_pitch_actual: torch.Tensor | None = None,
+    rear_pitch_actual: torch.Tensor | None = None,
+    wheel_spin_airborne_mean: torch.Tensor | None = None,
+    quality_row_advance_mask: torch.Tensor | None = None,
+    hard_quality_advance_mask: torch.Tensor | None = None,
+    low_quality_hit_mask: torch.Tensor | None = None,
+    raw_hard_hit_mask: torch.Tensor | None = None,
+    row_advance_without_quality_mask: torch.Tensor | None = None,
+    quality_advance_score: torch.Tensor | None = None,
+    phase_module_progress_score: torch.Tensor | None = None,
+    front_climb_success_mask: torch.Tensor | None = None,
+    middle_climb_success_mask: torch.Tensor | None = None,
+    rear_follow_success_mask: torch.Tensor | None = None,
+    actual_overspeed_near_edge_mask: torch.Tensor | None = None,
+    row_contact_support_min: torch.Tensor | None = None,
+    row_stuck_time_max: torch.Tensor | None = None,
+    recovery_active_mask: torch.Tensor | None = None,
+    recovery_reverse_mask: torch.Tensor | None = None,
+    recovery_success_mask: torch.Tensor | None = None,
 ) -> dict[str, float]:
     """Compute NaN-safe Stage1Eval scalars for terrain-column training."""
 
@@ -236,6 +311,106 @@ def compute_stage1_eval_metrics(
         speed_limit_active_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
     else:
         speed_limit_active_mask = speed_limit_active_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if stuck_penalty_active_mask is None:
+        stuck_penalty_active_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        stuck_penalty_active_mask = stuck_penalty_active_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if no_progress_active_mask is None:
+        no_progress_active_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        no_progress_active_mask = no_progress_active_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if vx_cmd_raw is None:
+        vx_cmd_raw = torch.zeros_like(terrain_levels)
+    else:
+        vx_cmd_raw = _clean(vx_cmd_raw)
+    if vx_cmd_limited is None:
+        vx_cmd_limited = torch.zeros_like(terrain_levels)
+    else:
+        vx_cmd_limited = _clean(vx_cmd_limited)
+    if vx_actual is None:
+        vx_actual = base_lin_vel[:, 0]
+    else:
+        vx_actual = _clean(vx_actual)
+    if front_pitch_ref is None:
+        front_pitch_ref = torch.zeros_like(terrain_levels)
+    else:
+        front_pitch_ref = _clean(front_pitch_ref)
+    if front_pitch_actual is None:
+        front_pitch_actual = torch.zeros_like(terrain_levels)
+    else:
+        front_pitch_actual = _clean(front_pitch_actual)
+    if rear_pitch_actual is None:
+        rear_pitch_actual = torch.zeros_like(terrain_levels)
+    else:
+        rear_pitch_actual = _clean(rear_pitch_actual)
+    if wheel_spin_airborne_mean is None:
+        wheel_spin_airborne_mean = torch.zeros_like(terrain_levels)
+    else:
+        wheel_spin_airborne_mean = _clean(wheel_spin_airborne_mean)
+    if quality_row_advance_mask is None:
+        quality_row_advance_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        quality_row_advance_mask = quality_row_advance_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if hard_quality_advance_mask is None:
+        hard_quality_advance_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        hard_quality_advance_mask = hard_quality_advance_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if low_quality_hit_mask is None:
+        low_quality_hit_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        low_quality_hit_mask = low_quality_hit_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if raw_hard_hit_mask is None:
+        raw_hard_hit_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        raw_hard_hit_mask = raw_hard_hit_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if row_advance_without_quality_mask is None:
+        row_advance_without_quality_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        row_advance_without_quality_mask = row_advance_without_quality_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if quality_advance_score is None:
+        quality_advance_score = torch.zeros_like(terrain_levels)
+    else:
+        quality_advance_score = _clean(quality_advance_score)
+    if phase_module_progress_score is None:
+        phase_module_progress_score = torch.zeros_like(terrain_levels)
+    else:
+        phase_module_progress_score = _clean(phase_module_progress_score)
+    if front_climb_success_mask is None:
+        front_climb_success_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        front_climb_success_mask = front_climb_success_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if middle_climb_success_mask is None:
+        middle_climb_success_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        middle_climb_success_mask = middle_climb_success_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if rear_follow_success_mask is None:
+        rear_follow_success_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        rear_follow_success_mask = rear_follow_success_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if actual_overspeed_near_edge_mask is None:
+        actual_overspeed_near_edge_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        actual_overspeed_near_edge_mask = actual_overspeed_near_edge_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if row_contact_support_min is None:
+        row_contact_support_min = torch.ones_like(terrain_levels)
+    else:
+        row_contact_support_min = _clean(row_contact_support_min)
+    if row_stuck_time_max is None:
+        row_stuck_time_max = torch.zeros_like(terrain_levels)
+    else:
+        row_stuck_time_max = _clean(row_stuck_time_max)
+    if recovery_active_mask is None:
+        recovery_active_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        recovery_active_mask = recovery_active_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if recovery_reverse_mask is None:
+        recovery_reverse_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        recovery_reverse_mask = recovery_reverse_mask.to(device=terrain_types.device, dtype=torch.bool)
+    if recovery_success_mask is None:
+        recovery_success_mask = torch.zeros_like(terrain_types, dtype=torch.bool)
+    else:
+        recovery_success_mask = recovery_success_mask.to(device=terrain_types.device, dtype=torch.bool)
     if train_active_mask is None:
         train_active_mask = torch.ones_like(terrain_types, dtype=torch.bool)
     else:
@@ -292,9 +467,34 @@ def compute_stage1_eval_metrics(
         "backward_mask": backward_mask,
         "stuck_time_s": stuck_time_s,
         "stuck_timeout_mask": stuck_timeout_mask,
+        "stuck_penalty_active_mask": stuck_penalty_active_mask,
+        "no_progress_active_mask": no_progress_active_mask,
         "pitch_rate_abs": pitch_rate_abs,
         "vz_down": vz_down,
         "speed_limit_active_mask": speed_limit_active_mask,
+        "vx_cmd_raw": vx_cmd_raw,
+        "vx_cmd_limited": vx_cmd_limited,
+        "vx_actual": vx_actual,
+        "front_pitch_ref": front_pitch_ref,
+        "front_pitch_actual": front_pitch_actual,
+        "rear_pitch_actual": rear_pitch_actual,
+        "wheel_spin_airborne_mean": wheel_spin_airborne_mean,
+        "quality_row_advance_mask": quality_row_advance_mask,
+        "hard_quality_advance_mask": hard_quality_advance_mask,
+        "low_quality_hit_mask": low_quality_hit_mask,
+        "raw_hard_hit_mask": raw_hard_hit_mask,
+        "row_advance_without_quality_mask": row_advance_without_quality_mask,
+        "quality_advance_score": quality_advance_score,
+        "phase_module_progress_score": phase_module_progress_score,
+        "front_climb_success_mask": front_climb_success_mask,
+        "middle_climb_success_mask": middle_climb_success_mask,
+        "rear_follow_success_mask": rear_follow_success_mask,
+        "actual_overspeed_near_edge_mask": actual_overspeed_near_edge_mask,
+        "row_contact_support_min": row_contact_support_min,
+        "row_stuck_time_max": row_stuck_time_max,
+        "recovery_active_mask": recovery_active_mask,
+        "recovery_reverse_mask": recovery_reverse_mask,
+        "recovery_success_mask": recovery_success_mask,
     }
     global_stats = _group_stats(all_mask, **common_kwargs)
     column_stats: dict[int, dict[str, float]] = {}
@@ -324,9 +524,14 @@ def compute_stage1_eval_metrics(
         "Stage1Eval/global/timeout_rate": global_stats["timeout_rate"],
         "Stage1Eval/global/stuck_time_mean": global_stats["stuck_time_mean"],
         "Stage1Eval/global/stuck_timeout_rate": global_stats["stuck_timeout_rate"],
+        "Stage1Eval/global/stuck_penalty_active_rate": global_stats["stuck_penalty_active_rate"],
+        "Stage1Eval/global/no_progress_active_rate": global_stats["no_progress_active_rate"],
         "Stage1Eval/global/stagnation_rate": global_stats["stagnation_rate"],
         "Stage1Eval/global/v_forward_mean": global_stats["v_forward_mean"],
         "Stage1Eval/global/speed_limit_active_rate": global_stats["speed_limit_active_rate"],
+        "Stage1Eval/global/vx_cmd_raw": global_stats["vx_cmd_raw"],
+        "Stage1Eval/global/vx_cmd_limited": global_stats["vx_cmd_limited"],
+        "Stage1Eval/global/vx_actual": global_stats["vx_actual"],
         "Stage1Eval/global/v_lateral_abs_mean": global_stats["v_lateral_abs_mean"],
         "Stage1Eval/global/lateral_velocity_ratio": global_stats["lateral_velocity_ratio"],
         "Stage1Eval/global/longitudinal_slip_abs_mean": global_stats["longitudinal_slip_abs_mean"],
@@ -338,6 +543,23 @@ def compute_stage1_eval_metrics(
         "Stage1Eval/global/pitch_abs_mean": global_stats["pitch_abs_mean"],
         "Stage1Eval/global/pitch_rate_abs_mean": global_stats["pitch_rate_abs_mean"],
         "Stage1Eval/global/vz_down_mean": global_stats["vz_down_mean"],
+        "Stage1Eval/global/wheel_spin_airborne_mean": global_stats["wheel_spin_airborne_mean"],
+        "Stage1Eval/global/quality_row_advance_rate": global_stats["quality_row_advance_rate"],
+        "Stage1Eval/global/hard_quality_advance_rate": global_stats["hard_quality_advance_rate"],
+        "Stage1Eval/global/low_quality_hit_rate": global_stats["low_quality_hit_rate"],
+        "Stage1Eval/global/raw_hard_hit_rate": global_stats["raw_hard_hit_rate"],
+        "Stage1Eval/global/row_advance_without_quality_rate": global_stats["row_advance_without_quality_rate"],
+        "Stage1Eval/global/quality_advance_score": global_stats["quality_advance_score"],
+        "Stage1Eval/global/phase_module_progress_score": global_stats["phase_module_progress_score"],
+        "Stage1Eval/global/front_climb_success_rate": global_stats["front_climb_success_rate"],
+        "Stage1Eval/global/middle_climb_success_rate": global_stats["middle_climb_success_rate"],
+        "Stage1Eval/global/rear_follow_success_rate": global_stats["rear_follow_success_rate"],
+        "Stage1Eval/global/actual_overspeed_near_edge_rate": global_stats["actual_overspeed_near_edge_rate"],
+        "Stage1Eval/global/row_contact_support_min": global_stats["row_contact_support_min"],
+        "Stage1Eval/global/row_stuck_time_max": global_stats["row_stuck_time_max"],
+        "Stage1Eval/global/recovery_active_rate": global_stats["recovery_active_rate"],
+        "Stage1Eval/global/recovery_reverse_rate": global_stats["recovery_reverse_rate"],
+        "Stage1Eval/global/recovery_success_rate": global_stats["recovery_success_rate"],
         "Stage1Eval/global/ball_joint_limit_usage_max": global_stats["ball_joint_limit_usage_max"],
         "Stage1Eval/global/action_abs_mean": global_stats["action_abs_mean"],
         "Stage1Eval/global/action_rate_abs_mean": global_stats["action_rate_abs_mean"],
@@ -360,14 +582,33 @@ def compute_stage1_eval_metrics(
         "ball_joint_limit_rate",
         "stuck_time_mean",
         "stuck_timeout_rate",
+        "stuck_penalty_active_rate",
+        "no_progress_active_rate",
         "stagnation_rate",
         "speed_limit_active_rate",
+        "vx_cmd_raw",
+        "vx_cmd_limited",
+        "vx_actual",
         "longitudinal_slip_abs_mean",
         "slip_angle_abs_mean",
         "combined_low_slip_pass_rate",
         "pitch_abs_mean",
         "pitch_rate_abs_mean",
         "vz_down_mean",
+        "wheel_spin_airborne_mean",
+        "quality_row_advance_rate",
+        "hard_quality_advance_rate",
+        "low_quality_hit_rate",
+        "raw_hard_hit_rate",
+        "row_advance_without_quality_rate",
+        "quality_advance_score",
+        "phase_module_progress_score",
+        "front_climb_success_rate",
+        "middle_climb_success_rate",
+        "rear_follow_success_rate",
+        "actual_overspeed_near_edge_rate",
+        "row_contact_support_min",
+        "row_stuck_time_max",
         "roll_abs_mean",
         "ball_joint_limit_usage_max",
         "action_saturation_rate",
@@ -390,10 +631,15 @@ def compute_stage1_eval_metrics(
         "timeout_rate",
         "stuck_time_mean",
         "stuck_timeout_rate",
+        "stuck_penalty_active_rate",
+        "no_progress_active_rate",
         "stagnation_rate",
         "backward_rate",
         "v_forward_mean",
         "speed_limit_active_rate",
+        "vx_cmd_raw",
+        "vx_cmd_limited",
+        "vx_actual",
         "v_lateral_abs_mean",
         "lateral_velocity_ratio",
         "yaw_rate_abs_mean",
@@ -406,6 +652,26 @@ def compute_stage1_eval_metrics(
         "pitch_abs_mean",
         "pitch_rate_abs_mean",
         "vz_down_mean",
+        "front_pitch_ref",
+        "front_pitch_actual",
+        "rear_pitch_actual",
+        "wheel_spin_airborne_mean",
+        "quality_row_advance_rate",
+        "hard_quality_advance_rate",
+        "low_quality_hit_rate",
+        "raw_hard_hit_rate",
+        "row_advance_without_quality_rate",
+        "quality_advance_score",
+        "phase_module_progress_score",
+        "front_climb_success_rate",
+        "middle_climb_success_rate",
+        "rear_follow_success_rate",
+        "actual_overspeed_near_edge_rate",
+        "row_contact_support_min",
+        "row_stuck_time_max",
+        "recovery_active_rate",
+        "recovery_reverse_rate",
+        "recovery_success_rate",
         "ball_joint_limit_usage_max",
         "action_abs_mean",
         "action_rate_abs_mean",
@@ -432,7 +698,7 @@ def compute_stage1_eval_metrics(
     flat_v_forward = flat_stats["v_forward_mean"]
     overspeed_threshold = max(1.5, flat_v_forward + 0.3)
     for col_index, col_name in STAGE1_TERRAIN_COLUMNS:
-        if col_name not in {"col01_slope_down", "col05_stairs_down", "col06_stairs_down"}:
+        if col_name not in {"col01_slope_down", "col05_stairs_down", "col06_stairs_down", "col07_stairs_down"}:
             continue
         col_mask = (terrain_types == col_index) & all_mask
         overspeed_rate = _masked_mean((v_forward > overspeed_threshold).float(), col_mask)

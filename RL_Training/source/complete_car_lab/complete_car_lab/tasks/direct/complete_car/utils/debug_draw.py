@@ -6,7 +6,6 @@ import torch
 
 import isaaclab.sim as sim_utils
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
-from isaaclab.markers.config import GREEN_ARROW_X_MARKER_CFG, RED_ARROW_X_MARKER_CFG
 from isaaclab.utils.math import quat_from_euler_xyz
 
 
@@ -18,6 +17,25 @@ GOAL_SPHERE_MARKER_CFG = VisualizationMarkersCfg(
         ),
     }
 )
+
+
+def _make_local_x_axis_marker_cfg(
+    prim_path: str,
+    color: tuple[float, float, float],
+    length: float,
+    radius: float,
+) -> VisualizationMarkersCfg:
+    return VisualizationMarkersCfg(
+        prim_path=prim_path,
+        markers={
+            "axis": sim_utils.CylinderCfg(
+                radius=radius,
+                height=length,
+                axis="X",
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color),
+            ),
+        },
+    )
 
 
 HEIGHT_PATCH_COLORS = (
@@ -48,10 +66,12 @@ class CompleteCarDebugDraw:
     def __init__(
         self,
         enabled: bool = False,
+        visualize_goal_position: bool = True,
         visualize_goal_heading: bool = True,
         height_patch_marker_radius: float = 0.035,
     ):
         self.enabled = enabled
+        self.visualize_goal_position = visualize_goal_position
         self.visualize_goal_heading = visualize_goal_heading
         self._goal_arrow_visualizer: VisualizationMarkers | None = None
         self._goal_sphere_visualizer: VisualizationMarkers | None = None
@@ -66,7 +86,7 @@ class CompleteCarDebugDraw:
         self._follow_view_count = 0
         self._follow_view_chase_env_index = 0
         self._follow_view_env_ids: tuple[int, ...] = ()
-        if self.enabled:
+        if self.enabled and (self.visualize_goal_position or self.visualize_goal_heading):
             self._ensure_goal_pose_visualizers()
             self.set_visibility(True)
 
@@ -84,7 +104,7 @@ class CompleteCarDebugDraw:
             return
 
     def set_visibility(self, visible: bool) -> None:
-        if visible and self.enabled:
+        if visible and self.enabled and (self.visualize_goal_position or self.visualize_goal_heading):
             self._ensure_goal_pose_visualizers()
         if self._goal_arrow_visualizer is not None:
             self._goal_arrow_visualizer.set_visibility(visible)
@@ -100,11 +120,12 @@ class CompleteCarDebugDraw:
             self._height_patch_positive_y_visualizer.set_visibility(visible)
 
     def draw_goal_pose(self, goal_positions_w: torch.Tensor, goal_headings_w: torch.Tensor) -> None:
-        if not self.enabled:
+        if not self.enabled or not (self.visualize_goal_position or self.visualize_goal_heading):
             return
 
         self._ensure_goal_pose_visualizers()
-        self._goal_sphere_visualizer.visualize(translations=goal_positions_w)
+        if self.visualize_goal_position:
+            self._goal_sphere_visualizer.visualize(translations=goal_positions_w)
 
         if self.visualize_goal_heading:
             zero = torch.zeros_like(goal_headings_w)
@@ -236,6 +257,9 @@ class CompleteCarDebugDraw:
         chase_env_indices: tuple[int, ...] = (),
         chase_offset_b: tuple[float, float, float],
         chase_target_offset_b: tuple[float, float, float],
+        forward_height_m: float,
+        forward_distance_m: float,
+        right_side_distance_m: float,
     ) -> None:
         """Create/update selectable USD cameras under /view for playback inspection."""
         if not self.enabled:
@@ -262,6 +286,8 @@ class CompleteCarDebugDraw:
             root_pos = root_positions[env_id]
             yaw = float(root_yaws[env_id])
             eye_offset = self._rotate_planar_offset(chase_offset_b, yaw)
+            left_chase_offset_b = (chase_offset_b[0], -chase_offset_b[1], chase_offset_b[2])
+            left_eye_offset = self._rotate_planar_offset(left_chase_offset_b, yaw)
             target_offset = self._rotate_planar_offset(chase_target_offset_b, yaw)
             eye = (
                 float(root_pos[0] + eye_offset[0]),
@@ -278,14 +304,65 @@ class CompleteCarDebugDraw:
                 target=target,
                 camera_prim_path=f"{self._view_root_path}/env_{env_id}/chase_camera",
             )
+            left_eye = (
+                float(root_pos[0] + left_eye_offset[0]),
+                float(root_pos[1] + left_eye_offset[1]),
+                float(root_pos[2] + left_eye_offset[2]),
+            )
+            sim.set_camera_view(
+                eye=left_eye,
+                target=target,
+                camera_prim_path=f"{self._view_root_path}/env_{env_id}/left_chase_camera",
+            )
+
+            forward_height = float(forward_height_m)
+            forward_distance = max(float(forward_distance_m), 0.1)
+            forward_target_offset = self._rotate_planar_offset((forward_distance, 0.0, forward_height), yaw)
+            forward_eye = (
+                float(root_pos[0]),
+                float(root_pos[1]),
+                float(root_pos[2] + forward_height),
+            )
+            forward_target = (
+                float(root_pos[0] + forward_target_offset[0]),
+                float(root_pos[1] + forward_target_offset[1]),
+                float(root_pos[2] + forward_target_offset[2]),
+            )
+            sim.set_camera_view(
+                eye=forward_eye,
+                target=forward_target,
+                camera_prim_path=f"{self._view_root_path}/env_{env_id}/forward_camera",
+            )
+
+            right_side_distance = max(float(right_side_distance_m), 0.1)
+            right_side_eye_offset = self._rotate_planar_offset((0.0, -right_side_distance, 0.0), yaw)
+            right_side_eye = (
+                float(root_pos[0] + right_side_eye_offset[0]),
+                float(root_pos[1] + right_side_eye_offset[1]),
+                float(root_pos[2] + right_side_eye_offset[2]),
+            )
+            right_side_target = (
+                float(root_pos[0]),
+                float(root_pos[1]),
+                float(root_pos[2]),
+            )
+            sim.set_camera_view(
+                eye=right_side_eye,
+                target=right_side_target,
+                camera_prim_path=f"{self._view_root_path}/env_{env_id}/right_side_camera",
+            )
 
     def _ensure_goal_pose_visualizers(self) -> None:
         if self.visualize_goal_heading and self._goal_arrow_visualizer is None:
-            arrow_cfg = GREEN_ARROW_X_MARKER_CFG.copy()
-            arrow_cfg.prim_path = "/Visuals/Command/goal_heading"
-            arrow_cfg.markers["arrow"].scale = (0.8, 0.12, 0.12)
-            self._goal_arrow_visualizer = VisualizationMarkers(arrow_cfg)
-        if self._goal_sphere_visualizer is None:
+            self._goal_arrow_visualizer = VisualizationMarkers(
+                _make_local_x_axis_marker_cfg(
+                    prim_path="/Visuals/Command/goal_heading",
+                    color=(0.0, 1.0, 0.0),
+                    length=0.8,
+                    radius=0.04,
+                )
+            )
+        if self.visualize_goal_position and self._goal_sphere_visualizer is None:
             sphere_cfg = GOAL_SPHERE_MARKER_CFG.copy()
             sphere_cfg.prim_path = "/Visuals/Command/goal_position"
             sphere_cfg.markers["sphere"].radius = 0.2
@@ -293,15 +370,23 @@ class CompleteCarDebugDraw:
 
     def _ensure_wheel_motion_visualizers(self) -> None:
         if self._wheel_forward_visualizer is None:
-            forward_cfg = GREEN_ARROW_X_MARKER_CFG.copy()
-            forward_cfg.prim_path = "/Visuals/WheelMotion/rolling_direction"
-            forward_cfg.markers["arrow"].scale = (1.0, 0.12, 0.12)
-            self._wheel_forward_visualizer = VisualizationMarkers(forward_cfg)
+            self._wheel_forward_visualizer = VisualizationMarkers(
+                _make_local_x_axis_marker_cfg(
+                    prim_path="/Visuals/WheelMotion/rolling_direction",
+                    color=(0.0, 1.0, 0.0),
+                    length=1.0,
+                    radius=0.045,
+                )
+            )
         if self._wheel_velocity_visualizer is None:
-            velocity_cfg = RED_ARROW_X_MARKER_CFG.copy()
-            velocity_cfg.prim_path = "/Visuals/WheelMotion/actual_velocity"
-            velocity_cfg.markers["arrow"].scale = (1.0, 0.12, 0.12)
-            self._wheel_velocity_visualizer = VisualizationMarkers(velocity_cfg)
+            self._wheel_velocity_visualizer = VisualizationMarkers(
+                _make_local_x_axis_marker_cfg(
+                    prim_path="/Visuals/WheelMotion/actual_velocity",
+                    color=(1.0, 0.0, 0.0),
+                    length=1.0,
+                    radius=0.045,
+                )
+            )
 
     def _ensure_height_patch_visualizer(self) -> None:
         if self._height_patch_visualizer is None:
@@ -310,10 +395,14 @@ class CompleteCarDebugDraw:
 
     def _ensure_height_patch_positive_y_visualizer(self) -> None:
         if self._height_patch_positive_y_visualizer is None:
-            arrow_cfg = RED_ARROW_X_MARKER_CFG.copy()
-            arrow_cfg.prim_path = "/Visuals/HeightPatch/positive_y_axis"
-            arrow_cfg.markers["arrow"].scale = (0.9, 0.16, 0.16)
-            self._height_patch_positive_y_visualizer = VisualizationMarkers(arrow_cfg)
+            self._height_patch_positive_y_visualizer = VisualizationMarkers(
+                _make_local_x_axis_marker_cfg(
+                    prim_path="/Visuals/HeightPatch/positive_y_axis",
+                    color=(1.0, 0.0, 0.0),
+                    length=0.9,
+                    radius=0.06,
+                )
+            )
 
     def _ensure_follow_view_paths(self, view_env_ids: tuple[int, ...], chase_env_index: int) -> None:
         if self._follow_view_env_ids == view_env_ids and self._follow_view_chase_env_index == chase_env_index:
@@ -323,6 +412,9 @@ class CompleteCarDebugDraw:
             self._create_xform_if_missing(f"{self._view_root_path}/env_{env_id}")
             self._create_camera_if_missing(f"{self._view_root_path}/env_{env_id}/top_down_camera")
             self._create_camera_if_missing(f"{self._view_root_path}/env_{env_id}/chase_camera")
+            self._create_camera_if_missing(f"{self._view_root_path}/env_{env_id}/left_chase_camera")
+            self._create_camera_if_missing(f"{self._view_root_path}/env_{env_id}/forward_camera")
+            self._create_camera_if_missing(f"{self._view_root_path}/env_{env_id}/right_side_camera")
         self._follow_view_count = len(view_env_ids)
         self._follow_view_chase_env_index = chase_env_index
         self._follow_view_env_ids = view_env_ids

@@ -1,30 +1,41 @@
 # stage0_baseline参数详情表
 
-本文档记录 `RL_Training/` 工作区内 `CompleteCar-Stage0` 的 baseline 配置、`best_baseline_2` 训练 run 实际参数、底层运动学模型和运行边界。
+本文档记录 `RL_Training/` 工作区内 `CompleteCar-Stage0` 的 baseline 配置、历史 `best_baseline_2` 训练 run、当前 `best_baseline5` 候选、底层运动学模型和运行边界。
 
 当前 baseline 定义为：`best_baseline`。
 
-当前详表对应的最新训练 run：`best_baseline_2`。
+当前详表对应的最新 Stage0 候选 run：`best_baseline5`。
 
-`best_baseline_2` 不是一套新的环境设计。它是在当前 `best_baseline` 源码配置上，通过命令行覆盖 `run_name=best_baseline_2` 启动的一轮完整训练。因此：
+`best_baseline_2` 不是一套新的环境设计。它是在当时 `best_baseline` 源码配置上，通过命令行覆盖 `run_name=best_baseline_2` 启动的一轮完整训练。因此：
 
 - 环境配置以 run 内 `params/env.yaml` 和当前 active 源码为准。
 - PPO 配置以 run 内 `params/agent.yaml` 为准。
-- 除 `run_name` 外，`best_baseline_2` 与当前 `best_baseline` 主线使用同一套 Stage0 reward、termination、动作语义和底层控制链。
+- `best_baseline_2` 训练结果解释应以 run 内快照为准；当前 active Stage0 源码已在 2026-05-10 后加入 direct-target 球铰控制和 action-rate 平滑惩罚，不能再把当前源码回放视为该 run 的严格历史复现。
 
 恢复基准来源：
 
 - 训练结果版本：`2026-04-25_18-26-58_stage0_lowslip_gate_v1_700iter/model_699.pt`
 - 结果说明文档：`results/stage0_lowslip_gate_v1_model699_detailed_result_config_motion_model_2026-04-28.md`
-- 当前保留的唯一口径差异：侧滑角仍使用 2026-04-28 后确认的当前口径，即 wheel local `Z` 作为水平侧向轴，低速分母使用 `max(abs(v_parallel), epsilon)`。
-- 其余 Stage0 RL 配置、reward 结构、PPO 语义和底层运动模型恢复到上述 `model_699` 对应版本。
+- 当前保留的关键口径差异之一：侧滑角仍使用 2026-04-28 后确认的当前口径，即 wheel local `Z` 作为水平侧向轴，低速分母使用 `max(abs(v_parallel), epsilon)`。
+- 其余 Stage0 RL 配置、reward 结构和 PPO 语义恢复到上述 `model_699` 对应版本。
+- 2026-05-10 新修改：Stage0 与 Stage1 的底层球铰和车轮控制参数统一，不再让底层运动学、机器人驱动配置随训练阶段变化；球铰控制链已取消旧的一阶位置规划器，policy 输出的 $q^d$ 直接作为球铰 position target，球铰 drive 统一为 `Kp=120, Kd=10, effort=60.0 N*m`。
+- 2026-05-10 新修改：Stage0 启用 `action_rate_penalty`，用于约束 policy 连续控制步之间的动作跳变，重点压制球铰动作高频变化。
+- 2026-05-10 新修改：Stage0 的 `progress_to_target` 新增中车 pitch gate，当前死区为 `1 deg`、尺度为 `π / 32 rad`，仅在 `|pitch| > 1 deg` 时降低正向 progress 奖励；Stage1 不启用该 gate，避免复杂地形训练时把中车强行约束为水平。
+
+当前 `best_baseline5` 候选说明：
+
+- run 目录：`RL_Training/logs/rsl_rl/complete_car_stage0/best_baseline5`
+- 来源：原 `2026-05-10_21-31-37_stage0_pitch_gate_k32_from150_to700` 已按用户要求重命名为 `best_baseline5`
+- Stage1 warm-start 来源 checkpoint：`model_75.pt`
+- `model_75.pt` 窗口指标：`success = 1.0`、`episode length ≈ 630.1`、`LowSlip/combined_pass_rate ≈ 0.0799`、中车 pitch 约 `-1.41 deg`、球铰 tracking error 约 `0.0873 rad`
+- 选择理由：相比同 run 后续 `model_150.pt`，`model_75.pt` 速度略慢，但 low-slip 更高、tracking error 更低，是当前本轮最平衡保存点；它已被转换为当前 Stage1 默认 warm-start：`RL_Training/logs/rsl_rl/complete_car_stage1/warmstart_best_baseline5_model75_terrain_features/model_0.pt`
 
 当前 Stage0 主线特征：
 
 - actor / critic 观测维度：`54 / 54`
 - 动作维度：`8`
 - 平地双 waypoint，每段 `10 m`
-- reward 为历史 lowslip gate v1 的 `7` 项结构
+- reward 为历史 lowslip gate v1 的主结构，并新增 action rate 平滑惩罚
 - 车轮执行链为 low-slip allocator 输出 torque target，不再使用 2026-04-28 中间版本的 direct wheel velocity target
 - 纵滑率方向恢复为历史口径
 - 侧滑角轴向保留当前修正口径
@@ -86,6 +97,10 @@ env TERM=xterm MPLCONFIGDIR=/tmp/matplotlib OMNI_KIT_ACCEPT_EULA=YES /home/ubunt
 | `control.sim_dt` | `1 / 120 s` | PhysX 仿真步长 |
 | `decimation` | `2` | 每 2 个 sim step 执行一次 RL action |
 | `control.control_dt` | `1 / 60 s` | RL 控制周期 |
+| `sim.physx.max_position_iteration_count` | `8` | 场景级 PhysX 位置约束求解迭代次数 |
+| `sim.physx.max_velocity_iteration_count` | `4` | 场景级 PhysX 速度约束求解迭代次数，用于轮地摩擦、碰撞冲击等速度层约束 |
+| `robot.articulation.solver_position_iteration_count` | `8` | 机器人 articulation root 位置约束求解迭代次数 |
+| `robot.articulation.solver_velocity_iteration_count` | `4` | 机器人 articulation root 速度约束求解迭代次数；已与 Stage0 场景级 velocity iteration 对齐 |
 | `episode_length_s` | `40.0 s` | 单个 episode 最大时长 |
 | `max_episode_length` | `2400` | `40 / (1 / 60)` 个控制步 |
 | `is_finite_horizon` | `False` | timeout 作为 time-limit 输出给 RSL-RL，PPO 会执行 bootstrap |
@@ -136,6 +151,8 @@ env TERM=xterm MPLCONFIGDIR=/tmp/matplotlib OMNI_KIT_ACCEPT_EULA=YES /home/ubunt
 | `control.base_yaw_rate_max` | `2.0 rad/s` | policy 第二维动作的 yaw rate 幅值上限 |
 | `control.base_allow_reverse` | `True` | 允许 policy 输出倒车速度命令 |
 
+2026-05-09 已重新核对并同步当前 Stage0 源码：`complete_car_stage0_cfg.py` 中 `control.base_allow_reverse = True`，与历史 `best_baseline_2` 的 `params/env.yaml` 口径一致。
+
 当前 Stage0 使用：
 
 $$
@@ -166,10 +183,10 @@ $$
 1. policy 输出 `8` 维 action。
 2. 前两维映射为平面命令 $u_v^d = [v_x^d, \omega_z^d]^T$。
 3. 后六维映射为球铰目标姿态 $q^d$。
-4. allocator 内部一阶球铰规划器由当前球铰姿态 $q$ 和目标姿态 $q^d$ 生成 $q_{cmd}$ 与 $\dot q_{cmd}$。
-5. 球铰驱动只下发 position target $q_{cmd}$。
+4. 球铰位置目标直接使用 $q^d$ 的限幅结果 $q_{target}$。
+5. 球铰驱动只下发 position target $q_{target}$。
 6. low-slip 平面命令整形器根据接触权重和轮心侧向速度代价计算 $u_v^*$。
-7. allocator 根据 $q$、$\dot q_{cmd}$ 与 $u_v^*$ 计算各轮滚动速度参考 $\Omega_j^{ref}$。
+7. allocator 根据 $q$、实际球铰角速度低通 $qdot_{alloc}$ 与 $u_v^*$ 计算各轮滚动速度参考 $\Omega_j^{ref}$。
 8. 轮级 traction allocator 根据 $\Omega_j^{ref}$、实际轮速、纵滑率和接触权重计算车轮 torque target。
 9. 车轮驱动最终下发 effort target，不下发 velocity target。
 
@@ -180,9 +197,8 @@ $$
 | 直接 `set_joint_velocity_target()` 控制车轮 | 否 | 已恢复为 wheel effort target |
 | no-progress reward | 否 | 不进入 `REWARD_TERM_NAMES` |
 | timeout fixed penalty reward | 否 | 不进入 `REWARD_TERM_NAMES` |
-| action-rate penalty reward | 否 | 不进入 `REWARD_TERM_NAMES` |
 | load equalization reward | 否 | 不进入 `REWARD_TERM_NAMES` |
-| env 层 qddot 轨迹器传入 allocator | 否 | 当前恢复为 allocator 内部旧一阶球铰规划器 |
+| env 层 qddot 轨迹器传入 allocator | 否 | 当前使用 direct target 和实际球铰角速度低通 |
 
 ### 4.1 低层几何参数
 
@@ -194,55 +210,56 @@ $$
 | `l1` | `-0.00989449 m` | 前车体轮心局部 x 基准 |
 | `l2` | `0.00000932 m` | 中车体轮心局部 x 基准 |
 | `l3` | `0.00968251 m` | 后车体轮心局部 x 基准 |
-| `d1` | `0.44737875 m` | 前车体左右轮距 |
-| `d2` | `0.44737968 m` | 中车体左右轮距 |
-| `d3` | `0.44737875 m` | 后车体左右轮距 |
+| `d1` | `0.539 m` | 前车体左右轮距，按当前实测轮距统一修正 |
+| `d2` | `0.539 m` | 中车体左右轮距，按当前实测轮距统一修正 |
+| `d3` | `0.539 m` | 后车体左右轮距，按当前实测轮距统一修正 |
 | `h1` | `-0.043083285 m` | 前车体轮心局部 z 偏置 |
 | `h2` | `-0.02578188 m` | 中车体轮心局部 z 偏置 |
 | `h3` | `-0.043100655 m` | 后车体轮心局部 z 偏置 |
 | `r_wheel` / `control.wheel_radius` | `0.19 m` | 车轮半径 |
 
-### 4.2 球铰规划器与 actuator
+### 4.2 球铰 direct target 与 actuator
 
 | 参数 | 当前值 | 含义 |
 |---|---:|---|
-| `control.ball_joint_planner_gains` | `(10, 10, 10, 10, 10, 10)` | 一阶球铰规划器比例增益 |
-| `control.ball_joint_planner_qdot_limits` | `(1, 1, 1, 1, 1, 1) rad/s` | 规划器内部 $\dot q_{cmd}$ 限幅 |
-| `control.ball_joint_stiffness` | `8000.0 N*m/rad` | PhysX 球铰 position drive 刚度 |
-| `control.ball_joint_damping` | `1000.0 N*m*s/rad` | PhysX 球铰 position drive 阻尼 |
-| `control.ball_joint_effort_limit_sim` | `20.0 N*m` | 球铰驱动力矩上限 |
-| `control.ball_joint_velocity_limit_sim` | `1.0 rad/s` | 球铰速度限制 |
+| `control.ball_joint_stiffness` | `120.0 N*m/rad` | PhysX 球铰 position drive 刚度；来自 MATLAB 真实轨迹扩展扫参推荐 |
+| `control.ball_joint_damping` | `10.0 N*m*s/rad` | PhysX 球铰 position drive 阻尼；来自 MATLAB 真实轨迹扩展扫参推荐 |
+| `control.ball_joint_effort_limit_sim` | `60.0 N*m` | 球铰驱动力矩上限；2026-05-10 起由 `20.0` 提高到 `60.0` |
+| `control.ball_joint_velocity_limit_sim` | `2.0 rad/s` | 球铰速度限制 |
+| `control.ball_joint_qdot_alloc_filter_tau_s` | `0.04 s` | 轮速分配使用的实际球铰角速度低通时间常数 |
 
-球铰规划器：
-
-$$
-\dot q_{raw} = K(q^d - q)
-$$
+球铰 active 执行链：
 
 $$
-\dot q_{cmd} = \operatorname{clip}(\dot q_{raw}, -\dot q_{max}, \dot q_{max})
+q_{target} = \operatorname{clip}(q^d, q_{lower}, q_{upper})
 $$
 
 $$
-q_{cmd} = \operatorname{clip}(q + \Delta t \dot q_{cmd}, q_{lower}, q_{upper})
+qdot_{alloc,k} =
+(1-\alpha_v)qdot_{alloc,k-1}+\alpha_v \dot q_{actual,k}
+$$
+
+$$
+\alpha_v = 1 - \exp(-\Delta t / \tau_v)
 $$
 
 其中：
 
 | 记号 | 含义 |
 |---|---|
-| $q$ | 当前球铰实际姿态 |
 | $q^d$ | policy action 映射出的球铰目标姿态 |
-| $K$ | `ball_joint_planner_gains` |
-| $\dot q_{max}$ | `ball_joint_planner_qdot_limits` |
+| $q_{target}$ | 直接下发给 PhysX position drive 的球铰位置目标 |
+| $\dot q_{actual}$ | IsaacLab 读取的球铰实际角速度 |
+| $qdot_{alloc}$ | 轮速分配中姿态变化项使用的球铰角速度 |
 | $\Delta t$ | `control.control_dt = 1 / 60 s` |
+| $\tau_v$ | `control.ball_joint_qdot_alloc_filter_tau_s = 0.04 s` |
 
 ### 4.3 low-slip 平面命令整形
 
 | 参数 | 当前值 | 含义 |
 |---|---:|---|
 | `control.low_slip_lambda_tracking` | `1.0` | 保持接近 policy 平面命令的权重 |
-| `control.low_slip_lambda_lateral` | `5.0` | 压低轮心名义侧向速度的权重 |
+| `control.low_slip_lambda_lateral` | `5.0` | 压低轮心名义侧向速度的权重；2026-05-10 起与 Stage1 统一 |
 | `control.contact_force_off_threshold` | `0.01` | 接触权重为 0 的归一化法向力阈值 |
 | `control.contact_force_on_threshold` | `0.08` | 接触权重为 1 的归一化法向力阈值 |
 
@@ -333,7 +350,7 @@ $$
 | `control.wheel_joint_effort_limit_sim` | `20.0 N*m` | 车轮 torque target 限幅 |
 | `control.wheel_joint_velocity_limit_sim` | `20.0 rad/s` | 车轮关节速度限制 |
 | `control.wheel_torque_tracking_gain` | `2.0` | 轮速误差转力矩的比例增益 |
-| `control.wheel_slip_feedback_gain` | `4.0` | 纵滑率反馈增益 |
+| `control.wheel_slip_feedback_gain` | `4.0` | 纵滑率反馈增益；2026-05-10 起与 Stage1 统一 |
 | `control.wheel_slip_velocity_epsilon` | `0.1 m/s` | 纵滑率和侧滑角低速保护分母 |
 
 车轮滚动速度参考：
@@ -485,7 +502,7 @@ actor 与 critic 当前都使用同一组 `54` 维观测。
 
 ## 7. Reward 结构
 
-当前 `REWARD_TERM_NAMES` 为 7 项：
+当前 Stage0 非零 active reward 项为 7 项：
 
 ```text
 distance_to_target
@@ -493,8 +510,8 @@ progress_to_target
 reached_target
 far_from_target
 angle_diff
-turn_speed_penalty
 slip_penalty
+action_rate_penalty
 ```
 
 reward 参数：
@@ -513,15 +530,22 @@ reward 参数：
 | `far_from_target_margin` | `6.0 m` | 远离失败距离裕度 |
 | `far_from_target_weight` | `-2.0` | 远离目标惩罚权重 |
 | `angle_diff_weight` | `6.0` | 目标视线角 shaping 权重 |
-| `turn_speed_penalty_weight` | `-2.0` | 转向时速度惩罚权重 |
 | `slip_penalty_weight` | `-2.0` | 滑移惩罚权重 |
-| `slip_angle_penalty_ratio` | `6.0` | 侧滑角在滑移惩罚中的相对系数 |
+| `slip_longitudinal_penalty_ratio` | `2.0` | 【2026-05-10 修改】纵滑率在滑移惩罚中的相对系数 |
+| `slip_angle_penalty_ratio` | `1.0` | 【2026-05-10 修改】侧滑角在滑移惩罚中的相对系数 |
+| `action_rate_penalty_weight` | `-50.0` | 【2026-05-10 新增】动作变化率惩罚权重；用于压制连续控制步之间的 policy action 跳变 |
+| `action_rate_base_ratio` | `0.2` | 【2026-05-10 新增】底盘两维动作变化的相对权重 |
+| `action_rate_joint_ratio` | `1.0` | 【2026-05-10 新增】六个球铰动作变化的相对权重 |
 | `progress_gate_longitudinal_k` | `3.0` | progress gate 的纵滑尺度 |
 | `progress_gate_slip_angle_scale_rad` | `1.5 rad` | progress gate 的侧滑角尺度 |
 | `progress_gate_min_multiplier` | `0.25` | 正 progress 乘子的下限 |
 | `progress_gate_max_multiplier` | `1.5` | 正 progress 乘子的上限 |
+| `progress_pitch_gate_deadband_deg` | `1.0 deg` | 【2026-05-10 修改】中车 pitch gate 死区；死区内不影响正 progress |
+| `progress_pitch_gate_k_rad` | `π / 32 rad` | 【2026-05-10 修改】中车 pitch gate 尺度；`|pitch| > 1 deg` 时正 progress 额外乘以 `exp(-0.5 * (|pitch| / k)^2)` |
 | `low_slip_longitudinal_threshold` | `1.0` | low-slip 纵滑 pass rate 统计阈值 |
 | `low_slip_angle_threshold_rad` | `0.35 rad` | low-slip 侧滑 pass rate 统计阈值 |
+
+Stage0 pitch gate 的参数先依据 `2026-05-10_19-52-05_stage0_slip2_actionrate_m50_qmon_resume200_to_quality` 续训到 `model_300.pt` 附近的实际 reward 尺度确定。iteration `301` 的末 `25` 轮窗口中，`Reward/progress_to_target` 约 `+0.0238/step`，`Reward/slip_penalty` 约 `-0.00457/step`，中车 pitch 均值约 `-6.0 deg`。原第一版 `deadband = 2 deg`、`k = π / 16 rad = 11.25 deg` 在后续 `2026-05-10_20-39-29_stage0_pitch_gate_gauss_from150_to700` 中过于温和：训练到 `model_150.pt` 附近时 pitch 已接近 `-2.8 deg`，但 `ProgressGate/pitch_gate` 仍约 `0.96`，不足以压制“快速推进但中车前俯”的策略倾向。因此当前改为 `deadband = 1 deg`、`k = π / 32 rad = 5.625 deg`；在 `|pitch| = 3 deg` 时 gate 约 `0.867`，在 `6 deg` 时 gate 约 `0.567`，会更明确地降低前俯推进的正 progress 收益。
 
 已删除的非 active reward 配置字段：
 
@@ -532,8 +556,6 @@ reward 参数：
 | `progress_negative_scale` | 当前负 progress 不额外放大 |
 | `no_progress_threshold_m` | 当前没有 no-progress penalty |
 | `no_progress_weight` | 当前没有 no-progress penalty |
-| `action_rate_base_weight` | 当前没有 action-rate penalty |
-| `action_rate_joint_weight` | 当前没有 action-rate penalty |
 | `load_equalization_weight` | 当前没有 load equalization reward |
 | `load_equalization_k` | 当前没有 load equalization reward |
 | `load_equalization_target_shares` | 当前没有 load equalization reward |
@@ -544,7 +566,7 @@ reward 参数：
 |---|---|
 | `ball_joint_planner_qddot_limits` | env 层 qddot 轨迹器已不再运行 |
 | `ball_joint_planner_track_error_limit` | env 层 qddot 轨迹器已不再运行 |
-| `planned_ball_joint_pos/planned_ball_joint_rate` allocator 兼容入口 | 当前只使用 allocator 内部一阶球铰规划器 |
+| `planned_ball_joint_pos/planned_ball_joint_rate` allocator 兼容入口 | 当前已改为 direct target 与 `qdot_alloc` 显式输入 |
 | `g_kappa/g_alpha` 诊断输出 | 当前轮级力矩公式不再使用纵滑/侧滑衰减因子，保留固定 `1.0` 日志会误导判断 |
 
 ### 7.1 progress gate
@@ -688,20 +710,6 @@ r_{angle}
 \frac{1}{T}
 $$
 
-转向速度惩罚：
-
-$$
-r_{turn}
-=
--2.0
-\cdot
-\frac{
-\operatorname{clip}(|\theta_{goal}|/\theta_{max},0,1)
-\cdot
-\|v_{xy}\| / v_{max}
-}{T}
-$$
-
 滑移惩罚：
 
 $$
@@ -710,8 +718,32 @@ r_{slip}
 -2.0
 \cdot
 \frac{
-\operatorname{mean}_j(|\kappa_j|)
-+ 6.0\operatorname{mean}_j(|\alpha_j|)
+2.0\operatorname{mean}_j(|\kappa_j|)
++ 1.0\operatorname{mean}_j(|\alpha_j|)
+}{T}
+$$
+
+动作变化率惩罚：
+
+$$
+\Delta a = a_t - a_{t-1}
+$$
+
+$$
+w_a =
+\begin{cases}
+0.2, & \text{底盘前进 / 偏航动作} \\
+1.0, & \text{六个球铰姿态动作}
+\end{cases}
+$$
+
+$$
+r_{action\_rate}
+=
+-50.0
+\cdot
+\frac{
+\operatorname{mean}_i(w_{a,i}\Delta a_i^2)
 }{T}
 $$
 
@@ -725,6 +757,8 @@ $$
 | $t$ | 当前 episode 控制步数 |
 | $\theta_{goal}$ | `goal_rel_heading` |
 | $\theta_{max}$ | `goal_direction_max_deg = 30 deg` |
+| $a_t$ | 当前 policy action |
+| $a_{t-1}$ | 上一个 control step 的 policy action |
 | $v_{xy}$ | 车体根部 body frame 平面速度 |
 | $v_{max}$ | `base_forward_velocity_max = 2.0 m/s` |
 

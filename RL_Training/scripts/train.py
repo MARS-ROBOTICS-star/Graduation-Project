@@ -50,10 +50,16 @@ parser.add_argument(
     help="Load a checkpoint and run policy inference only, without PPO updates.",
 )
 parser.add_argument(
+    "--show_goal_vis",
+    action="store_true",
+    default=False,
+    help="Show goal position and optional heading markers during training.",
+)
+parser.add_argument(
     "--hide_goal_vis",
     action="store_true",
     default=False,
-    help="Hide goal position and heading markers during training.",
+    help="Disable goal position and heading markers even when --show_goal_vis is set.",
 )
 parser.add_argument(
     "--hide_goal_heading",
@@ -62,10 +68,16 @@ parser.add_argument(
     help="Hide only the goal heading arrow while keeping the goal position marker visible.",
 )
 parser.add_argument(
+    "--show_wheel_slip_vis",
+    action="store_true",
+    default=False,
+    help="Show wheel-slip debug arrows during training.",
+)
+parser.add_argument(
     "--hide_wheel_slip_vis",
     action="store_true",
     default=False,
-    help="Hide wheel-slip debug arrows during training.",
+    help="Disable wheel-slip debug arrows even when --show_wheel_slip_vis is set.",
 )
 parser.add_argument(
     "--create_follow_views",
@@ -495,16 +507,19 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     env_cfg.seed = agent_cfg.seed
     env_cfg.sim.device = args_cli.device
     agent_cfg.device = args_cli.device
+    goal_vis_enabled = args_cli.show_goal_vis and not args_cli.hide_goal_vis
+    wheel_slip_vis_enabled = args_cli.show_wheel_slip_vis and not args_cli.hide_wheel_slip_vis
     debug_draw_needed = (
-        not args_cli.hide_goal_vis
+        goal_vis_enabled
+        or wheel_slip_vis_enabled
         or args_cli.create_follow_views
         or args_cli.follow_all_envs
         or args_cli.record_terrain_chase_videos
     )
     env_cfg.debug.enable_debug_draw = debug_draw_needed
-    env_cfg.debug.visualize_goal_heading = (not args_cli.hide_goal_vis) and (not args_cli.hide_goal_heading)
-    if args_cli.hide_wheel_slip_vis:
-        env_cfg.debug.visualize_wheel_slip = False
+    env_cfg.debug.visualize_goal_position = goal_vis_enabled
+    env_cfg.debug.visualize_goal_heading = goal_vis_enabled and (not args_cli.hide_goal_heading)
+    env_cfg.debug.visualize_wheel_slip = wheel_slip_vis_enabled
     if args_cli.create_follow_views or args_cli.follow_all_envs or args_cli.record_terrain_chase_videos:
         env_cfg.debug.create_follow_views = True
     if args_cli.follow_view_top_height is not None:

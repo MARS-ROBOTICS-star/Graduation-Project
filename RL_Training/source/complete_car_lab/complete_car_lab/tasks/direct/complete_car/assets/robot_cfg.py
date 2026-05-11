@@ -101,7 +101,7 @@ def build_complete_car_robot_cfg(
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 enabled_self_collisions=False,
                 solver_position_iteration_count=8,
-                solver_velocity_iteration_count=0,
+                solver_velocity_iteration_count=4,
                 sleep_threshold=0.005,
                 stabilization_threshold=0.001,
             ),

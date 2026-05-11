@@ -259,7 +259,6 @@ Stage1Eval 额外提供：
 | `Reward/reached_target` | 是 | 命中目标点时的奖励项 | Stage1 当前权重为 `6.0`，目标命中会直接贡献稀疏奖励 |
 | `Reward/far_from_target` | 是 | 远离目标阈值后的惩罚项 | 越接近 `0` 越好 |
 | `Reward/angle_diff` | 是 | heading error 越小越高的奖励项 | 越高越好 |
-| `Reward/turn_speed_penalty` | 是 | 大角度误差下高速运动惩罚 | 越接近 `0` 越好 |
 | `Reward/slip_penalty` | 是 | 接触权重 mask 后的纵滑和侧滑角惩罚 | 越接近 `0` 越好 |
 | `Reward/action_rate_penalty` | 否 | 动作变化惩罚；Stage1 当前按 `N=2400` 归一化，并通过 `Debug/Stage1/Reward/action_rate_penalty` 写入 TensorBoard | 越接近 `0` 越好 |
 | `Reward/contact_support_penalty` | 否 | 前、中、后三段模块支撑丢失惩罚，并通过 `Debug/Stage1/Reward/contact_support_penalty` 写入 TensorBoard | 越接近 `0` 越好 |
@@ -409,7 +408,6 @@ episode 指标只在有环境 reset 后聚合，因此训练前期或 episode �
 | `episode/reached_target` | episode 内 reached target reward 累计值 |
 | `episode/far_from_target` | episode 内 far penalty 累计值 |
 | `episode/angle_diff` | episode 内 angle reward 累计值 |
-| `episode/turn_speed_penalty` | episode 内 turn-speed penalty 累计值 |
 | `episode/slip_penalty` | episode 内 slip penalty 累计值 |
 | `episode/action_rate_penalty` | episode 内 action rate penalty 累计值 |
 | `episode/contact_support_penalty` | episode 内 contact support penalty 累计值 |
@@ -487,11 +485,10 @@ Stage1 默认不写入 `PerWheel/*`，只有 `logging.enable_stage1_per_wheel_de
 10. `Reward/distance_to_target`
 11. `Reward/progress_to_target`
 12. `Reward/angle_diff`
-13. `Reward/turn_speed_penalty`
-14. `Reward/slip_penalty`
-15. `Reward/far_from_target`
-16. `Observation/wheel_longitudinal_slip_abs_mean_raw`
-17. `Observation/wheel_slip_angle_abs_mean_raw`
+13. `Reward/slip_penalty`
+14. `Reward/far_from_target`
+15. `Observation/wheel_longitudinal_slip_abs_mean_raw`
+16. `Observation/wheel_slip_angle_abs_mean_raw`
 18. `LowSlip/combined_pass_rate`
 19. `LowSlip/longitudinal_slip_pass_rate`
 20. `LowSlip/slip_angle_pass_rate`

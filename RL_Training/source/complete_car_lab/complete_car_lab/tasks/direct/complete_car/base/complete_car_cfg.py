@@ -60,15 +60,14 @@ class ControlCfg:
 
     ball_joint_names: tuple[str, ...] = tuple(BALL_JOINT_NAMES)
     wheel_joint_names: tuple[str, ...] = tuple(WHEEL_JOINT_NAMES)
-    ball_joint_planner_gains: tuple[float, ...] = (8.0, 8.0, 8.0, 8.0, 8.0, 8.0)
-    ball_joint_planner_qdot_limits: tuple[float, ...] = (1.5, 1.5, 1.5, 1.5, 1.5, 1.5)
     base_forward_velocity_max: float = 1.2  # 中模块期望纵向速度上限，单位：m/s。
     base_yaw_rate_max: float = 0.6  # 中模块期望偏航角速度上限，单位：rad/s。
     base_allow_reverse: bool = False  # 为 False 时，高层只输出前进命令，不输出倒车命令。
-    ball_joint_stiffness: float = 1000.0  # 球铰位置控制刚度，单位：N*m/rad。
+    ball_joint_stiffness: float = 120.0  # 球铰位置控制刚度，单位：N*m/rad。
     ball_joint_damping: float = 10.0  # 球铰位置控制阻尼，单位：N*m*s/rad。
-    ball_joint_effort_limit_sim: float = 20.0  # 球铰驱动器力矩上限，单位：N*m。
+    ball_joint_effort_limit_sim: float = 60.0  # 球铰驱动器力矩上限，单位：N*m。
     ball_joint_velocity_limit_sim: float = 2.0  # 球铰驱动器速度上限，单位：rad/s。
+    ball_joint_qdot_alloc_filter_tau_s: float = 0.04  # 轮速分配用实际球铰角速度低通时间常数，单位：s。
 
     wheel_joint_stiffness: float = 0.0  # 车轮位置刚度，单位：N*m/rad。
     wheel_joint_damping: float = 0.0  # 车轮速度驱动阻尼；速度目标模式下必须为非零才会产生 drive 力矩。
@@ -83,10 +82,11 @@ class ControlCfg:
     wheel_slip_feedback_gain: float = 4.0
     wheel_slip_velocity_epsilon: float = 0.1
     terrain_speed_limit_enabled: bool = False
-    terrain_speed_step_up_mps: float = 0.50
-    terrain_speed_step_up_climb_mps: float = 0.80
+    terrain_speed_limit_mps: float = 0.50
+    terrain_speed_step_up_approach_mps: float = 0.45
+    terrain_speed_step_up_climb_mps: float = 0.75
     terrain_speed_step_down_mps: float = 0.35
-    terrain_speed_gap_mps: float = 0.40
+    terrain_speed_obstacle_mps: float = 0.40
 
 
 @configclass
@@ -151,7 +151,6 @@ class RewardParamsCfg:
     distance_to_target_denominator_scale: float = 0.01
     distance_to_target_weight: float = 6.0
     nominal_goal_distance_m: float = 0.0
-    turn_speed_angle_scale_deg: float = -1.0
     progress_to_target_clip_m: float = 0.25
     progress_to_target_relax_radius_m: float = 4.0
     progress_to_target_weight: float = 8.0
@@ -160,7 +159,6 @@ class RewardParamsCfg:
     far_from_target_margin: float = 6.0
     far_from_target_weight: float = -2.0
     angle_diff_weight: float = 6.0
-    turn_speed_penalty_weight: float = -2.0
     slip_penalty_weight: float = -2.0
     slip_longitudinal_penalty_ratio: float = 1.0
     slip_angle_penalty_ratio: float = 6.0
@@ -181,6 +179,9 @@ class RewardParamsCfg:
     stuck_goal_ahead_threshold_m: float = 0.5
     stuck_penalty_grace_s: float = 1.0
     stuck_timeout_s: float = 0.0
+    no_progress_penalty_weight: float = 0.0
+    no_progress_min_delta_m: float = 0.003
+    no_progress_hard_gate_threshold: float = 0.3
     airborne_spin_penalty_weight: float = 0.0
     airborne_spin_velocity_scale_radps: float = 20.0
     hard_terrain_spin_penalty_weight: float = 0.0
@@ -197,6 +198,27 @@ class RewardParamsCfg:
     step_up_approach_distance_max_m: float = 1.20
     step_up_goal_ahead_threshold_m: float = 0.5
     step_up_progress_quality_min_multiplier: float = 1.0
+    progress_quality_slip_scale: float = 4.0
+    progress_quality_pitch_rate_sigma_radps: float = 1.0
+    progress_quality_stuck_time_scale_s: float = 2.0
+    step_up_module_progress_reward_weight: float = 0.0
+    step_up_module_height_progress_scale_m: float = 0.05
+    quality_row_advance_reward_weight: float = 0.0
+    quality_row_advance_min_score: float = 0.3
+    quality_gated_terrain_advance: bool = False
+    quality_advance_min_score: float = 0.35
+    quality_advance_actual_overspeed_margin_mps: float = 0.10
+    quality_advance_contact_min: float = 0.70
+    quality_advance_module_progress_min: float = 0.35
+    quality_advance_front_progress_threshold_m: float = 0.03
+    quality_advance_middle_progress_threshold_m: float = 0.03
+    quality_advance_rear_progress_threshold_m: float = 0.02
+    terrain_actual_overspeed_penalty_ratio: float = 0.5
+    recovery_stuck_time_threshold_s: float = 0.5
+    recovery_reverse_cmd_threshold_mps: float = 0.05
+    recovery_success_progress_m: float = 0.10
+    recovery_reverse_penalty_weight: float = 0.0
+    recovery_success_reward_weight: float = 0.0
     drop_anti_dive_penalty_weight: float = 0.0
     drop_theta_safe_rad: float = 0.0
     drop_pitch_sigma_rad: float = 0.20
@@ -206,6 +228,8 @@ class RewardParamsCfg:
     progress_gate_slip_angle_scale_rad: float = 1.5
     progress_gate_min_multiplier: float = 0.25
     progress_gate_max_multiplier: float = 1.5
+    progress_pitch_gate_deadband_deg: float = 0.0
+    progress_pitch_gate_k_rad: float = 0.0
     low_slip_longitudinal_threshold: float = 1.0
     low_slip_angle_threshold_rad: float = 0.35
 
@@ -274,6 +298,8 @@ class CurriculumCfg:
     move_down_command_ratio: float = 0.5
     move_up_uses_forward_x: bool = False
     terrain_column_move_down_progress_ratio: float = 0.30
+    terrain_column_recycle_completed_envs: bool = False
+    terrain_column_completed_retention_ratio: float = 0.0
 
 
 @configclass
@@ -291,6 +317,7 @@ class LoggingCfg:
     """训练日志开关。"""
 
     enable_stage1_per_wheel_debug: bool = False
+    step_metrics_interval: int = 1
 
 
 @configclass
@@ -298,19 +325,24 @@ class DebugCfg:
     """调试辅助配置。"""
 
     enable_debug_draw: bool = False
-    visualize_goal_heading: bool = True
+    visualize_goal_position: bool = False
+    visualize_goal_heading: bool = False
     visualize_wheel_slip: bool = False
     visualize_height_patch: bool = False
     height_patch_visualization_env_indices: tuple[int, ...] = (0,)
     height_patch_marker_radius: float = 0.035
     height_patch_marker_height_offset: float = 0.035
     height_patch_color_range_m: float = 0.30
+    visualize_height_patch_positive_y_axis: bool = False
     create_follow_views: bool = False
     follow_view_top_height: float = 2.5
     follow_view_chase_env_index: int = 0
     follow_view_chase_env_indices: tuple[int, ...] = ()
     follow_view_chase_offset_b: tuple[float, float, float] = (-4.0, -3.0, 2.4)
     follow_view_chase_target_offset_b: tuple[float, float, float] = (1.0, 0.0, 0.4)
+    follow_view_forward_height_m: float = 3.0
+    follow_view_forward_distance_m: float = 4.0
+    follow_view_right_side_distance_m: float = 1.5
     log_sensor_outputs: bool = True
 
 

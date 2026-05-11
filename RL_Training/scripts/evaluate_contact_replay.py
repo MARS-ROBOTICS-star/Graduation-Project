@@ -33,9 +33,7 @@ parser.add_argument("--warmup_steps", type=int, default=120)
 parser.add_argument("--ball_joint_stiffness", type=float, default=None)
 parser.add_argument("--ball_joint_damping", type=float, default=None)
 parser.add_argument("--ball_joint_effort_limit", type=float, default=None)
-parser.add_argument("--ball_joint_qdot_limit", type=float, default=None)
-parser.add_argument("--ball_joint_qddot_limit", type=float, default=None)
-parser.add_argument("--ball_joint_track_error_limit", type=float, default=None)
+parser.add_argument("--qdot_alloc_filter_tau", type=float, default=None)
 parser.add_argument("--ball_joint_yaw_limit", type=float, default=None)
 parser.add_argument("--ball_joint_pitch_limit", type=float, default=None)
 parser.add_argument("--ball_joint_roll_limit", type=float, default=None)
@@ -92,10 +90,6 @@ def _parse_rsl_rl_version(version_str: str):
         return version.parse(version_str)
     except InvalidVersion:
         return version.parse(version_str.replace("-local", "+local"))
-
-
-def _set_uniform_tuple(value: float, count: int = 6) -> tuple[float, ...]:
-    return tuple(float(value) for _ in range(count))
 
 
 def _set_ball_joint_symmetric_limits(yaw: float, pitch: float, roll: float) -> tuple[tuple[float, ...], tuple[float, ...]]:
@@ -155,6 +149,34 @@ def _print_summary(label: str, metrics: dict[str, list[float]]) -> None:
     print(f"longitudinal_slip_abs_mean: {_mean(metrics['Observation/wheel_longitudinal_slip_abs_mean_raw']):.4f}")
     print(f"slip_angle_abs_mean: {_mean(metrics['Observation/wheel_slip_angle_abs_mean_raw']):.4f}")
     print(f"active_segment_completion_pct_tail: {_tail_mean(metrics['Tracking/active_segment_completion_pct']):.4f}")
+    reward_keys = [
+        "Reward/total",
+        "Reward/distance_to_target",
+        "Reward/progress_to_target",
+        "Reward/reached_target",
+        "Reward/far_from_target",
+        "Reward/angle_diff",
+        "Reward/slip_penalty",
+        "Reward/action_rate_penalty",
+        "Reward/contact_support_penalty",
+        "Reward/edge_speed_penalty",
+        "Reward/terrain_aware_edge_speed_penalty",
+        "Reward/stuck_penalty",
+        "Reward/no_progress_penalty",
+        "Reward/airborne_spin_penalty",
+        "Reward/hard_terrain_spin_penalty",
+        "Reward/action_soft_limit_penalty",
+        "Reward/step_up_front_posture_penalty",
+        "Reward/step_up_module_progress_reward",
+        "Reward/quality_row_advance_reward",
+        "Reward/recovery_reward",
+        "Reward/drop_anti_dive_penalty",
+    ]
+    print("reward_mean_per_step:")
+    for key in reward_keys:
+        values = metrics.get(key, [])
+        if values:
+            print(f"  {key}: mean={_mean(values):.8f}, tail={_tail_mean(values):.8f}")
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)
@@ -169,12 +191,8 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         env_cfg.control.ball_joint_damping = args_cli.ball_joint_damping
     if args_cli.ball_joint_effort_limit is not None:
         env_cfg.control.ball_joint_effort_limit_sim = args_cli.ball_joint_effort_limit
-    if args_cli.ball_joint_qdot_limit is not None:
-        env_cfg.control.ball_joint_planner_qdot_limits = _set_uniform_tuple(args_cli.ball_joint_qdot_limit)
-    if args_cli.ball_joint_qddot_limit is not None:
-        env_cfg.control.ball_joint_planner_qddot_limits = _set_uniform_tuple(args_cli.ball_joint_qddot_limit)
-    if args_cli.ball_joint_track_error_limit is not None:
-        env_cfg.control.ball_joint_planner_track_error_limit = args_cli.ball_joint_track_error_limit
+    if args_cli.qdot_alloc_filter_tau is not None:
+        env_cfg.control.ball_joint_qdot_alloc_filter_tau_s = args_cli.qdot_alloc_filter_tau
     if (
         args_cli.ball_joint_yaw_limit is not None
         or args_cli.ball_joint_pitch_limit is not None
@@ -210,9 +228,8 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         f"Kp={env_cfg.control.ball_joint_stiffness}, "
         f"Kd={env_cfg.control.ball_joint_damping}, "
         f"effort={env_cfg.control.ball_joint_effort_limit_sim}, "
-        f"qdot={env_cfg.control.ball_joint_planner_qdot_limits[0]}, "
-        f"qddot={env_cfg.control.ball_joint_planner_qddot_limits[0]}, "
-        f"track_error={env_cfg.control.ball_joint_planner_track_error_limit}, "
+        f"vel_limit={env_cfg.control.ball_joint_velocity_limit_sim}, "
+        f"tau_v={env_cfg.control.ball_joint_qdot_alloc_filter_tau_s}, "
         f"joint_lower={env_cfg.terminations.ball_joint_pos_lower_limits}, "
         f"joint_upper={env_cfg.terminations.ball_joint_pos_upper_limits}, "
         f"lambda_lat={env_cfg.control.low_slip_lambda_lateral}"
@@ -249,6 +266,27 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         "PerWheel/tail_car_wheel_right/normal_force",
         "PerWheel/body_car_wheel_left/contact_weight",
         "PerWheel/body_car_wheel_right/contact_weight",
+        "Reward/total",
+        "Reward/distance_to_target",
+        "Reward/progress_to_target",
+        "Reward/reached_target",
+        "Reward/far_from_target",
+        "Reward/angle_diff",
+        "Reward/slip_penalty",
+        "Reward/action_rate_penalty",
+        "Reward/contact_support_penalty",
+        "Reward/edge_speed_penalty",
+        "Reward/terrain_aware_edge_speed_penalty",
+        "Reward/stuck_penalty",
+        "Reward/no_progress_penalty",
+        "Reward/airborne_spin_penalty",
+        "Reward/hard_terrain_spin_penalty",
+        "Reward/action_soft_limit_penalty",
+        "Reward/step_up_front_posture_penalty",
+        "Reward/step_up_module_progress_reward",
+        "Reward/quality_row_advance_reward",
+        "Reward/recovery_reward",
+        "Reward/drop_anti_dive_penalty",
     ]
 
     with torch.inference_mode():

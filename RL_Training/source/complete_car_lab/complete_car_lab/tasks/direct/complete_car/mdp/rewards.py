@@ -14,17 +14,20 @@ REWARD_TERM_NAMES = (
     "reached_target",
     "far_from_target",
     "angle_diff",
-    "turn_speed_penalty",
     "slip_penalty",
     "action_rate_penalty",
     "contact_support_penalty",
     "edge_speed_penalty",
     "terrain_aware_edge_speed_penalty",
     "stuck_penalty",
+    "no_progress_penalty",
     "airborne_spin_penalty",
     "hard_terrain_spin_penalty",
     "action_soft_limit_penalty",
     "step_up_front_posture_penalty",
+    "step_up_module_progress_reward",
+    "quality_row_advance_reward",
+    "recovery_reward",
     "drop_anti_dive_penalty",
 )
 
@@ -67,6 +70,72 @@ def _terrain_gate(
     return torch.clamp(_optional_vector(terrain_gates[name], reference, default=default), min=0.0, max=1.0)
 
 
+def _terrain_value(
+    terrain_gates: dict[str, torch.Tensor] | None,
+    name: str,
+    reference: torch.Tensor,
+    *,
+    default: float = 0.0,
+) -> torch.Tensor:
+    if terrain_gates is None or name not in terrain_gates:
+        return torch.full_like(reference, float(default))
+    return _optional_vector(terrain_gates[name], reference, default=default)
+
+
+def _reward_weight_enabled(params, name: str) -> bool:
+    return abs(float(getattr(params, name, 0.0))) > 0.0
+
+
+def compute_stage1_phase_speed_safe(
+    cfg,
+    reference: torch.Tensor,
+    g_step_up: torch.Tensor,
+    g_step_down: torch.Tensor,
+    g_gap: torch.Tensor,
+    step_up_distance_m: torch.Tensor,
+    *,
+    obstacle_gate: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Compute the Stage1 terrain/phase positive vx limit used by control and reward."""
+
+    flat_speed_limit = max(float(cfg.control.base_forward_velocity_max), 1.0e-6)
+    fallback_speed = min(max(float(getattr(cfg.control, "terrain_speed_limit_mps", 0.50)), 0.0), flat_speed_limit)
+    v_up_approach = min(
+        max(float(getattr(cfg.control, "terrain_speed_step_up_approach_mps", fallback_speed)), 0.0),
+        flat_speed_limit,
+    )
+    v_up_climb = min(
+        max(float(getattr(cfg.control, "terrain_speed_step_up_climb_mps", fallback_speed)), 0.0),
+        flat_speed_limit,
+    )
+    v_down = min(
+        max(float(getattr(cfg.control, "terrain_speed_step_down_mps", fallback_speed)), 0.0),
+        flat_speed_limit,
+    )
+    v_obstacle = min(
+        max(float(getattr(cfg.control, "terrain_speed_obstacle_mps", fallback_speed)), 0.0),
+        flat_speed_limit,
+    )
+    params = cfg.rewards.params
+    approach_min = float(getattr(params, "step_up_approach_distance_min_m", 0.20))
+    approach_max = float(getattr(params, "step_up_approach_distance_max_m", 1.20))
+    g_step_up_approach = g_step_up * ((step_up_distance_m > approach_min) & (step_up_distance_m < approach_max)).float()
+    g_step_up_climb = g_step_up * (step_up_distance_m <= approach_min).float()
+    if obstacle_gate is None:
+        obstacle_gate = torch.zeros_like(reference)
+    else:
+        obstacle_gate = torch.clamp(_optional_vector(obstacle_gate, reference), min=0.0, max=1.0)
+    g_obstacle_approach = obstacle_gate * torch.clamp(1.0 - g_step_up_climb, min=0.0, max=1.0)
+
+    v_safe = torch.full_like(reference, flat_speed_limit)
+    v_safe = torch.minimum(v_safe, flat_speed_limit - g_step_up_approach * (flat_speed_limit - v_up_approach))
+    v_safe = torch.minimum(v_safe, flat_speed_limit - g_step_up_climb * (flat_speed_limit - v_up_climb))
+    v_safe = torch.minimum(v_safe, flat_speed_limit - g_step_down * (flat_speed_limit - v_down))
+    v_safe = torch.minimum(v_safe, flat_speed_limit - g_gap * (flat_speed_limit - v_obstacle))
+    v_safe = torch.minimum(v_safe, flat_speed_limit - g_obstacle_approach * (flat_speed_limit - v_obstacle))
+    return torch.clamp(_finite_tensor(v_safe), min=0.0, max=flat_speed_limit)
+
+
 def get_nominal_goal_distance(cfg) -> float:
     """Return the reward/termination distance scale without tying Stage1 to waypoint sampling fields."""
 
@@ -74,19 +143,6 @@ def get_nominal_goal_distance(cfg) -> float:
     if value > 0.0:
         return value
     return float(cfg.commands.goal_distance)
-
-
-def get_turn_speed_angle_scale_rad(cfg) -> float:
-    """Return the turn-speed penalty angle scale.
-
-    Negative values preserve the legacy behavior of reading the command sampler's
-    free-waypoint direction range.
-    """
-
-    value = float(getattr(cfg.rewards.params, "turn_speed_angle_scale_deg", -1.0))
-    if value >= 0.0:
-        return math.radians(value)
-    return math.radians(cfg.commands.goal_direction_max_deg)
 
 
 def compute_reward_terms(
@@ -114,6 +170,14 @@ def compute_reward_terms(
     root_lin_vel_w: torch.Tensor | None = None,
     root_ang_vel_b: torch.Tensor | None = None,
     stuck_time_s: torch.Tensor | None = None,
+    previous_module_support_heights: torch.Tensor | None = None,
+    row_module_support_height_baseline: torch.Tensor | None = None,
+    row_module_progress_max: torch.Tensor | None = None,
+    obstacle_gate: torch.Tensor | None = None,
+    recovery_active: torch.Tensor | None = None,
+    recovery_reverse_now: torch.Tensor | None = None,
+    recovery_success: torch.Tensor | None = None,
+    middle_pitch_rad: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     params = cfg.rewards.params
     commands = _finite_tensor(commands)
@@ -140,6 +204,7 @@ def compute_reward_terms(
     step_up_distance_norm = _terrain_gate(terrain_gates, "step_up_distance_norm", current_goal_distance, default=1.0)
     goal_heading_error = wrap_to_pi_tensor(commands[:, 3])
     reward_scale = (max_episode_length_f - episode_length_buf) / max_episode_length_f
+    zero_reward_term = torch.zeros_like(current_goal_distance)
 
     distance_to_target = (
         1.0
@@ -175,6 +240,19 @@ def compute_reward_terms(
         params.progress_gate_min_multiplier
         + (params.progress_gate_max_multiplier - params.progress_gate_min_multiplier) * progress_gate
     )
+    pitch_gate_k_rad = float(getattr(params, "progress_pitch_gate_k_rad", 0.0))
+    if pitch_gate_k_rad > 0.0:
+        pitch_abs_rad = torch.abs(_optional_vector(middle_pitch_rad, current_goal_distance))
+        pitch_deadband_deg = max(float(getattr(params, "progress_pitch_gate_deadband_deg", 0.0)), 0.0)
+        pitch_deadband_rad = math.radians(pitch_deadband_deg)
+        pitch_gate = torch.where(
+            pitch_abs_rad > pitch_deadband_rad,
+            torch.exp(-0.5 * torch.square(pitch_abs_rad / max(pitch_gate_k_rad, 1.0e-6))),
+            torch.ones_like(pitch_abs_rad),
+        )
+    else:
+        pitch_gate = torch.ones_like(current_goal_distance)
+    progress_multiplier = progress_multiplier * pitch_gate
     ungated_progress_to_target = positive_progress + negative_progress
     progress_to_target = progress_multiplier * positive_progress + negative_progress
     reached_target = waypoint_hit_mask.float() * params.reached_target_base_reward * reward_scale
@@ -188,11 +266,6 @@ def compute_reward_terms(
         (1.0 / (1.0 + torch.abs(goal_heading_error)))
         / max_episode_length_f
     )
-    turn_angle_scale = max(get_turn_speed_angle_scale_rad(cfg), 1.0e-6)
-    turn_intensity = torch.clamp(torch.abs(goal_heading_error) / turn_angle_scale, min=0.0, max=1.0)
-    planar_speed = torch.linalg.vector_norm(base_lin_vel_b[:, :2], dim=1)
-    normalized_planar_speed = planar_speed / max(float(cfg.control.base_forward_velocity_max), 1.0e-6)
-    turn_speed_penalty = turn_intensity * normalized_planar_speed / max_episode_length_f
     contact_weight_sum = torch.clamp(torch.sum(wheel_contact_weights, dim=1), min=1.0)
     masked_longitudinal_slip = (
         torch.sum(wheel_contact_weights * torch.abs(wheel_longitudinal_slip), dim=1) / contact_weight_sum
@@ -240,39 +313,29 @@ def compute_reward_terms(
     ) / max_episode_length_f
     forward_speed = torch.clamp(base_lin_vel_b[:, 0], min=0.0)
     flat_speed_limit = max(float(cfg.control.base_forward_velocity_max), 1.0e-6)
-    edge_speed_limit = min(max(float(params.edge_speed_limit_mps), 0.0), flat_speed_limit)
-    edge_safe_speed = flat_speed_limit - edge_strength * (flat_speed_limit - edge_speed_limit)
-    edge_speed_excess = torch.clamp(forward_speed - edge_safe_speed, min=0.0)
-    edge_speed_penalty = edge_strength * torch.square(edge_speed_excess / flat_speed_limit) / max_episode_length_f
+    edge_safe_speed = torch.full_like(current_goal_distance, flat_speed_limit)
+    edge_speed_excess = zero_reward_term
+    edge_speed_penalty = zero_reward_term
+    if _reward_weight_enabled(params, "edge_speed_penalty_weight"):
+        edge_speed_limit = min(max(float(params.edge_speed_limit_mps), 0.0), flat_speed_limit)
+        edge_safe_speed = flat_speed_limit - edge_strength * (flat_speed_limit - edge_speed_limit)
+        edge_speed_excess = torch.clamp(forward_speed - edge_safe_speed, min=0.0)
+        edge_speed_penalty = edge_strength * torch.square(edge_speed_excess / flat_speed_limit) / max_episode_length_f
 
     if terrain_speed_safe is None:
-        v_up = min(max(float(getattr(cfg.control, "terrain_speed_step_up_mps", 0.50)), 0.0), flat_speed_limit)
-        v_up_climb = min(
-            max(float(getattr(cfg.control, "terrain_speed_step_up_climb_mps", 0.80)), 0.0),
-            flat_speed_limit,
-        )
-        v_down = min(max(float(getattr(cfg.control, "terrain_speed_step_down_mps", 0.35)), 0.0), flat_speed_limit)
-        v_gap = min(max(float(getattr(cfg.control, "terrain_speed_gap_mps", 0.40)), 0.0), flat_speed_limit)
         step_up_distance_m = step_up_distance_norm * max(
             float(getattr(cfg.terrain, "patch_front_extent", 0.0))
             + float(getattr(cfg.terrain, "patch_preview_length", 1.0)),
             1.0e-6,
         )
-        g_step_up_approach = g_step_up * (
-            (step_up_distance_m > float(params.step_up_approach_distance_min_m))
-            & (step_up_distance_m < float(params.step_up_approach_distance_max_m))
-        ).float()
-        g_step_up_climb = g_step_up * (step_up_distance_m <= float(params.step_up_approach_distance_min_m)).float()
-        v_safe_up = torch.minimum(
-            flat_speed_limit - g_step_up_approach * (flat_speed_limit - v_up),
-            flat_speed_limit - g_step_up_climb * (flat_speed_limit - v_up_climb),
-        )
-        terrain_speed_safe = torch.minimum(
-            torch.minimum(
-                v_safe_up,
-                flat_speed_limit - g_step_down * (flat_speed_limit - v_down),
-            ),
-            flat_speed_limit - g_gap * (flat_speed_limit - v_gap),
+        terrain_speed_safe = compute_stage1_phase_speed_safe(
+            cfg,
+            current_goal_distance,
+            g_step_up,
+            g_step_down,
+            g_gap,
+            step_up_distance_m,
+            obstacle_gate=obstacle_gate,
         )
     terrain_speed_safe = torch.clamp(_optional_vector(terrain_speed_safe, current_goal_distance, default=flat_speed_limit), min=0.0)
     raw_planar_command = _optional_matrix(
@@ -291,7 +354,8 @@ def compute_reward_terms(
         g_edge
         * (
             torch.square(terrain_raw_excess / flat_speed_limit)
-            + 0.5 * torch.square(terrain_actual_excess / flat_speed_limit)
+            + float(getattr(params, "terrain_actual_overspeed_penalty_ratio", 0.5))
+            * torch.square(terrain_actual_excess / flat_speed_limit)
         )
         / max_episode_length_f
     )
@@ -302,50 +366,73 @@ def compute_reward_terms(
         current_goal_distance,
     )
 
+    control_dt = max(float(getattr(cfg.control, "control_dt", 1.0 / 60.0)), 1.0e-6)
+    hard_gate = torch.maximum(g_step_up, torch.maximum(g_step_down, g_gap))
+    hard_gate_active = hard_gate > float(getattr(params, "no_progress_hard_gate_threshold", 0.3))
+    target_ahead = commands[:, 0] > float(getattr(params, "stuck_goal_ahead_threshold_m", 0.5))
+    no_progress_min_delta_m = max(float(getattr(params, "no_progress_min_delta_m", 0.003)), 1.0e-6)
+    no_progress_deficit = torch.clamp(no_progress_min_delta_m - progress_delta, min=0.0) / no_progress_min_delta_m
+    no_progress_active = (hard_gate_active & target_ahead).float()
+    no_progress_penalty = no_progress_active * torch.clamp(no_progress_deficit, min=0.0, max=2.0) * control_dt
+    no_progress_gate = torch.clamp(no_progress_penalty / control_dt, min=0.0, max=1.0)
+
     stuck_time_s = _optional_vector(stuck_time_s, current_goal_distance)
-    stuck_penalty = (stuck_time_s > float(params.stuck_penalty_grace_s)).float() / max_episode_length_f
+    stuck_penalty_active = (stuck_time_s > float(params.stuck_penalty_grace_s)).float()
+    stuck_penalty = stuck_penalty_active * control_dt
 
-    wheel_joint_vel = _optional_matrix(wheel_joint_vel, wheel_contact_weights)
-    airborne_spin_penalty = (
-        torch.mean((1.0 - wheel_contact_weights) * torch.abs(wheel_joint_vel), dim=1)
-        / max(float(params.airborne_spin_velocity_scale_radps), 1.0e-6)
-        / max_episode_length_f
-    )
-
-    hard_terrain_spin_gate = torch.maximum(g_step_up, g_gap)
-    hard_terrain_low_speed = torch.clamp(
-        (
-            float(params.hard_terrain_spin_speed_threshold_mps)
-            - torch.clamp(base_lin_vel_b[:, 0], min=0.0)
+    airborne_spin_penalty = zero_reward_term
+    wheel_spin_airborne_mean = zero_reward_term
+    if _reward_weight_enabled(params, "airborne_spin_penalty_weight"):
+        wheel_joint_vel = _optional_matrix(wheel_joint_vel, wheel_contact_weights)
+        wheel_spin_airborne_mean = torch.mean((1.0 - wheel_contact_weights) * torch.abs(wheel_joint_vel), dim=1)
+        airborne_spin_penalty = (
+            wheel_spin_airborne_mean
+            / max(float(params.airborne_spin_velocity_scale_radps), 1.0e-6)
+            / max_episode_length_f
         )
-        / max(float(params.hard_terrain_spin_speed_threshold_mps), 1.0e-6),
-        min=0.0,
-        max=1.0,
-    )
-    hard_terrain_slip_excess = torch.clamp(
-        (masked_longitudinal_slip - float(params.hard_terrain_spin_slip_threshold))
-        / max(float(params.hard_terrain_spin_slip_scale), 1.0e-6),
-        min=0.0,
-        max=2.0,
-    )
-    hard_terrain_spin_penalty = (
-        hard_terrain_spin_gate
-        * hard_terrain_low_speed
-        * torch.square(hard_terrain_slip_excess)
-        / max_episode_length_f
-    )
 
-    soft_limit_actions = actions[:, 2:] if actions.shape[1] > 2 else actions
-    action_soft_limit_penalty = torch.mean(
-        torch.square(torch.clamp(torch.abs(soft_limit_actions) - float(params.action_soft_limit_threshold), min=0.0)),
-        dim=1,
-    ) / max_episode_length_f
+    hard_terrain_spin_gate = zero_reward_term
+    hard_terrain_low_speed = zero_reward_term
+    hard_terrain_slip_excess = zero_reward_term
+    hard_terrain_spin_penalty = zero_reward_term
+    if _reward_weight_enabled(params, "hard_terrain_spin_penalty_weight"):
+        hard_terrain_spin_gate = hard_gate
+        hard_terrain_low_speed = torch.clamp(
+            (
+                float(params.hard_terrain_spin_speed_threshold_mps)
+                - torch.clamp(base_lin_vel_b[:, 0], min=0.0)
+            )
+            / max(float(params.hard_terrain_spin_speed_threshold_mps), 1.0e-6),
+            min=0.0,
+            max=1.0,
+        )
+        hard_terrain_slip_excess = torch.clamp(
+            (masked_longitudinal_slip - float(params.hard_terrain_spin_slip_threshold))
+            / max(float(params.hard_terrain_spin_slip_scale), 1.0e-6),
+            min=0.0,
+            max=2.0,
+        )
+        hard_terrain_spin_penalty = (
+            hard_terrain_spin_gate
+            * torch.maximum(hard_terrain_low_speed, no_progress_gate)
+            * torch.square(hard_terrain_slip_excess)
+            / max_episode_length_f
+        )
+
+    action_soft_limit_penalty = zero_reward_term
+    if _reward_weight_enabled(params, "action_soft_limit_penalty_weight"):
+        soft_limit_actions = actions[:, 2:] if actions.shape[1] > 2 else actions
+        action_soft_limit_penalty = torch.mean(
+            torch.square(torch.clamp(torch.abs(soft_limit_actions) - float(params.action_soft_limit_threshold), min=0.0)),
+            dim=1,
+        ) / max_episode_length_f
 
     ball_joint_pos = _optional_matrix(
         ball_joint_pos,
         torch.zeros((current_goal_distance.shape[0], 6), device=current_goal_distance.device, dtype=current_goal_distance.dtype),
     )
     front_pitch_actual = ball_joint_pos[:, 1] if ball_joint_pos.shape[1] > 1 else torch.zeros_like(current_goal_distance)
+    rear_pitch_actual = ball_joint_pos[:, 4] if ball_joint_pos.shape[1] > 4 else torch.zeros_like(current_goal_distance)
     max_preview_distance_m = max(
         float(getattr(cfg.terrain, "patch_front_extent", 0.0)) + float(getattr(cfg.terrain, "patch_preview_length", 1.0)),
         1.0e-6,
@@ -367,6 +454,60 @@ def compute_reward_terms(
         min=0.0,
         max=1.0,
     )
+    root_ang_vel_b = _optional_matrix(
+        root_ang_vel_b,
+        torch.zeros((current_goal_distance.shape[0], 3), device=current_goal_distance.device, dtype=current_goal_distance.dtype),
+    )
+    root_lin_vel_w = _optional_matrix(
+        root_lin_vel_w,
+        torch.zeros((current_goal_distance.shape[0], 3), device=current_goal_distance.device, dtype=current_goal_distance.dtype),
+    )
+    pitch_rate_abs = torch.abs(root_ang_vel_b[:, 1])
+    vz_down = torch.clamp(-root_lin_vel_w[:, 2], min=0.0)
+    drop_front_pitch_excess = torch.clamp(front_pitch_actual - float(params.drop_theta_safe_rad), min=0.0)
+
+    slip_quality = torch.clamp(
+        1.0
+        - torch.clamp(
+            (masked_longitudinal_slip - float(params.low_slip_longitudinal_threshold))
+            / max(float(getattr(params, "progress_quality_slip_scale", 4.0)), 1.0e-6),
+            min=0.0,
+            max=1.0,
+        ),
+        min=0.0,
+        max=1.0,
+    )
+    overspeed_quality = torch.clamp(1.0 - terrain_raw_excess / flat_speed_limit, min=0.0, max=1.0)
+    pitch_rate_quality = torch.clamp(
+        1.0
+        - torch.clamp(
+            pitch_rate_abs / max(float(getattr(params, "progress_quality_pitch_rate_sigma_radps", 1.0)), 1.0e-6),
+            min=0.0,
+            max=1.0,
+        ),
+        min=0.0,
+        max=1.0,
+    )
+    step_up_posture_quality = torch.clamp(1.0 - approach_mask * g_step_up * step_up_posture_badness, min=0.0, max=1.0)
+    drop_posture_badness = torch.clamp(
+        0.5 * drop_front_pitch_excess / max(float(params.drop_pitch_sigma_rad), 1.0e-6)
+        + 0.3 * pitch_rate_abs / max(float(params.drop_pitch_rate_sigma_radps), 1.0e-6)
+        + 0.2 * vz_down / max(float(params.drop_vz_down_sigma_mps), 1.0e-6),
+        min=0.0,
+        max=1.0,
+    )
+    posture_quality = torch.minimum(step_up_posture_quality, torch.clamp(1.0 - g_drop * drop_posture_badness, min=0.0))
+    contact_quality = torch.clamp((mid_support + rear_support) / 2.0, min=0.0, max=1.0)
+    not_stuck_quality = torch.clamp(
+        1.0
+        - stuck_time_s / max(float(getattr(params, "progress_quality_stuck_time_scale_s", 2.0)), 1.0e-6),
+        min=0.0,
+        max=1.0,
+    )
+    progress_quality_score = torch.minimum(
+        torch.minimum(slip_quality, overspeed_quality),
+        torch.minimum(torch.minimum(posture_quality, pitch_rate_quality), torch.minimum(contact_quality, not_stuck_quality)),
+    )
     step_up_progress_quality_min = torch.clamp(
         torch.as_tensor(
             float(params.step_up_progress_quality_min_multiplier),
@@ -376,12 +517,8 @@ def compute_reward_terms(
         min=0.0,
         max=1.0,
     )
-    step_up_progress_quality_multiplier = 1.0 - (
-        approach_mask
-        * g_step_up
-        * (1.0 - step_up_progress_quality_min)
-        * step_up_posture_badness
-    )
+    hard_quality_multiplier = step_up_progress_quality_min + (1.0 - step_up_progress_quality_min) * progress_quality_score
+    step_up_progress_quality_multiplier = 1.0 - hard_gate * (1.0 - hard_quality_multiplier)
     progress_to_target = torch.where(
         progress_to_target > 0.0,
         progress_to_target * step_up_progress_quality_multiplier,
@@ -394,17 +531,65 @@ def compute_reward_terms(
         / max_episode_length_f
     )
 
-    root_ang_vel_b = _optional_matrix(
-        root_ang_vel_b,
-        torch.zeros((current_goal_distance.shape[0], 3), device=current_goal_distance.device, dtype=current_goal_distance.dtype),
+    support_heights = torch.stack(
+        (
+            _terrain_value(terrain_gates, "front_support_height_m", current_goal_distance),
+            _terrain_value(terrain_gates, "middle_support_height_m", current_goal_distance),
+            _terrain_value(terrain_gates, "rear_support_height_m", current_goal_distance),
+        ),
+        dim=1,
     )
-    root_lin_vel_w = _optional_matrix(
-        root_lin_vel_w,
-        torch.zeros((current_goal_distance.shape[0], 3), device=current_goal_distance.device, dtype=current_goal_distance.dtype),
+    previous_module_support_heights = _optional_matrix(previous_module_support_heights, support_heights)
+    row_module_support_height_baseline = _optional_matrix(row_module_support_height_baseline, support_heights)
+    row_module_progress_max = _optional_matrix(
+        row_module_progress_max,
+        torch.zeros_like(support_heights),
     )
-    pitch_rate_abs = torch.abs(root_ang_vel_b[:, 1])
-    vz_down = torch.clamp(-root_lin_vel_w[:, 2], min=0.0)
-    drop_front_pitch_excess = torch.clamp(front_pitch_actual - float(params.drop_theta_safe_rad), min=0.0)
+    module_height_delta = support_heights - previous_module_support_heights
+    step_module_height_progress = torch.clamp(module_height_delta, min=0.0)
+    row_module_progress = torch.clamp(support_heights - row_module_support_height_baseline, min=0.0)
+    module_height_progress = torch.clamp(row_module_progress - row_module_progress_max, min=0.0)
+    climb_phase = g_step_up * (step_up_distance_m <= float(params.step_up_approach_distance_min_m)).float() * target_ahead.float()
+    crest_phase = g_step_up * (step_up_distance_m > float(params.step_up_approach_distance_min_m)).float() * target_ahead.float()
+    module_progress_score = torch.clamp(
+        (
+            0.2 * module_height_progress[:, 0]
+            + 0.5 * module_height_progress[:, 1]
+            + 0.3 * module_height_progress[:, 2]
+        )
+        / max(float(getattr(params, "step_up_module_height_progress_scale_m", 0.05)), 1.0e-6),
+        min=0.0,
+        max=1.0,
+    )
+    module_support_phase_score = torch.clamp((mid_support + rear_support) / 2.0, min=0.0, max=1.0)
+    step_up_module_progress_reward = (
+        torch.maximum(climb_phase, 0.5 * crest_phase)
+        * module_progress_score
+        * module_support_phase_score
+        * control_dt
+    )
+
+    quality_row_advance_mask = (
+        waypoint_hit_mask.float()
+        * hard_gate
+        * (progress_quality_score >= float(getattr(params, "quality_row_advance_min_score", 0.3))).float()
+    )
+    quality_row_advance_reward = quality_row_advance_mask * progress_quality_score
+
+    recovery_active = _optional_vector(
+        recovery_active.float() if isinstance(recovery_active, torch.Tensor) else None,
+        current_goal_distance,
+    )
+    recovery_reverse_now = _optional_vector(
+        recovery_reverse_now.float() if isinstance(recovery_reverse_now, torch.Tensor) else None,
+        current_goal_distance,
+    )
+    recovery_success = _optional_vector(
+        recovery_success.float() if isinstance(recovery_success, torch.Tensor) else None,
+        current_goal_distance,
+    )
+    recovery_reward = recovery_success + recovery_reverse_now * recovery_active * control_dt
+
     drop_anti_dive_penalty = (
         g_drop
         * (
@@ -421,7 +606,6 @@ def compute_reward_terms(
         "reached_target": reached_target * params.reached_target_weight,
         "far_from_target": far_from_target * params.far_from_target_weight,
         "angle_diff": angle_diff * params.angle_diff_weight,
-        "turn_speed_penalty": turn_speed_penalty * params.turn_speed_penalty_weight,
         "slip_penalty": slip_penalty * params.slip_penalty_weight,
         "action_rate_penalty": action_rate_penalty * params.action_rate_penalty_weight,
         "contact_support_penalty": contact_support_penalty * params.contact_support_penalty_weight,
@@ -430,11 +614,20 @@ def compute_reward_terms(
             terrain_aware_edge_speed_penalty * params.terrain_aware_edge_speed_penalty_weight
         ),
         "stuck_penalty": stuck_penalty * params.stuck_penalty_weight,
+        "no_progress_penalty": no_progress_penalty * params.no_progress_penalty_weight,
         "airborne_spin_penalty": airborne_spin_penalty * params.airborne_spin_penalty_weight,
         "hard_terrain_spin_penalty": hard_terrain_spin_penalty * params.hard_terrain_spin_penalty_weight,
         "action_soft_limit_penalty": action_soft_limit_penalty * params.action_soft_limit_penalty_weight,
         "step_up_front_posture_penalty": (
             step_up_front_posture_penalty * params.step_up_front_posture_penalty_weight
+        ),
+        "step_up_module_progress_reward": (
+            step_up_module_progress_reward * params.step_up_module_progress_reward_weight
+        ),
+        "quality_row_advance_reward": quality_row_advance_reward * params.quality_row_advance_reward_weight,
+        "recovery_reward": (
+            recovery_success * params.recovery_success_reward_weight
+            + recovery_reverse_now * recovery_active * control_dt * params.recovery_reverse_penalty_weight
         ),
         "drop_anti_dive_penalty": drop_anti_dive_penalty * params.drop_anti_dive_penalty_weight,
     }
@@ -449,6 +642,7 @@ def compute_reward_terms(
         "progress_negative": negative_progress,
         "progress_longitudinal_gate": longitudinal_gate,
         "progress_slip_angle_gate": slip_angle_gate,
+        "progress_pitch_gate": pitch_gate,
         "progress_gate": progress_gate,
         "progress_multiplier": progress_multiplier,
         "slip_contact_weight_sum": contact_weight_sum,
@@ -484,8 +678,12 @@ def compute_reward_terms(
         "terrain_speed_actual_excess": terrain_actual_excess,
         "terrain_speed_limit_active": terrain_speed_limit_active_f,
         "stuck_time_s": stuck_time_s,
-        "stuck_penalty_active": (stuck_time_s > float(params.stuck_penalty_grace_s)).float(),
+        "stuck_penalty_active": stuck_penalty_active,
+        "no_progress_active": no_progress_active,
+        "no_progress_deficit": no_progress_deficit,
+        "no_progress_penalty_raw": no_progress_penalty,
         "airborne_spin_penalty_raw": airborne_spin_penalty,
+        "wheel_spin_airborne_mean": wheel_spin_airborne_mean,
         "hard_terrain_spin_gate": hard_terrain_spin_gate,
         "hard_terrain_low_speed": hard_terrain_low_speed,
         "hard_terrain_slip_excess": hard_terrain_slip_excess,
@@ -493,12 +691,39 @@ def compute_reward_terms(
         "action_soft_limit_penalty_raw": action_soft_limit_penalty,
         "front_pitch_ref": front_pitch_ref,
         "front_pitch_actual": front_pitch_actual,
+        "rear_pitch_actual": rear_pitch_actual,
         "front_pitch_error": front_pitch_error,
         "step_up_distance_m": step_up_distance_m,
         "step_up_approach_mask": approach_mask,
         "step_up_posture_badness": step_up_posture_badness,
+        "progress_quality_slip": slip_quality,
+        "progress_quality_overspeed": overspeed_quality,
+        "progress_quality_pitch": posture_quality,
+        "progress_quality_contact": contact_quality,
+        "progress_quality_not_stuck": not_stuck_quality,
+        "progress_quality_score": progress_quality_score,
         "step_up_progress_quality_multiplier": step_up_progress_quality_multiplier,
         "step_up_front_posture_penalty_raw": step_up_front_posture_penalty,
+        "front_module_height_progress": row_module_progress[:, 0],
+        "middle_module_height_progress": row_module_progress[:, 1],
+        "rear_module_height_progress": row_module_progress[:, 2],
+        "front_module_step_height_progress": step_module_height_progress[:, 0],
+        "middle_module_step_height_progress": step_module_height_progress[:, 1],
+        "rear_module_step_height_progress": step_module_height_progress[:, 2],
+        "front_module_new_height_progress": module_height_progress[:, 0],
+        "middle_module_new_height_progress": module_height_progress[:, 1],
+        "rear_module_new_height_progress": module_height_progress[:, 2],
+        "module_support_phase_score": module_support_phase_score,
+        "step_up_climb_phase": climb_phase,
+        "step_up_crest_phase": crest_phase,
+        "step_up_module_progress_score": module_progress_score,
+        "step_up_module_progress_reward_raw": step_up_module_progress_reward,
+        "quality_row_advance_mask": quality_row_advance_mask,
+        "quality_row_advance_reward_raw": quality_row_advance_reward,
+        "recovery_active": recovery_active,
+        "recovery_reverse_now": recovery_reverse_now,
+        "recovery_success": recovery_success,
+        "recovery_reward_raw": recovery_reward,
         "drop_pitch_rate_abs": pitch_rate_abs,
         "drop_vz_down": vz_down,
         "drop_anti_dive_penalty_raw": drop_anti_dive_penalty,

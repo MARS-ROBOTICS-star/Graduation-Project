@@ -1,4 +1,4 @@
-"""CLI validation tool for the low-slip ball-joint planner and traction allocator."""
+"""CLI validation tool for direct ball-joint targets and the low-slip traction allocator."""
 
 from __future__ import annotations
 
@@ -19,11 +19,9 @@ ALLOCATOR_SPEC.loader.exec_module(ALLOCATOR_MODULE)
 
 NumpyWheelSpeedAllocator = ALLOCATOR_MODULE.NumpyWheelSpeedAllocator
 
-DEFAULT_PLANNER_GAINS = (8.0, 8.0, 8.0, 8.0, 8.0, 8.0)
-DEFAULT_PLANNER_QDOT_LIMITS = (1.5, 1.5, 1.5, 1.5, 1.5, 1.5)
+DEFAULT_BALL_JOINT_RATE_TARGETS = (0.0,) * 6
 DEFAULT_Q_LOWER_LIMITS = (-0.6, -1.0, -0.5, -0.6, -1.0, -0.5)
 DEFAULT_Q_UPPER_LIMITS = (0.6, 0.4, 0.5, 0.6, 0.4, 0.5)
-DEFAULT_CONTROL_DT = 1.0 / 60.0
 DEFAULT_PLANAR_LIMITS = (2.0, 2.0)
 DEFAULT_CONTACT_FORCES = (1.0 / 6.0,) * 6
 DEFAULT_WHEEL_JOINT_VEL = (0.0,) * 6
@@ -35,7 +33,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Validate the low-slip Chapter03 control chain with manual inputs. "
-            "Provide q, q^d, planar command, wheel contact state, and actual wheel motion."
+            "Provide q, q^d, qdot_alloc, planar command, wheel contact state, and actual wheel motion."
         )
     )
     joint_help = "Six values in joint order [spm1_z, spm1_y, spm1_x, spm2_z, spm2_y, spm2_x]."
@@ -48,9 +46,7 @@ def _build_parser() -> argparse.ArgumentParser:
     qd_group.add_argument("--ball-joint-desired-deg", nargs=6, type=float, help=f"{joint_help} Desired q^d in deg.")
 
     parser.add_argument("--planar-command", nargs=2, type=float, metavar=("VX", "WZ"))
-    parser.add_argument("--control-dt", type=float, default=DEFAULT_CONTROL_DT)
-    parser.add_argument("--planner-gains", nargs=6, type=float, default=DEFAULT_PLANNER_GAINS)
-    parser.add_argument("--planner-qdot-limits", nargs=6, type=float, default=DEFAULT_PLANNER_QDOT_LIMITS)
+    parser.add_argument("--ball-joint-rate-targets", nargs=6, type=float, default=DEFAULT_BALL_JOINT_RATE_TARGETS)
     parser.add_argument("--ball-joint-lower-limits", nargs=6, type=float, default=DEFAULT_Q_LOWER_LIMITS)
     parser.add_argument("--ball-joint-upper-limits", nargs=6, type=float, default=DEFAULT_Q_UPPER_LIMITS)
     parser.add_argument("--wheel-normal-contact-force", nargs=6, type=float, default=DEFAULT_CONTACT_FORCES)
@@ -92,6 +88,7 @@ def _resolve_joint_vector(rad_values, deg_values, name: str) -> np.ndarray | Non
 def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
     q = np.zeros(6, dtype=np.float64)
     q_desired = np.zeros(6, dtype=np.float64)
+    qdot_alloc = np.zeros(6, dtype=np.float64)
     planar_command = np.zeros(2, dtype=np.float64)
     full_contact = np.full(6, 1.0 / 6.0, dtype=np.float64)
     wheel_joint_vel = np.zeros(6, dtype=np.float64)
@@ -101,14 +98,12 @@ def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
     zero_outputs = allocator.compute_low_slip_control_targets(
         ball_joint_pos=q,
         desired_ball_joint_pos=q_desired,
+        ball_joint_rate_targets=qdot_alloc,
         desired_planar_command=planar_command,
         wheel_normal_contact_force=full_contact,
         wheel_joint_vel=wheel_joint_vel,
         rolling_speed_actual=rolling_speed_actual,
         lateral_speed_actual=lateral_speed_actual,
-        control_dt=DEFAULT_CONTROL_DT,
-        planner_gains=DEFAULT_PLANNER_GAINS,
-        planner_qdot_limits=DEFAULT_PLANNER_QDOT_LIMITS,
         q_lower_limits=DEFAULT_Q_LOWER_LIMITS,
         q_upper_limits=DEFAULT_Q_UPPER_LIMITS,
         lambda_tracking=1.0,
@@ -129,14 +124,12 @@ def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
     forward_outputs = allocator.compute_low_slip_control_targets(
         ball_joint_pos=q,
         desired_ball_joint_pos=q_desired,
+        ball_joint_rate_targets=qdot_alloc,
         desired_planar_command=np.array([1.0, 0.0], dtype=np.float64),
         wheel_normal_contact_force=full_contact,
         wheel_joint_vel=wheel_joint_vel,
         rolling_speed_actual=rolling_speed_actual,
         lateral_speed_actual=lateral_speed_actual,
-        control_dt=DEFAULT_CONTROL_DT,
-        planner_gains=DEFAULT_PLANNER_GAINS,
-        planner_qdot_limits=DEFAULT_PLANNER_QDOT_LIMITS,
         q_lower_limits=DEFAULT_Q_LOWER_LIMITS,
         q_upper_limits=DEFAULT_Q_UPPER_LIMITS,
         lambda_tracking=1.0,
@@ -156,14 +149,12 @@ def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
     no_contact_outputs = allocator.compute_low_slip_control_targets(
         ball_joint_pos=q,
         desired_ball_joint_pos=q_desired,
+        ball_joint_rate_targets=qdot_alloc,
         desired_planar_command=np.array([1.0, 0.0], dtype=np.float64),
         wheel_normal_contact_force=np.zeros(6, dtype=np.float64),
         wheel_joint_vel=wheel_joint_vel,
         rolling_speed_actual=rolling_speed_actual,
         lateral_speed_actual=lateral_speed_actual,
-        control_dt=DEFAULT_CONTROL_DT,
-        planner_gains=DEFAULT_PLANNER_GAINS,
-        planner_qdot_limits=DEFAULT_PLANNER_QDOT_LIMITS,
         q_lower_limits=DEFAULT_Q_LOWER_LIMITS,
         q_upper_limits=DEFAULT_Q_UPPER_LIMITS,
         lambda_tracking=1.0,
@@ -206,19 +197,17 @@ def _run_smoke_cases(allocator: "NumpyWheelSpeedAllocator") -> None:
     )
     np.testing.assert_allclose(braking_outputs.wheel_torque_targets, np.full(6, -0.1), atol=1.0e-10)
 
-    planner_test_qd = np.array([0.6, -1.0, 0.3, -0.6, 0.4, -0.3], dtype=np.float64)
-    planner_outputs = allocator.compute_ball_joint_planner_outputs(
-        q,
-        planner_test_qd,
-        DEFAULT_CONTROL_DT,
-        DEFAULT_PLANNER_GAINS,
-        DEFAULT_PLANNER_QDOT_LIMITS,
+    target_test_qd = np.array([0.6, -1.0, 0.3, -0.6, 0.4, -0.3], dtype=np.float64)
+    command_outputs = allocator.compute_ball_joint_command_outputs(
+        target_test_qd,
+        qdot_alloc,
         DEFAULT_Q_LOWER_LIMITS,
         DEFAULT_Q_UPPER_LIMITS,
     )
     np.testing.assert_allclose(
-        np.abs(planner_outputs.ball_joint_rate_targets) <= np.asarray(DEFAULT_PLANNER_QDOT_LIMITS) + 1.0e-12,
-        np.ones(6, dtype=bool),
+        command_outputs.ball_joint_position_targets,
+        np.clip(target_test_qd, DEFAULT_Q_LOWER_LIMITS, DEFAULT_Q_UPPER_LIMITS),
+        atol=1.0e-10,
     )
 
     print("Validation checks passed.")
@@ -232,18 +221,17 @@ def _run_manual_case(args: argparse.Namespace, allocator: "NumpyWheelSpeedAlloca
     q_desired = _resolve_joint_vector(args.ball_joint_desired, args.ball_joint_desired_deg, name="desired")
     if q_desired is None:
         q_desired = q.copy()
+    qdot_alloc = np.asarray(args.ball_joint_rate_targets, dtype=np.float64)
 
     outputs = allocator.compute_low_slip_control_targets(
         ball_joint_pos=q,
         desired_ball_joint_pos=q_desired,
+        ball_joint_rate_targets=qdot_alloc,
         desired_planar_command=np.asarray(args.planar_command, dtype=np.float64),
         wheel_normal_contact_force=np.asarray(args.wheel_normal_contact_force, dtype=np.float64),
         wheel_joint_vel=np.asarray(args.wheel_joint_vel, dtype=np.float64),
         rolling_speed_actual=np.asarray(args.rolling_speed_actual, dtype=np.float64),
         lateral_speed_actual=np.asarray(args.lateral_speed_actual, dtype=np.float64),
-        control_dt=args.control_dt,
-        planner_gains=np.asarray(args.planner_gains, dtype=np.float64),
-        planner_qdot_limits=np.asarray(args.planner_qdot_limits, dtype=np.float64),
         q_lower_limits=np.asarray(args.ball_joint_lower_limits, dtype=np.float64),
         q_upper_limits=np.asarray(args.ball_joint_upper_limits, dtype=np.float64),
         lambda_tracking=float(args.lambda_tracking),
@@ -265,9 +253,9 @@ def _run_manual_case(args: argparse.Namespace, allocator: "NumpyWheelSpeedAlloca
     print("q^d [deg]:", _format_vector(np.rad2deg(q_desired)))
     print("u_v^d = [Vx, Wz]:", _format_vector(outputs.desired_planar_command))
     print("u_v*  = [Vx, Wz]:", _format_vector(outputs.shaped_planar_command))
-    print("qdot_cmd [rad/s]:", _format_vector(outputs.ball_joint_rate_targets))
-    print("q_cmd [rad]:", _format_vector(outputs.ball_joint_position_targets))
-    print("q_cmd [deg]:", _format_vector(np.rad2deg(outputs.ball_joint_position_targets)))
+    print("qdot_alloc [rad/s]:", _format_vector(outputs.ball_joint_rate_targets))
+    print("q_target [rad]:", _format_vector(outputs.ball_joint_position_targets))
+    print("q_target [deg]:", _format_vector(np.rad2deg(outputs.ball_joint_position_targets)))
     print("contact weights:", _format_vector(outputs.contact_weights))
     print("rolling-speed reference [m/s]:", _format_vector(outputs.rolling_speed_reference))
     print("wheel angular-speed reference [rad/s]:", _format_vector(outputs.wheel_speed_reference))

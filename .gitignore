@@ -8,6 +8,8 @@ RL_Training/outputs/
 RL_Training/logs/rsl_rl/complete_car_stage1/
 __pycache__/
 *.py[cod]
+slprj/
+*.slxc
 *.bak
 .obsidian/
 .codex

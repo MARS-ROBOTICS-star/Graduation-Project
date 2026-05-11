@@ -34,7 +34,6 @@ class _FakeTerrainCfg:
         "slope up",
         "uneven rough",
         "stairs down",
-        "stairs up",
         "discrete obstacles",
     )
 
@@ -45,7 +44,7 @@ class _FakeRuntime:
     _terrain_cfg: _FakeTerrainCfg = field(default_factory=_FakeTerrainCfg)
 
     def get_tile_type_indices(self, _levels: torch.Tensor, terrain_types: torch.Tensor) -> torch.Tensor:
-        col_to_type = torch.tensor([0, 1, 2, 3, 3, 4, 4, 5, 5, 6], device=terrain_types.device)
+        col_to_type = torch.tensor([0, 1, 2, 3, 3, 4, 4, 4, 5, 5], device=terrain_types.device)
         return col_to_type[terrain_types.to(torch.long)]
 
 
@@ -56,14 +55,12 @@ class _FakeCurriculumCfg:
     initial_min_terrain_level_by_name: dict[str, int] = field(
         default_factory=lambda: {
             "stairs down": 1,
-            "stairs up": 1,
             "discrete obstacles": 1,
         }
     )
     initial_max_terrain_level_by_name: dict[str, int] = field(
         default_factory=lambda: {
             "stairs down": 1,
-            "stairs up": 1,
             "discrete obstacles": 2,
         }
     )
@@ -81,18 +78,65 @@ def main() -> None:
     assert int(levels[non_step_mask].min().item()) >= 0
     assert int(levels[non_step_mask].max().item()) <= 5
 
-    stairs_down_mask = (terrain_types == 5) | (terrain_types == 6)
-    stairs_up_mask = (terrain_types == 7) | (terrain_types == 8)
-    obstacles_mask = terrain_types == 9
+    stairs_down_mask = (terrain_types == 5) | (terrain_types == 6) | (terrain_types == 7)
+    obstacles_mask = (terrain_types == 8) | (terrain_types == 9)
 
     assert torch.all(levels[stairs_down_mask] == 1)
-    assert torch.all(levels[stairs_up_mask] == 1)
     assert int(levels[obstacles_mask].min().item()) >= 1
     assert int(levels[obstacles_mask].max().item()) <= 2
 
     min_levels = curriculum.get_min_initial_terrain_levels(cfg, runtime, torch.arange(10, dtype=torch.long))
     assert torch.equal(min_levels[:5], torch.zeros(5, dtype=torch.long))
     assert torch.equal(min_levels[5:], torch.ones(5, dtype=torch.long))
+
+    active_counts = torch.zeros(10, dtype=torch.long)
+    unfinished_columns = torch.zeros(10, dtype=torch.bool)
+    unfinished_columns[5:10] = True
+    assignments = curriculum.assign_recycled_terrain_columns(active_counts, unfinished_columns, 50)
+    assigned_counts = curriculum.compute_terrain_column_counts(assignments, 10)
+    assert torch.equal(assigned_counts[:5], torch.zeros(5, dtype=torch.long))
+    assert int(assigned_counts[5:10].min().item()) == 10
+    assert int(assigned_counts[5:10].max().item()) == 10
+    assert int(assigned_counts[5:8].sum().item()) == 30
+    assert int(assigned_counts[8:10].sum().item()) == 20
+
+    active_counts = torch.tensor([0, 0, 0, 0, 0, 16, 16, 16, 16, 15], dtype=torch.long)
+    assignments = curriculum.assign_recycled_terrain_columns(active_counts, unfinished_columns, 5)
+    assigned_counts = curriculum.compute_terrain_column_counts(assignments, 10)
+    final_counts = active_counts + assigned_counts
+    assert int(final_counts[5:10].min().item()) == 16
+    assert int(final_counts[5:10].max().item()) == 17
+
+    active_counts = torch.tensor([8, 8, 8, 8, 8, 18, 18, 18, 17, 17], dtype=torch.long)
+    completed_columns = torch.zeros(10, dtype=torch.bool)
+    completed_columns[:5] = True
+    retention_count = curriculum.compute_completed_column_retention_count(
+        active_counts,
+        completed_columns,
+        num_envs=128,
+        retention_ratio=0.40,
+        candidate_count=16,
+    )
+    assert retention_count == 12
+
+    active_counts[:5] = torch.tensor([11, 11, 10, 10, 10], dtype=torch.long)
+    retention_count = curriculum.compute_completed_column_retention_count(
+        active_counts,
+        completed_columns,
+        num_envs=128,
+        retention_ratio=0.40,
+        candidate_count=16,
+    )
+    assert retention_count == 0
+
+    retention_count = curriculum.compute_completed_column_retention_count(
+        active_counts,
+        torch.zeros(10, dtype=torch.bool),
+        num_envs=128,
+        retention_ratio=0.40,
+        candidate_count=16,
+    )
+    assert retention_count == 0
 
 
 if __name__ == "__main__":

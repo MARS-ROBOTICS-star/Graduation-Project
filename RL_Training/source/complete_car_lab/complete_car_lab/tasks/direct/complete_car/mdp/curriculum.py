@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import torch
 
 
@@ -81,6 +83,77 @@ def _build_initial_terrain_types(terrain_runtime) -> torch.Tensor:
     return terrain_types.clamp_(max=terrain_runtime._terrain_cfg.num_cols - 1)
 
 
+def compute_terrain_column_counts(terrain_types: torch.Tensor, num_cols: int) -> torch.Tensor:
+    """Count envs or completions per terrain column."""
+
+    num_cols = max(int(num_cols), 1)
+    if terrain_types.numel() == 0:
+        return torch.zeros(num_cols, dtype=torch.long, device=terrain_types.device)
+    terrain_types = terrain_types.to(dtype=torch.long).clamp(min=0, max=num_cols - 1)
+    return torch.bincount(terrain_types, minlength=num_cols)[:num_cols].to(dtype=torch.long)
+
+
+def assign_recycled_terrain_columns(
+    active_counts: torch.Tensor,
+    unfinished_columns: torch.Tensor,
+    num_recycle: int,
+    *,
+    start_offset: int = 0,
+) -> torch.Tensor:
+    """Assign recycled envs to unfinished columns while keeping column counts balanced."""
+
+    num_recycle = max(int(num_recycle), 0)
+    if num_recycle == 0:
+        return torch.empty(0, dtype=torch.long, device=active_counts.device)
+
+    active_counts = active_counts.to(dtype=torch.long).clone()
+    unfinished_columns = unfinished_columns.to(device=active_counts.device, dtype=torch.bool)
+    available_columns = torch.nonzero(unfinished_columns, as_tuple=False).flatten()
+    if available_columns.numel() == 0:
+        return torch.empty(0, dtype=torch.long, device=active_counts.device)
+
+    assignments = torch.empty(num_recycle, dtype=torch.long, device=active_counts.device)
+    offset = int(start_offset) % int(available_columns.numel())
+    for i in range(num_recycle):
+        available_counts = active_counts[available_columns]
+        min_count = torch.min(available_counts)
+        candidate_positions = torch.nonzero(available_counts == min_count, as_tuple=False).flatten()
+        chosen_position = candidate_positions[(offset + i) % int(candidate_positions.numel())]
+        chosen_column = available_columns[chosen_position]
+        assignments[i] = chosen_column
+        active_counts[chosen_column] += 1
+    return assignments
+
+
+def compute_completed_column_retention_count(
+    active_counts: torch.Tensor,
+    completed_columns: torch.Tensor,
+    num_envs: int,
+    retention_ratio: float,
+    candidate_count: int,
+) -> int:
+    """Return how many recycle candidates should stay on completed columns."""
+
+    candidate_count = max(int(candidate_count), 0)
+    if candidate_count == 0:
+        return 0
+
+    ratio = min(max(float(retention_ratio), 0.0), 1.0)
+    if ratio <= 0.0:
+        return 0
+
+    active_counts = active_counts.to(dtype=torch.long)
+    completed_columns = completed_columns.to(device=active_counts.device, dtype=torch.bool)
+    if not torch.any(completed_columns):
+        return 0
+
+    target_retained = int(math.ceil(max(int(num_envs), 0) * ratio))
+    target_retained = min(max(target_retained, 0), max(int(num_envs), 0))
+    current_retained = int(torch.sum(active_counts[completed_columns]).item())
+    retention_needed = max(target_retained - current_retained, 0)
+    return min(retention_needed, candidate_count)
+
+
 def initialize_terrain_curriculum(curriculum_cfg, terrain_runtime, scene) -> None:
     if not terrain_runtime.generator_enabled:
         return
@@ -134,6 +207,9 @@ def update_terrain_curriculum(curriculum_cfg, terrain_runtime, scene, robot, env
 
 
 __all__ = [
+    "assign_recycled_terrain_columns",
+    "compute_completed_column_retention_count",
+    "compute_terrain_column_counts",
     "get_min_initial_terrain_levels",
     "initialize_terrain_curriculum",
     "sample_initial_terrain_levels",

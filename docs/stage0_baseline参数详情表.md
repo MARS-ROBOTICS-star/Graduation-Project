@@ -95,14 +95,14 @@ env TERM=xterm MPLCONFIGDIR=/tmp/matplotlib OMNI_KIT_ACCEPT_EULA=YES /home/ubunt
 | `scene.num_envs` | `64` | 并行环境数量 |
 | `scene.env_spacing` | `4.0 m` | 不同环境之间的间距 |
 | `control.sim_dt` | `1 / 120 s` | PhysX 仿真步长 |
-| `decimation` | `2` | 每 2 个 sim step 执行一次 RL action |
-| `control.control_dt` | `1 / 60 s` | RL 控制周期 |
+| `decimation` | `4` | 每 4 个 sim step 执行一次 RL action |
+| `control.control_dt` | `1 / 30 s` | RL 控制周期 |
 | `sim.physx.max_position_iteration_count` | `8` | 场景级 PhysX 位置约束求解迭代次数 |
 | `sim.physx.max_velocity_iteration_count` | `4` | 场景级 PhysX 速度约束求解迭代次数，用于轮地摩擦、碰撞冲击等速度层约束 |
 | `robot.articulation.solver_position_iteration_count` | `8` | 机器人 articulation root 位置约束求解迭代次数 |
 | `robot.articulation.solver_velocity_iteration_count` | `4` | 机器人 articulation root 速度约束求解迭代次数；已与 Stage0 场景级 velocity iteration 对齐 |
 | `episode_length_s` | `40.0 s` | 单个 episode 最大时长 |
-| `max_episode_length` | `2400` | `40 / (1 / 60)` 个控制步 |
+| `max_episode_length` | `1200` | `40 / (1 / 30)` 个控制步 |
 | `is_finite_horizon` | `False` | timeout 作为 time-limit 输出给 RSL-RL，PPO 会执行 bootstrap |
 | `terrain.enabled` | `False` | 不启用 terrain generator |
 | `terrain.mode` | `plane` | 平地 |
@@ -186,7 +186,7 @@ $$
 4. 球铰位置目标直接使用 $q^d$ 的限幅结果 $q_{target}$。
 5. 球铰驱动只下发 position target $q_{target}$。
 6. low-slip 平面命令整形器根据接触权重和轮心侧向速度代价计算 $u_v^*$。
-7. allocator 根据 $q$、实际球铰角速度低通 $qdot_{alloc}$ 与 $u_v^*$ 计算各轮滚动速度参考 $\Omega_j^{ref}$。
+7. allocator 根据实际球铰姿态 $q$、命令姿态变化率 $\dot q^{cmd}$ 与 $u_v^*$ 计算各轮滚动速度参考 $\Omega_j^{ref}$。
 8. 轮级 traction allocator 根据 $\Omega_j^{ref}$、实际轮速、纵滑率和接触权重计算车轮 torque target。
 9. 车轮驱动最终下发 effort target，不下发 velocity target。
 
@@ -251,7 +251,7 @@ $$
 | $q_{target}$ | 直接下发给 PhysX position drive 的球铰位置目标 |
 | $\dot q_{actual}$ | IsaacLab 读取的球铰实际角速度 |
 | $qdot_{alloc}$ | 轮速分配中姿态变化项使用的球铰角速度 |
-| $\Delta t$ | `control.control_dt = 1 / 60 s` |
+| $\Delta t$ | `control.control_dt = 1 / 30 s` |
 | $\tau_v$ | `control.ball_joint_qdot_alloc_filter_tau_s = 0.04 s` |
 
 ### 4.3 low-slip 平面命令整形
@@ -753,7 +753,7 @@ $$
 |---|---|
 | $d_{now}$ | 当前 active waypoint 的平面距离 |
 | $d_{goal}$ | `goal_distance = 10.0 m` |
-| $T$ | `max_episode_length = 2400` |
+| $T$ | `max_episode_length = 1200` |
 | $t$ | 当前 episode 控制步数 |
 | $\theta_{goal}$ | `goal_rel_heading` |
 | $\theta_{max}$ | `goal_direction_max_deg = 30 deg` |
@@ -769,7 +769,7 @@ $$
 | `is_success` | 命中最后一个 waypoint，位置误差小于 `0.5 m` | 是 |
 | `far_from_target` | 当前目标距离大于 `goal_distance + far_from_target_margin = 16.0 m` | 是 |
 | `ball_joint_out_of_bounds` | 任一球铰超过 lower / upper limits | 是 |
-| `time_out` | episode 达到 `2400` 步 | 否，作为 time-limit 输出 |
+| `time_out` | episode 达到 `1200` 步 | 否，作为 time-limit 输出 |
 
 实际运行函数为 `compute_done_terms()` 和环境 `_get_dones()`：
 

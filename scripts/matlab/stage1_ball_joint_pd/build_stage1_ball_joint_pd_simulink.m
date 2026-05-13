@@ -52,20 +52,20 @@ function add_inputs(model_name)
         "VariableName", "q_desired_ts", ...
         "SampleTime", "dt_ctrl", ...
         "Position", [35, 70, 170, 100]);
-    add_block("simulink/Sources/From Workspace", model_name + "/q_target_old", ...
-        "VariableName", "q_target_old_ts", ...
+    add_block("simulink/Sources/From Workspace", model_name + "/q_target_trace", ...
+        "VariableName", "q_target_trace_ts", ...
         "SampleTime", "dt_ctrl", ...
         "Position", [35, 145, 170, 175]);
-    add_block("simulink/Sources/From Workspace", model_name + "/q_actual_old", ...
-        "VariableName", "q_actual_old_ts", ...
+    add_block("simulink/Sources/From Workspace", model_name + "/q_actual_trace", ...
+        "VariableName", "q_actual_trace_ts", ...
         "SampleTime", "dt_ctrl", ...
         "Position", [35, 220, 170, 250]);
-    add_block("simulink/Sources/From Workspace", model_name + "/qdot_actual_old", ...
-        "VariableName", "qdot_actual_old_ts", ...
+    add_block("simulink/Sources/From Workspace", model_name + "/qdot_actual_trace", ...
+        "VariableName", "qdot_actual_trace_ts", ...
         "SampleTime", "dt_ctrl", ...
         "Position", [35, 520, 170, 550]);
-    add_block("simulink/Sources/From Workspace", model_name + "/qdot_cmd_old", ...
-        "VariableName", "qdot_cmd_old_ts", ...
+    add_block("simulink/Sources/From Workspace", model_name + "/qdot_alloc_trace", ...
+        "VariableName", "qdot_alloc_trace_ts", ...
         "SampleTime", "dt_ctrl", ...
         "Position", [35, 595, 170, 625]);
 end
@@ -141,10 +141,10 @@ function add_outputs(model_name)
     add_to_workspace(model_name, "tau_saturation_flag_new", [1810, 265, 1965, 295]);
 
     add_goto(model_name, "goto_q_desired", "q_desired_vec", [1810, 340, 1935, 370]);
-    add_goto(model_name, "goto_q_target_old", "q_target_old_vec", [1810, 385, 1935, 415]);
-    add_goto(model_name, "goto_q_actual_old", "q_actual_old_vec", [1810, 430, 1935, 460]);
-    add_goto(model_name, "goto_qdot_actual_old", "qdot_actual_old_vec", [1810, 475, 1935, 505]);
-    add_goto(model_name, "goto_qdot_cmd_old", "qdot_cmd_old_vec", [1810, 520, 1935, 550]);
+    add_goto(model_name, "goto_q_target_trace", "q_target_trace_vec", [1810, 385, 1935, 415]);
+    add_goto(model_name, "goto_q_actual_trace", "q_actual_trace_vec", [1810, 430, 1935, 460]);
+    add_goto(model_name, "goto_qdot_actual_trace", "qdot_actual_trace_vec", [1810, 475, 1935, 505]);
+    add_goto(model_name, "goto_qdot_alloc_trace", "qdot_alloc_trace_vec", [1810, 520, 1935, 550]);
     add_goto(model_name, "goto_q_target_new", "q_target_new_vec", [2015, 40, 2140, 70]);
     add_goto(model_name, "goto_q_sim_new", "q_sim_new_vec", [2015, 85, 2140, 115]);
     add_goto(model_name, "goto_qdot_sim_new", "qdot_sim_new_vec", [2015, 130, 2140, 160]);
@@ -231,9 +231,9 @@ function build_joint_display_subsystem(subsystem_path, joint_index, ~)
         "FontSize", 15);
     style_scope(torque_scope, "Torque command", "Torque (N*m)", [200, 200, 980, 520]);
 
-    angle_tags = ["q_desired_vec", "q_target_old_vec", "q_actual_old_vec", "q_target_new_vec", "q_sim_new_vec"];
-    angle_names = ["q_desired", "q_target_old", "q_actual_old", "q_target_new", "q_sim_new"];
-    angle_legend_names = ["q desired", "old target", "old actual", "new target", "new sim"];
+    angle_tags = ["q_desired_vec", "q_target_trace_vec", "q_actual_trace_vec", "q_target_new_vec", "q_sim_new_vec"];
+    angle_names = ["q_desired", "q_target_trace", "q_actual_trace", "q_target_new", "q_sim_new"];
+    angle_legend_names = ["q desired", "Isaac target", "Isaac actual", "sim target", "sim actual"];
     for signal_index = 1:numel(angle_tags)
         add_from_demux(subsystem_path, angle_names(signal_index), angle_tags(signal_index), ...
             [55, 75 + (signal_index - 1) * 42, 205, 107 + (signal_index - 1) * 42], ...
@@ -242,9 +242,9 @@ function build_joint_display_subsystem(subsystem_path, joint_index, ~)
             "Angle rad/" + string(signal_index), angle_legend_names(signal_index));
     end
 
-    velocity_tags = ["qdot_actual_old_vec", "qdot_cmd_old_vec", "qdot_sim_new_vec", "qdot_alloc_new_vec"];
-    velocity_names = ["qdot_actual_old", "qdot_cmd_old", "qdot_sim_new", "qdot_alloc_new"];
-    velocity_legend_names = ["old qdot actual", "old qdot cmd", "new qdot sim", "new qdot alloc"];
+    velocity_tags = ["qdot_actual_trace_vec", "qdot_alloc_trace_vec", "qdot_sim_new_vec", "qdot_alloc_new_vec"];
+    velocity_names = ["qdot_actual_trace", "qdot_alloc_trace", "qdot_sim_new", "qdot_alloc_new"];
+    velocity_legend_names = ["Isaac qdot actual", "Isaac qdot alloc", "sim qdot", "sim qdot alloc"];
     for signal_index = 1:numel(velocity_tags)
         add_from_demux(subsystem_path, velocity_names(signal_index), velocity_tags(signal_index), ...
             [55, 270 + (signal_index - 1) * 42, 205, 302 + (signal_index - 1) * 42], ...
@@ -323,7 +323,7 @@ function style_blocks(model_name)
     catch
     end
 
-    color_blocks(model_name, ["q_desired", "q_target_old", "q_actual_old", "qdot_actual_old", "qdot_cmd_old"], "lightGreen");
+    color_blocks(model_name, ["q_desired", "q_target_trace", "q_actual_trace", "qdot_actual_trace", "qdot_alloc_trace"], "lightGreen");
     color_blocks(model_name, ["Clamp q target", "q error", "Kp", "Kd", "PD torque", "Torque saturation"], "lightBlue");
     color_blocks(model_name, ["qdot integrator", "qdot saturation", "q integrator", "q saturation", "qdot allocator LPF"], "yellow");
     color_blocks(model_name, ["q_target_new", "q_sim_new", "qdot_sim_new", "qdot_alloc_new", "tau_sim_new", "tau_saturation_flag_new"], "white");
@@ -371,10 +371,10 @@ function connect_blocks(model_name)
     add_line(model_name, "tau saturation flag/1", "tau_saturation_flag_new/1", "autorouting", "on");
 
     add_line(model_name, "q_desired/1", "goto_q_desired/1", "autorouting", "on");
-    add_line(model_name, "q_target_old/1", "goto_q_target_old/1", "autorouting", "on");
-    add_line(model_name, "q_actual_old/1", "goto_q_actual_old/1", "autorouting", "on");
-    add_line(model_name, "qdot_actual_old/1", "goto_qdot_actual_old/1", "autorouting", "on");
-    add_line(model_name, "qdot_cmd_old/1", "goto_qdot_cmd_old/1", "autorouting", "on");
+    add_line(model_name, "q_target_trace/1", "goto_q_target_trace/1", "autorouting", "on");
+    add_line(model_name, "q_actual_trace/1", "goto_q_actual_trace/1", "autorouting", "on");
+    add_line(model_name, "qdot_actual_trace/1", "goto_qdot_actual_trace/1", "autorouting", "on");
+    add_line(model_name, "qdot_alloc_trace/1", "goto_qdot_alloc_trace/1", "autorouting", "on");
     add_line(model_name, "Clamp q target/1", "goto_q_target_new/1", "autorouting", "on");
     add_line(model_name, "q saturation/1", "goto_q_sim_new/1", "autorouting", "on");
     add_line(model_name, "qdot saturation/1", "goto_qdot_sim_new/1", "autorouting", "on");

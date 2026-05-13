@@ -7,13 +7,13 @@ arguments
     params (1, 1) struct
 end
 
-old_gap = abs(trace.q_desired - trace.q_target_old);
-old_error = abs(trace.q_desired - trace.q_actual_old);
+old_gap = abs(trace.q_desired - trace.q_target);
+old_error = abs(trace.q_desired - trace.q_actual);
 new_error = abs(sim_result.q_target_new - sim_result.q_sim_new);
 qdot_abs = abs(sim_result.qdot_sim_new);
 tau_abs = abs(sim_result.tau_sim_new);
 
-old_qdot_rms = rms_all(trace.qdot_actual_old);
+old_qdot_rms = rms_all(trace.qdot_actual);
 new_qdot_rms = rms_all(sim_result.qdot_sim_new);
 
 qdot_sign = sign(sim_result.qdot_sim_new);
@@ -59,8 +59,8 @@ function value = safe_ratio(numerator, denominator)
 end
 
 function score = compute_risk_score(metrics)
-    saturation_penalty = 2.0 * max(0.0, metrics.sat_ratio - 0.30);
-    qdot_penalty = 2.0 * max(0.0, metrics.qdot_limit_rate - 0.30);
+    saturation_penalty = 2.0 * max(0.0, metrics.sat_ratio - 0.70);
+    qdot_penalty = 2.0 * max(0.0, metrics.qdot_limit_rate - 0.70);
     negative_reduction_penalty = 2.0 * max(0.0, -metrics.error_reduction_ratio);
     oscillation_penalty = 0.01 * metrics.oscillation_score;
     smoothness_penalty = 0.20 * metrics.smoothness_cost;

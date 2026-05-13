@@ -413,8 +413,8 @@ $$
 | 参数 | 当前值 | 说明 |
 |---|---:|---|
 | `control.sim_dt` | `1/120 s` | Isaac physics step |
-| `control.decimation` | `2` | 每两个 physics step 更新一次 RL 控制 |
-| `control.control_dt` | `1/60 s` | 控制周期 |
+| `control.decimation` | `4` | 每四个 physics step 更新一次 RL 控制 |
+| `control.control_dt` | `1/30 s` | 控制周期 |
 | `ball_joint_effort_limit_sim` | `60 N*m` | 球铰 effort limit |
 | `ball_joint_velocity_limit_sim` | `2 rad/s` | 球铰 velocity limit |
 
@@ -422,7 +422,7 @@ MATLAB 第一版应使用：
 
 ```text
 dt_sim = 1/120 s
-dt_ctrl = 1/60 s
+dt_ctrl = 1/30 s
 tau_max = 60 N*m
 qdot_max = 2 rad/s
 ```
@@ -502,7 +502,7 @@ $$
 tau_max = 60 N*m
 qdot_max = 2 rad/s
 dt_sim = 1/120 s
-dt_ctrl = 1/60 s
+dt_ctrl = 1/30 s
 ```
 
 当前 `Kp=1000, Kd=10` 必须保留为压力测试基线。它不是推荐值，而是用于量化“当前 gain 直接 target 后会不会长期饱和和抖动”。
@@ -637,7 +637,7 @@ params.Kd = 32;
 params.tau_max = 60;
 params.qdot_max = 2;
 params.dt_sim = 1/120;
-params.dt_ctrl = 1/60;
+params.dt_ctrl = 1/30;
 params.tau_v = 0.05;
 ```
 

@@ -20,7 +20,7 @@
 当前 Stage1 的关键配置背景：
 
 - 并行环境数：`32`
-- 控制频率：`60 Hz`
+- 控制频率：`30 Hz`
 - episode 时长：`40 s`
 - actor 观测维度：`82`
 - critic 观测维度：`660`
@@ -151,7 +151,7 @@ record-only 模式只做策略推理和视频补录，不执行 PPO rollout/upda
 | `Train/mean_reward/time` | 以累计训练时间为横轴的平均 return | 按真实训练耗时看学习速度 |
 | `Train/mean_episode_length/time` | 以累计训练时间为横轴的平均 episode 长度 | 按真实训练耗时看终止趋势 |
 
-Stage1 中如果 `mean_episode_length` 接近 `40 s * 60 Hz = 2400` 步，通常说明 episode 多数跑到 time limit；如果明显变短，需要结合 `Termination/*` 判断是失稳、远离目标还是球铰越界。
+Stage1 中如果 `mean_episode_length` 接近 `40 s * 30 Hz = 1200` 步，通常说明 episode 多数跑到 time limit；如果明显变短，需要结合 `Termination/*` 判断是失稳、远离目标还是球铰越界。
 
 ### 3.2 `Loss/*`
 
@@ -260,7 +260,7 @@ Stage1Eval 额外提供：
 | `Reward/far_from_target` | 是 | 远离目标阈值后的惩罚项 | 越接近 `0` 越好 |
 | `Reward/angle_diff` | 是 | heading error 越小越高的奖励项 | 越高越好 |
 | `Reward/slip_penalty` | 是 | 接触权重 mask 后的纵滑和侧滑角惩罚 | 越接近 `0` 越好 |
-| `Reward/action_rate_penalty` | 否 | 动作变化惩罚；Stage1 当前按 `N=2400` 归一化，并通过 `Debug/Stage1/Reward/action_rate_penalty` 写入 TensorBoard | 越接近 `0` 越好 |
+| `Reward/action_rate_penalty` | 否 | 动作变化惩罚；Stage1 当前按 `N=1200` 归一化，并通过 `Debug/Stage1/Reward/action_rate_penalty` 写入 TensorBoard | 越接近 `0` 越好 |
 | `Reward/contact_support_penalty` | 否 | 前、中、后三段模块支撑丢失惩罚，并通过 `Debug/Stage1/Reward/contact_support_penalty` 写入 TensorBoard | 越接近 `0` 越好 |
 | `Reward/edge_speed_penalty` | 否 | 地形突变前正向超速惩罚，并通过 `Debug/Stage1/Reward/edge_speed_penalty` 写入 TensorBoard | 越接近 `0` 越好 |
 

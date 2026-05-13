@@ -72,6 +72,12 @@ parser.add_argument("--checkpoint", type=str, default=None)
 parser.add_argument("--load_run", type=str, default=None)
 parser.add_argument("--real-time", action="store_true", default=False)
 parser.add_argument(
+    "--zero_actions",
+    action="store_true",
+    default=False,
+    help="Force zero policy actions during playback. Useful for stationary debug visualization.",
+)
+parser.add_argument(
     "--show_goal_vis",
     action="store_true",
     default=False,
@@ -144,7 +150,7 @@ parser.add_argument(
         "--stream_video are enabled, such as 'chase,right_side'."
     ),
 )
-parser.add_argument("--follow_view_top_height", type=float, default=2.5)
+parser.add_argument("--follow_view_top_height", type=float, default=3.5)
 parser.add_argument("--follow_view_chase_env", type=int, default=0)
 parser.add_argument(
     "--terrain_replay_columns",
@@ -360,16 +366,16 @@ def _open_follow_view_stream_recorders(
     for view, output_path in stream_video_paths.items():
         camera_prim_path = f"/view/env_{args_cli.follow_view_chase_env}/{FOLLOW_CAMERA_NAMES[view]}"
         render_product = rep.create.render_product(camera_prim_path, resolution=raw_env.cfg.viewer.resolution)
-        if not isinstance(render_product, str):
-            render_product = render_product.path
+        render_product_path = render_product if isinstance(render_product, str) else render_product.path
         annotator = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
-        annotator.attach(render_product)
+        annotator.attach([render_product_path])
         writer = _open_stream_writer(output_path, fps)
         recorders.append(
             {
                 "view": view,
                 "path": output_path,
                 "render_product": render_product,
+                "render_product_path": render_product_path,
                 "annotator": annotator,
                 "writer": writer,
             }
@@ -378,9 +384,11 @@ def _open_follow_view_stream_recorders(
     return recorders
 
 
-def _append_follow_view_frames(recorders: list[dict[str, object]]) -> None:
+def _append_follow_view_frames(raw_env, recorders: list[dict[str, object]]) -> int:
     import numpy as np
 
+    raw_env.sim.render()
+    written_count = 0
     for recorder in recorders:
         annotator = recorder["annotator"]
         writer = recorder["writer"]
@@ -389,13 +397,15 @@ def _append_follow_view_frames(recorders: list[dict[str, object]]) -> None:
         if rgb_data.size == 0:
             continue
         writer.append_data(rgb_data[:, :, :3])
+        written_count += 1
+    return written_count
 
 
 def _close_follow_view_stream_recorders(recorders: list[dict[str, object]]) -> None:
     for recorder in recorders:
         writer = recorder.get("writer")
         annotator = recorder.get("annotator")
-        render_product = recorder.get("render_product")
+        render_product = recorder.get("render_product_path")
         if writer is not None:
             writer.close()
             recorder["writer"] = None
@@ -712,18 +722,30 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         video_writer = _open_stream_writer(stream_video_paths["viewport"], fps=round(1.0 / dt))
     obs = env.get_observations()
     timestep = 0
+    empty_follow_frame_count = 0
     try:
         while simulation_app.is_running():
             start_time = time.time()
             with torch.inference_mode():
                 actions = policy(obs)
+                if args_cli.zero_actions:
+                    actions = torch.zeros_like(actions)
                 obs, _, dones, _ = env.step(actions)
                 if parsed_rsl_rl_version >= version.parse("4.0.0"):
                     policy.reset(dones)
                 elif policy_nn is not None:
                     policy_nn.reset(dones)
             if follow_view_recorders:
-                _append_follow_view_frames(follow_view_recorders)
+                written_count = _append_follow_view_frames(env.unwrapped, follow_view_recorders)
+                if written_count != len(follow_view_recorders):
+                    empty_follow_frame_count += 1
+                    if empty_follow_frame_count >= 120:
+                        raise RuntimeError(
+                            "Follow-view stream recording did not receive RGB frames from all requested cameras. "
+                            "No video frames were written; check Replicator render products and camera prim paths."
+                        )
+                    continue
+                empty_follow_frame_count = 0
                 timestep += 1
                 if timestep % 600 == 0:
                     if args_cli.video_length > 0:

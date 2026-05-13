@@ -11,6 +11,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
 from isaaclab.app import AppLauncher
 
 
@@ -31,6 +32,48 @@ BALL_JOINT_NAMES = (
     "spm2_platform_joint_z",
     "spm2_platform_joint_y",
     "spm2_platform_joint_x",
+)
+REWARD_DIAGNOSTIC_FIELDS = (
+    "front_pitch_ref",
+    "front_pitch_actual",
+    "rear_pitch_actual",
+    "front_pitch_error",
+    "step_up_distance_m",
+    "step_up_front_gap_m",
+    "step_up_posture_phase_weight",
+    "step_up_posture_weight",
+    "step_up_posture_badness",
+    "terrain_gate_step_up",
+    "edge_strength",
+    "edge_height_jump",
+    "progress_quality_score",
+    "quality_gate_score",
+    "motion_quality_score",
+    "progress_quality_pitch",
+    "progress_quality_contact",
+    "step_up_front_posture_penalty_raw",
+    "step_up_module_progress_score",
+    "step_up_module_progress_reward_raw",
+    "drop_guard_active",
+    "drop_anti_dive_penalty_raw",
+    "rear_follow_score",
+    "rear_follow_progress_score",
+    "rear_follow_deficit_m",
+    "rear_follow_deficit_score",
+    "rear_follow_reward_raw",
+    "rear_follow_penalty_raw",
+    "front_middle_high_rear_low",
+    "quality_row_advance_mask",
+)
+REWARD_COMPONENT_FIELDS = (
+    "progress_to_target",
+    "terrain_aware_edge_speed_penalty",
+    "step_up_front_posture_penalty",
+    "step_up_module_progress_reward",
+    "rear_follow_reward",
+    "rear_follow_penalty",
+    "quality_row_advance_reward",
+    "drop_anti_dive_penalty",
 )
 
 parser = argparse.ArgumentParser(description="Export ball-joint policy traces for MATLAB PD tuning.")
@@ -73,6 +116,36 @@ parser.add_argument(
 parser.add_argument("--prefix", type=str, default="sec14_model699")
 parser.add_argument("--no_split_by_terrain", action="store_true", default=False)
 parser.add_argument("--include_done_rows", action="store_true", default=False)
+parser.add_argument(
+    "--ball_joint_stiffness",
+    type=float,
+    default=None,
+    help="Optional replay-only override for ball-joint position-drive stiffness.",
+)
+parser.add_argument(
+    "--ball_joint_damping",
+    type=float,
+    default=None,
+    help="Optional replay-only override for ball-joint position-drive damping.",
+)
+parser.add_argument(
+    "--height_patch_env_id",
+    type=int,
+    default=-1,
+    help="Optional env id for exporting raw Stage1 critic height patch snapshots to NPZ. Negative disables it.",
+)
+parser.add_argument(
+    "--height_patch_stride",
+    type=int,
+    default=1,
+    help="Export one height patch snapshot every N collected control steps when --height_patch_env_id is enabled.",
+)
+parser.add_argument(
+    "--height_patch_max_snapshots",
+    type=int,
+    default=0,
+    help="Maximum exported height patch snapshots. Use 0 for no limit.",
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
 
@@ -100,7 +173,9 @@ import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils.hydra import hydra_task_config
 
 import complete_car_lab  # noqa: F401
+from complete_car_lab.tasks.direct.complete_car.assets.robot_cfg import build_complete_car_robot_cfg
 from complete_car_lab.tasks.direct.complete_car.mdp import actions as mdp_actions
+from complete_car_lab.tasks.direct.complete_car.mdp import curriculum as mdp_curriculum
 
 
 def _normalize_selector(value: str) -> str:
@@ -208,6 +283,41 @@ def _format_stage1_replay_columns(columns: list[int], terrain_runtime) -> str:
     return ", ".join(f"{column}:{_terrain_column_name(terrain_runtime, column)}" for column in columns)
 
 
+def _reset_stage1_replay_curriculum_state(raw_env, terrain_runtime, *, preserve_levels: bool) -> None:
+    """Keep Stage1 trace replay column selection from reset-time recycling."""
+    num_cols = int(terrain_runtime._terrain_cfg.num_cols)
+    if not preserve_levels:
+        terrain_runtime.terrain_levels[:] = mdp_curriculum.sample_initial_terrain_levels(
+            raw_env.cfg.curriculum,
+            terrain_runtime,
+            terrain_runtime.terrain_types,
+        )
+    targets = mdp_curriculum.compute_terrain_column_counts(terrain_runtime.terrain_types, num_cols)
+
+    completion_targets = getattr(raw_env, "_stage1_column_completion_targets", None)
+    completion_counts = getattr(raw_env, "_stage1_column_completion_counts", None)
+    completed_columns = getattr(raw_env, "_stage1_completed_terrain_columns", None)
+    if completion_targets is not None and completion_counts is not None and completed_columns is not None:
+        completion_targets.copy_(targets)
+        completion_counts.zero_()
+        completed_columns.copy_(targets <= 0)
+
+    training_active = getattr(raw_env, "_stage1_training_active", None)
+    transition_train_mask = getattr(raw_env, "_stage1_transition_train_mask", None)
+    recycled_ever = getattr(raw_env, "_stage1_recycled_envs_ever", None)
+    last_recycled = getattr(raw_env, "_stage1_last_recycled_env_mask", None)
+    if training_active is not None:
+        training_active.fill_(True)
+    if transition_train_mask is not None:
+        transition_train_mask.fill_(True)
+    if recycled_ever is not None:
+        recycled_ever.zero_()
+    if last_recycled is not None:
+        last_recycled.zero_()
+    if hasattr(raw_env, "_stage1_recycle_cursor"):
+        raw_env._stage1_recycle_cursor = 0
+
+
 def _parse_level_by_name(raw_value: str) -> dict[str, int]:
     result: dict[str, int] = {}
     if not raw_value.strip():
@@ -256,6 +366,11 @@ def _configure_stage1_replay_terrain(raw_env, raw_selector: str, level: int | No
             if normalized in level_by_name:
                 terrain_runtime.terrain_levels[env_id] = int(max(0, min(level_by_name[normalized], max_level)))
 
+    _reset_stage1_replay_curriculum_state(
+        raw_env,
+        terrain_runtime,
+        preserve_levels=level is not None or bool(level_by_name),
+    )
     terrain_runtime.sync_env_origins(raw_env.scene)
     print(
         "[INFO] Stage1 trace terrain columns: "
@@ -307,6 +422,8 @@ def _build_fieldnames() -> list[str]:
     ]
     for action_idx in range(8):
         fields.append(f"action_{action_idx}")
+    fields.extend(REWARD_DIAGNOSTIC_FIELDS)
+    fields.extend(f"reward_component_{name}" for name in REWARD_COMPONENT_FIELDS)
     for joint_name in BALL_JOINT_NAMES:
         fields.extend(
             [
@@ -358,6 +475,22 @@ def _collect_rows(raw_env, actions: torch.Tensor, step: int, episode_indices: to
     lateral_abs_cpu = _tensor_to_cpu(torch.mean(torch.abs(raw_env._last_wheel_v_perp), dim=1))
     dones_cpu = _tensor_to_cpu(dones).to(dtype=torch.bool)
     episode_cpu = _tensor_to_cpu(episode_indices)
+    reward_diagnostics_cpu: dict[str, torch.Tensor] = {}
+    reward_diagnostics = getattr(raw_env, "_last_reward_diagnostics", {})
+    for field_name in REWARD_DIAGNOSTIC_FIELDS:
+        values = reward_diagnostics.get(field_name)
+        if isinstance(values, torch.Tensor):
+            reward_diagnostics_cpu[field_name] = _tensor_to_cpu(values).reshape(-1)
+        else:
+            reward_diagnostics_cpu[field_name] = torch.full((num_envs,), float("nan"))
+    reward_components_cpu: dict[str, torch.Tensor] = {}
+    reward_components = getattr(raw_env, "_last_reward_components", {})
+    for field_name in REWARD_COMPONENT_FIELDS:
+        values = reward_components.get(field_name)
+        if isinstance(values, torch.Tensor):
+            reward_components_cpu[field_name] = _tensor_to_cpu(values).reshape(-1)
+        else:
+            reward_components_cpu[field_name] = torch.full((num_envs,), float("nan"))
 
     if terrain_runtime is not None and terrain_runtime.terrain_types is not None:
         terrain_cols_cpu = _tensor_to_cpu(terrain_runtime.terrain_types)
@@ -410,6 +543,10 @@ def _collect_rows(raw_env, actions: torch.Tensor, step: int, episode_indices: to
         }
         for action_idx in range(actions_cpu.shape[1]):
             row[f"action_{action_idx}"] = float(actions_cpu[env_id, action_idx].item())
+        for field_name in REWARD_DIAGNOSTIC_FIELDS:
+            row[field_name] = float(reward_diagnostics_cpu[field_name][env_id].item())
+        for field_name in REWARD_COMPONENT_FIELDS:
+            row[f"reward_component_{field_name}"] = float(reward_components_cpu[field_name][env_id].item())
         for joint_index, joint_name in enumerate(BALL_JOINT_NAMES):
             q_desired = float(desired_cpu[env_id, joint_index].item())
             q_position_target = float(position_target_cpu[env_id, joint_index].item())
@@ -432,6 +569,75 @@ def _write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, object]])
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _height_patch_snapshot(raw_env, env_id: int, collected_step: int) -> dict[str, object] | None:
+    height_patch = getattr(raw_env, "_last_critic_height_patch", None)
+    if not isinstance(height_patch, torch.Tensor):
+        return None
+    if height_patch.ndim != 2 or env_id < 0 or env_id >= int(height_patch.shape[0]):
+        return None
+    x_points = getattr(raw_env, "_height_patch_x_points", None)
+    y_points = getattr(raw_env, "_height_patch_y_points", None)
+    if not isinstance(x_points, torch.Tensor) or not isinstance(y_points, torch.Tensor):
+        return None
+
+    relative_height = _tensor_to_cpu(height_patch[env_id]).numpy()
+    root_pos = _tensor_to_cpu(raw_env.robot.data.root_link_pos_w[env_id, :3]).numpy()
+    root_quat = _tensor_to_cpu(raw_env.robot.data.root_link_quat_w[env_id]).numpy()
+    terrain_height = float(root_pos[2]) - relative_height
+    diagnostics = getattr(raw_env, "_last_terrain_feature_diagnostics", {})
+    reward_diagnostics = getattr(raw_env, "_last_reward_diagnostics", {})
+
+    feature_values: dict[str, float] = {}
+    for source in (diagnostics, reward_diagnostics):
+        if not isinstance(source, dict):
+            continue
+        for name, values in source.items():
+            if isinstance(values, torch.Tensor) and values.ndim >= 1 and values.shape[0] > env_id:
+                value = values[env_id]
+                if value.numel() == 1:
+                    feature_values[name] = float(value.detach().item())
+
+    return {
+        "step": int(collected_step),
+        "time_s": float(collected_step) * float(getattr(raw_env, "step_dt", raw_env.cfg.control.control_dt)),
+        "env_id": int(env_id),
+        "root_pos_w": root_pos.astype(np.float32),
+        "root_quat_w": root_quat.astype(np.float32),
+        "relative_height_patch": relative_height.astype(np.float32),
+        "terrain_height_patch": terrain_height.astype(np.float32),
+        "feature_values": feature_values,
+    }
+
+
+def _write_height_patch_npz(path: Path, raw_env, snapshots: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    x_points = _tensor_to_cpu(raw_env._height_patch_x_points).numpy().astype(np.float32)
+    y_points = _tensor_to_cpu(raw_env._height_patch_y_points).numpy().astype(np.float32)
+    local_points = _tensor_to_cpu(raw_env._critic_height_patch_local).numpy().astype(np.float32)
+    feature_names = sorted({name for snapshot in snapshots for name in snapshot["feature_values"].keys()})
+    feature_matrix = np.full((len(snapshots), len(feature_names)), np.nan, dtype=np.float32)
+    for row_idx, snapshot in enumerate(snapshots):
+        feature_values = snapshot["feature_values"]
+        for col_idx, name in enumerate(feature_names):
+            if name in feature_values:
+                feature_matrix[row_idx, col_idx] = float(feature_values[name])
+    np.savez_compressed(
+        path,
+        steps=np.asarray([snapshot["step"] for snapshot in snapshots], dtype=np.int32),
+        time_s=np.asarray([snapshot["time_s"] for snapshot in snapshots], dtype=np.float32),
+        env_id=np.asarray([snapshot["env_id"] for snapshot in snapshots], dtype=np.int32),
+        root_pos_w=np.stack([snapshot["root_pos_w"] for snapshot in snapshots]).astype(np.float32),
+        root_quat_w=np.stack([snapshot["root_quat_w"] for snapshot in snapshots]).astype(np.float32),
+        local_x=x_points,
+        local_y=y_points,
+        local_points=local_points,
+        relative_height_patch=np.stack([snapshot["relative_height_patch"] for snapshot in snapshots]).astype(np.float32),
+        terrain_height_patch=np.stack([snapshot["terrain_height_patch"] for snapshot in snapshots]).astype(np.float32),
+        feature_names=np.asarray(feature_names),
+        feature_values=feature_matrix,
+    )
 
 
 def _summarize_rows(rows: list[dict[str, object]]) -> dict[str, object]:
@@ -460,10 +666,26 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         raise ValueError("--warmup_steps must be non-negative.")
     if args_cli.replay_episode_length_s <= 0.0:
         raise ValueError("--replay_episode_length_s must be positive.")
+    if args_cli.height_patch_stride <= 0:
+        raise ValueError("--height_patch_stride must be positive.")
 
     env_cfg.scene.num_envs = args_cli.num_envs
     env_cfg.sim.device = args_cli.device
     env_cfg.episode_length_s = args_cli.replay_episode_length_s
+    if args_cli.ball_joint_stiffness is not None:
+        env_cfg.control.ball_joint_stiffness = float(args_cli.ball_joint_stiffness)
+    if args_cli.ball_joint_damping is not None:
+        env_cfg.control.ball_joint_damping = float(args_cli.ball_joint_damping)
+    if args_cli.ball_joint_stiffness is not None or args_cli.ball_joint_damping is not None:
+        env_cfg.robot = build_complete_car_robot_cfg(env_cfg.control, env_cfg.resets)
+    print(
+        "[INFO] Ball-joint replay drive: "
+        f"Kp={env_cfg.control.ball_joint_stiffness:g}, "
+        f"Kd={env_cfg.control.ball_joint_damping:g}, "
+        f"effort={env_cfg.control.ball_joint_effort_limit_sim:g}, "
+        f"velocity={env_cfg.control.ball_joint_velocity_limit_sim:g}",
+        flush=True,
+    )
     env_cfg.debug.enable_debug_draw = False
     env_cfg.debug.visualize_goal_position = False
     env_cfg.debug.visualize_goal_heading = False
@@ -499,6 +721,7 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
 
     obs = env.get_observations()
     rows: list[dict[str, object]] = []
+    height_patch_snapshots: list[dict[str, object]] = []
     episode_indices = torch.zeros(env.unwrapped.num_envs, dtype=torch.long, device=env.unwrapped.device)
     fieldnames = _build_fieldnames()
     total_steps = args_cli.warmup_steps + args_cli.steps
@@ -517,6 +740,17 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
                 if not args_cli.include_done_rows:
                     step_rows = [row for row in step_rows if int(row["is_done"]) == 0]
                 rows.extend(step_rows)
+                if (
+                    args_cli.height_patch_env_id >= 0
+                    and collected_step % args_cli.height_patch_stride == 0
+                    and (
+                        args_cli.height_patch_max_snapshots <= 0
+                        or len(height_patch_snapshots) < args_cli.height_patch_max_snapshots
+                    )
+                ):
+                    snapshot = _height_patch_snapshot(env.unwrapped, args_cli.height_patch_env_id, collected_step)
+                    if snapshot is not None:
+                        height_patch_snapshots.append(snapshot)
 
             episode_indices += dones.to(dtype=torch.long)
             if (step + 1) % 300 == 0:
@@ -527,6 +761,16 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     combined_path = out_dir / f"{args_cli.prefix}_combined.csv"
     _write_csv(combined_path, fieldnames, rows)
     print(f"[INFO] Wrote combined trace: {combined_path}", flush=True)
+    height_patch_npz_path: str | None = None
+    if height_patch_snapshots:
+        height_patch_path = out_dir / f"{args_cli.prefix}_height_patch_env{args_cli.height_patch_env_id}.npz"
+        _write_height_patch_npz(height_patch_path, env.unwrapped, height_patch_snapshots)
+        height_patch_npz_path = str(height_patch_path)
+        print(
+            f"[INFO] Wrote height patch trace: {height_patch_path} "
+            f"({len(height_patch_snapshots)} snapshots)",
+            flush=True,
+        )
 
     split_paths: dict[str, str] = {}
     if not args_cli.no_split_by_terrain:
@@ -552,6 +796,9 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         "terrain_level_by_name": args_cli.terrain_level_by_name,
         "combined_csv": str(combined_path),
         "split_csv": split_paths,
+        "height_patch_npz": height_patch_npz_path,
+        "height_patch_env_id": args_cli.height_patch_env_id,
+        "height_patch_stride": args_cli.height_patch_stride,
         "summary": _summarize_rows(rows),
         "ball_joint_names": list(BALL_JOINT_NAMES),
     }

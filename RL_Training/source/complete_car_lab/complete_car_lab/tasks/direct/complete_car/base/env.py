@@ -112,7 +112,14 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._stage1_row_actual_overspeed_near_edge_max = torch.zeros(self.num_envs, device=self.device)
         self._stage1_row_actual_overspeed_near_edge_ever = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._stage1_row_phase_module_progress_max = torch.zeros(self.num_envs, device=self.device)
+        self._stage1_row_rear_follow_score_max = torch.zeros(self.num_envs, device=self.device)
+        self._stage1_drop_guard_latch = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._stage1_drop_guard_front_stable_time_s = torch.zeros(self.num_envs, device=self.device)
+        self._last_stage1_drop_guard_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._last_stage1_orientation_out_of_bounds = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._last_stage1_quality_advance_score = torch.zeros(self.num_envs, device=self.device)
+        self._last_stage1_quality_gate_score = torch.zeros(self.num_envs, device=self.device)
+        self._last_stage1_motion_quality_score = torch.zeros(self.num_envs, device=self.device)
         self._last_stage1_quality_advance_mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._last_stage1_low_quality_hit = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._last_stage1_raw_hard_hit = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
@@ -207,7 +214,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "rear_pitch_actual": torch.zeros(self.num_envs, device=self.device),
             "front_pitch_error": torch.zeros(self.num_envs, device=self.device),
             "step_up_distance_m": torch.zeros(self.num_envs, device=self.device),
-            "step_up_approach_mask": torch.zeros(self.num_envs, device=self.device),
+            "step_up_front_gap_m": torch.zeros(self.num_envs, device=self.device),
+            "step_up_posture_phase_weight": torch.zeros(self.num_envs, device=self.device),
+            "step_up_posture_weight": torch.zeros(self.num_envs, device=self.device),
             "step_up_posture_badness": torch.zeros(self.num_envs, device=self.device),
             "progress_quality_slip": torch.ones(self.num_envs, device=self.device),
             "progress_quality_overspeed": torch.ones(self.num_envs, device=self.device),
@@ -232,6 +241,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "step_up_module_progress_score": torch.zeros(self.num_envs, device=self.device),
             "step_up_module_progress_reward_raw": torch.zeros(self.num_envs, device=self.device),
             "quality_advance_score": torch.zeros(self.num_envs, device=self.device),
+            "quality_gate_score": torch.zeros(self.num_envs, device=self.device),
+            "motion_quality_score": torch.zeros(self.num_envs, device=self.device),
             "hard_quality_advance": torch.zeros(self.num_envs, device=self.device),
             "raw_hard_hit": torch.zeros(self.num_envs, device=self.device),
             "low_quality_hit": torch.zeros(self.num_envs, device=self.device),
@@ -239,6 +250,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "row_contact_support_min": torch.ones(self.num_envs, device=self.device),
             "row_stuck_time_max": torch.zeros(self.num_envs, device=self.device),
             "phase_module_progress_score": torch.zeros(self.num_envs, device=self.device),
+            "row_rear_follow_score_max": torch.zeros(self.num_envs, device=self.device),
             "actual_overspeed_near_edge": torch.zeros(self.num_envs, device=self.device),
             "actual_overspeed_near_edge_rate": torch.zeros(self.num_envs, device=self.device),
             "front_climb_success": torch.zeros(self.num_envs, device=self.device),
@@ -252,7 +264,15 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "recovery_reward_raw": torch.zeros(self.num_envs, device=self.device),
             "drop_pitch_rate_abs": torch.zeros(self.num_envs, device=self.device),
             "drop_vz_down": torch.zeros(self.num_envs, device=self.device),
+            "drop_guard_active": torch.zeros(self.num_envs, device=self.device),
             "drop_anti_dive_penalty_raw": torch.zeros(self.num_envs, device=self.device),
+            "rear_follow_score": torch.zeros(self.num_envs, device=self.device),
+            "rear_follow_progress_score": torch.zeros(self.num_envs, device=self.device),
+            "rear_follow_deficit_m": torch.zeros(self.num_envs, device=self.device),
+            "rear_follow_deficit_score": torch.zeros(self.num_envs, device=self.device),
+            "rear_follow_reward_raw": torch.zeros(self.num_envs, device=self.device),
+            "rear_follow_penalty_raw": torch.zeros(self.num_envs, device=self.device),
+            "front_middle_high_rear_low": torch.zeros(self.num_envs, device=self.device),
         }
         self._last_total_reward = torch.zeros(self.num_envs, device=self.device)
         self._episode_total_reward_sum = torch.zeros(self.num_envs, device=self.device)
@@ -263,6 +283,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "is_success": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             "far_from_target": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             "ball_joint_out_of_bounds": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
+            "orientation_out_of_bounds": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             "time_out": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             "stuck_timeout": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             "terrain_column_completed": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
@@ -689,6 +710,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         blocked = (
             done_terms["far_from_target"]
             | done_terms["ball_joint_out_of_bounds"]
+            | done_terms.get("orientation_out_of_bounds", torch.zeros_like(waypoint_hit))
             | done_terms["time_out"]
             | done_terms.get("stuck_timeout", torch.zeros_like(waypoint_hit))
             | done_terms.get("low_quality_terrain_hit", torch.zeros_like(waypoint_hit))
@@ -959,6 +981,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self.cfg.control.contact_force_off_threshold,
             self.cfg.control.contact_force_on_threshold,
         )
+        drop_guard_active = self._update_stage1_drop_guard_state(relative_goal_commands, wheel_contact_weights)
         terrain_height_patch = self._compute_critic_height_patch()
         self._pre_reset_critic_height_patch = terrain_height_patch
         edge_strength, edge_height_jump = self._compute_edge_preview(terrain_height_patch)
@@ -1000,6 +1023,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             recovery_reverse_now=self._last_stage1_recovery_reverse_now,
             recovery_success=self._last_stage1_recovery_success,
             middle_pitch_rad=middle_pitch_rad,
+            drop_guard_active=drop_guard_active,
         )
         self._update_stage1_quality_advance_state(diagnostics)
         if self._uses_stage1_train_retirement():
@@ -1023,6 +1047,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
             diagnostics["quality_row_advance_mask"] = self._last_stage1_quality_advance_mask.float()
             diagnostics["quality_row_advance_reward_raw"] = quality_reward_raw
             diagnostics["quality_advance_score"] = self._last_stage1_quality_advance_score
+            diagnostics["quality_gate_score"] = self._last_stage1_quality_gate_score
+            diagnostics["motion_quality_score"] = self._last_stage1_motion_quality_score
             diagnostics["hard_quality_advance"] = self._last_stage1_quality_advance_mask.float()
             diagnostics["raw_hard_hit"] = self._last_stage1_raw_hard_hit.float()
             diagnostics["low_quality_hit"] = self._last_stage1_low_quality_hit.float()
@@ -1030,6 +1056,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             diagnostics["row_contact_support_min"] = self._stage1_row_contact_support_min
             diagnostics["row_stuck_time_max"] = self._stage1_row_stuck_time_max
             diagnostics["phase_module_progress_score"] = self._stage1_row_phase_module_progress_max
+            diagnostics["row_rear_follow_score_max"] = self._stage1_row_rear_follow_score_max
             diagnostics["actual_overspeed_near_edge"] = self._stage1_row_actual_overspeed_near_edge_max
             diagnostics["actual_overspeed_near_edge_rate"] = self._stage1_row_actual_overspeed_near_edge_ever.float()
             front_threshold = max(
@@ -1075,6 +1102,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             & ~self._last_done_terms["is_success"]
             & ~self._last_done_terms["far_from_target"]
             & ~self._last_done_terms["ball_joint_out_of_bounds"]
+            & ~self._last_done_terms["orientation_out_of_bounds"]
             & ~self._last_done_terms["time_out"]
             & ~self._last_done_terms["stuck_timeout"],
             as_tuple=False,
@@ -1159,10 +1187,12 @@ class CompleteCarDirectEnv(DirectRLEnv):
             done_terms["is_success"]
             | done_terms["far_from_target"]
             | done_terms["ball_joint_out_of_bounds"]
+            | done_terms["orientation_out_of_bounds"]
             | done_terms["stuck_timeout"]
             | done_terms["terrain_column_completed"]
             | done_terms["low_quality_terrain_hit"]
         )
+        self._last_stage1_orientation_out_of_bounds.copy_(done_terms["orientation_out_of_bounds"])
         return terminated, done_terms["time_out"]
 
 
@@ -1212,6 +1242,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._last_done_terms["is_success"][env_ids]
             | self._last_done_terms["far_from_target"][env_ids]
             | self._last_done_terms["ball_joint_out_of_bounds"][env_ids]
+            | self._last_done_terms["orientation_out_of_bounds"][env_ids]
             | self._last_done_terms["stuck_timeout"][env_ids]
             | self._last_done_terms["terrain_column_completed"][env_ids]
             | self._last_done_terms["low_quality_terrain_hit"][env_ids]
@@ -1233,6 +1264,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
         )
         extras["Termination/ball_joint_limit_rate"] = float(
             torch.mean(self._last_done_terms["ball_joint_out_of_bounds"][env_ids].float()).item()
+        )
+        extras["Termination/orientation_out_of_bounds_rate"] = float(
+            torch.mean(self._last_done_terms["orientation_out_of_bounds"][env_ids].float()).item()
         )
         if terrain_metrics is not None:
             extras.update({f"terrain/{key}": value for key, value in terrain_metrics.items()})
@@ -1463,7 +1497,13 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._stage1_row_actual_overspeed_near_edge_max[env_ids] = 0.0
         self._stage1_row_actual_overspeed_near_edge_ever[env_ids] = False
         self._stage1_row_phase_module_progress_max[env_ids] = 0.0
+        self._stage1_row_rear_follow_score_max[env_ids] = 0.0
+        self._stage1_drop_guard_latch[env_ids] = False
+        self._stage1_drop_guard_front_stable_time_s[env_ids] = 0.0
+        self._last_stage1_drop_guard_active[env_ids] = False
         self._last_stage1_quality_advance_score[env_ids] = 0.0
+        self._last_stage1_quality_gate_score[env_ids] = 0.0
+        self._last_stage1_motion_quality_score[env_ids] = 0.0
         self._last_stage1_quality_advance_mask[env_ids] = False
         self._last_stage1_low_quality_hit[env_ids] = False
         self._last_stage1_raw_hard_hit[env_ids] = False
@@ -1544,9 +1584,18 @@ class CompleteCarDirectEnv(DirectRLEnv):
         )
         module_progress_score = torch.clamp(
             (
-                0.2 * self._stage1_row_module_progress_max[:, 0]
-                + 0.5 * self._stage1_row_module_progress_max[:, 1]
-                + 0.3 * self._stage1_row_module_progress_max[:, 2]
+                float(getattr(self.cfg.rewards.params, "step_up_module_progress_front_ratio", 0.15))
+                * self._stage1_row_module_progress_max[:, 0]
+                + float(getattr(self.cfg.rewards.params, "step_up_module_progress_middle_ratio", 0.35))
+                * self._stage1_row_module_progress_max[:, 1]
+                + float(getattr(self.cfg.rewards.params, "step_up_module_progress_rear_ratio", 0.50))
+                * self._stage1_row_module_progress_max[:, 2]
+            )
+            / max(
+                float(getattr(self.cfg.rewards.params, "step_up_module_progress_front_ratio", 0.15))
+                + float(getattr(self.cfg.rewards.params, "step_up_module_progress_middle_ratio", 0.35))
+                + float(getattr(self.cfg.rewards.params, "step_up_module_progress_rear_ratio", 0.50)),
+                1.0e-6,
             )
             / module_progress_scale,
             min=0.0,
@@ -1555,6 +1604,11 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._stage1_row_phase_module_progress_max[hard_mask] = torch.maximum(
             self._stage1_row_phase_module_progress_max[hard_mask],
             module_progress_score[hard_mask],
+        )
+        rear_follow_score = torch.clamp(diagnostics.get("rear_follow_score", torch.zeros(self.num_envs, device=self.device)), min=0.0, max=1.0)
+        self._stage1_row_rear_follow_score_max[hard_mask] = torch.maximum(
+            self._stage1_row_rear_follow_score_max[hard_mask],
+            rear_follow_score[hard_mask],
         )
 
     def _compute_stage1_quality_advance_mask(
@@ -1571,25 +1625,41 @@ class CompleteCarDirectEnv(DirectRLEnv):
         contact_quality = torch.clamp(self._stage1_row_contact_support_min / contact_min, min=0.0, max=1.0)
         not_stuck_quality = torch.clamp(1.0 - self._stage1_row_stuck_time_max / stuck_scale, min=0.0, max=1.0)
 
-        obstacle_mask = self._stage1_terrain_name_gate("discrete obstacles") > 0.5
+        hard_terrain_mask = self._stage1_hard_terrain_mask()
         module_quality = torch.where(
-            obstacle_mask,
+            hard_terrain_mask,
             torch.clamp(self._stage1_row_phase_module_progress_max / module_min, min=0.0, max=1.0),
             torch.ones_like(speed_quality),
         )
-        quality_score = torch.minimum(
+        rear_follow_quality = torch.where(
+            hard_terrain_mask,
+            torch.clamp(self._stage1_row_rear_follow_score_max, min=0.0, max=1.0),
+            torch.ones_like(speed_quality),
+        )
+        quality_gate_score = torch.minimum(
             torch.minimum(speed_quality, contact_quality),
-            torch.minimum(not_stuck_quality, module_quality),
+            torch.minimum(not_stuck_quality, torch.minimum(module_quality, rear_follow_quality)),
+        )
+        motion_quality_score = torch.clamp(
+            0.25 * speed_quality
+            + 0.25 * contact_quality
+            + 0.15 * not_stuck_quality
+            + 0.20 * module_quality
+            + 0.15 * rear_follow_quality,
+            min=0.0,
+            max=1.0,
         )
         min_score = float(getattr(self.cfg.rewards.params, "quality_advance_min_score", 0.35))
         contact_ok = self._stage1_row_contact_support_min >= contact_min
-        quality_ok = (quality_score >= min_score) & contact_ok
+        quality_ok = (quality_gate_score >= min_score) & contact_ok
         quality_advance = hard_hit & quality_ok
         quality_gate_enabled = bool(getattr(self.cfg.rewards.params, "quality_gated_terrain_advance", False))
         low_quality_hit = hard_hit & ~quality_ok if quality_gate_enabled else torch.zeros_like(hard_hit)
         row_advance_without_quality = hard_hit & can_advance & ~quality_ok
 
-        self._last_stage1_quality_advance_score.copy_(quality_score)
+        self._last_stage1_quality_advance_score.copy_(quality_gate_score)
+        self._last_stage1_quality_gate_score.copy_(quality_gate_score)
+        self._last_stage1_motion_quality_score.copy_(motion_quality_score)
         self._last_stage1_quality_advance_mask.copy_(quality_advance)
         self._last_stage1_low_quality_hit.copy_(low_quality_hit)
         self._last_stage1_raw_hard_hit.copy_(hard_hit)
@@ -1656,6 +1726,50 @@ class CompleteCarDirectEnv(DirectRLEnv):
         if root_lin_vel_w is None:
             return torch.zeros_like(self.robot.data.root_com_lin_vel_b)
         return torch.nan_to_num(root_lin_vel_w, nan=0.0, posinf=0.0, neginf=0.0)
+
+    def _update_stage1_drop_guard_state(
+        self,
+        relative_goal_commands: torch.Tensor,
+        wheel_contact_weights: torch.Tensor,
+    ) -> torch.Tensor:
+        if not self._is_stage1():
+            self._stage1_drop_guard_latch.zero_()
+            self._stage1_drop_guard_front_stable_time_s.zero_()
+            self._last_stage1_drop_guard_active.zero_()
+            return self._last_stage1_drop_guard_active
+
+        params = self.cfg.rewards.params
+        control_dt = max(float(getattr(self.cfg.control, "control_dt", 1.0 / 30.0)), 1.0e-6)
+        g_drop = torch.maximum(
+            self._stage1_terrain_feature_value("g_step_down"),
+            self._stage1_terrain_feature_value("g_gap"),
+        )
+        target_ahead = relative_goal_commands[:, 0] > float(getattr(params, "stuck_goal_ahead_threshold_m", 0.5))
+        activate = (g_drop > float(getattr(params, "drop_guard_gate_threshold", 0.3))) & target_ahead
+
+        front_support = torch.max(wheel_contact_weights[:, 2], wheel_contact_weights[:, 3])
+        pitch_rate_abs = torch.abs(self.robot.data.root_com_ang_vel_b[:, 1])
+        vz_down = torch.clamp(-self._root_lin_vel_w()[:, 2], min=0.0)
+        stable = (
+            (front_support >= float(getattr(params, "drop_guard_release_front_support", 0.7)))
+            & (pitch_rate_abs <= float(getattr(params, "drop_guard_release_pitch_rate_radps", 0.5)))
+            & (vz_down <= float(getattr(params, "drop_guard_release_vz_down_mps", 0.15)))
+        )
+
+        next_latch = (self._stage1_drop_guard_latch | activate) & target_ahead
+        self._stage1_drop_guard_front_stable_time_s = torch.where(
+            next_latch & stable,
+            self._stage1_drop_guard_front_stable_time_s + control_dt,
+            torch.zeros_like(self._stage1_drop_guard_front_stable_time_s),
+        )
+        release = next_latch & (
+            self._stage1_drop_guard_front_stable_time_s
+            >= float(getattr(params, "drop_guard_release_time_s", 0.20))
+        )
+        next_latch = next_latch & ~release
+        self._stage1_drop_guard_latch.copy_(next_latch)
+        self._last_stage1_drop_guard_active.copy_(next_latch)
+        return self._last_stage1_drop_guard_active
 
     def _update_stage1_stuck_state(self, relative_goal_commands: torch.Tensor) -> torch.Tensor:
         if not self._is_stage1():
@@ -1917,6 +2031,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         middle_rpy = quaternion_to_rpy(self.robot.data.root_link_quat_w)
         middle_roll_deg = torch.rad2deg(middle_rpy[:, 0])
         middle_pitch_deg = torch.rad2deg(middle_rpy[:, 1])
+        middle_roll_abs_deg = torch.abs(middle_roll_deg)
         root_lin_vel_w = self._root_lin_vel_w()
         pitch_rate_abs = torch.abs(raw_obs_terms["base_ang_vel"][:, 1])
         vz_down = torch.clamp(-root_lin_vel_w[:, 2], min=0.0)
@@ -1990,6 +2105,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Reward/step_up_module_progress_reward": float(
                 torch.mean(self._last_reward_components["step_up_module_progress_reward"]).item()
             ),
+            "Reward/rear_follow_reward": float(torch.mean(self._last_reward_components["rear_follow_reward"]).item()),
+            "Reward/rear_follow_penalty": float(torch.mean(self._last_reward_components["rear_follow_penalty"]).item()),
             "Reward/quality_row_advance_reward": float(
                 torch.mean(self._last_reward_components["quality_row_advance_reward"]).item()
             ),
@@ -2101,6 +2218,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 torch.mean(self._last_reward_diagnostics["wheel_spin_airborne_mean"]).item()
             ),
             "Termination/stuck_timeout_rate": float(torch.mean(self._last_done_terms["stuck_timeout"].float()).item()),
+            "Termination/orientation_out_of_bounds_rate": float(
+                torch.mean(self._last_done_terms["orientation_out_of_bounds"].float()).item()
+            ),
             "Posture/front_pitch_ref": float(torch.mean(self._last_reward_diagnostics["front_pitch_ref"]).item()),
             "Posture/front_pitch_actual": float(
                 torch.mean(self._last_reward_diagnostics["front_pitch_actual"]).item()
@@ -2110,8 +2230,12 @@ class CompleteCarDirectEnv(DirectRLEnv):
             ),
             "Posture/front_pitch_error": float(torch.mean(self._last_reward_diagnostics["front_pitch_error"]).item()),
             "Posture/step_up_distance_m": float(torch.mean(self._last_reward_diagnostics["step_up_distance_m"]).item()),
-            "Posture/approach_mask_rate": float(
-                torch.mean(self._last_reward_diagnostics["step_up_approach_mask"]).item()
+            "Posture/step_up_front_gap_m": float(torch.mean(self._last_reward_diagnostics["step_up_front_gap_m"]).item()),
+            "Posture/step_up_posture_phase_weight": float(
+                torch.mean(self._last_reward_diagnostics["step_up_posture_phase_weight"]).item()
+            ),
+            "Posture/step_up_posture_weight": float(
+                torch.mean(self._last_reward_diagnostics["step_up_posture_weight"]).item()
             ),
             "Posture/step_up_posture_badness": float(
                 torch.mean(self._last_reward_diagnostics["step_up_posture_badness"]).item()
@@ -2148,6 +2272,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Posture/quality_advance_score": float(
                 torch.mean(self._last_reward_diagnostics["quality_advance_score"]).item()
             ),
+            "Posture/quality_gate_score": float(torch.mean(self._last_reward_diagnostics["quality_gate_score"]).item()),
+            "Posture/motion_quality_score": float(torch.mean(self._last_reward_diagnostics["motion_quality_score"]).item()),
             "Posture/front_climb_success_rate": float(
                 torch.mean(self._last_reward_diagnostics["front_climb_success"]).item()
             ),
@@ -2166,6 +2292,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Posture/row_stuck_time_max": float(
                 torch.mean(self._last_reward_diagnostics["row_stuck_time_max"]).item()
             ),
+            "Posture/row_rear_follow_score_max": float(
+                torch.mean(self._last_reward_diagnostics["row_rear_follow_score_max"]).item()
+            ),
             "Posture/posture_penalty_raw": float(
                 torch.mean(self._last_reward_diagnostics["step_up_front_posture_penalty_raw"]).item()
             ),
@@ -2174,8 +2303,20 @@ class CompleteCarDirectEnv(DirectRLEnv):
             ),
             "Drop/pitch_rate_abs_mean": float(torch.mean(self._last_reward_diagnostics["drop_pitch_rate_abs"]).item()),
             "Drop/vz_down_mean": float(torch.mean(self._last_reward_diagnostics["drop_vz_down"]).item()),
+            "Drop/guard_active_rate": float(torch.mean(self._last_reward_diagnostics["drop_guard_active"]).item()),
             "Drop/anti_dive_penalty_raw": float(
                 torch.mean(self._last_reward_diagnostics["drop_anti_dive_penalty_raw"]).item()
+            ),
+            "RearFollow/score": float(torch.mean(self._last_reward_diagnostics["rear_follow_score"]).item()),
+            "RearFollow/progress_score": float(
+                torch.mean(self._last_reward_diagnostics["rear_follow_progress_score"]).item()
+            ),
+            "RearFollow/deficit_m": float(torch.mean(self._last_reward_diagnostics["rear_follow_deficit_m"]).item()),
+            "RearFollow/deficit_score": float(
+                torch.mean(self._last_reward_diagnostics["rear_follow_deficit_score"]).item()
+            ),
+            "RearFollow/front_middle_high_rear_low_rate": float(
+                torch.mean(self._last_reward_diagnostics["front_middle_high_rear_low"]).item()
             ),
             "Tracking/active_waypoint_pos_error": float(torch.mean(active_waypoint_pos_error).item()),
             "Tracking/active_waypoint_bearing_abs": float(torch.mean(active_waypoint_bearing_abs).item()),
@@ -2230,6 +2371,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Command/goal_heading_offset_deg": float(torch.rad2deg(self._goal_heading_offsets[command_env_id]).item()),
             "Observation/base_lin_vel_y_raw": float(torch.mean(raw_obs_terms["base_lin_vel"][:, 1]).item()),
             "Observation/roll_deg": float(torch.mean(middle_roll_deg).item()),
+            "Observation/max_roll_abs_deg": float(torch.max(middle_roll_abs_deg).item()),
             "Observation/pitch_deg": float(torch.mean(middle_pitch_deg).item()),
             "Observation/projected_gravity_xy_norm_raw": float(
                 torch.mean(torch.linalg.vector_norm(raw_obs_terms["projected_gravity"][:, :2], dim=1)).item()
@@ -2715,6 +2857,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             forward_height_m=self.cfg.debug.follow_view_forward_height_m,
             forward_distance_m=self.cfg.debug.follow_view_forward_distance_m,
             right_side_distance_m=self.cfg.debug.follow_view_right_side_distance_m,
+            right_side_height_m=self.cfg.debug.follow_view_right_side_height_m,
         )
 
 

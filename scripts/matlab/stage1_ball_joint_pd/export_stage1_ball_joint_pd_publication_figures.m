@@ -12,10 +12,10 @@ set_param(model_name, "SimulationCommand", "update");
 
 trace.t = timeseries_time(q_desired_ts);
 trace.q_desired = timeseries_matrix(q_desired_ts);
-trace.q_target_old = timeseries_matrix(q_target_old_ts);
-trace.q_actual_old = timeseries_matrix(q_actual_old_ts);
-trace.qdot_actual_old = timeseries_matrix(qdot_actual_old_ts);
-trace.qdot_cmd_old = timeseries_matrix(qdot_cmd_old_ts);
+trace.q_target = timeseries_matrix(q_target_trace_ts);
+trace.q_actual = timeseries_matrix(q_actual_trace_ts);
+trace.qdot_actual = timeseries_matrix(qdot_actual_trace_ts);
+trace.qdot_alloc = timeseries_matrix(qdot_alloc_trace_ts);
 
 params = struct();
 params.Kp = Kp;
@@ -32,7 +32,8 @@ params.q_lower = q_lower;
 params.q_upper = q_upper;
 sim_result = simulate_uniform_ball_joint_pd(trace, params);
 
-output_dir = fullfile(project_root, "results", "stage1_ball_joint_pd_matlab", "publication_figures");
+output_dir = fullfile(project_root, ...
+    "results", "stage1_model725_allcols_30hz_fine_pd_2026-05-12", "simulink_figures");
 if ~isfolder(output_dir)
     mkdir(output_dir);
 end

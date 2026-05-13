@@ -17,9 +17,9 @@ decimation = max(1, round(dt_ctrl / dt_sim));
 alpha_v = 1 - exp(-dt_ctrl / params.tau_v);
 
 if isfield(params, "initial_condition_from_trace") && params.initial_condition_from_trace
-    q = trace.q_actual_old(1, :);
-    qdot = trace.qdot_actual_old(1, :);
-    qdot_alloc = trace.qdot_cmd_old(1, :);
+    q = trace.q_actual(1, :);
+    qdot = trace.qdot_actual(1, :);
+    qdot_alloc = trace.qdot_alloc(1, :);
 else
     q = zeros(1, num_joints);
     qdot = zeros(1, num_joints);

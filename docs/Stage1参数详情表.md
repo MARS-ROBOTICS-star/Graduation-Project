@@ -18,7 +18,7 @@
 
 该 run 使用 `32` env、headless、`700` iterations、`best_baseline_2` warm-start，并启用按地形选择最佳 env 后依次录制 `120 s` chase 视频。2026-04-28 的 GUI run `2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter` 已按用户要求在 PPO iteration `18/700` 后停止，只作为历史启动验证记录；当前默认 warm-start 已在 2026-05-10 改为 `best_baseline5/model_75.pt` 的 Stage1 转换版。
 
-注意：上述 run 的 `env.yaml` 是启动时快照。2026-05-02 起，当前源码中的 Stage1 terrain column 映射已调整为第 `0` 列 `flat`，Stage1 源码默认动作映射也已调整为与 Stage0 相同的底盘物理速度输出范围；2026-05-07 起，当前源码中的 Stage1 观测结构已变为 actor `82` 维、critic `660` 维。此前已经启动的 run 的 `params/env.yaml` 不会因源码修改自动改变，新启动的 Stage1 run 才会使用下文当前源码配置。
+注意：上述 run 的 `env.yaml` 是启动时快照。2026-05-02 起，当前源码中的 Stage1 terrain column 映射已调整为第 `0` 列 `flat`，Stage1 源码默认动作映射也已调整为与 Stage0 相同的底盘物理速度输出范围；2026-05-13 起，当前源码中的 Stage1 观测结构已开启 4 帧历史堆叠，actor `328` 维、critic `906` 维。此前已经启动的 run 的 `params/env.yaml` 不会因源码修改自动改变，新启动的 Stage1 run 才会使用下文当前源码配置。
 
 本文档中的“当前值”默认表示当前源码配置；若某个值来自训练命令覆盖或历史 run 快照，会在说明中单独标明。
 
@@ -55,13 +55,13 @@
 | `scene.num_envs` | `32` | Stage1 源码默认并行环境数，训练入口可用 `--num_envs` 覆盖 |
 | `scene.env_spacing` | `2.0 m` | 环境克隆间距 |
 | `action_space` | `8` | policy 动作维度 |
-| `observation_space.actor` | `82` | actor 观测维度，即 `54` 维基础观测加 `28` 维低维地形特征 |
-| `observation_space.critic` | `660` | critic 观测维度，即 actor 观测加 `578` 维完整 height patch |
+| `observation_space.actor` | `328` | actor 观测维度，即 `82` 维单帧 actor 观测做 4 帧历史堆叠 |
+| `observation_space.critic` | `906` | critic 观测维度，即 4 帧 actor 观测加 `578` 维完整 height patch |
 | `state_space` | `0` | 当前不使用额外 privileged state |
 | `episode_length_s` | `40.0 s` | 单个 episode 最大时长 |
 | `control.sim_dt` | `1 / 120 s` | PhysX 仿真步长 |
-| `decimation` | `2` | 每 2 个 sim step 执行一次 RL action |
-| `control.control_dt` | `1 / 60 s` | RL 控制周期 |
+| `decimation` | `4` | 每 4 个 sim step 执行一次 RL action |
+| `control.control_dt` | `1 / 30 s` | RL 控制周期 |
 | `sim.physx.max_position_iteration_count` | `8` | 场景级 PhysX 位置约束求解迭代次数 |
 | `sim.physx.max_velocity_iteration_count` | `4` | 场景级 PhysX 速度约束求解迭代次数，用于轮地摩擦、碰撞冲击等速度层约束 |
 | `robot.articulation.solver_position_iteration_count` | `8` | 机器人 articulation root 位置约束求解迭代次数 |
@@ -71,7 +71,7 @@
 | `control.terrain_speed_step_up_climb_mps` | `0.75 m/s` | 【本轮修改】正高度突变 climb 阶段前进速度上限，允许有限牵引爬升 |
 | `control.terrain_speed_step_down_mps` | `0.35 m/s` | 【本轮新增】下台阶 / drop 阶段前进速度上限 |
 | `control.terrain_speed_obstacle_mps` | `0.40 m/s` | 【本轮新增】离散障碍 / gap approach 阶段前进速度上限 |
-| `max_episode_length` | `2400` | `40 s * 60 Hz` |
+| `max_episode_length` | `1200` | `40 s * 30 Hz` |
 | `is_finite_horizon` | `False` | timeout 作为 RSL-RL time-limit，可做 bootstrap |
 | `terrain.enabled` | `True` | 启用地形 |
 | `terrain.mode` | `generator` | 使用 Stage1 terrain generator |
@@ -249,7 +249,7 @@ python scripts/play.py --task CompleteCar-Stage1 --device cuda:0 --num_envs 4 --
 | `scene.clone_in_fabric` | `True` | 使用 Fabric clone |
 | `sim.device` | `cuda:0` | 仿真设备 |
 | `sim.dt` | `0.008333333333333333 s` | 120 Hz 仿真步长 |
-| `sim.render_interval` | `2` | 每 2 个 sim step 渲染一次 |
+| `sim.render_interval` | `4` | 每 4 个 sim step 渲染一次 |
 | `sim.gravity` | `(0.0, 0.0, -9.81)` | 重力 |
 | `sim.use_fabric` | `True` | 启用 Fabric |
 | `sim.physics_material.static_friction` | `1.0` | 全局静摩擦 |
@@ -304,7 +304,7 @@ $$
 
 ### 4.1 与 Stage0 统一的底层执行参数
 
-2026-05-10 新修改：Stage0 和 Stage1 的底层球铰、车轮控制参数已统一。含义是：policy 任务、奖励和地形课程可以按阶段变化，但同一台车的底层运动学、球铰 actuator、车轮 torque target 分配参数不随训练阶段改变。本轮进一步把球铰执行链从旧 `q + dt*qdot_cmd` 改为直接 `q_target = q^d`，轮速分配所需姿态变化率改为实际球铰角速度低通 `qdot_alloc`。
+2026-05-12 恢复：Stage0 和 Stage1 的底层球铰、车轮控制参数仍保持统一。球铰执行链已按用户要求改回 direct target：`q_target = clamp(q_desired)`；轮速分配所需姿态变化率使用实际球铰角速度低通 `qdot_alloc`。
 
 | 参数 | 当前值 | 说明 |
 |---|---:|---|
@@ -447,6 +447,14 @@ origin 的 z 坐标取 tile 中心区域高度的非负最大值，用于 reset 
 
 当前 `terrain_dict` 只保留上述 6 个实际采样地形：`flat`、`slope down`、`slope up`、`uneven rough`、`stairs down`、`discrete obstacles`。旧的 `stairs up`、`hurdle`、`gap`、`ramp`、`beam`、`new stairs down`、`pit` 已从默认 `terrain_dict` 移除；对应 tile 生成函数仍保留为手动实验入口，但不会进入当前 Stage1 默认训练列。
 
+当前 `discrete obstacles` 最大障碍高度公式为：
+
+$$
+h_{\mathrm{obs,max}} = 0.05 + 0.17 \cdot \mathrm{difficulty}
+$$
+
+在 `vertical_scale = 0.005 m` 量化后，最高 `row 19` 的实际最大障碍高度为 `0.21 m`。
+
 ## 7. Curriculum 与 reset
 
 ### 7.1 初始课程分配
@@ -571,21 +579,22 @@ $$
 
 ### 8.1 总维度
 
-Stage1 actor 和 critic 使用不同观测维度：
+Stage1 actor 和 critic 使用不同观测维度。当前源码开启 4 帧历史堆叠：
 
 $$
-\mathrm{actor} = 54 + 28 = 82
+\mathrm{actor} = (54 + 28) \times 4 = 328
 $$
 
 $$
-\mathrm{critic} = 82 + 34 \times 17 = 660
+\mathrm{critic} = 328 + 34 \times 17 = 906
 $$
 
 其中：
 
 - `54` 是 Stage0 继承来的 proprioception / command / last action 基础观测。
 - `28` 是从完整 height patch 中确定性提取的低维地形特征 `z_terrain`。
-- `34 * 17 = 578` 是 Stage1 完整 height patch，只追加到 critic 观测中。
+- `82` 是单帧 actor 观测维度，当前 actor 使用 4 帧历史堆叠。
+- `34 * 17 = 578` 是 Stage1 完整 height patch，只追加到 critic 观测中，不做历史堆叠。
 
 ### 8.2 观测分量顺序
 
@@ -604,15 +613,15 @@ $$
 | `terrain_features` | `28` | 内部缩放 | actor 使用的确定性低维地形特征 |
 | `terrain_height_patch` | `578` | 原始米制值 | 仅 critic 额外使用的完整 Stage1 地形高度 patch |
 
-actor 观测包含表中前 `11` 项，即 `54 + 28 = 82` 维。critic 观测为 actor 观测再追加完整 `terrain_height_patch`，即 `660` 维。当前配置类中仍存在 `projected_gravity`、`ball_joint_target_error`、`module_roll_pitch` 等 scale 字段，但当前 `build_observation_descriptor()` 和 `compute_actor_observation_from_raw_terms()` 不把这些项拼入 actor / critic 观测。
+单帧 actor 观测包含表中前 `11` 项，即 `54 + 28 = 82` 维；当前 actor 观测为 4 帧历史堆叠，即 `328` 维。critic 观测为 4 帧 actor 观测再追加当前完整 `terrain_height_patch`，即 `906` 维。当前配置类中仍存在 `projected_gravity`、`ball_joint_target_error`、`module_roll_pitch` 等 scale 字段，但当前 `build_observation_descriptor()` 和 `compute_actor_observation_from_raw_terms()` 不把这些项拼入 actor / critic 观测。
 
 ### 8.3 观测裁剪与噪声
 
 | 参数 | 当前值 | 含义 |
 |---|---:|---|
 | `observations.clip_observations` | `100.0` | actor / critic 观测输出后统一 clip 到 `[-100, 100]` |
-| `observations.use_history` | `False` | 不使用观测历史堆叠 |
-| `observations.history_length` | `1` | 单帧观测 |
+| `observations.use_history` | `True` | 使用 actor 观测历史堆叠 |
+| `observations.history_length` | `4` | 4 帧 actor 观测历史 |
 | `observations.terrain_feature_height_scale_m` | `0.25 m` | 地形高度类特征进入 actor 前的归一化尺度 |
 | `observations.noise.enabled` | `False` | 当前不注入观测噪声 |
 | `observations.wheel_slip_epsilon` | `0.1` | 纵滑 / 侧滑计算的低速分母保护 |
@@ -941,21 +950,21 @@ g_{\mathrm{step\_up}}
 =
 \sigma
 \left(
-\frac{h_{\mathrm{step\_up}} - 0.08}{0.02}
+\frac{h_{\mathrm{step\_up}} - 0.05}{0.02}
 \right)
 $$
 
 其中：
 
 - $h_{\mathrm{step\_up}}$ 对应 `step_up_height_m`。
-- $0.08\ \mathrm{m}$ 是上台阶激活中心阈值。
+- $0.05\ \mathrm{m}$ 是上台阶激活中心阈值。
 - $0.02\ \mathrm{m}$ 是 sigmoid 过渡宽度。
 
 解释：
 
-- `step_up_height_m` 明显小于 `0.08 m` 时，`g_step_up` 接近 `0`。
-- `step_up_height_m` 接近 `0.08 m` 时，`g_step_up` 约为 `0.5`。
-- `step_up_height_m` 明显大于 `0.08 m` 时，`g_step_up` 接近 `1`。
+- `step_up_height_m` 明显小于 `0.05 m` 时，`g_step_up` 接近 `0`。
+- `step_up_height_m` 接近 `0.05 m` 时，`g_step_up` 约为 `0.5`。
+- `step_up_height_m` 明显大于 `0.05 m` 时，`g_step_up` 接近 `1`。
 
 #### 9.4.2 下台阶 gate
 
@@ -1063,9 +1072,11 @@ Stage1 当前 reward 计算仍复用共享 reward 主干。按照 `docs/优化�
 13. `hard_terrain_spin_penalty`
 14. `step_up_front_posture_penalty`
 15. `step_up_module_progress_reward`
-16. `quality_row_advance_reward`
-17. `recovery_reward`
-18. `drop_anti_dive_penalty`
+16. `rear_follow_reward`
+17. `rear_follow_penalty`
+18. `quality_row_advance_reward`
+19. `recovery_reward`
+20. `drop_anti_dive_penalty`
 
 当前权重为 `0.0`、只保留源码实现或日志诊断的项：
 
@@ -1080,14 +1091,19 @@ Stage1 当前 reward 计算仍复用共享 reward 主干。按照 `docs/优化�
 - 【修改】`stuck_speed_threshold_mps` 从 `0.05` 提高到 `0.10`，`stuck_penalty_grace_s` 从 `1.0 s` 提前到 `0.5 s`，`stuck_penalty` 不再除以 `max_episode_length`，而是按 `control_dt` 计入。
 - 【新增】`no_progress_penalty` 从 hard terrain 一开始约束“目标还在前方但几乎没有推进”的样本。
 - 【新增】轻量 `airborne_spin_penalty` 和 `hard_terrain_spin_penalty`，用于压制离地空转和卡住时高轮速硬顶。
-- 【修改】`step_up_progress_quality_min_multiplier` 从 `1.0` 改为 `0.5`，progress reward 会按滑移、超速、姿态、接触和 stuck 质量折减。
+- 【修改】`step_up_progress_quality_min_multiplier` 从 `0.5` 继续降到 `0.2`，hard terrain 中低质量推进只能保留更小比例的正向 progress reward。
 - 【新增】`step_up_module_progress_reward`，用前 / 中 / 后模块支撑高度变化鼓励相位化爬升。
+- 【新增】`rear_follow_reward` / `rear_follow_penalty`，专门约束前中车已上台阶但后车未形成跟随支撑的状态。
 - 【新增】`quality_row_advance_reward`，只奖励有质量地推进到下一 row。
 - 【新增】`recovery_reward` 和 recovery 状态机，允许离散障碍卡住后短时倒车调整，成功重新推进时给正反馈。
 - 【修改】`quality_gated_terrain_advance` 当前默认关闭，hard terrain 命中目标后按普通逻辑 row advance / completed；质量相关指标只作为 reward / diagnostics，不再作为课程晋级硬门槛。
 - 【修改】`step_up_module_progress_reward` 从单步高度差改为“当前 row 内累计新增模块进展”，并将权重从 `1.0` 提高到 `10.0`。
+- 【修改】模块进展权重从偏中车的 `0.2 / 0.5 / 0.3` 改为 `front=0.15, middle=0.35, rear=0.50`，使后车跟随成为 stairs down 的主导约束之一。
+- 【修改】上台阶支撑缺失惩罚从偏中车改为 `mid=0.4, rear=0.6`。
 - 【修改】`step_up_front_posture_penalty_weight` 从 `-5.0` 提高到 `-12.0`。
 - 【修改】`terrain_aware_edge_speed_penalty` 中 actual overspeed 系数从固定 `0.5` 改为 `terrain_actual_overspeed_penalty_ratio = 2.0`。
+- 【修改】`drop_anti_dive_penalty` 增加下坑 latch，相位激活后直到前轮稳定接触并满足 pitch rate / 下落速度释放条件才退出；权重从 `-10.0` 提高到 `-40.0`。
+- 【修改】quality 评价拆成严格的 `quality_gate_score` 和加权型 `motion_quality_score`；`quality_gated_terrain_advance` 仍保持关闭。
 
 ### 10.1 reward 参数
 
@@ -1114,6 +1130,8 @@ Stage1 当前 reward 计算仍复用共享 reward 主干。按照 `docs/优化�
 | `contact_support_penalty_weight` | `-20.0` |
 | `contact_support_min_weight` | `0.3` |
 | `contact_support_lr_balance_ratio` | `0.15` |
+| `step_up_support_mid_ratio` | `0.4` |
+| `step_up_support_rear_ratio` | `0.6` |
 | `edge_speed_penalty_weight` | `0.0` |
 | `edge_height_low_threshold_m` | `0.04 m` |
 | `edge_height_high_threshold_m` | `0.10 m` |
@@ -1142,13 +1160,23 @@ Stage1 当前 reward 计算仍复用共享 reward 主干。按照 `docs/优化�
 | `front_pitch_sigma_rad` | `0.20 rad` |
 | `step_up_approach_distance_min_m` | `0.20 m` |
 | `step_up_approach_distance_max_m` | `1.20 m` |
+| `step_up_posture_front_gap_start_m` | `0.60 m` |
+| `step_up_posture_front_gap_full_m` | `0.15 m` |
 | `step_up_goal_ahead_threshold_m` | `0.5 m` |
-| `step_up_progress_quality_min_multiplier` | `0.5` |
+| `step_up_progress_quality_min_multiplier` | `0.2` |
 | `progress_quality_slip_scale` | `4.0` |
 | `progress_quality_pitch_rate_sigma_radps` | `1.0 rad/s` |
 | `progress_quality_stuck_time_scale_s` | `2.0 s` |
 | `step_up_module_progress_reward_weight` | `10.0` |
 | `step_up_module_height_progress_scale_m` | `0.05 m` |
+| `step_up_module_progress_front_ratio` | `0.15` |
+| `step_up_module_progress_middle_ratio` | `0.35` |
+| `step_up_module_progress_rear_ratio` | `0.50` |
+| `rear_follow_reward_weight` | `8.0` |
+| `rear_follow_penalty_weight` | `-12.0` |
+| `rear_follow_progress_scale_m` | `0.03 m` |
+| `rear_follow_deficit_scale_m` | `0.05 m` |
+| `rear_follow_front_middle_threshold_m` | `0.03 m` |
 | `quality_row_advance_reward_weight` | `1.0` |
 | `quality_row_advance_min_score` | `0.3` |
 | `quality_gated_terrain_advance` | `False` |
@@ -1165,7 +1193,13 @@ Stage1 当前 reward 计算仍复用共享 reward 主干。按照 `docs/优化�
 | `recovery_success_progress_m` | `0.10 m` |
 | `recovery_reverse_penalty_weight` | `-0.2` |
 | `recovery_success_reward_weight` | `0.5` |
-| `drop_anti_dive_penalty_weight` | `-10.0` |
+| `drop_anti_dive_penalty_weight` | `-40.0` |
+| `drop_guard_gate_threshold` | `0.3` |
+| `drop_guard_release_front_support` | `0.7` |
+| `drop_guard_release_pitch_rate_radps` | `0.5 rad/s` |
+| `drop_guard_release_vz_down_mps` | `0.15 m/s` |
+| `drop_guard_release_time_s` | `0.20 s` |
+| `drop_guard_latch_penalty_ratio` | `1.5` |
 | `drop_theta_safe_rad` | `0.0 rad` |
 | `drop_pitch_sigma_rad` | `0.20 rad` |
 | `drop_pitch_rate_sigma_radps` | `1.0 rad/s` |
@@ -1180,13 +1214,15 @@ Stage1 当前 reward 计算仍复用共享 reward 主干。按照 `docs/优化�
 | `low_slip_angle_threshold_rad` | `0.35 rad` |
 | `only_positive_rewards` | `False` |
 
-说明：`step_up_front_posture_penalty_weight = -12.0` 是基于上一轮 reward 实际量级后的温和增强，目标是让前车姿态误差从约 `-0.00036/step` 提升到可见但不过强的量级；`step_up_module_progress_reward_weight = 10.0` 是为了把模块协同爬升信号从约 `+0.00015/step` 提升到约 `+0.001` 级别，使它能和 `no_progress_penalty`、`contact_support_penalty` 竞争。`drop_anti_dive_penalty_weight = -10.0` 保持不变。当前仍不加大 `no_progress_penalty_weight`，避免进一步诱导“别停，直接冲”的行为。
+说明：`step_up_front_posture_penalty_weight = -12.0` 继续保留；本轮重点不再只加强前车抬头，而是把 stairs down 的后车跟随、下坑抗俯冲和低质量推进折减补成闭环。`drop_anti_dive_penalty_weight = -40.0` 必须结合 drop latch 理解，不是简单全程放大惩罚；只有检测到下坑 / gap 相位并进入 guard 后才持续约束，释放条件是前轮接触稳定、pitch rate 和下落速度回到安全范围。
+
+2026-05-12 新修改说明：`front_pitch_ref` 的显式姿态惩罚不再使用裸 `step_up_approach_distance_min_m/max_m` 作为激活窗口，而是使用 `front_gap_m = step_up_distance_m - terrain.patch_front_extent`。其中 `terrain.patch_front_extent = 0.942209 m` 表示中车参考点到整车前端的真实覆盖长度。当前前车姿态权重在 `front_gap_m = 0.60 -> 0.15 m` 逐渐激活；达到满激活后，只要 `g_step_up` 仍存在且目标仍在前方，就不再因为车头已经接近或压上台阶而提前释放。原 `step_up_approach_distance_min_m/max_m` 仍用于已有相位速度限制和模块爬升 phase 逻辑，不再用于 `step_up_front_posture_penalty`。
 
 2026-05-10 新修改说明：Stage1 显式保持 `progress_pitch_gate_k_rad = 0.0`，即不启用 Stage0 新增的中车 pitch-progress gate。`progress_pitch_gate_deadband_deg` 随 Stage0 参数表同步为 `1.0 deg` 只是配置一致性记录，在 `k = 0.0` 时不会参与实际 reward 计算。原因是 Stage1 的 stairs down / discrete obstacles 等复杂地形需要允许中车姿态随地形变化；若直接继承 Stage0 的平地中车水平 gate，会把必要的地形适应姿态误判为低质量推进。
 
 ### 10.2 主要 reward 计算
 
-设当前相对目标平面距离为 $D_t$，上一帧距离为 $D_{t-1}$，最大 episode 步数为 $N = 2400$。
+设当前相对目标平面距离为 $D_t$，上一帧距离为 $D_{t-1}$，最大 episode 步数为 $N = 1200$。
 
 距离项：
 
@@ -1873,7 +1909,7 @@ w_{\mathrm{stuck}}
 \Delta t
 $$
 
-其中当前默认 $w_{\mathrm{stuck}}=-3.0$。旧实现会再除以 $N=2400$，实际惩罚几乎不可见；本轮改为乘 $\Delta t$，让 stuck penalty 对 PPO 更新产生可见影响。若 `stuck_timeout_s > 0` 且：
+其中当前默认 $w_{\mathrm{stuck}}=-3.0$。旧实现会再除以最大 episode 步数，实际惩罚几乎不可见；本轮改为乘 $\Delta t$，让 stuck penalty 对 PPO 更新产生可见影响。若 `stuck_timeout_s > 0` 且：
 
 $$
 t_{\mathrm{stuck}} >
@@ -1973,20 +2009,33 @@ r_{\mathrm{quality\_row}}
 q_{\mathrm{advance}}
 $$
 
-其中 $q_{\mathrm{advance}}$ 是单独的晋级质量分数，不直接使用 slip quality。第一版：
+其中 $q_{\mathrm{gate}}$ 是严格质量 gate 分数，仍采用最差项逻辑，适合判断“是否安全通过”，但当前默认不再阻止 row advance：
 
 $$
-q_{\mathrm{advance}}
+q_{\mathrm{gate}}
 =
 \min(
 q_{\mathrm{speed}},
 q_{\mathrm{contact}},
 q_{\mathrm{not\_stuck}},
-q_{\mathrm{module}}
+q_{\mathrm{module}},
+q_{\mathrm{rear\_follow}}
 )
 $$
 
-`stairs_down` 不强制要求正向模块高度进展；`discrete obstacles` 要求 row 内累计模块进展达到可见水平。hard terrain 命中目标后，只有 `q_advance >= 0.35` 且 row 内支撑质量不低于 `0.70` 才允许 row advance / completed。低质量 hit 会结束 episode，但不升 row。
+本轮新增 `motion_quality_score` 作为整体运动质量诊断，使用加权平均而不是最差项：
+
+$$
+q_{\mathrm{motion}}
+=
+0.25q_{\mathrm{speed}}
++0.25q_{\mathrm{contact}}
++0.15q_{\mathrm{not\_stuck}}
++0.20q_{\mathrm{module}}
++0.15q_{\mathrm{rear\_follow}}
+$$
+
+`stairs_down` 和 `discrete obstacles` 现在都会统计模块进展与 rear follow 质量，不再只让 `discrete obstacles` 参与 module quality。hard terrain 命中目标后，当前仍按普通逻辑 row advance / completed；只有未来重新开启 `quality_gated_terrain_advance` 时，`q_gate >= 0.35` 且 row 内支撑质量不低于 `0.70` 才会成为晋级条件。
 
 它比直接增大 `progress_to_target_weight` 更安全，因为它奖励的是“跨过一行并且质量合格”，不是奖励原地高滑移硬顶。
 
@@ -2013,6 +2062,7 @@ $$
 | `is_success` | Stage1 terrain-column 目标下固定为 `False` |
 | `far_from_target` | 当前目标距离 `> 11.0 m` |
 | `ball_joint_out_of_bounds` | 任一受控球铰超过 lower / upper limit |
+| `orientation_out_of_bounds` | middle/root roll 绝对值超过 `35.0 deg` |
 | `stuck_timeout` | 复杂地形前连续卡住超过 `4.0 s` |
 | `terrain_column_completed` | 已推进到该地形列最高有效 source row 后结束该 env 训练 |
 | `low_quality_terrain_hit` | 当前默认不会触发；仅在重新开启 `quality_gated_terrain_advance` 时，表示 hard terrain 命中目标但 quality gate 不合格 |
@@ -2028,6 +2078,8 @@ $$
 \mathrm{far\_from\_target}
 \lor
 \mathrm{ball\_joint\_out\_of\_bounds}
+\lor
+\mathrm{orientation\_out\_of\_bounds}
 \lor
 \mathrm{stuck\_timeout}
 \lor
@@ -2051,7 +2103,7 @@ $$
 
 ### 11.3 当前非 active termination 字段
 
-Stage1 cfg 不显式设置目标 yaw tolerance、整车姿态阈值、首尾模块 roll / pitch 阈值。当前 `compute_done_terms()` 没有把这些共享默认字段纳入 Stage1 active termination。
+Stage1 当前只启用 middle/root roll 的 `orientation_out_of_bounds`，阈值为 `35.0 deg`。目标 yaw tolerance、head/tail roll、head/tail pitch 和 camera collision 仍未纳入 active termination。
 
 ## 12. 传感器、随机化与可视化
 

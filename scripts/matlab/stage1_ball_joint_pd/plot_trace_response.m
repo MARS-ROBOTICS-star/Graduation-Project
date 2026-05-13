@@ -19,25 +19,25 @@ tiledlayout(fig, 3, 1, "TileSpacing", "compact", "Padding", "compact");
 nexttile;
 plot(trace.t, trace.q_desired(:, joint_index), "Color", colors.desired, "LineWidth", 2.0);
 hold on;
-plot(trace.t, trace.q_target_old(:, joint_index), "--", "Color", colors.old_target, "LineWidth", 1.7);
-plot(trace.t, trace.q_actual_old(:, joint_index), "Color", colors.old_actual, "LineWidth", 1.7);
+plot(trace.t, trace.q_target(:, joint_index), "--", "Color", colors.trace_target, "LineWidth", 1.7);
+plot(trace.t, trace.q_actual(:, joint_index), "Color", colors.trace_actual, "LineWidth", 1.7);
 plot(sim_result.t, sim_result.q_target_new(:, joint_index), ":", "Color", colors.new_target, "LineWidth", 2.0);
 plot(sim_result.t, sim_result.q_sim_new(:, joint_index), "Color", colors.new_sim, "LineWidth", 2.0);
 style_response_axes(gca, options.FontSize);
 ylabel("Angle (rad)");
 title(options.Title, "Interpreter", "none", "FontSize", options.FontSize + 1, "FontWeight", "bold");
-legend("q desired", "old target", "old actual", "new target", "new sim", ...
+legend("q desired", "Isaac target", "Isaac actual", "sim target", "sim actual", ...
     "Location", "eastoutside", "Box", "off", "FontSize", options.FontSize - 2);
 
 nexttile;
-plot(trace.t, trace.qdot_actual_old(:, joint_index), "Color", colors.old_target, "LineWidth", 1.7);
+plot(trace.t, trace.qdot_actual(:, joint_index), "Color", colors.trace_target, "LineWidth", 1.7);
 hold on;
-plot(trace.t, trace.qdot_cmd_old(:, joint_index), "--", "Color", colors.old_actual, "LineWidth", 1.7);
+plot(trace.t, trace.qdot_alloc(:, joint_index), "--", "Color", colors.trace_actual, "LineWidth", 1.7);
 plot(sim_result.t, sim_result.qdot_sim_new(:, joint_index), "Color", colors.new_target, "LineWidth", 2.0);
 plot(sim_result.t, sim_result.qdot_alloc_new(:, joint_index), "Color", colors.new_sim, "LineWidth", 2.0);
 style_response_axes(gca, options.FontSize);
 ylabel("Velocity (rad/s)");
-legend("old qdot actual", "old qdot cmd", "new qdot sim", "new qdot alloc", ...
+legend("Isaac qdot actual", "Isaac qdot alloc", "sim qdot", "sim qdot alloc", ...
     "Location", "eastoutside", "Box", "off", "FontSize", options.FontSize - 2);
 
 nexttile;
@@ -53,8 +53,8 @@ end
 
 function colors = response_plot_colors()
     colors.desired = [0.05, 0.05, 0.05];
-    colors.old_target = [0.50, 0.50, 0.50];
-    colors.old_actual = [0.84, 0.37, 0.00];
+    colors.trace_target = [0.50, 0.50, 0.50];
+    colors.trace_actual = [0.84, 0.37, 0.00];
     colors.new_target = [0.00, 0.45, 0.70];
     colors.new_sim = [0.00, 0.62, 0.45];
     colors.torque = [0.49, 0.18, 0.56];

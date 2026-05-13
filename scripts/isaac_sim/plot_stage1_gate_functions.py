@@ -50,14 +50,17 @@ def main() -> None:
 
     fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.5), constrained_layout=True)
 
-    # g_step_up and g_step_down share the same transfer function.
+    # g_step_up is intentionally more sensitive than g_step_down.
     jump_m = np.linspace(0.0, 0.20, 600)
-    g_step = sigmoid((jump_m - 0.08) / 0.02)
+    g_step_up = sigmoid((jump_m - 0.05) / 0.02)
+    g_step_down = sigmoid((jump_m - 0.08) / 0.02)
     ax = axes[0, 0]
-    ax.plot(jump_m, g_step, color="#d1495b", lw=2.4, label="g_step_up / g_step_down")
-    ax.axvline(0.08, color="#333333", lw=1.4, ls="--", label="0.08 m threshold")
+    ax.plot(jump_m, g_step_up, color="#d1495b", lw=2.4, label="g_step_up")
+    ax.plot(jump_m, g_step_down, color="#457b9d", lw=2.2, label="g_step_down")
+    ax.axvline(0.05, color="#d1495b", lw=1.4, ls="--", label="step-up 0.05 m")
+    ax.axvline(0.08, color="#457b9d", lw=1.4, ls="--", label="step-down 0.08 m")
     ax.axhline(0.5, color="#777777", lw=1.0, ls=":")
-    ax.set_title("Step gate: height jump/drop -> gate")
+    ax.set_title("Step gates: height jump/drop -> gate")
     ax.set_xlabel("max height jump or drop (m)")
     ax.set_ylabel("gate value")
     ax.set_xlim(0, 0.20)

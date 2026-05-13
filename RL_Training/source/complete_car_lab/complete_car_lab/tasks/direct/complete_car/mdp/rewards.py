@@ -26,6 +26,8 @@ REWARD_TERM_NAMES = (
     "action_soft_limit_penalty",
     "step_up_front_posture_penalty",
     "step_up_module_progress_reward",
+    "rear_follow_reward",
+    "rear_follow_penalty",
     "quality_row_advance_reward",
     "recovery_reward",
     "drop_anti_dive_penalty",
@@ -84,6 +86,16 @@ def _terrain_value(
 
 def _reward_weight_enabled(params, name: str) -> bool:
     return abs(float(getattr(params, name, 0.0))) > 0.0
+
+
+def _decreasing_distance_weight(
+    distance_m: torch.Tensor,
+    *,
+    enter_start_m: float,
+    enter_full_m: float,
+) -> torch.Tensor:
+    enter_span = max(float(enter_start_m) - float(enter_full_m), 1.0e-6)
+    return torch.clamp((float(enter_start_m) - distance_m) / enter_span, min=0.0, max=1.0)
 
 
 def compute_stage1_phase_speed_safe(
@@ -178,6 +190,7 @@ def compute_reward_terms(
     recovery_reverse_now: torch.Tensor | None = None,
     recovery_success: torch.Tensor | None = None,
     middle_pitch_rad: torch.Tensor | None = None,
+    drop_guard_active: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     params = cfg.rewards.params
     commands = _finite_tensor(commands)
@@ -294,7 +307,13 @@ def compute_reward_terms(
     mid_deficit_sq = torch.square(contact_deficit[:, 1])
     rear_deficit_sq = torch.square(contact_deficit[:, 2])
     all_module_penalty = (front_deficit_sq + mid_deficit_sq + rear_deficit_sq) / 3.0
-    step_up_support_penalty = (mid_deficit_sq + 0.5 * rear_deficit_sq) / 1.5
+    step_up_mid_ratio = max(float(getattr(params, "step_up_support_mid_ratio", 0.4)), 0.0)
+    step_up_rear_ratio = max(float(getattr(params, "step_up_support_rear_ratio", 0.6)), 0.0)
+    step_up_support_den = max(step_up_mid_ratio + step_up_rear_ratio, 1.0e-6)
+    step_up_support_penalty = (
+        step_up_mid_ratio * mid_deficit_sq
+        + step_up_rear_ratio * rear_deficit_sq
+    ) / step_up_support_den
     drop_support_penalty = (mid_deficit_sq + rear_deficit_sq) / 2.0
     g_support_all = torch.maximum(g_flat, g_rough)
     support_weight_sum = torch.clamp(g_support_all + g_step_up + g_drop, min=1.0e-6)
@@ -443,11 +462,14 @@ def compute_reward_terms(
         min=0.0,
         max=float(params.front_pitch_max_ref_rad),
     )
-    approach_mask = (
-        (step_up_distance_m > float(params.step_up_approach_distance_min_m))
-        & (step_up_distance_m < float(params.step_up_approach_distance_max_m))
-        & (commands[:, 0] > float(params.step_up_goal_ahead_threshold_m))
-    ).float()
+    step_up_front_gap_m = step_up_distance_m - float(getattr(cfg.terrain, "patch_front_extent", 0.0))
+    step_up_posture_phase_weight = _decreasing_distance_weight(
+        step_up_front_gap_m,
+        enter_start_m=float(getattr(params, "step_up_posture_front_gap_start_m", 0.60)),
+        enter_full_m=float(getattr(params, "step_up_posture_front_gap_full_m", 0.15)),
+    )
+    step_up_posture_target_ahead = commands[:, 0] > float(params.step_up_goal_ahead_threshold_m)
+    step_up_posture_weight = g_step_up * step_up_posture_target_ahead.float() * step_up_posture_phase_weight
     front_pitch_error = front_pitch_actual - front_pitch_ref
     step_up_posture_badness = torch.clamp(
         front_pitch_error / max(float(params.front_pitch_sigma_rad), 1.0e-6),
@@ -488,7 +510,7 @@ def compute_reward_terms(
         min=0.0,
         max=1.0,
     )
-    step_up_posture_quality = torch.clamp(1.0 - approach_mask * g_step_up * step_up_posture_badness, min=0.0, max=1.0)
+    step_up_posture_quality = torch.clamp(1.0 - step_up_posture_weight * step_up_posture_badness, min=0.0, max=1.0)
     drop_posture_badness = torch.clamp(
         0.5 * drop_front_pitch_excess / max(float(params.drop_pitch_sigma_rad), 1.0e-6)
         + 0.3 * pitch_rate_abs / max(float(params.drop_pitch_rate_sigma_radps), 1.0e-6)
@@ -496,7 +518,15 @@ def compute_reward_terms(
         min=0.0,
         max=1.0,
     )
-    posture_quality = torch.minimum(step_up_posture_quality, torch.clamp(1.0 - g_drop * drop_posture_badness, min=0.0))
+    drop_guard_active_f = _optional_vector(
+        drop_guard_active.float() if isinstance(drop_guard_active, torch.Tensor) else None,
+        current_goal_distance,
+    )
+    drop_guard_weight = torch.maximum(g_drop, drop_guard_active_f)
+    posture_quality = torch.minimum(
+        step_up_posture_quality,
+        torch.clamp(1.0 - drop_guard_weight * drop_posture_badness, min=0.0),
+    )
     contact_quality = torch.clamp((mid_support + rear_support) / 2.0, min=0.0, max=1.0)
     not_stuck_quality = torch.clamp(
         1.0
@@ -525,8 +555,7 @@ def compute_reward_terms(
         progress_to_target,
     )
     step_up_front_posture_penalty = (
-        approach_mask
-        * g_step_up
+        step_up_posture_weight
         * torch.square(front_pitch_error / max(float(params.front_pitch_sigma_rad), 1.0e-6))
         / max_episode_length_f
     )
@@ -551,16 +580,41 @@ def compute_reward_terms(
     module_height_progress = torch.clamp(row_module_progress - row_module_progress_max, min=0.0)
     climb_phase = g_step_up * (step_up_distance_m <= float(params.step_up_approach_distance_min_m)).float() * target_ahead.float()
     crest_phase = g_step_up * (step_up_distance_m > float(params.step_up_approach_distance_min_m)).float() * target_ahead.float()
+    module_front_ratio = max(float(getattr(params, "step_up_module_progress_front_ratio", 0.15)), 0.0)
+    module_middle_ratio = max(float(getattr(params, "step_up_module_progress_middle_ratio", 0.35)), 0.0)
+    module_rear_ratio = max(float(getattr(params, "step_up_module_progress_rear_ratio", 0.50)), 0.0)
+    module_ratio_den = max(module_front_ratio + module_middle_ratio + module_rear_ratio, 1.0e-6)
     module_progress_score = torch.clamp(
         (
-            0.2 * module_height_progress[:, 0]
-            + 0.5 * module_height_progress[:, 1]
-            + 0.3 * module_height_progress[:, 2]
+            module_front_ratio * module_height_progress[:, 0]
+            + module_middle_ratio * module_height_progress[:, 1]
+            + module_rear_ratio * module_height_progress[:, 2]
         )
+        / module_ratio_den
         / max(float(getattr(params, "step_up_module_height_progress_scale_m", 0.05)), 1.0e-6),
         min=0.0,
         max=1.0,
     )
+    front_middle_progress_min = torch.minimum(row_module_progress[:, 0], row_module_progress[:, 1])
+    rear_follow_deficit_m = torch.clamp(front_middle_progress_min - row_module_progress[:, 2], min=0.0)
+    rear_follow_deficit_score = torch.clamp(
+        rear_follow_deficit_m / max(float(getattr(params, "rear_follow_deficit_scale_m", 0.05)), 1.0e-6),
+        min=0.0,
+        max=1.0,
+    )
+    rear_follow_progress_score = torch.clamp(
+        module_height_progress[:, 2] / max(float(getattr(params, "rear_follow_progress_scale_m", 0.03)), 1.0e-6),
+        min=0.0,
+        max=1.0,
+    )
+    front_middle_high = (
+        front_middle_progress_min >= float(getattr(params, "rear_follow_front_middle_threshold_m", 0.03))
+    ).float()
+    rear_follow_phase = g_step_up * target_ahead.float() * front_middle_high
+    rear_follow_score = torch.clamp(row_module_progress[:, 2] / torch.clamp(front_middle_progress_min, min=1.0e-6), min=0.0, max=1.0)
+    front_middle_high_rear_low = rear_follow_phase * (rear_follow_deficit_score > 0.5).float()
+    rear_follow_reward = rear_follow_phase * rear_follow_progress_score * rear_support * control_dt
+    rear_follow_penalty = rear_follow_phase * rear_follow_deficit_score * (1.0 + torch.clamp(1.0 - rear_support, min=0.0)) * control_dt
     module_support_phase_score = torch.clamp((mid_support + rear_support) / 2.0, min=0.0, max=1.0)
     step_up_module_progress_reward = (
         torch.maximum(climb_phase, 0.5 * crest_phase)
@@ -591,12 +645,13 @@ def compute_reward_terms(
     recovery_reward = recovery_success + recovery_reverse_now * recovery_active * control_dt
 
     drop_anti_dive_penalty = (
-        g_drop
+        drop_guard_weight
         * (
             0.5 * torch.square(drop_front_pitch_excess / max(float(params.drop_pitch_sigma_rad), 1.0e-6))
             + 0.2 * torch.square(pitch_rate_abs / max(float(params.drop_pitch_rate_sigma_radps), 1.0e-6))
             + 0.5 * torch.square(vz_down / max(float(params.drop_vz_down_sigma_mps), 1.0e-6))
         )
+        * (1.0 + float(getattr(params, "drop_guard_latch_penalty_ratio", 1.5)) * drop_guard_active_f)
         / max_episode_length_f
     )
 
@@ -624,6 +679,8 @@ def compute_reward_terms(
         "step_up_module_progress_reward": (
             step_up_module_progress_reward * params.step_up_module_progress_reward_weight
         ),
+        "rear_follow_reward": rear_follow_reward * params.rear_follow_reward_weight,
+        "rear_follow_penalty": rear_follow_penalty * params.rear_follow_penalty_weight,
         "quality_row_advance_reward": quality_row_advance_reward * params.quality_row_advance_reward_weight,
         "recovery_reward": (
             recovery_success * params.recovery_success_reward_weight
@@ -694,7 +751,9 @@ def compute_reward_terms(
         "rear_pitch_actual": rear_pitch_actual,
         "front_pitch_error": front_pitch_error,
         "step_up_distance_m": step_up_distance_m,
-        "step_up_approach_mask": approach_mask,
+        "step_up_front_gap_m": step_up_front_gap_m,
+        "step_up_posture_phase_weight": step_up_posture_phase_weight,
+        "step_up_posture_weight": step_up_posture_weight,
         "step_up_posture_badness": step_up_posture_badness,
         "progress_quality_slip": slip_quality,
         "progress_quality_overspeed": overspeed_quality,
@@ -726,7 +785,15 @@ def compute_reward_terms(
         "recovery_reward_raw": recovery_reward,
         "drop_pitch_rate_abs": pitch_rate_abs,
         "drop_vz_down": vz_down,
+        "drop_guard_active": drop_guard_active_f,
         "drop_anti_dive_penalty_raw": drop_anti_dive_penalty,
+        "rear_follow_score": rear_follow_score,
+        "rear_follow_progress_score": rear_follow_progress_score,
+        "rear_follow_deficit_m": rear_follow_deficit_m,
+        "rear_follow_deficit_score": rear_follow_deficit_score,
+        "rear_follow_reward_raw": rear_follow_reward,
+        "rear_follow_penalty_raw": rear_follow_penalty,
+        "front_middle_high_rear_low": front_middle_high_rear_low,
     }
     diagnostics = {name: _finite_tensor(value) for name, value in diagnostics.items()}
     return total_reward, components, diagnostics

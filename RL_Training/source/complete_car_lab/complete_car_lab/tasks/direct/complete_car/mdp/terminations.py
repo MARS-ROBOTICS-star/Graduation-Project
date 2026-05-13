@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 
 from .rewards import get_nominal_goal_distance
-from ..utils.math_utils import wrap_to_pi_tensor
+from ..utils.math_utils import quaternion_to_rpy, wrap_to_pi_tensor
 
 
 def compute_done_terms(
@@ -38,12 +38,16 @@ def compute_done_terms(
     far_from_target = current_goal_distance > (
         get_nominal_goal_distance(cfg) + cfg.rewards.params.far_from_target_margin
     )
+    root_rpy = quaternion_to_rpy(robot.data.root_link_quat_w)
+    root_roll_abs_deg = torch.rad2deg(torch.abs(root_rpy[:, 0]))
+    orientation_out_of_bounds = root_roll_abs_deg > float(cfg.terminations.orientation_limit_deg)
 
     return {
         "waypoint_hit": waypoint_hit,
         "is_success": is_success,
         "far_from_target": far_from_target,
         "ball_joint_out_of_bounds": ball_joint_out_of_bounds,
+        "orientation_out_of_bounds": orientation_out_of_bounds,
         "time_out": time_out,
     }
 
@@ -70,5 +74,6 @@ def compute_dones(
         done_terms["is_success"]
         | done_terms["far_from_target"]
         | done_terms["ball_joint_out_of_bounds"]
+        | done_terms["orientation_out_of_bounds"]
     )
     return terminated, done_terms["time_out"]

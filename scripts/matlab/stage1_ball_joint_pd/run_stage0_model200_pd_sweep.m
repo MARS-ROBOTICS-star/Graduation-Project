@@ -27,7 +27,7 @@ joint_names = [
 
 base_params = struct();
 base_params.dt_sim = 1 / 120;
-base_params.dt_ctrl = 1 / 60;
+base_params.dt_ctrl = 1 / 30;
 base_params.q_lower = [-0.7, -1.6, -0.5, -0.7, -1.6, -0.5];
 base_params.q_upper = [0.7, 0.5, 0.5, 0.7, 0.5, 0.5];
 base_params.J_axis = 0.10;
@@ -182,9 +182,9 @@ function raw_stats = compute_raw_trace_stats(case_rows)
     for case_index = 1:height(case_rows)
         trace = load_isaac_ball_joint_trace(case_rows.csv_path(case_index), EnvId=case_rows.env_id(case_index));
         q_desired_abs = [q_desired_abs; abs(trace.q_desired(:))]; %#ok<AGROW>
-        tracking_error_abs = [tracking_error_abs; abs(trace.q_desired(:) - trace.q_actual_old(:))]; %#ok<AGROW>
-        position_target_gap_abs = [position_target_gap_abs; abs(trace.q_desired(:) - trace.q_target_old(:))]; %#ok<AGROW>
-        qdot_abs = [qdot_abs; abs(trace.qdot_actual_old(:))]; %#ok<AGROW>
+        tracking_error_abs = [tracking_error_abs; abs(trace.q_desired(:) - trace.q_actual(:))]; %#ok<AGROW>
+        position_target_gap_abs = [position_target_gap_abs; abs(trace.q_desired(:) - trace.q_target(:))]; %#ok<AGROW>
+        qdot_abs = [qdot_abs; abs(trace.qdot_actual(:))]; %#ok<AGROW>
         desired_delta_abs = [desired_delta_abs; abs(reshape(diff(trace.q_desired, 1, 1), [], 1))]; %#ok<AGROW>
     end
 
@@ -216,7 +216,7 @@ function write_report(report_path, metrics_path, candidate_path, case_best_path,
     fprintf(fid, "- 参与 case 数：`%d`，每个 case 对应一个 `env_id`。\n", height(case_rows));
     fprintf(fid, "- 固定 plant 参数：`J = %.3f kg*m^2`、`B = %.3f`、`tau_load = %.3f N*m`、`tau_v = %.3f s`。\n", ...
         base_params.J_axis, base_params.B_axis, base_params.tau_load, base_params.tau_v);
-    fprintf(fid, "- 固定限制：`tau_max = %.1f N*m`、`qdot_max = %.1f rad/s`、`dt_sim = 1/120 s`、`dt_ctrl = 1/60 s`。\n", ...
+    fprintf(fid, "- 固定限制：`tau_max = %.1f N*m`、`qdot_max = %.1f rad/s`、`dt_sim = 1/120 s`、`dt_ctrl = 1/30 s`。\n", ...
         base_params.tau_max, base_params.qdot_max);
     fprintf(fid, "- 仿真初值：使用真实 trace 的第一帧 `q_actual`、`qdot_actual` 和 `qdot_alloc`。\n");
     fprintf(fid, "- 关节顺序：`%s`。\n\n", strjoin(joint_names, "`, `"));

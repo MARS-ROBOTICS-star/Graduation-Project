@@ -496,7 +496,7 @@ python scripts/rsl_rl/train.py --task Complete-Car-StageX-...-v0
    - 把前 6 维动作转成球铰位置目标
    - 把后 6 维动作转成轮速目标
 5. `DirectRLEnv.step()` 按 `decimation` 重复 physics loop  
-   当前默认 `decimation = 2`
+   当前默认 `decimation = 4`
 6. 每个 physics 子步里：
    - 调 `CompleteCarEnv._apply_action()`
    - `scene.write_data_to_sim()`

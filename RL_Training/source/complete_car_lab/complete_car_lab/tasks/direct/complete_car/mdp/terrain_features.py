@@ -207,7 +207,7 @@ def compute_terrain_features(
 
     gate_sigma_m = 0.02
     rough_sigma_m = 0.01
-    g_step_up = torch.sigmoid((step_up_height_m - 0.08) / gate_sigma_m)
+    g_step_up = torch.sigmoid((step_up_height_m - 0.05) / gate_sigma_m)
     g_step_down = torch.sigmoid((drop_depth_m - 0.08) / gate_sigma_m)
     g_gap = g_step_down * torch.sigmoid((gap_width_norm - 0.15) / 0.05)
     g_rough = torch.sigmoid((front_roughness_m - 0.03) / rough_sigma_m)

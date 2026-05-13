@@ -260,6 +260,7 @@ class CompleteCarDebugDraw:
         forward_height_m: float,
         forward_distance_m: float,
         right_side_distance_m: float,
+        right_side_height_m: float,
     ) -> None:
         """Create/update selectable USD cameras under /view for playback inspection."""
         if not self.enabled:
@@ -335,7 +336,8 @@ class CompleteCarDebugDraw:
             )
 
             right_side_distance = max(float(right_side_distance_m), 0.1)
-            right_side_eye_offset = self._rotate_planar_offset((0.0, -right_side_distance, 0.0), yaw)
+            right_side_height = float(right_side_height_m)
+            right_side_eye_offset = self._rotate_planar_offset((0.0, -right_side_distance, right_side_height), yaw)
             right_side_eye = (
                 float(root_pos[0] + right_side_eye_offset[0]),
                 float(root_pos[1] + right_side_eye_offset[1]),

@@ -19,7 +19,7 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         # stay inside this file without bouncing back to the base template.
         self.stage_name = "stage0"
         self.episode_length_s = 40.0
-        self.decimation = 2
+        self.decimation = 4
 
         self.scene.num_envs = 64
         self.scene.env_spacing = 4.0
@@ -36,8 +36,8 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.commands.rel_standing_envs = 0.0
 
         self.control.sim_dt = 1.0 / 120.0
-        self.control.decimation = 2
-        self.control.control_dt = 1.0 / 60.0
+        self.control.decimation = 4
+        self.control.control_dt = 1.0 / 30.0
         self.control.base_forward_velocity_max = 2.0
         self.control.base_yaw_rate_max = 2.0
         self.control.base_allow_reverse = True

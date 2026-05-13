@@ -27,7 +27,7 @@ joint_names = [
 
 base_params = struct();
 base_params.dt_sim = 1 / 120;
-base_params.dt_ctrl = 1 / 60;
+base_params.dt_ctrl = 1 / 30;
 base_params.q_lower = [-0.7, -1.6, -0.5, -0.7, -1.6, -0.5];
 base_params.q_upper = [0.7, 0.5, 0.5, 0.7, 0.5, 0.5];
 base_params.J_axis = 0.10;
@@ -193,7 +193,7 @@ function write_report(report_path, metrics_path, candidate_path, case_best_path,
     fprintf(fid, "- 轨迹覆盖：flat、stairs down、discrete obstacles；每个地形列 CSV 中所有 `env_id` 均参与统计。\n");
     fprintf(fid, "- 固定 plant 参数：`J = %.3f kg*m^2`、`B = %.3f`、`tau_load = %.3f N*m`、`tau_v = %.3f s`。\n", ...
         base_params.J_axis, base_params.B_axis, base_params.tau_load, base_params.tau_v);
-    fprintf(fid, "- 固定限制：`tau_max = %.1f N*m`、`qdot_max = %.1f rad/s`、`dt_sim = 1/120 s`、`dt_ctrl = 1/60 s`。\n", ...
+    fprintf(fid, "- 固定限制：`tau_max = %.1f N*m`、`qdot_max = %.1f rad/s`、`dt_sim = 1/120 s`、`dt_ctrl = 1/30 s`。\n", ...
         base_params.tau_max, base_params.qdot_max);
     fprintf(fid, "- 扫描变量：统一 `Kp/Kd`，六个球铰轴共享同一组增益。\n\n");
 

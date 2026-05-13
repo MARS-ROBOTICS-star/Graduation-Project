@@ -445,7 +445,7 @@ def make_discrete_obstacles_tile(cfg: Stage1TerrainCfg, difficulty: float, seed:
     rng = np.random.default_rng(seed)
     _discrete_obstacles_terrain(
         terrain,
-        max_height=0.05 + difficulty * 0.2,
+        max_height=0.05 + difficulty * 0.17,
         min_size=1.0,
         max_size=2.5,
         num_rects=20,

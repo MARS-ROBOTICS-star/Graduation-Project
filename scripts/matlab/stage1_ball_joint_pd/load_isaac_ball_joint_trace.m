@@ -53,29 +53,14 @@ trace.csv_path = csv_path;
 trace.env_id = selected_env_id;
 trace.t = table_data{:, "time_s"};
 trace.q_desired = read_joint_matrix(table_data, variables, "q_desired_", joint_names);
-trace.q_target_old = read_joint_matrix_first_available(table_data, variables, ...
-    ["q_position_target_old_", "q_position_target_"], joint_names);
-trace.q_actual_old = read_joint_matrix(table_data, variables, "q_actual_", joint_names);
-trace.qdot_actual_old = read_joint_matrix(table_data, variables, "qdot_actual_", joint_names);
-trace.qdot_cmd_old = read_joint_matrix_first_available(table_data, variables, ...
-    ["qdot_cmd_old_", "qdot_alloc_", "qdot_actual_"], joint_names);
+trace.q_target = read_joint_matrix(table_data, variables, "q_position_target_", joint_names);
+trace.q_actual = read_joint_matrix(table_data, variables, "q_actual_", joint_names);
+trace.qdot_actual = read_joint_matrix(table_data, variables, "qdot_actual_", joint_names);
+trace.qdot_alloc = read_joint_matrix(table_data, variables, "qdot_alloc_", joint_names);
 
 if any(diff(trace.t) <= 0)
     error("stage1BallJointPD:InvalidTraceTime", "time_s must be strictly increasing in %s.", csv_path);
 end
-end
-
-function values = read_joint_matrix_first_available(table_data, variables, prefixes, joint_names)
-    for prefix = string(prefixes)
-        column_names = prefix + joint_names;
-        if all(ismember(column_names, variables))
-            values = read_joint_matrix(table_data, variables, prefix, joint_names);
-            return;
-        end
-    end
-    missing_columns = prefixes(1) + joint_names;
-    error("stage1BallJointPD:MissingColumns", ...
-        "Trace CSV is missing required columns: %s", strjoin(missing_columns, ", "));
 end
 
 function values = read_joint_matrix(table_data, variables, prefix, joint_names)

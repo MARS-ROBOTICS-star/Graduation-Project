@@ -55,8 +55,8 @@ class ControlCfg:
     """动作语义和驱动参数。"""
 
     sim_dt: float = 1.0 / 120.0  # 仿真底层步长，单位：s。
-    decimation: int = 2  # 每执行多少个 sim step 才更新一次 RL 控制。
-    control_dt: float = 1.0 / 60.0  # 控制周期，单位：s。
+    decimation: int = 4  # 每执行多少个 sim step 才更新一次 RL 控制。
+    control_dt: float = 1.0 / 30.0  # 控制周期，单位：s。
 
     ball_joint_names: tuple[str, ...] = tuple(BALL_JOINT_NAMES)
     wheel_joint_names: tuple[str, ...] = tuple(WHEEL_JOINT_NAMES)
@@ -168,6 +168,8 @@ class RewardParamsCfg:
     contact_support_penalty_weight: float = 0.0
     contact_support_min_weight: float = 0.3
     contact_support_lr_balance_ratio: float = 0.15
+    step_up_support_mid_ratio: float = 0.4
+    step_up_support_rear_ratio: float = 0.6
     edge_speed_penalty_weight: float = 0.0
     edge_height_low_threshold_m: float = 0.04
     edge_height_high_threshold_m: float = 0.10
@@ -196,6 +198,8 @@ class RewardParamsCfg:
     front_pitch_sigma_rad: float = 0.20
     step_up_approach_distance_min_m: float = 0.20
     step_up_approach_distance_max_m: float = 1.20
+    step_up_posture_front_gap_start_m: float = 0.60
+    step_up_posture_front_gap_full_m: float = 0.15
     step_up_goal_ahead_threshold_m: float = 0.5
     step_up_progress_quality_min_multiplier: float = 1.0
     progress_quality_slip_scale: float = 4.0
@@ -203,6 +207,14 @@ class RewardParamsCfg:
     progress_quality_stuck_time_scale_s: float = 2.0
     step_up_module_progress_reward_weight: float = 0.0
     step_up_module_height_progress_scale_m: float = 0.05
+    step_up_module_progress_front_ratio: float = 0.15
+    step_up_module_progress_middle_ratio: float = 0.35
+    step_up_module_progress_rear_ratio: float = 0.50
+    rear_follow_reward_weight: float = 0.0
+    rear_follow_penalty_weight: float = 0.0
+    rear_follow_progress_scale_m: float = 0.03
+    rear_follow_deficit_scale_m: float = 0.05
+    rear_follow_front_middle_threshold_m: float = 0.03
     quality_row_advance_reward_weight: float = 0.0
     quality_row_advance_min_score: float = 0.3
     quality_gated_terrain_advance: bool = False
@@ -220,6 +232,12 @@ class RewardParamsCfg:
     recovery_reverse_penalty_weight: float = 0.0
     recovery_success_reward_weight: float = 0.0
     drop_anti_dive_penalty_weight: float = 0.0
+    drop_guard_gate_threshold: float = 0.3
+    drop_guard_release_front_support: float = 0.7
+    drop_guard_release_pitch_rate_radps: float = 0.5
+    drop_guard_release_vz_down_mps: float = 0.15
+    drop_guard_release_time_s: float = 0.20
+    drop_guard_latch_penalty_ratio: float = 1.5
     drop_theta_safe_rad: float = 0.0
     drop_pitch_sigma_rad: float = 0.20
     drop_pitch_rate_sigma_radps: float = 1.0
@@ -342,7 +360,8 @@ class DebugCfg:
     follow_view_chase_target_offset_b: tuple[float, float, float] = (1.0, 0.0, 0.4)
     follow_view_forward_height_m: float = 3.0
     follow_view_forward_distance_m: float = 4.0
-    follow_view_right_side_distance_m: float = 1.5
+    follow_view_right_side_distance_m: float = 3.5
+    follow_view_right_side_height_m: float = 1.0
     log_sensor_outputs: bool = True
 
 
@@ -361,11 +380,11 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
     """总装配配置类，所有阶段都从这里派生。"""
 
     stage_name: str = "stage0"
-    episode_length_s: float = 16.0 #control_dt = 1/60 s 理论最大控制步数：16 × 60 = 960 步
+    episode_length_s: float = 16.0 #control_dt = 1/30 s 理论最大控制步数：16 × 30 = 480 步
     action_space: int = 2 + len(BALL_JOINT_NAMES)
     observation_space: dict[str, int] | int = 0
     state_space: int = 0 #critic state 或 privileged state 的维度
-    decimation: int = 2
+    decimation: int = 4
 
     sim: sim_utils.SimulationCfg = sim_utils.SimulationCfg()
     viewer: ViewerCfg = ViewerCfg(eye=(-53.885, 43.696, 64.903), lookat=(-53.054, 43.698, 64.346))

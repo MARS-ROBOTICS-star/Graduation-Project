@@ -607,7 +607,7 @@ $$
 
 结合 Stage1 当前地形生成函数：
 
-- `stairs up/down` 的单级台阶高度约为 `0.05-0.22 m`；
+- `stairs up/down` 的单级台阶高度约为 `0.05-0.20 m`；
 - `discrete obstacles` 的相邻高度跳变从约 `0.10 m` 起，高 row 可更大；
 - `slope up` 最高 row 的相邻网格高度差约为 `0.04 m`。
 
@@ -1097,7 +1097,7 @@ $$
 | $v_{\mathrm{edge}}$ | $0.5\ \mathrm{m/s}$ |
 | $v_{\max}$ | $2.0\ \mathrm{m/s}$ |
 
-参数依据：Stage1 当前 `stairs up/down` 单级台阶高度约为 `0.05-0.22 m`，`discrete obstacles` 相邻高度跳变从约 `0.10 m` 起，而 `slope up` 最高 row 的相邻高度差约为 `0.04 m`。因此 $0.04\ \mathrm{m}$ 用于排除普通坡面，$0.10\ \mathrm{m}$ 用于把明确台阶/障碍边缘视为强突变。
+参数依据：Stage1 当前 `stairs up/down` 单级台阶高度约为 `0.05-0.20 m`，`discrete obstacles` 相邻高度跳变从约 `0.10 m` 起，而 `slope up` 最高 row 的相邻高度差约为 `0.04 m`。因此 $0.04\ \mathrm{m}$ 用于排除普通坡面，$0.10\ \mathrm{m}$ 用于把明确台阶/障碍边缘视为强突变。
 
 ## 11. 动作变化惩罚
 

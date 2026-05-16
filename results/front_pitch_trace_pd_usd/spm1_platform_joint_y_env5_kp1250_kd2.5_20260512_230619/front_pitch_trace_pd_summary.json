@@ -1,0 +1,60 @@
+{
+  "rows": 1198,
+  "joint_name": "spm1_platform_joint_y",
+  "kp": 1250.0,
+  "kd": 2.5,
+  "effort_limit": 60.0,
+  "velocity_limit": 1.2,
+  "qddot_limit": 3.0,
+  "tau_ref": 0.12,
+  "control_dt": 0.03333333333333333,
+  "physics_dt": 0.008333333333333333,
+  "q_cmd_minus_actual": {
+    "mean_abs": 0.019294939945583584,
+    "rmse": 0.02175705814573024,
+    "p50_abs": 0.013192040866062252,
+    "p95_abs": 0.034072273437664044,
+    "p99_abs": 0.03637662350299297,
+    "max_abs": 0.03747847217893627
+  },
+  "q_raw_minus_actual": {
+    "mean_abs": 0.22953903090299457,
+    "rmse": 0.29262895072672485,
+    "p50_abs": 0.18610783573240042,
+    "p95_abs": 0.5704372107982633,
+    "p99_abs": 0.712618109825998,
+    "max_abs": 0.9483683742582798
+  },
+  "qdot_cmd_minus_actual": {
+    "mean_abs": 0.41028453438548895,
+    "rmse": 0.49339802158802576,
+    "p50_abs": 0.3715164616703987,
+    "p95_abs": 0.9184342768382713,
+    "p99_abs": 1.1001186006516217,
+    "max_abs": 1.208160469122231
+  },
+  "qdot_cmd_abs": {
+    "mean_abs": 0.5318785482354507,
+    "rmse": 0.635425688138515,
+    "p50_abs": 0.5,
+    "p95_abs": 1.2,
+    "p99_abs": 1.2,
+    "max_abs": 1.2
+  },
+  "qdot_cmd_delta_abs_mean": 0.09315195774644137,
+  "qdot_cmd_delta_abs_p95": 0.10000000000000003,
+  "estimated_tau_abs": {
+    "mean_abs": 24.036496450485817,
+    "rmse": 27.09154578287109,
+    "p50_abs": 17.411164662460422,
+    "p95_abs": 41.98257796285005,
+    "p99_abs": 44.18113718423184,
+    "max_abs": 47.318789202756335
+  },
+  "estimated_tau_saturation_rate_ge_0p98": 0.0,
+  "trace": "/home/ubuntu/Graduation-Project/results/stage1_model725_allcols_30hz_fine_pd_2026-05-12/raw_traces/model725_allcols_30hz_col05_stairs_down.csv",
+  "usd": "/home/ubuntu/Graduation-Project/USD/complete_car.usd",
+  "env_id": 5,
+  "source_column": "q_desired_spm1_platform_joint_y",
+  "records_csv": "/home/ubuntu/Graduation-Project/results/front_pitch_trace_pd_usd/spm1_platform_joint_y_env5_kp1250_kd2.5_20260512_230619/front_pitch_trace_pd_records.csv"
+}

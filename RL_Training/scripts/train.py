@@ -35,6 +35,7 @@ parser.add_argument("--task", type=str, default="CompleteCar-Stage0", choices=TA
 parser.add_argument("--agent", type=str, default="rsl_rl_cfg_entry_point")
 parser.add_argument("--seed", type=int, default=None)
 parser.add_argument("--max_iterations", type=int, default=None)
+parser.add_argument("--learning_rate", type=float, default=None)
 parser.add_argument("--experiment_name", type=str, default=None)
 parser.add_argument("--run_name", type=str, default=None)
 parser.add_argument("--resume", action="store_true", default=False)
@@ -490,6 +491,8 @@ def _update_agent_cfg(agent_cfg):
         agent_cfg.neptune_project = args_cli.log_project_name
     if args_cli.max_iterations is not None:
         agent_cfg.max_iterations = args_cli.max_iterations
+    if args_cli.learning_rate is not None:
+        agent_cfg.algorithm.learning_rate = args_cli.learning_rate
     return agent_cfg
 
 

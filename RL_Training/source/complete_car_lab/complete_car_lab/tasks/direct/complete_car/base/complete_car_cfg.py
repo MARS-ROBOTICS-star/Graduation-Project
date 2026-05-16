@@ -68,6 +68,8 @@ class ControlCfg:
     ball_joint_effort_limit_sim: float = 60.0  # 球铰驱动器力矩上限，单位：N*m。
     ball_joint_velocity_limit_sim: float = 2.0  # 球铰驱动器速度上限，单位：rad/s。
     ball_joint_qdot_alloc_filter_tau_s: float = 0.04  # 轮速分配用实际球铰角速度低通时间常数，单位：s。
+    ball_joint_action_position_lower_limits: tuple[float, ...] = ()
+    ball_joint_action_position_upper_limits: tuple[float, ...] = ()
 
     wheel_joint_stiffness: float = 0.0  # 车轮位置刚度，单位：N*m/rad。
     wheel_joint_damping: float = 0.0  # 车轮速度驱动阻尼；速度目标模式下必须为非零才会产生 drive 力矩。
@@ -157,7 +159,6 @@ class RewardParamsCfg:
     reached_target_base_reward: float = 2.0
     reached_target_weight: float = 6.0
     far_from_target_margin: float = 6.0
-    far_from_target_weight: float = -2.0
     angle_diff_weight: float = 6.0
     slip_penalty_weight: float = -2.0
     slip_longitudinal_penalty_ratio: float = 1.0
@@ -170,10 +171,8 @@ class RewardParamsCfg:
     contact_support_lr_balance_ratio: float = 0.15
     step_up_support_mid_ratio: float = 0.4
     step_up_support_rear_ratio: float = 0.6
-    edge_speed_penalty_weight: float = 0.0
     edge_height_low_threshold_m: float = 0.04
     edge_height_high_threshold_m: float = 0.10
-    edge_speed_limit_mps: float = 0.5
     terrain_aware_edge_speed_penalty_weight: float = 0.0
     stuck_penalty_weight: float = 0.0
     stuck_gate_threshold: float = 0.3
@@ -190,8 +189,6 @@ class RewardParamsCfg:
     hard_terrain_spin_speed_threshold_mps: float = 0.40
     hard_terrain_spin_slip_threshold: float = 3.0
     hard_terrain_spin_slip_scale: float = 3.0
-    action_soft_limit_penalty_weight: float = 0.0
-    action_soft_limit_threshold: float = 0.8
     step_up_front_posture_penalty_weight: float = 0.0
     front_pitch_height_gain_rad_per_m: float = 2.5
     front_pitch_max_ref_rad: float = 0.25
@@ -215,6 +212,8 @@ class RewardParamsCfg:
     rear_follow_progress_scale_m: float = 0.03
     rear_follow_deficit_scale_m: float = 0.05
     rear_follow_front_middle_threshold_m: float = 0.03
+    rear_follow_hold_min_score: float = 0.70
+    rear_follow_hold_reward_ratio: float = 0.25
     quality_row_advance_reward_weight: float = 0.0
     quality_row_advance_min_score: float = 0.3
     quality_gated_terrain_advance: bool = False
@@ -228,8 +227,12 @@ class RewardParamsCfg:
     terrain_actual_overspeed_penalty_ratio: float = 0.5
     recovery_stuck_time_threshold_s: float = 0.5
     recovery_reverse_cmd_threshold_mps: float = 0.05
-    recovery_success_progress_m: float = 0.10
-    recovery_reverse_penalty_weight: float = 0.0
+    recovery_reverse_reward_window_s: float = 1.0
+    recovery_min_reverse_time_s: float = 0.10
+    recovery_success_step_progress_m: float = 0.005
+    recovery_success_progress_m: float = 0.03
+    recovery_success_forward_speed_mps: float = 0.08
+    recovery_reverse_reward_weight: float = 0.0
     recovery_success_reward_weight: float = 0.0
     drop_anti_dive_penalty_weight: float = 0.0
     drop_guard_gate_threshold: float = 0.3
@@ -301,6 +304,15 @@ class RandomizationCfg:
     joint_position_noise_scale: float = 0.0
     action_noise_std: float = 0.0
     action_bias_std: float = 0.0
+    enable_actuator_scale_randomization: bool = False
+    ball_joint_stiffness_scale_range: tuple[float, float] = (1.0, 1.0)
+    ball_joint_damping_scale_range: tuple[float, float] = (1.0, 1.0)
+    ball_joint_effort_limit_scale_range: tuple[float, float] = (1.0, 1.0)
+    ball_joint_velocity_limit_scale_range: tuple[float, float] = (1.0, 1.0)
+    wheel_joint_effort_limit_scale_range: tuple[float, float] = (1.0, 1.0)
+    enable_wheel_friction_randomization: bool = False
+    wheel_static_friction_range: tuple[float, float] = (1.0, 1.0)
+    wheel_dynamic_friction_range: tuple[float, float] = (1.0, 1.0)
 
 
 @configclass
@@ -318,6 +330,16 @@ class CurriculumCfg:
     terrain_column_move_down_progress_ratio: float = 0.30
     terrain_column_recycle_completed_envs: bool = False
     terrain_column_completed_retention_ratio: float = 0.0
+    terrain_column_stop_when_all_completed: bool = True
+    terrain_column_hard_completion_names: tuple[str, ...] = ("stairs down", "discrete obstacles")
+    terrain_column_hard_completion_success_count: int = 0
+    terrain_column_full_pass_completion_columns: tuple[int, ...] = ()
+    terrain_column_full_pass_start_level: int = 0
+    terrain_column_full_pass_success_count: int = 0
+    terrain_column_full_pass_start_level_by_name: dict[str, int] = field(default_factory=dict)
+    terrain_column_full_pass_success_count_by_name: dict[str, int] = field(default_factory=dict)
+    terrain_column_completed_hard_window_start_level: int = -1
+    terrain_column_completed_hard_window_start_level_by_name: dict[str, int] = field(default_factory=dict)
 
 
 @configclass
@@ -360,7 +382,7 @@ class DebugCfg:
     follow_view_chase_target_offset_b: tuple[float, float, float] = (1.0, 0.0, 0.4)
     follow_view_forward_height_m: float = 3.0
     follow_view_forward_distance_m: float = 4.0
-    follow_view_right_side_distance_m: float = 3.5
+    follow_view_right_side_distance_m: float = 3.0
     follow_view_right_side_height_m: float = 1.0
     log_sensor_outputs: bool = True
 
@@ -457,7 +479,9 @@ class CompleteCarEnvCfg(DirectRLEnvCfg):
         self.state_space = total_dim(build_state_descriptor(self))
 
         self.action_noise_model = self._build_action_noise_model_cfg()
-        self.observation_noise_model = self._build_observation_noise_model_cfg()
+        # This task exposes "actor" and "critic" observation groups instead of Isaac Lab's default
+        # "policy" key, so actor observation noise is applied inside CompleteCarEnv._get_observations().
+        self.observation_noise_model = None
 
         self.sim.dt = self.control.sim_dt
         self.sim.render_interval = self.decimation

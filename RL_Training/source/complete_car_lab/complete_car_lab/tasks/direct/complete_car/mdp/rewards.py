@@ -12,18 +12,15 @@ REWARD_TERM_NAMES = (
     "distance_to_target",
     "progress_to_target",
     "reached_target",
-    "far_from_target",
     "angle_diff",
     "slip_penalty",
     "action_rate_penalty",
     "contact_support_penalty",
-    "edge_speed_penalty",
     "terrain_aware_edge_speed_penalty",
     "stuck_penalty",
     "no_progress_penalty",
     "airborne_spin_penalty",
     "hard_terrain_spin_penalty",
-    "action_soft_limit_penalty",
     "step_up_front_posture_penalty",
     "step_up_module_progress_reward",
     "rear_follow_reward",
@@ -188,6 +185,13 @@ def compute_reward_terms(
     obstacle_gate: torch.Tensor | None = None,
     recovery_active: torch.Tensor | None = None,
     recovery_reverse_now: torch.Tensor | None = None,
+    recovery_reverse_reward_now: torch.Tensor | None = None,
+    recovery_had_reverse: torch.Tensor | None = None,
+    recovery_no_progress_cleared: torch.Tensor | None = None,
+    recovery_forward_progress: torch.Tensor | None = None,
+    recovery_total_progress: torch.Tensor | None = None,
+    recovery_reverse_time_s: torch.Tensor | None = None,
+    recovery_elapsed_time_s: torch.Tensor | None = None,
     recovery_success: torch.Tensor | None = None,
     middle_pitch_rad: torch.Tensor | None = None,
     drop_guard_active: torch.Tensor | None = None,
@@ -269,12 +273,6 @@ def compute_reward_terms(
     ungated_progress_to_target = positive_progress + negative_progress
     progress_to_target = progress_multiplier * positive_progress + negative_progress
     reached_target = waypoint_hit_mask.float() * params.reached_target_base_reward * reward_scale
-    far_from_target_threshold = goal_distance_f + params.far_from_target_margin
-    far_from_target = torch.where(
-        current_goal_distance > far_from_target_threshold,
-        torch.ones_like(current_goal_distance),
-        torch.zeros_like(current_goal_distance),
-    )
     angle_diff = (
         (1.0 / (1.0 + torch.abs(goal_heading_error)))
         / max_episode_length_f
@@ -332,15 +330,6 @@ def compute_reward_terms(
     ) / max_episode_length_f
     forward_speed = torch.clamp(base_lin_vel_b[:, 0], min=0.0)
     flat_speed_limit = max(float(cfg.control.base_forward_velocity_max), 1.0e-6)
-    edge_safe_speed = torch.full_like(current_goal_distance, flat_speed_limit)
-    edge_speed_excess = zero_reward_term
-    edge_speed_penalty = zero_reward_term
-    if _reward_weight_enabled(params, "edge_speed_penalty_weight"):
-        edge_speed_limit = min(max(float(params.edge_speed_limit_mps), 0.0), flat_speed_limit)
-        edge_safe_speed = flat_speed_limit - edge_strength * (flat_speed_limit - edge_speed_limit)
-        edge_speed_excess = torch.clamp(forward_speed - edge_safe_speed, min=0.0)
-        edge_speed_penalty = edge_strength * torch.square(edge_speed_excess / flat_speed_limit) / max_episode_length_f
-
     if terrain_speed_safe is None:
         step_up_distance_m = step_up_distance_norm * max(
             float(getattr(cfg.terrain, "patch_front_extent", 0.0))
@@ -438,14 +427,6 @@ def compute_reward_terms(
             / max_episode_length_f
         )
 
-    action_soft_limit_penalty = zero_reward_term
-    if _reward_weight_enabled(params, "action_soft_limit_penalty_weight"):
-        soft_limit_actions = actions[:, 2:] if actions.shape[1] > 2 else actions
-        action_soft_limit_penalty = torch.mean(
-            torch.square(torch.clamp(torch.abs(soft_limit_actions) - float(params.action_soft_limit_threshold), min=0.0)),
-            dim=1,
-        ) / max_episode_length_f
-
     ball_joint_pos = _optional_matrix(
         ball_joint_pos,
         torch.zeros((current_goal_distance.shape[0], 6), device=current_goal_distance.device, dtype=current_goal_distance.dtype),
@@ -468,8 +449,7 @@ def compute_reward_terms(
         enter_start_m=float(getattr(params, "step_up_posture_front_gap_start_m", 0.60)),
         enter_full_m=float(getattr(params, "step_up_posture_front_gap_full_m", 0.15)),
     )
-    step_up_posture_target_ahead = commands[:, 0] > float(params.step_up_goal_ahead_threshold_m)
-    step_up_posture_weight = g_step_up * step_up_posture_target_ahead.float() * step_up_posture_phase_weight
+    step_up_posture_weight = g_step_up * step_up_posture_phase_weight
     front_pitch_error = front_pitch_actual - front_pitch_ref
     step_up_posture_badness = torch.clamp(
         front_pitch_error / max(float(params.front_pitch_sigma_rad), 1.0e-6),
@@ -610,10 +590,32 @@ def compute_reward_terms(
     front_middle_high = (
         front_middle_progress_min >= float(getattr(params, "rear_follow_front_middle_threshold_m", 0.03))
     ).float()
-    rear_follow_phase = g_step_up * target_ahead.float() * front_middle_high
+    rear_follow_phase = g_step_up * front_middle_high
     rear_follow_score = torch.clamp(row_module_progress[:, 2] / torch.clamp(front_middle_progress_min, min=1.0e-6), min=0.0, max=1.0)
+    rear_follow_hold_min_score = torch.clamp(
+        torch.as_tensor(
+            float(getattr(params, "rear_follow_hold_min_score", 0.70)),
+            device=current_goal_distance.device,
+            dtype=current_goal_distance.dtype,
+        ),
+        min=0.0,
+        max=0.999,
+    )
+    rear_follow_hold_score = torch.clamp(
+        (rear_follow_score - rear_follow_hold_min_score) / torch.clamp(1.0 - rear_follow_hold_min_score, min=1.0e-6),
+        min=0.0,
+        max=1.0,
+    )
     front_middle_high_rear_low = rear_follow_phase * (rear_follow_deficit_score > 0.5).float()
-    rear_follow_reward = rear_follow_phase * rear_follow_progress_score * rear_support * control_dt
+    rear_follow_progress_reward = rear_follow_phase * rear_follow_progress_score * control_dt
+    rear_follow_hold_reward = (
+        rear_follow_phase
+        * rear_follow_hold_score
+        * rear_support
+        * control_dt
+        * max(float(getattr(params, "rear_follow_hold_reward_ratio", 0.25)), 0.0)
+    )
+    rear_follow_reward = rear_follow_progress_reward + rear_follow_hold_reward
     rear_follow_penalty = rear_follow_phase * rear_follow_deficit_score * (1.0 + torch.clamp(1.0 - rear_support, min=0.0)) * control_dt
     module_support_phase_score = torch.clamp((mid_support + rear_support) / 2.0, min=0.0, max=1.0)
     step_up_module_progress_reward = (
@@ -638,11 +640,29 @@ def compute_reward_terms(
         recovery_reverse_now.float() if isinstance(recovery_reverse_now, torch.Tensor) else None,
         current_goal_distance,
     )
+    recovery_reverse_reward_now = _optional_vector(
+        recovery_reverse_reward_now.float() if isinstance(recovery_reverse_reward_now, torch.Tensor) else None,
+        current_goal_distance,
+    )
+    recovery_had_reverse = _optional_vector(
+        recovery_had_reverse.float() if isinstance(recovery_had_reverse, torch.Tensor) else None,
+        current_goal_distance,
+    )
+    recovery_no_progress_cleared = _optional_vector(
+        recovery_no_progress_cleared.float() if isinstance(recovery_no_progress_cleared, torch.Tensor) else None,
+        current_goal_distance,
+    )
+    recovery_forward_progress = _optional_vector(recovery_forward_progress, current_goal_distance)
+    recovery_total_progress = _optional_vector(recovery_total_progress, current_goal_distance)
+    recovery_reverse_time_s = _optional_vector(recovery_reverse_time_s, current_goal_distance)
+    recovery_elapsed_time_s = _optional_vector(recovery_elapsed_time_s, current_goal_distance)
     recovery_success = _optional_vector(
         recovery_success.float() if isinstance(recovery_success, torch.Tensor) else None,
         current_goal_distance,
     )
-    recovery_reward = recovery_success + recovery_reverse_now * recovery_active * control_dt
+    recovery_reverse_reward = recovery_reverse_reward_now * control_dt
+    recovery_success_reward = recovery_success
+    recovery_reward = recovery_success_reward + recovery_reverse_reward
 
     drop_anti_dive_penalty = (
         drop_guard_weight
@@ -659,12 +679,10 @@ def compute_reward_terms(
         "distance_to_target": distance_to_target * params.distance_to_target_weight,
         "progress_to_target": progress_to_target * params.progress_to_target_weight,
         "reached_target": reached_target * params.reached_target_weight,
-        "far_from_target": far_from_target * params.far_from_target_weight,
         "angle_diff": angle_diff * params.angle_diff_weight,
         "slip_penalty": slip_penalty * params.slip_penalty_weight,
         "action_rate_penalty": action_rate_penalty * params.action_rate_penalty_weight,
         "contact_support_penalty": contact_support_penalty * params.contact_support_penalty_weight,
-        "edge_speed_penalty": edge_speed_penalty * params.edge_speed_penalty_weight,
         "terrain_aware_edge_speed_penalty": (
             terrain_aware_edge_speed_penalty * params.terrain_aware_edge_speed_penalty_weight
         ),
@@ -672,7 +690,6 @@ def compute_reward_terms(
         "no_progress_penalty": no_progress_penalty * params.no_progress_penalty_weight,
         "airborne_spin_penalty": airborne_spin_penalty * params.airborne_spin_penalty_weight,
         "hard_terrain_spin_penalty": hard_terrain_spin_penalty * params.hard_terrain_spin_penalty_weight,
-        "action_soft_limit_penalty": action_soft_limit_penalty * params.action_soft_limit_penalty_weight,
         "step_up_front_posture_penalty": (
             step_up_front_posture_penalty * params.step_up_front_posture_penalty_weight
         ),
@@ -683,8 +700,8 @@ def compute_reward_terms(
         "rear_follow_penalty": rear_follow_penalty * params.rear_follow_penalty_weight,
         "quality_row_advance_reward": quality_row_advance_reward * params.quality_row_advance_reward_weight,
         "recovery_reward": (
-            recovery_success * params.recovery_success_reward_weight
-            + recovery_reverse_now * recovery_active * control_dt * params.recovery_reverse_penalty_weight
+            recovery_success_reward * params.recovery_success_reward_weight
+            + recovery_reverse_reward * params.recovery_reverse_reward_weight
         ),
         "drop_anti_dive_penalty": drop_anti_dive_penalty * params.drop_anti_dive_penalty_weight,
     }
@@ -694,7 +711,21 @@ def compute_reward_terms(
         total_reward = torch.clamp(total_reward, min=0.0)
     total_reward = _finite_tensor(total_reward)
     diagnostics = {
+        "current_goal_distance_m": current_goal_distance,
+        "previous_goal_distance_m": previous_goal_distance,
+        "goal_heading_error_rad": goal_heading_error,
+        "reward_scale": reward_scale,
+        "distance_to_target_raw": distance_to_target,
+        "progress_to_target_raw": progress_to_target,
+        "reached_target_raw": reached_target,
+        "angle_diff_raw": angle_diff,
+        "slip_penalty_raw": slip_penalty,
+        "action_rate_penalty_raw": action_rate_penalty,
+        "contact_support_penalty_raw": contact_support_penalty,
+        "terrain_aware_edge_speed_penalty_raw": terrain_aware_edge_speed_penalty,
+        "stuck_penalty_raw": stuck_penalty,
         "progress_ungated": ungated_progress_to_target,
+        "progress_delta_m": progress_delta,
         "progress_positive": positive_progress,
         "progress_negative": negative_progress,
         "progress_longitudinal_gate": longitudinal_gate,
@@ -709,24 +740,31 @@ def compute_reward_terms(
         "contact_support_mid": mid_support,
         "contact_support_rear": rear_support,
         "contact_support_score": torch.mean(module_support, dim=1),
+        "contact_deficit_front": contact_deficit[:, 0],
+        "contact_deficit_mid": contact_deficit[:, 1],
+        "contact_deficit_rear": contact_deficit[:, 2],
         "contact_support_w_all": contact_w_all,
         "contact_support_w_up": contact_w_up,
         "contact_support_w_drop": contact_w_drop,
+        "contact_support_weight_sum": support_weight_sum,
         "contact_support_lr_balance": contact_lr_balance,
         "contact_support_all_module_penalty": all_module_penalty,
         "contact_support_step_up_penalty": step_up_support_penalty,
         "contact_support_drop_penalty": drop_support_penalty,
         "edge_strength": edge_strength,
         "edge_height_jump": edge_height_jump,
-        "edge_safe_speed": edge_safe_speed,
-        "edge_forward_speed": forward_speed,
-        "edge_speed_excess": edge_speed_excess,
         "terrain_gate_step_up": g_step_up,
         "terrain_gate_step_down": g_step_down,
         "terrain_gate_gap": g_gap,
         "terrain_gate_rough": g_rough,
         "terrain_gate_flat": g_flat,
         "terrain_gate_edge": g_edge,
+        "terrain_gate_drop": g_drop,
+        "hard_gate": hard_gate,
+        "hard_gate_active": hard_gate_active.float(),
+        "target_ahead": target_ahead.float(),
+        "step_up_height_m": step_up_height_m,
+        "step_up_distance_norm": step_up_distance_norm,
         "terrain_speed_safe": terrain_speed_safe,
         "terrain_speed_raw_vx": raw_vx_cmd,
         "terrain_speed_limited_vx": limited_vx_cmd,
@@ -745,7 +783,6 @@ def compute_reward_terms(
         "hard_terrain_low_speed": hard_terrain_low_speed,
         "hard_terrain_slip_excess": hard_terrain_slip_excess,
         "hard_terrain_spin_penalty_raw": hard_terrain_spin_penalty,
-        "action_soft_limit_penalty_raw": action_soft_limit_penalty,
         "front_pitch_ref": front_pitch_ref,
         "front_pitch_actual": front_pitch_actual,
         "rear_pitch_actual": rear_pitch_actual,
@@ -758,6 +795,7 @@ def compute_reward_terms(
         "progress_quality_slip": slip_quality,
         "progress_quality_overspeed": overspeed_quality,
         "progress_quality_pitch": posture_quality,
+        "progress_quality_pitch_rate": pitch_rate_quality,
         "progress_quality_contact": contact_quality,
         "progress_quality_not_stuck": not_stuck_quality,
         "progress_quality_score": progress_quality_score,
@@ -777,20 +815,40 @@ def compute_reward_terms(
         "step_up_crest_phase": crest_phase,
         "step_up_module_progress_score": module_progress_score,
         "step_up_module_progress_reward_raw": step_up_module_progress_reward,
+        "step_up_front_posture_quality": step_up_posture_quality,
         "quality_row_advance_mask": quality_row_advance_mask,
         "quality_row_advance_reward_raw": quality_row_advance_reward,
         "recovery_active": recovery_active,
         "recovery_reverse_now": recovery_reverse_now,
+        "recovery_reverse_reward_now": recovery_reverse_reward_now,
+        "recovery_had_reverse": recovery_had_reverse,
+        "recovery_no_progress_cleared": recovery_no_progress_cleared,
+        "recovery_forward_progress_m": recovery_forward_progress,
+        "recovery_total_progress_m": recovery_total_progress,
+        "recovery_reverse_time_s": recovery_reverse_time_s,
+        "recovery_elapsed_time_s": recovery_elapsed_time_s,
         "recovery_success": recovery_success,
+        "recovery_reverse_reward_raw": recovery_reverse_reward,
+        "recovery_success_reward_raw": recovery_success_reward,
         "recovery_reward_raw": recovery_reward,
         "drop_pitch_rate_abs": pitch_rate_abs,
         "drop_vz_down": vz_down,
+        "drop_front_pitch_excess": drop_front_pitch_excess,
         "drop_guard_active": drop_guard_active_f,
+        "drop_guard_weight": drop_guard_weight,
+        "drop_posture_badness": drop_posture_badness,
         "drop_anti_dive_penalty_raw": drop_anti_dive_penalty,
+        "rear_follow_phase": rear_follow_phase,
+        "front_middle_high": front_middle_high,
+        "front_middle_progress_min": front_middle_progress_min,
         "rear_follow_score": rear_follow_score,
         "rear_follow_progress_score": rear_follow_progress_score,
+        "rear_follow_hold_score": rear_follow_hold_score,
+        "rear_follow_hold_min_score": rear_follow_hold_min_score.expand_as(rear_follow_score),
         "rear_follow_deficit_m": rear_follow_deficit_m,
         "rear_follow_deficit_score": rear_follow_deficit_score,
+        "rear_follow_progress_reward_raw": rear_follow_progress_reward,
+        "rear_follow_hold_reward_raw": rear_follow_hold_reward,
         "rear_follow_reward_raw": rear_follow_reward,
         "rear_follow_penalty_raw": rear_follow_penalty,
         "front_middle_high_rear_low": front_middle_high_rear_low,

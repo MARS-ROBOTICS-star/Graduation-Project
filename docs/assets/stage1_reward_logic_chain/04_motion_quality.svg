@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="700" viewBox="0 0 1500 700">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#475569"/></marker>
+    <style>
+      .title{font:700 30px "Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;fill:#0f172a}
+      .box{rx:15;ry:15;stroke-width:2}
+      .input{fill:#e0f2fe;stroke:#0284c7}
+      .penalty{fill:#fee2e2;stroke:#dc2626}
+      .note{fill:#f8fafc;stroke:#64748b}
+      .text{font:500 21px "Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;fill:#0f172a}
+      .small{font:500 18px "Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;fill:#334155}
+      .line{stroke:#475569;stroke-width:2.5;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1500" height="700" fill="#fff"/>
+  <text x="750" y="48" text-anchor="middle" class="title">基础运动质量链：告诉策略不要靠乱滑乱冲通过</text>
+
+  <rect x="80" y="95" width="250" height="95" class="box input"/>
+  <text x="205" y="132" text-anchor="middle" class="text">轮速 / 车体速度</text>
+  <text x="205" y="163" text-anchor="middle" class="small">计算纵向滑移与侧偏</text>
+
+  <rect x="80" y="245" width="250" height="95" class="box input"/>
+  <text x="205" y="282" text-anchor="middle" class="text">轮接触权重</text>
+  <text x="205" y="313" text-anchor="middle" class="small">前 / 中 / 后支撑</text>
+
+  <rect x="80" y="395" width="250" height="95" class="box input"/>
+  <text x="205" y="432" text-anchor="middle" class="text">动作变化</text>
+  <text x="205" y="463" text-anchor="middle" class="small">当前动作 - 上一帧动作</text>
+
+  <rect x="80" y="545" width="250" height="95" class="box input"/>
+  <text x="205" y="582" text-anchor="middle" class="text">hard gate + 低速</text>
+  <text x="205" y="613" text-anchor="middle" class="small">目标仍在前方</text>
+
+  <rect x="485" y="105" width="260" height="80" class="box penalty"/>
+  <text x="615" y="138" text-anchor="middle" class="text">slip_penalty</text>
+  <text x="615" y="164" text-anchor="middle" class="small">打滑扣分</text>
+
+  <rect x="485" y="245" width="260" height="95" class="box penalty"/>
+  <text x="615" y="282" text-anchor="middle" class="text">contact_support_penalty</text>
+  <text x="615" y="313" text-anchor="middle" class="small">支撑不足扣分</text>
+
+  <rect x="485" y="395" width="260" height="80" class="box penalty"/>
+  <text x="615" y="428" text-anchor="middle" class="text">action_rate_penalty</text>
+  <text x="615" y="454" text-anchor="middle" class="small">动作抖动扣分</text>
+
+  <rect x="485" y="520" width="260" height="80" class="box penalty"/>
+  <text x="615" y="553" text-anchor="middle" class="text">no_progress_penalty</text>
+  <text x="615" y="579" text-anchor="middle" class="small">不前进扣分</text>
+
+  <rect x="840" y="520" width="260" height="80" class="box penalty"/>
+  <text x="970" y="553" text-anchor="middle" class="text">stuck_penalty</text>
+  <text x="970" y="579" text-anchor="middle" class="small">卡住持续扣分 / reset</text>
+
+  <rect x="840" y="105" width="260" height="80" class="box penalty"/>
+  <text x="970" y="138" text-anchor="middle" class="text">hard_terrain_spin</text>
+  <text x="970" y="164" text-anchor="middle" class="small">低速空转扣分</text>
+
+  <rect x="1160" y="235" width="270" height="150" class="box note"/>
+  <text x="1295" y="278" text-anchor="middle" class="text">关键解释</text>
+  <text x="1295" y="314" text-anchor="middle" class="small">多数是负惩罚</text>
+  <text x="1295" y="344" text-anchor="middle" class="small">能告诉策略哪里不好</text>
+  <text x="1295" y="374" text-anchor="middle" class="small">但不直接给恢复动作</text>
+
+  <path d="M330 142 H485" class="line"/>
+  <path d="M330 292 H485" class="line"/>
+  <path d="M330 442 H485" class="line"/>
+  <path d="M330 592 C385 575 430 565 485 560" class="line"/>
+  <path d="M745 560 H840" class="line"/>
+  <path d="M330 142 C500 80 715 95 840 130" class="line"/>
+  <path d="M745 292 C920 290 1040 290 1160 300" class="line"/>
+</svg>

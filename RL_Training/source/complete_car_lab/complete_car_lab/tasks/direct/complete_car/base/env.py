@@ -32,8 +32,17 @@ from ..sensors.sensor_cfg import CompleteCarSensorSuiteRuntime
 from ..terrain.terrain_cfg import STAGE1_TERRAIN_CLASS_STEP
 from ..terrain.terrain_runtime import CompleteCarTerrainRuntime
 from ..utils.debug_draw import CompleteCarDebugDraw
-from ..utils.math_utils import quat_rotate, quaternion_to_rpy, update_history, wrap_to_pi_tensor
+from ..utils.math_utils import (
+    compute_policy_obs_noise_magnitudes,
+    quat_rotate,
+    quaternion_to_rpy,
+    update_history,
+    wrap_to_pi_tensor,
+)
 from .complete_car_cfg import CompleteCarEnvCfg
+
+
+STAGE1_RECENT_MAX_ROW_ATTEMPT_WINDOW = 100
 
 
 class CompleteCarDirectEnv(DirectRLEnv):
@@ -55,6 +64,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._ball_joint_ids, _ = self.robot.find_joints(BALL_JOINT_NAMES, preserve_order=True)
         self._wheel_joint_ids, _ = self.robot.find_joints(WHEEL_JOINT_NAMES, preserve_order=True)
         self._wheel_body_ids, _ = self.robot.find_bodies(WHEEL_BODY_NAMES, preserve_order=True)
+        self._wheel_material_shape_ids = self._resolve_body_material_shape_ids(self._wheel_body_ids)
         gravity_magnitude = abs(float(self.cfg.sim.gravity[2]))
         self._total_vehicle_weight = (
             self.robot.data.default_mass.sum(dim=1, keepdim=True).to(device=self.device) * gravity_magnitude
@@ -62,6 +72,31 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._wheel_speed_allocator = TorchWheelSpeedAllocator(
             device=self.device,
             dtype=self.robot.data.joint_pos.dtype,
+        )
+        runtime_dtype = self.robot.data.joint_pos.dtype
+        self._ball_joint_stiffness_runtime = torch.full(
+            (self.num_envs, len(BALL_JOINT_NAMES)),
+            float(self.cfg.control.ball_joint_stiffness),
+            device=self.device,
+            dtype=runtime_dtype,
+        )
+        self._ball_joint_damping_runtime = torch.full_like(
+            self._ball_joint_stiffness_runtime,
+            float(self.cfg.control.ball_joint_damping),
+        )
+        self._ball_joint_effort_limit_runtime = torch.full_like(
+            self._ball_joint_stiffness_runtime,
+            float(self.cfg.control.ball_joint_effort_limit_sim),
+        )
+        self._ball_joint_velocity_limit_runtime = torch.full_like(
+            self._ball_joint_stiffness_runtime,
+            float(self.cfg.control.ball_joint_velocity_limit_sim),
+        )
+        self._wheel_effort_limit_runtime = torch.full(
+            (self.num_envs, len(WHEEL_JOINT_NAMES)),
+            float(self.cfg.control.wheel_joint_effort_limit_sim),
+            device=self.device,
+            dtype=runtime_dtype,
         )
 
         self.actions = torch.zeros((self.num_envs, self.cfg.action_space), device=self.device)
@@ -94,6 +129,25 @@ class CompleteCarDirectEnv(DirectRLEnv):
             dtype=torch.long,
             device=self.device,
         )
+        self._stage1_column_max_row_attempt_counts = torch.zeros_like(self._stage1_column_completion_counts)
+        self._stage1_column_max_row_success_with_quality_counts = torch.zeros_like(
+            self._stage1_column_completion_counts
+        )
+        self._stage1_column_consecutive_max_row_successes = torch.zeros_like(self._stage1_column_completion_counts)
+        self._stage1_recent_max_row_attempt_successes = torch.zeros(
+            (num_stage1_terrain_cols, STAGE1_RECENT_MAX_ROW_ATTEMPT_WINDOW),
+            dtype=torch.bool,
+            device=self.device,
+        )
+        self._stage1_recent_max_row_attempt_valid = torch.zeros_like(
+            self._stage1_recent_max_row_attempt_successes,
+            dtype=torch.bool,
+        )
+        self._stage1_recent_max_row_attempt_cursor = torch.zeros(
+            num_stage1_terrain_cols,
+            dtype=torch.long,
+            device=self.device,
+        )
         self._stage1_column_completion_targets = torch.ones_like(self._stage1_column_completion_counts)
         self._stage1_completed_terrain_columns = torch.zeros(
             num_stage1_terrain_cols,
@@ -102,8 +156,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
         )
         self._stage1_recycled_envs_ever = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._stage1_last_recycled_env_mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._stage1_terrain_level_floor = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._stage1_recycle_cursor = 0
         self._initialize_stage1_column_completion_tracking()
+        self._initialize_stage1_terrain_level_floor()
         self._stage1_row_quality_baseline_ready = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._stage1_row_module_support_height_baseline = torch.zeros((self.num_envs, 3), device=self.device)
         self._stage1_row_module_progress_max = torch.zeros_like(self._stage1_row_module_support_height_baseline)
@@ -158,11 +214,26 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._episode_sums = {name: torch.zeros(self.num_envs, device=self.device) for name in REWARD_TERM_NAMES}
         self._last_reward_components = {name: torch.zeros(self.num_envs, device=self.device) for name in REWARD_TERM_NAMES}
         self._last_reward_diagnostics = {
+            "current_goal_distance_m": torch.zeros(self.num_envs, device=self.device),
+            "previous_goal_distance_m": torch.zeros(self.num_envs, device=self.device),
+            "goal_heading_error_rad": torch.zeros(self.num_envs, device=self.device),
+            "reward_scale": torch.ones(self.num_envs, device=self.device),
+            "distance_to_target_raw": torch.zeros(self.num_envs, device=self.device),
+            "progress_to_target_raw": torch.zeros(self.num_envs, device=self.device),
+            "reached_target_raw": torch.zeros(self.num_envs, device=self.device),
+            "angle_diff_raw": torch.zeros(self.num_envs, device=self.device),
+            "slip_penalty_raw": torch.zeros(self.num_envs, device=self.device),
+            "action_rate_penalty_raw": torch.zeros(self.num_envs, device=self.device),
+            "contact_support_penalty_raw": torch.zeros(self.num_envs, device=self.device),
+            "terrain_aware_edge_speed_penalty_raw": torch.zeros(self.num_envs, device=self.device),
+            "stuck_penalty_raw": torch.zeros(self.num_envs, device=self.device),
             "progress_ungated": torch.zeros(self.num_envs, device=self.device),
+            "progress_delta_m": torch.zeros(self.num_envs, device=self.device),
             "progress_positive": torch.zeros(self.num_envs, device=self.device),
             "progress_negative": torch.zeros(self.num_envs, device=self.device),
             "progress_longitudinal_gate": torch.zeros(self.num_envs, device=self.device),
             "progress_slip_angle_gate": torch.zeros(self.num_envs, device=self.device),
+            "progress_pitch_gate": torch.ones(self.num_envs, device=self.device),
             "progress_gate": torch.zeros(self.num_envs, device=self.device),
             "progress_multiplier": torch.zeros(self.num_envs, device=self.device),
             "slip_contact_weight_sum": torch.zeros(self.num_envs, device=self.device),
@@ -172,24 +243,31 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "contact_support_mid": torch.zeros(self.num_envs, device=self.device),
             "contact_support_rear": torch.zeros(self.num_envs, device=self.device),
             "contact_support_score": torch.zeros(self.num_envs, device=self.device),
+            "contact_deficit_front": torch.zeros(self.num_envs, device=self.device),
+            "contact_deficit_mid": torch.zeros(self.num_envs, device=self.device),
+            "contact_deficit_rear": torch.zeros(self.num_envs, device=self.device),
             "contact_support_w_all": torch.zeros(self.num_envs, device=self.device),
             "contact_support_w_up": torch.zeros(self.num_envs, device=self.device),
             "contact_support_w_drop": torch.zeros(self.num_envs, device=self.device),
+            "contact_support_weight_sum": torch.zeros(self.num_envs, device=self.device),
             "contact_support_lr_balance": torch.zeros(self.num_envs, device=self.device),
             "contact_support_all_module_penalty": torch.zeros(self.num_envs, device=self.device),
             "contact_support_step_up_penalty": torch.zeros(self.num_envs, device=self.device),
             "contact_support_drop_penalty": torch.zeros(self.num_envs, device=self.device),
             "edge_strength": torch.zeros(self.num_envs, device=self.device),
             "edge_height_jump": torch.zeros(self.num_envs, device=self.device),
-            "edge_safe_speed": torch.zeros(self.num_envs, device=self.device),
-            "edge_forward_speed": torch.zeros(self.num_envs, device=self.device),
-            "edge_speed_excess": torch.zeros(self.num_envs, device=self.device),
             "terrain_gate_step_up": torch.zeros(self.num_envs, device=self.device),
             "terrain_gate_step_down": torch.zeros(self.num_envs, device=self.device),
             "terrain_gate_gap": torch.zeros(self.num_envs, device=self.device),
             "terrain_gate_rough": torch.zeros(self.num_envs, device=self.device),
             "terrain_gate_flat": torch.ones(self.num_envs, device=self.device),
             "terrain_gate_edge": torch.zeros(self.num_envs, device=self.device),
+            "terrain_gate_drop": torch.zeros(self.num_envs, device=self.device),
+            "hard_gate": torch.zeros(self.num_envs, device=self.device),
+            "hard_gate_active": torch.zeros(self.num_envs, device=self.device),
+            "target_ahead": torch.zeros(self.num_envs, device=self.device),
+            "step_up_height_m": torch.zeros(self.num_envs, device=self.device),
+            "step_up_distance_norm": torch.ones(self.num_envs, device=self.device),
             "terrain_speed_safe": torch.zeros(self.num_envs, device=self.device),
             "terrain_speed_raw_vx": torch.zeros(self.num_envs, device=self.device),
             "terrain_speed_limited_vx": torch.zeros(self.num_envs, device=self.device),
@@ -208,7 +286,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "hard_terrain_low_speed": torch.zeros(self.num_envs, device=self.device),
             "hard_terrain_slip_excess": torch.zeros(self.num_envs, device=self.device),
             "hard_terrain_spin_penalty_raw": torch.zeros(self.num_envs, device=self.device),
-            "action_soft_limit_penalty_raw": torch.zeros(self.num_envs, device=self.device),
             "front_pitch_ref": torch.zeros(self.num_envs, device=self.device),
             "front_pitch_actual": torch.zeros(self.num_envs, device=self.device),
             "rear_pitch_actual": torch.zeros(self.num_envs, device=self.device),
@@ -221,6 +298,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "progress_quality_slip": torch.ones(self.num_envs, device=self.device),
             "progress_quality_overspeed": torch.ones(self.num_envs, device=self.device),
             "progress_quality_pitch": torch.ones(self.num_envs, device=self.device),
+            "progress_quality_pitch_rate": torch.ones(self.num_envs, device=self.device),
             "progress_quality_contact": torch.ones(self.num_envs, device=self.device),
             "progress_quality_not_stuck": torch.ones(self.num_envs, device=self.device),
             "progress_quality_score": torch.ones(self.num_envs, device=self.device),
@@ -240,6 +318,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "step_up_crest_phase": torch.zeros(self.num_envs, device=self.device),
             "step_up_module_progress_score": torch.zeros(self.num_envs, device=self.device),
             "step_up_module_progress_reward_raw": torch.zeros(self.num_envs, device=self.device),
+            "step_up_front_posture_quality": torch.ones(self.num_envs, device=self.device),
             "quality_advance_score": torch.zeros(self.num_envs, device=self.device),
             "quality_gate_score": torch.zeros(self.num_envs, device=self.device),
             "motion_quality_score": torch.zeros(self.num_envs, device=self.device),
@@ -260,16 +339,35 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "quality_row_advance_reward_raw": torch.zeros(self.num_envs, device=self.device),
             "recovery_active": torch.zeros(self.num_envs, device=self.device),
             "recovery_reverse_now": torch.zeros(self.num_envs, device=self.device),
+            "recovery_reverse_reward_now": torch.zeros(self.num_envs, device=self.device),
+            "recovery_had_reverse": torch.zeros(self.num_envs, device=self.device),
+            "recovery_no_progress_cleared": torch.zeros(self.num_envs, device=self.device),
+            "recovery_forward_progress_m": torch.zeros(self.num_envs, device=self.device),
+            "recovery_total_progress_m": torch.zeros(self.num_envs, device=self.device),
+            "recovery_reverse_time_s": torch.zeros(self.num_envs, device=self.device),
+            "recovery_elapsed_time_s": torch.zeros(self.num_envs, device=self.device),
             "recovery_success": torch.zeros(self.num_envs, device=self.device),
+            "recovery_reverse_reward_raw": torch.zeros(self.num_envs, device=self.device),
+            "recovery_success_reward_raw": torch.zeros(self.num_envs, device=self.device),
             "recovery_reward_raw": torch.zeros(self.num_envs, device=self.device),
             "drop_pitch_rate_abs": torch.zeros(self.num_envs, device=self.device),
             "drop_vz_down": torch.zeros(self.num_envs, device=self.device),
+            "drop_front_pitch_excess": torch.zeros(self.num_envs, device=self.device),
             "drop_guard_active": torch.zeros(self.num_envs, device=self.device),
+            "drop_guard_weight": torch.zeros(self.num_envs, device=self.device),
+            "drop_posture_badness": torch.zeros(self.num_envs, device=self.device),
             "drop_anti_dive_penalty_raw": torch.zeros(self.num_envs, device=self.device),
+            "rear_follow_phase": torch.zeros(self.num_envs, device=self.device),
+            "front_middle_high": torch.zeros(self.num_envs, device=self.device),
+            "front_middle_progress_min": torch.zeros(self.num_envs, device=self.device),
             "rear_follow_score": torch.zeros(self.num_envs, device=self.device),
             "rear_follow_progress_score": torch.zeros(self.num_envs, device=self.device),
+            "rear_follow_hold_score": torch.zeros(self.num_envs, device=self.device),
+            "rear_follow_hold_min_score": torch.zeros(self.num_envs, device=self.device),
             "rear_follow_deficit_m": torch.zeros(self.num_envs, device=self.device),
             "rear_follow_deficit_score": torch.zeros(self.num_envs, device=self.device),
+            "rear_follow_progress_reward_raw": torch.zeros(self.num_envs, device=self.device),
+            "rear_follow_hold_reward_raw": torch.zeros(self.num_envs, device=self.device),
             "rear_follow_reward_raw": torch.zeros(self.num_envs, device=self.device),
             "rear_follow_penalty_raw": torch.zeros(self.num_envs, device=self.device),
             "front_middle_high_rear_low": torch.zeros(self.num_envs, device=self.device),
@@ -289,12 +387,37 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "terrain_column_completed": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             "low_quality_terrain_hit": torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
         }
+        self._last_step_done_terms = {
+            key: torch.zeros_like(value) for key, value in self._last_done_terms.items()
+        }
+        self._last_ball_joint_out_of_bounds_joint_mask = torch.zeros(
+            (self.num_envs, len(BALL_JOINT_NAMES)),
+            dtype=torch.bool,
+            device=self.device,
+        )
+        self._last_ball_joint_out_of_bounds_joint_pos = torch.zeros(
+            (self.num_envs, len(BALL_JOINT_NAMES)),
+            device=self.device,
+        )
         self._stage1_stuck_time = torch.zeros(self.num_envs, device=self.device)
         self._last_stage1_stuck_now = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._prev_stage1_module_support_heights = torch.zeros((self.num_envs, 3), device=self.device)
         self._stage1_recovery_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._last_stage1_recovery_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._stage1_recovery_elapsed_time_s = torch.zeros(self.num_envs, device=self.device)
         self._stage1_recovery_reverse_time_s = torch.zeros(self.num_envs, device=self.device)
         self._stage1_recovery_start_goal_distance = torch.zeros(self.num_envs, device=self.device)
+        self._last_stage1_recovery_had_reverse = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._last_stage1_recovery_reverse_reward_now = torch.zeros(
+            self.num_envs, dtype=torch.bool, device=self.device
+        )
+        self._last_stage1_recovery_no_progress_cleared = torch.zeros(
+            self.num_envs, dtype=torch.bool, device=self.device
+        )
+        self._last_stage1_recovery_forward_progress = torch.zeros(self.num_envs, device=self.device)
+        self._last_stage1_recovery_total_progress = torch.zeros(self.num_envs, device=self.device)
+        self._last_stage1_recovery_reverse_time_s = torch.zeros(self.num_envs, device=self.device)
+        self._last_stage1_recovery_elapsed_time_s = torch.zeros(self.num_envs, device=self.device)
         self._last_stage1_recovery_reverse_now = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._last_stage1_recovery_success = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._last_critic_height_patch: torch.Tensor | None = None
@@ -316,6 +439,22 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 (self.num_envs, self.cfg.observations.history_length, history_dim),
                 device=self.device,
             )
+        self._actor_obs_noise_magnitudes: torch.Tensor | None = None
+        if self.cfg.observations.noise.enabled and self.cfg.observations.noise.level > 0.0:
+            actor_noise_magnitudes = compute_policy_obs_noise_magnitudes(self.cfg)
+            if self.cfg.observations.use_history and self.cfg.observations.history_length > 1:
+                actor_noise_magnitudes = actor_noise_magnitudes * self.cfg.observations.history_length
+            if any(magnitude > 0.0 for magnitude in actor_noise_magnitudes):
+                self._actor_obs_noise_magnitudes = torch.tensor(
+                    actor_noise_magnitudes,
+                    device=self.device,
+                    dtype=torch.float32,
+                ).unsqueeze(0)
+                if self._actor_obs_noise_magnitudes.shape[1] != int(self.cfg.observation_space["actor"]):
+                    raise RuntimeError(
+                        "Actor observation noise dimension mismatch: "
+                        f"{self._actor_obs_noise_magnitudes.shape[1]} != {self.cfg.observation_space['actor']}"
+                    )
 
         if not hasattr(self, "extras"):
             self.extras = {}
@@ -340,6 +479,208 @@ class CompleteCarDirectEnv(DirectRLEnv):
             torch.abs(self._height_patch_y_points) <= edge_preview_y_limit + edge_eps,
             as_tuple=False,
         ).flatten()
+        self._reset_actuator_randomization(
+            torch.arange(self.num_envs, device=self.device, dtype=torch.long),
+            log=False,
+        )
+        self._reset_wheel_friction_randomization(
+            torch.arange(self.num_envs, device=self.device, dtype=torch.long),
+            log=False,
+        )
+
+    def _resolve_body_material_shape_ids(self, body_ids) -> torch.Tensor:
+        body_ids_cpu = torch.as_tensor(body_ids, dtype=torch.long, device="cpu").reshape(-1)
+        if body_ids_cpu.numel() == 0:
+            return torch.empty(0, dtype=torch.long, device="cpu")
+
+        num_shapes_per_body: list[int] = []
+        for link_path in self.robot.root_physx_view.link_paths[0]:
+            link_physx_view = self.robot._physics_sim_view.create_rigid_body_view(link_path)  # type: ignore[attr-defined]
+            num_shapes_per_body.append(int(link_physx_view.max_shapes))
+
+        expected_num_shapes = int(self.robot.root_physx_view.max_shapes)
+        if sum(num_shapes_per_body) != expected_num_shapes:
+            raise RuntimeError(
+                "Failed to resolve wheel material shape ids: "
+                f"expected {expected_num_shapes} shapes, got {sum(num_shapes_per_body)} from body views."
+            )
+
+        selected_body_ids = set(int(body_id) for body_id in body_ids_cpu.tolist())
+        selected_shape_ids: list[int] = []
+        shape_start = 0
+        for body_id, num_shapes in enumerate(num_shapes_per_body):
+            shape_end = shape_start + num_shapes
+            if body_id in selected_body_ids:
+                selected_shape_ids.extend(range(shape_start, shape_end))
+            shape_start = shape_end
+
+        return torch.as_tensor(selected_shape_ids, dtype=torch.long, device="cpu")
+
+    def _sample_randomization_scale(
+        self,
+        value_range: tuple[float, float],
+        shape: tuple[int, ...],
+        *,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        low, high = (float(value_range[0]), float(value_range[1]))
+        if high < low:
+            raise ValueError(f"Invalid randomization range {value_range}: upper bound is lower than lower bound.")
+        if high == low:
+            return torch.full(shape, low, device=self.device, dtype=dtype)
+        return torch.empty(shape, device=self.device, dtype=dtype).uniform_(low, high)
+
+    def _apply_actor_observation_noise(self, actor_obs: torch.Tensor) -> torch.Tensor:
+        if self._actor_obs_noise_magnitudes is None:
+            return actor_obs
+        magnitudes = self._actor_obs_noise_magnitudes.to(dtype=actor_obs.dtype)
+        noise = (torch.rand_like(actor_obs) * 2.0 - 1.0) * magnitudes
+        return torch.nan_to_num(actor_obs + noise, nan=0.0, posinf=0.0, neginf=0.0)
+
+    def _reset_actuator_randomization(self, env_ids: torch.Tensor, *, log: bool = True) -> dict[str, float]:
+        if not bool(getattr(self.cfg.randomization, "enable_actuator_scale_randomization", False)):
+            return {}
+        if env_ids.numel() == 0:
+            return {}
+
+        dtype = self._ball_joint_stiffness_runtime.dtype
+        num_envs = int(env_ids.numel())
+        ball_shape = (num_envs, len(BALL_JOINT_NAMES))
+        wheel_shape = (num_envs, len(WHEEL_JOINT_NAMES))
+
+        ball_stiffness_scale = self._sample_randomization_scale(
+            self.cfg.randomization.ball_joint_stiffness_scale_range,
+            ball_shape,
+            dtype=dtype,
+        )
+        ball_damping_scale = self._sample_randomization_scale(
+            self.cfg.randomization.ball_joint_damping_scale_range,
+            ball_shape,
+            dtype=dtype,
+        )
+        ball_effort_scale = self._sample_randomization_scale(
+            self.cfg.randomization.ball_joint_effort_limit_scale_range,
+            ball_shape,
+            dtype=dtype,
+        )
+        ball_velocity_scale = self._sample_randomization_scale(
+            self.cfg.randomization.ball_joint_velocity_limit_scale_range,
+            ball_shape,
+            dtype=dtype,
+        )
+        wheel_effort_scale = self._sample_randomization_scale(
+            self.cfg.randomization.wheel_joint_effort_limit_scale_range,
+            wheel_shape,
+            dtype=dtype,
+        )
+
+        self._ball_joint_stiffness_runtime[env_ids] = float(self.cfg.control.ball_joint_stiffness) * ball_stiffness_scale
+        self._ball_joint_damping_runtime[env_ids] = float(self.cfg.control.ball_joint_damping) * ball_damping_scale
+        self._ball_joint_effort_limit_runtime[env_ids] = (
+            float(self.cfg.control.ball_joint_effort_limit_sim) * ball_effort_scale
+        )
+        self._ball_joint_velocity_limit_runtime[env_ids] = (
+            float(self.cfg.control.ball_joint_velocity_limit_sim) * ball_velocity_scale
+        )
+        self._wheel_effort_limit_runtime[env_ids] = float(self.cfg.control.wheel_joint_effort_limit_sim) * wheel_effort_scale
+
+        self.robot.write_joint_stiffness_to_sim(
+            self._ball_joint_stiffness_runtime[env_ids],
+            joint_ids=self._ball_joint_ids,
+            env_ids=env_ids,
+        )
+        self.robot.write_joint_damping_to_sim(
+            self._ball_joint_damping_runtime[env_ids],
+            joint_ids=self._ball_joint_ids,
+            env_ids=env_ids,
+        )
+        self.robot.write_joint_effort_limit_to_sim(
+            self._ball_joint_effort_limit_runtime[env_ids],
+            joint_ids=self._ball_joint_ids,
+            env_ids=env_ids,
+        )
+        self.robot.write_joint_velocity_limit_to_sim(
+            self._ball_joint_velocity_limit_runtime[env_ids],
+            joint_ids=self._ball_joint_ids,
+            env_ids=env_ids,
+        )
+        self.robot.write_joint_effort_limit_to_sim(
+            self._wheel_effort_limit_runtime[env_ids],
+            joint_ids=self._wheel_joint_ids,
+            env_ids=env_ids,
+        )
+
+        if not log:
+            return {}
+        return self._sanitize_scalar_metrics(
+            {
+                "DomainRand/ball_stiffness_scale_mean": torch.mean(ball_stiffness_scale),
+                "DomainRand/ball_damping_scale_mean": torch.mean(ball_damping_scale),
+                "DomainRand/ball_effort_scale_mean": torch.mean(ball_effort_scale),
+                "DomainRand/ball_velocity_scale_mean": torch.mean(ball_velocity_scale),
+                "DomainRand/wheel_effort_scale_mean": torch.mean(wheel_effort_scale),
+            }
+        )
+
+    def _reset_wheel_friction_randomization(self, env_ids: torch.Tensor, *, log: bool = True) -> dict[str, float]:
+        if not bool(getattr(self.cfg.randomization, "enable_wheel_friction_randomization", False)):
+            return {}
+        if env_ids.numel() == 0 or self._wheel_material_shape_ids.numel() == 0:
+            return {}
+
+        materials = self.robot.root_physx_view.get_material_properties()
+        material_device = materials.device
+        material_dtype = materials.dtype
+        env_ids_cpu = env_ids.detach().cpu()
+        env_ids_material = env_ids_cpu.to(device=material_device, dtype=torch.long).reshape(-1, 1)
+        wheel_shape_ids = self._wheel_material_shape_ids.to(device=material_device, dtype=torch.long).reshape(1, -1)
+        sample_shape = (int(env_ids.numel()), int(self._wheel_material_shape_ids.numel()))
+
+        static_friction = self._sample_uniform_on_device(
+            self.cfg.randomization.wheel_static_friction_range,
+            sample_shape,
+            device=material_device,
+            dtype=material_dtype,
+        )
+        dynamic_friction = self._sample_uniform_on_device(
+            self.cfg.randomization.wheel_dynamic_friction_range,
+            sample_shape,
+            device=material_device,
+            dtype=material_dtype,
+        )
+        dynamic_friction = torch.minimum(dynamic_friction, static_friction)
+
+        materials[env_ids_material, wheel_shape_ids, 0] = static_friction
+        materials[env_ids_material, wheel_shape_ids, 1] = dynamic_friction
+        self.robot.root_physx_view.set_material_properties(materials, env_ids_cpu)
+
+        if not log:
+            return {}
+        return self._sanitize_scalar_metrics(
+            {
+                "DomainRand/wheel_static_friction_mean": torch.mean(static_friction),
+                "DomainRand/wheel_dynamic_friction_mean": torch.mean(dynamic_friction),
+                "DomainRand/wheel_static_friction_min": torch.min(static_friction),
+                "DomainRand/wheel_dynamic_friction_min": torch.min(dynamic_friction),
+                "DomainRand/wheel_static_friction_max": torch.max(static_friction),
+                "DomainRand/wheel_dynamic_friction_max": torch.max(dynamic_friction),
+            }
+        )
+
+    @staticmethod
+    def _sample_uniform_on_device(
+        value_range: tuple[float, float],
+        shape: tuple[int, ...],
+        *,
+        device: torch.device | str,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        low, high = (float(value_range[0]), float(value_range[1]))
+        if high < low:
+            raise ValueError(f"Invalid randomization range {value_range}: upper bound is lower than lower bound.")
+        if high == low:
+            return torch.full(shape, low, device=device, dtype=dtype)
+        return torch.empty(shape, device=device, dtype=dtype).uniform_(low, high)
 
     def step(self, action: torch.Tensor):
         self._clear_wheel_contact_force_cache()
@@ -391,8 +732,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
         )
         extras["train_mask"] = self._stage1_transition_train_mask.clone()
         extras["next_train_mask"] = next_train_mask
+        all_columns_completed = self._all_stage1_terrain_columns_completed()
         all_train_envs_retired = bool(
-            (not torch.any(next_train_mask).item()) or self._all_stage1_terrain_columns_completed()
+            (not torch.any(next_train_mask).item())
+            or (all_columns_completed and self._stops_when_all_stage1_columns_completed())
         )
         extras["all_train_envs_retired"] = all_train_envs_retired
         metrics_interval = max(int(getattr(self.cfg.logging, "step_metrics_interval", 1)), 1)
@@ -483,6 +826,14 @@ class CompleteCarDirectEnv(DirectRLEnv):
         ball_joint_actions = self.actions[:, 2:]
         ball_joint_lower_limits = self.cfg.terminations.ball_joint_pos_lower_limits
         ball_joint_upper_limits = self.cfg.terminations.ball_joint_pos_upper_limits
+        ball_joint_action_lower_limits = (
+            self.cfg.control.ball_joint_action_position_lower_limits
+            or ball_joint_lower_limits
+        )
+        ball_joint_action_upper_limits = (
+            self.cfg.control.ball_joint_action_position_upper_limits
+            or ball_joint_upper_limits
+        )
 
         wheel_contact_forces_w = self._get_wheel_contact_forces_w_cached("pre_physics")
         wheel_normal_contact_force = torch.linalg.vector_norm(wheel_contact_forces_w, dim=-1) / self._total_vehicle_weight
@@ -500,8 +851,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
         desired_ball_joint_targets = mdp_actions.map_ball_joint_actions_to_desired_positions(
             self.robot.data.default_joint_pos[:, self._ball_joint_ids],
             ball_joint_actions,
-            ball_joint_lower_limits,
-            ball_joint_upper_limits,
+            ball_joint_action_lower_limits,
+            ball_joint_action_upper_limits,
         )
         desired_ball_joint_delta = wrap_to_pi_tensor(desired_ball_joint_targets - self._last_ball_joint_desired_targets)
         self._last_ball_joint_desired_delta_abs_mean.copy_(torch.mean(torch.abs(desired_ball_joint_delta), dim=1))
@@ -520,8 +871,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
         tau_v = float(self.cfg.control.ball_joint_qdot_alloc_filter_tau_s)
         alpha_v = 1.0 if tau_v <= 0.0 else 1.0 - math.exp(-float(self.cfg.control.control_dt) / tau_v)
         self._ball_joint_qdot_alloc.mul_(1.0 - alpha_v).add_(ball_joint_vel, alpha=alpha_v)
-        qdot_limit = abs(float(self.cfg.control.ball_joint_velocity_limit_sim))
-        self._ball_joint_qdot_alloc.clamp_(min=-qdot_limit, max=qdot_limit)
+        qdot_limit = torch.clamp(self._ball_joint_velocity_limit_runtime, min=1.0e-6)
+        self._ball_joint_qdot_alloc.copy_(
+            torch.minimum(torch.maximum(self._ball_joint_qdot_alloc, -qdot_limit), qdot_limit)
+        )
         wheel_joint_vel = self.robot.data.joint_vel[:, self._wheel_joint_ids]
         low_level_outputs = self._wheel_speed_allocator.compute_low_slip_control_targets(
             ball_joint_pos=ball_joint_pos,
@@ -544,7 +897,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             contact_force_on_threshold=self.cfg.control.contact_force_on_threshold,
             torque_tracking_gain=self.cfg.control.wheel_torque_tracking_gain,
             slip_feedback_gain=self.cfg.control.wheel_slip_feedback_gain,
-            wheel_torque_limit=self.cfg.control.wheel_joint_effort_limit_sim,
+            wheel_torque_limit=self._wheel_effort_limit_runtime,
             slip_velocity_epsilon=self.cfg.control.wheel_slip_velocity_epsilon,
         )
         self._last_desired_planar_command.copy_(planar_command)
@@ -568,7 +921,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._joint_effort_targets,
             self._wheel_joint_ids,
             low_level_outputs.wheel_torque_targets,
-            self.cfg.control.wheel_joint_effort_limit_sim,
+            self._wheel_effort_limit_runtime,
         )
 
     # 球铰下发位置目标；车轮下发低层力矩目标。
@@ -750,6 +1103,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._terrain_runtime.terrain_levels[env_ids] + 1,
             max=max(int(self._terrain_runtime.max_terrain_level) - 1, 0),
         )
+        self._stage1_terrain_level_floor[env_ids] = torch.maximum(
+            self._stage1_terrain_level_floor[env_ids],
+            self._terrain_runtime.terrain_levels[env_ids],
+        )
         min_row_offset = max(int(getattr(self.cfg.commands, "terrain_goal_min_row_offset", 1)), 1)
         max_target_level = max(int(self._terrain_runtime.max_terrain_level) - 1, 0)
         max_advance_source_level = max(max_target_level - min_row_offset, 0)
@@ -807,8 +1164,9 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._last_terrain_features = terrain_features
         self._last_terrain_feature_diagnostics = terrain_feature_diagnostics
         current_actor_obs = compute_actor_observation_from_raw_terms(self.cfg, raw_obs_terms, terrain_features)
-        actor_obs = update_history(self._obs_history, current_actor_obs)
-        critic_obs = compute_critic_observation(actor_obs, terrain_height_patch)
+        clean_actor_obs = update_history(self._obs_history, current_actor_obs)
+        actor_obs = self._apply_actor_observation_noise(clean_actor_obs)
+        critic_obs = compute_critic_observation(clean_actor_obs, terrain_height_patch)
         if self._sensor_runtime is not None and self.cfg.debug.log_sensor_outputs:
             self.extras["sensors"] = self._sensor_runtime.get_raw_output()
         return {"actor": actor_obs, "critic": critic_obs}
@@ -1019,8 +1377,15 @@ class CompleteCarDirectEnv(DirectRLEnv):
             row_module_support_height_baseline=self._stage1_row_module_support_height_baseline,
             row_module_progress_max=self._stage1_row_module_progress_max,
             obstacle_gate=self._stage1_terrain_name_gate("discrete obstacles"),
-            recovery_active=self._stage1_recovery_active,
+            recovery_active=self._last_stage1_recovery_active,
             recovery_reverse_now=self._last_stage1_recovery_reverse_now,
+            recovery_reverse_reward_now=self._last_stage1_recovery_reverse_reward_now,
+            recovery_had_reverse=self._last_stage1_recovery_had_reverse,
+            recovery_no_progress_cleared=self._last_stage1_recovery_no_progress_cleared,
+            recovery_forward_progress=self._last_stage1_recovery_forward_progress,
+            recovery_total_progress=self._last_stage1_recovery_total_progress,
+            recovery_reverse_time_s=self._last_stage1_recovery_reverse_time_s,
+            recovery_elapsed_time_s=self._last_stage1_recovery_elapsed_time_s,
             recovery_success=self._last_stage1_recovery_success,
             middle_pitch_rad=middle_pitch_rad,
             drop_guard_active=drop_guard_active,
@@ -1134,6 +1499,32 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self.episode_length_buf,
             self.max_episode_length,
         )
+        ball_joint_pos = wrap_to_pi_tensor(self.robot.data.joint_pos[:, self._ball_joint_ids])
+        lower_limits = ball_joint_pos.new_tensor(self.cfg.terminations.ball_joint_pos_lower_limits).unsqueeze(0)
+        upper_limits = ball_joint_pos.new_tensor(self.cfg.terminations.ball_joint_pos_upper_limits).unsqueeze(0)
+        self._last_ball_joint_out_of_bounds_joint_mask.copy_(
+            (ball_joint_pos < lower_limits) | (ball_joint_pos > upper_limits)
+        )
+        self._last_ball_joint_out_of_bounds_joint_pos.copy_(ball_joint_pos)
+        if (
+            getattr(self, "_stage1_replay_fixed_terrain_level", None) is not None
+            and torch.any(done_terms["ball_joint_out_of_bounds"])
+        ):
+            env_ids = torch.nonzero(done_terms["ball_joint_out_of_bounds"], as_tuple=False).flatten()
+            violation = self._last_ball_joint_out_of_bounds_joint_mask[env_ids]
+            env_local, joint_index = torch.nonzero(violation, as_tuple=True)
+            details: list[str] = []
+            for env_offset, joint_offset in zip(env_local[:4], joint_index[:4], strict=False):
+                env_id = int(env_ids[env_offset].item())
+                joint_id = int(joint_offset.item())
+                value = float(ball_joint_pos[env_id, joint_id].item())
+                low = float(lower_limits[0, joint_id].item())
+                high = float(upper_limits[0, joint_id].item())
+                side = "<" if value < low else ">"
+                limit = low if value < low else high
+                details.append(f"env{env_id}:{BALL_JOINT_NAMES[joint_id]}={value:.3f}{side}{limit:.3f}")
+            if details:
+                print("[RESET_DETAIL] ball_joint_out_of_bounds " + ",".join(details), flush=True)
         done_terms.setdefault(
             "terrain_column_completed",
             torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
@@ -1167,12 +1558,25 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 done_terms,
             )
             done_terms["low_quality_terrain_hit"] = self._last_stage1_low_quality_hit.clone()
-            if torch.any(max_row_reached_mask):
-                done_terms["terrain_column_completed"] = max_row_reached_mask
-                self._episode_terrain_target_advances[max_row_reached_mask] += 1
-                self._last_stage1_max_row_reached.copy_(max_row_reached_mask)
-                self._record_stage1_column_completions(max_row_reached_mask)
-                self._stage1_training_active[max_row_reached_mask] = False
+            full_pass_env_mask = self._stage1_full_pass_env_mask()
+            full_pass_completion_mask = max_row_reached_mask & full_pass_env_mask
+            standard_completion_mask = max_row_reached_mask & ~full_pass_env_mask
+            column_completion_mask = standard_completion_mask | full_pass_completion_mask
+            if torch.any(column_completion_mask):
+                done_terms["terrain_column_completed"] = column_completion_mask
+                self._episode_terrain_target_advances[column_completion_mask] += 1
+                self._last_stage1_max_row_reached.copy_(column_completion_mask)
+                self._record_stage1_column_completions(column_completion_mask)
+                self._stage1_training_active[column_completion_mask] = False
+            done_now_mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            for value in done_terms.values():
+                done_now_mask |= value
+            max_row_attempt_mask = self._last_stage1_valid_target_masked & done_now_mask & ~already_retired_mask
+            self._record_stage1_max_row_attempts(
+                max_row_attempt_mask,
+                self._last_stage1_max_row_reached & max_row_attempt_mask,
+                self._last_stage1_quality_advance_mask & max_row_attempt_mask,
+            )
         if self._uses_stage1_train_retirement():
             if torch.any(already_retired_mask):
                 for value in done_terms.values():
@@ -1183,6 +1587,8 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._episode_waypoints_completed[waypoint_hit_env_ids] += 1
         for key, value in done_terms.items():
             self._last_done_terms[key].copy_(value)
+            if key in self._last_step_done_terms:
+                self._last_step_done_terms[key].copy_(value)
         terminated = (
             done_terms["is_success"]
             | done_terms["far_from_target"]
@@ -1283,6 +1689,146 @@ class CompleteCarDirectEnv(DirectRLEnv):
             getattr(self.cfg.curriculum, "terrain_column_recycle_completed_envs", False)
         )
 
+    def _stops_when_all_stage1_columns_completed(self) -> bool:
+        return bool(getattr(self.cfg.curriculum, "terrain_column_stop_when_all_completed", True))
+
+    def _stage1_hard_completion_column_mask(self) -> torch.Tensor:
+        num_cols = int(self._stage1_column_completion_targets.numel())
+        hard_completion_count = int(
+            max(getattr(self.cfg.curriculum, "terrain_column_hard_completion_success_count", 0), 0)
+        )
+        hard_names = tuple(getattr(self.cfg.curriculum, "terrain_column_hard_completion_names", ()) or ())
+        if (
+            hard_completion_count <= 0
+            or not hard_names
+            or not self._uses_stage1_train_retirement()
+        ):
+            return torch.zeros(num_cols, dtype=torch.bool, device=self.device)
+
+        return self._stage1_column_mask_for_terrain_names(hard_names, num_cols)
+
+    def _stage1_column_mask_for_terrain_names(self, terrain_names_query: tuple[str, ...], num_cols: int) -> torch.Tensor:
+        mask = torch.zeros(num_cols, dtype=torch.bool, device=self.device)
+        if not terrain_names_query or self._terrain_runtime is None:
+            return mask
+
+        terrain_names = tuple(getattr(self._terrain_runtime._terrain_cfg, "terrain_names", ()))
+        type_indices = [terrain_names.index(name) for name in terrain_names_query if name in terrain_names]
+        if not type_indices:
+            return mask
+
+        terrain_types = torch.arange(num_cols, dtype=torch.long, device=self.device)
+        row0 = torch.zeros_like(terrain_types)
+        tile_type_indices = self._terrain_runtime.get_tile_type_indices(row0, terrain_types)
+        for type_idx in type_indices:
+            mask |= tile_type_indices == type_idx
+        return mask
+
+    def _stage1_full_pass_success_counts_by_column(self) -> torch.Tensor:
+        num_cols = int(self._stage1_column_completion_targets.numel())
+        counts = torch.zeros(num_cols, dtype=torch.long, device=self.device)
+        if not self._uses_stage1_train_retirement():
+            return counts
+
+        default_count = int(max(getattr(self.cfg.curriculum, "terrain_column_full_pass_success_count", 0), 0))
+        if default_count > 0:
+            for column_index in tuple(getattr(self.cfg.curriculum, "terrain_column_full_pass_completion_columns", ()) or ()):
+                column_index = int(column_index)
+                if 0 <= column_index < num_cols:
+                    counts[column_index] = default_count
+
+        counts_by_name = getattr(self.cfg.curriculum, "terrain_column_full_pass_success_count_by_name", {}) or {}
+        for terrain_name, count in counts_by_name.items():
+            count = int(max(count, 0))
+            if count <= 0:
+                continue
+            column_mask = self._stage1_column_mask_for_terrain_names((str(terrain_name),), num_cols)
+            counts[column_mask] = count
+        return counts
+
+    def _stage1_full_pass_completion_column_mask(self) -> torch.Tensor:
+        return self._stage1_full_pass_success_counts_by_column() > 0
+
+    def _stage1_full_pass_start_level(self) -> int:
+        if self._terrain_runtime is None:
+            return max(int(getattr(self.cfg.curriculum, "terrain_column_full_pass_start_level", 0)), 0)
+        max_level = max(int(self._terrain_runtime.max_terrain_level) - 1, 0)
+        return min(max(int(getattr(self.cfg.curriculum, "terrain_column_full_pass_start_level", 0)), 0), max_level)
+
+    def _stage1_full_pass_start_levels_by_column(self) -> torch.Tensor:
+        num_cols = int(self._stage1_column_completion_targets.numel())
+        default_start = self._stage1_full_pass_start_level()
+        levels = torch.full((num_cols,), default_start, dtype=torch.long, device=self.device)
+        if not self._uses_stage1_train_retirement():
+            return levels
+
+        max_level = max(int(self._terrain_runtime.max_terrain_level) - 1, 0) if self._terrain_runtime is not None else 0
+        starts_by_name = getattr(self.cfg.curriculum, "terrain_column_full_pass_start_level_by_name", {}) or {}
+        for terrain_name, start_level in starts_by_name.items():
+            start_level = min(max(int(start_level), 0), max_level)
+            column_mask = self._stage1_column_mask_for_terrain_names((str(terrain_name),), num_cols)
+            levels[column_mask] = start_level
+        return levels
+
+    def _stage1_full_pass_start_levels_from_types(self, terrain_types: torch.Tensor) -> torch.Tensor:
+        if terrain_types.numel() == 0:
+            return torch.empty(0, dtype=torch.long, device=self.device)
+        column_start_levels = self._stage1_full_pass_start_levels_by_column()
+        terrain_types = terrain_types.to(dtype=torch.long).clamp(min=0, max=column_start_levels.numel() - 1)
+        return column_start_levels[terrain_types]
+
+    def _stage1_completed_hard_window_start_levels_by_column(self) -> torch.Tensor:
+        levels = self._stage1_full_pass_start_levels_by_column()
+        if not self._uses_stage1_train_retirement():
+            return levels
+
+        configured_default = int(
+            getattr(self.cfg.curriculum, "terrain_column_completed_hard_window_start_level", -1)
+        )
+        max_level = max(int(self._terrain_runtime.max_terrain_level) - 1, 0) if self._terrain_runtime is not None else 0
+        if configured_default >= 0:
+            levels = torch.full_like(levels, min(configured_default, max_level))
+        else:
+            levels = levels.clone()
+
+        starts_by_name = getattr(
+            self.cfg.curriculum,
+            "terrain_column_completed_hard_window_start_level_by_name",
+            {},
+        ) or {}
+        for terrain_name, start_level in starts_by_name.items():
+            start_level = min(max(int(start_level), 0), max_level)
+            column_mask = self._stage1_column_mask_for_terrain_names((str(terrain_name),), levels.numel())
+            levels[column_mask] = start_level
+        return levels
+
+    def _stage1_completed_hard_window_start_levels_from_types(self, terrain_types: torch.Tensor) -> torch.Tensor:
+        if terrain_types.numel() == 0:
+            return torch.empty(0, dtype=torch.long, device=self.device)
+        column_start_levels = self._stage1_completed_hard_window_start_levels_by_column()
+        terrain_types = terrain_types.to(dtype=torch.long).clamp(min=0, max=column_start_levels.numel() - 1)
+        return column_start_levels[terrain_types]
+
+    def _stage1_full_pass_env_mask_from_types(self, terrain_types: torch.Tensor) -> torch.Tensor:
+        if terrain_types.numel() == 0:
+            return torch.zeros_like(terrain_types, dtype=torch.bool)
+        column_mask = self._stage1_full_pass_completion_column_mask()
+        if not torch.any(column_mask):
+            return torch.zeros_like(terrain_types, dtype=torch.bool)
+        terrain_types = terrain_types.to(dtype=torch.long).clamp(min=0, max=column_mask.numel() - 1)
+        return column_mask[terrain_types]
+
+    def _stage1_full_pass_env_mask(self, env_ids: torch.Tensor | None = None) -> torch.Tensor:
+        if (
+            not self._uses_stage1_train_retirement()
+            or self._terrain_runtime is None
+            or self._terrain_runtime.terrain_types is None
+        ):
+            size = self.num_envs if env_ids is None else int(env_ids.numel())
+            return torch.zeros(size, dtype=torch.bool, device=self.device)
+        terrain_types = self._terrain_runtime.terrain_types if env_ids is None else self._terrain_runtime.terrain_types[env_ids]
+        return self._stage1_full_pass_env_mask_from_types(terrain_types)
+
     def _initialize_stage1_column_completion_tracking(self) -> None:
         if (
             not self._uses_stage1_train_retirement()
@@ -1294,9 +1840,44 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._terrain_runtime.terrain_types,
             self._stage1_column_completion_targets.numel(),
         )
+        hard_completion_count = int(
+            max(getattr(self.cfg.curriculum, "terrain_column_hard_completion_success_count", 0), 0)
+        )
+        if hard_completion_count > 0:
+            hard_column_mask = self._stage1_hard_completion_column_mask()
+            targets = torch.where(
+                hard_column_mask & (targets > 0),
+                torch.full_like(targets, hard_completion_count),
+                targets,
+            )
+        full_pass_completion_counts = self._stage1_full_pass_success_counts_by_column()
+        if torch.any(full_pass_completion_counts > 0):
+            targets = torch.where(
+                (full_pass_completion_counts > 0) & (targets > 0),
+                full_pass_completion_counts.to(dtype=targets.dtype),
+                targets,
+            )
         self._stage1_column_completion_targets.copy_(targets)
         self._stage1_column_completion_counts.zero_()
         self._stage1_completed_terrain_columns.copy_(targets <= 0)
+
+    def _initialize_stage1_terrain_level_floor(self, env_ids: torch.Tensor | None = None) -> None:
+        if (
+            not self._uses_stage1_train_retirement()
+            or self._terrain_runtime is None
+            or self._terrain_runtime.terrain_types is None
+        ):
+            return
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs, dtype=torch.long, device=self.device)
+        if env_ids.numel() == 0:
+            return
+        min_levels = mdp_curriculum.get_min_initial_terrain_levels(
+            self.cfg.curriculum,
+            self._terrain_runtime,
+            self._terrain_runtime.terrain_types[env_ids],
+        )
+        self._stage1_terrain_level_floor[env_ids] = min_levels
 
     def _record_stage1_column_completions(self, completed_env_mask: torch.Tensor) -> None:
         if (
@@ -1316,6 +1897,51 @@ class CompleteCarDirectEnv(DirectRLEnv):
         target_met = self._stage1_column_completion_counts >= self._stage1_column_completion_targets
         has_target = self._stage1_column_completion_targets > 0
         self._stage1_completed_terrain_columns |= target_met & has_target
+
+    def _record_stage1_max_row_attempts(
+        self,
+        attempt_env_mask: torch.Tensor,
+        success_env_mask: torch.Tensor,
+        quality_success_env_mask: torch.Tensor,
+    ) -> None:
+        if (
+            self._terrain_runtime is None
+            or self._terrain_runtime.terrain_types is None
+            or attempt_env_mask.numel() == 0
+            or not torch.any(attempt_env_mask)
+        ):
+            return
+
+        attempt_types = self._terrain_runtime.terrain_types[attempt_env_mask]
+        success_values = success_env_mask[attempt_env_mask].to(dtype=torch.bool)
+        quality_success_values = quality_success_env_mask[attempt_env_mask].to(dtype=torch.bool)
+        attempt_counts = mdp_curriculum.compute_terrain_column_counts(
+            attempt_types,
+            self._stage1_column_max_row_attempt_counts.numel(),
+        )
+        quality_success_counts = mdp_curriculum.compute_terrain_column_counts(
+            attempt_types[quality_success_values],
+            self._stage1_column_max_row_success_with_quality_counts.numel(),
+        )
+        self._stage1_column_max_row_attempt_counts += attempt_counts
+        self._stage1_column_max_row_success_with_quality_counts += quality_success_counts
+
+        for col_idx in range(self._stage1_column_max_row_attempt_counts.numel()):
+            col_mask = attempt_types == col_idx
+            if not torch.any(col_mask):
+                continue
+            col_successes = success_values[col_mask].tolist()
+            for success in col_successes:
+                cursor = int(self._stage1_recent_max_row_attempt_cursor[col_idx].item())
+                self._stage1_recent_max_row_attempt_successes[col_idx, cursor] = bool(success)
+                self._stage1_recent_max_row_attempt_valid[col_idx, cursor] = True
+                self._stage1_recent_max_row_attempt_cursor[col_idx] = (
+                    self._stage1_recent_max_row_attempt_cursor[col_idx] + 1
+                ) % STAGE1_RECENT_MAX_ROW_ATTEMPT_WINDOW
+                if success:
+                    self._stage1_column_consecutive_max_row_successes[col_idx] += 1
+                else:
+                    self._stage1_column_consecutive_max_row_successes[col_idx] = 0
 
     def _all_stage1_terrain_columns_completed(self) -> bool:
         if not self._uses_stage1_train_retirement():
@@ -1350,6 +1976,30 @@ class CompleteCarDirectEnv(DirectRLEnv):
                     self._terrain_runtime,
                     assigned_terrain_types[target_mask],
                 )
+        full_pass_env_mask = self._stage1_full_pass_env_mask_from_types(assigned_terrain_types)
+        if torch.any(full_pass_env_mask):
+            assigned_columns = assigned_terrain_types.to(dtype=torch.long).clamp(
+                min=0,
+                max=self._stage1_completed_terrain_columns.numel() - 1,
+            )
+            unfinished_full_pass_mask = full_pass_env_mask & ~self._stage1_completed_terrain_columns[assigned_columns]
+            start_levels = self._stage1_full_pass_start_levels_from_types(assigned_terrain_types)
+            min_initial_levels = mdp_curriculum.get_min_initial_terrain_levels(
+                self.cfg.curriculum,
+                self._terrain_runtime,
+                assigned_terrain_types,
+            )
+            completion_counts = self._stage1_column_completion_counts[assigned_columns]
+            start_from_window = unfinished_full_pass_mask & (
+                (completion_counts > 0)
+                | (start_levels <= min_initial_levels)
+            )
+            new_levels[start_from_window] = start_levels[start_from_window]
+
+            completed_full_pass_mask = full_pass_env_mask & self._stage1_completed_terrain_columns[assigned_columns]
+            if torch.any(completed_full_pass_mask):
+                completed_start_levels = self._stage1_completed_hard_window_start_levels_from_types(assigned_terrain_types)
+                new_levels[completed_full_pass_mask] = completed_start_levels[completed_full_pass_mask]
         return new_levels
 
     def _sample_stage1_completed_retention_levels(self, assigned_terrain_types: torch.Tensor) -> torch.Tensor:
@@ -1358,11 +2008,16 @@ class CompleteCarDirectEnv(DirectRLEnv):
             or assigned_terrain_types.numel() == 0
         ):
             return torch.empty(0, dtype=torch.long, device=self.device)
-        return mdp_curriculum.sample_initial_terrain_levels(
+        levels = mdp_curriculum.sample_initial_terrain_levels(
             self.cfg.curriculum,
             self._terrain_runtime,
             assigned_terrain_types,
         )
+        full_pass_env_mask = self._stage1_full_pass_env_mask_from_types(assigned_terrain_types)
+        if torch.any(full_pass_env_mask):
+            completed_start_levels = self._stage1_completed_hard_window_start_levels_from_types(assigned_terrain_types)
+            levels[full_pass_env_mask] = completed_start_levels[full_pass_env_mask]
+        return levels
 
     def _recycle_stage1_completed_envs(self, env_ids: torch.Tensor) -> torch.Tensor:
         if (
@@ -1378,7 +2033,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
         has_target = self._stage1_column_completion_targets > 0
         unfinished_columns = (~self._stage1_completed_terrain_columns) & has_target
         completed_columns = self._stage1_completed_terrain_columns & has_target
-        if not torch.any(unfinished_columns):
+        continue_completed_columns = (not torch.any(unfinished_columns)) and (
+            not self._stops_when_all_stage1_columns_completed()
+        )
+        if not torch.any(unfinished_columns) and not continue_completed_columns:
             return torch.empty(0, dtype=torch.long, device=self.device)
 
         active_counts = mdp_curriculum.compute_terrain_column_counts(
@@ -1386,12 +2044,16 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._stage1_column_completion_counts.numel(),
         )
         retention_ratio = float(getattr(self.cfg.curriculum, "terrain_column_completed_retention_ratio", 0.0))
-        num_retention = mdp_curriculum.compute_completed_column_retention_count(
-            active_counts,
-            completed_columns,
-            self.num_envs,
-            retention_ratio,
-            int(env_ids.numel()),
+        num_retention = (
+            int(env_ids.numel())
+            if continue_completed_columns
+            else mdp_curriculum.compute_completed_column_retention_count(
+                active_counts,
+                completed_columns,
+                self.num_envs,
+                retention_ratio,
+                int(env_ids.numel()),
+            )
         )
 
         assigned_chunks: list[torch.Tensor] = []
@@ -1408,7 +2070,10 @@ class CompleteCarDirectEnv(DirectRLEnv):
             )
             if retention_types.numel() > 0:
                 retention_env_ids = env_ids[: retention_types.numel()]
-                retention_levels = self._sample_stage1_completed_retention_levels(retention_types)
+                if continue_completed_columns:
+                    retention_levels = self._sample_stage1_recycled_levels(retention_types)
+                else:
+                    retention_levels = self._sample_stage1_completed_retention_levels(retention_types)
                 assigned_chunks.append(retention_types)
                 level_chunks.append(retention_levels)
                 recycled_env_chunks.append(retention_env_ids)
@@ -1420,7 +2085,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
 
         assigned_so_far = sum(int(chunk.numel()) for chunk in assigned_chunks)
         remaining_count = max(int(env_ids.numel()) - assigned_so_far, 0)
-        if remaining_count > 0:
+        if remaining_count > 0 and torch.any(unfinished_columns):
             unfinished_types = mdp_curriculum.assign_recycled_terrain_columns(
                 active_counts,
                 unfinished_columns,
@@ -1443,6 +2108,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
         recycled_env_ids = torch.cat(recycled_env_chunks, dim=0)
         self._terrain_runtime.terrain_types[recycled_env_ids] = assigned_types
         self._terrain_runtime.terrain_levels[recycled_env_ids] = new_levels
+        self._stage1_terrain_level_floor[recycled_env_ids] = new_levels
         self._stage1_training_active[recycled_env_ids] = True
         self._stage1_recycled_envs_ever[recycled_env_ids] = True
         self._stage1_last_recycled_env_mask[recycled_env_ids] = True
@@ -1776,7 +2442,16 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._stage1_stuck_time.zero_()
             self._last_stage1_stuck_now.zero_()
             self._stage1_recovery_active.zero_()
+            self._last_stage1_recovery_active.zero_()
+            self._stage1_recovery_elapsed_time_s.zero_()
             self._stage1_recovery_reverse_time_s.zero_()
+            self._last_stage1_recovery_had_reverse.zero_()
+            self._last_stage1_recovery_reverse_reward_now.zero_()
+            self._last_stage1_recovery_no_progress_cleared.zero_()
+            self._last_stage1_recovery_forward_progress.zero_()
+            self._last_stage1_recovery_total_progress.zero_()
+            self._last_stage1_recovery_reverse_time_s.zero_()
+            self._last_stage1_recovery_elapsed_time_s.zero_()
             self._last_stage1_recovery_reverse_now.zero_()
             self._last_stage1_recovery_success.zero_()
             return torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
@@ -1792,6 +2467,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             getattr(params, "stuck_goal_ahead_threshold_m", 0.5)
         )
         current_goal_distance = torch.linalg.vector_norm(relative_goal_commands[:, :2], dim=1)
+        recovery_forward_progress = self._previous_goal_distance - current_goal_distance
         active_mask = self._stage1_training_active if self._uses_stage1_train_retirement() else torch.ones(
             self.num_envs,
             dtype=torch.bool,
@@ -1817,25 +2493,46 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._stage1_recovery_start_goal_distance.copy_(
             torch.where(recovery_starting, current_goal_distance, self._stage1_recovery_start_goal_distance)
         )
+        recovery_elapsed_time_s = torch.where(
+            recovery_active,
+            torch.where(
+                recovery_starting,
+                torch.zeros_like(self._stage1_recovery_elapsed_time_s),
+                self._stage1_recovery_elapsed_time_s,
+            )
+            + self.step_dt,
+            torch.zeros_like(self._stage1_recovery_elapsed_time_s),
+        )
         reverse_threshold = float(getattr(params, "recovery_reverse_cmd_threshold_mps", 0.05))
         reverse_now = recovery_active & (
             (self._last_limited_planar_command[:, 0] < -reverse_threshold)
             | (v_forward < -reverse_threshold)
         )
-        self._stage1_recovery_reverse_time_s.copy_(
+        recovery_reverse_time_s = torch.where(
+            recovery_active & reverse_now,
+            self._stage1_recovery_reverse_time_s + self.step_dt,
             torch.where(
-                recovery_active & reverse_now,
-                self._stage1_recovery_reverse_time_s + self.step_dt,
-                torch.where(
-                    recovery_active,
-                    self._stage1_recovery_reverse_time_s,
-                    torch.zeros_like(self._stage1_recovery_reverse_time_s),
-                ),
-            )
+                recovery_active,
+                self._stage1_recovery_reverse_time_s,
+                torch.zeros_like(self._stage1_recovery_reverse_time_s),
+            ),
         )
+        had_reverse = recovery_active & (
+            recovery_reverse_time_s >= float(getattr(params, "recovery_min_reverse_time_s", 0.10))
+        )
+        reverse_reward_now = recovery_active & reverse_now & (
+            recovery_elapsed_time_s <= float(getattr(params, "recovery_reverse_reward_window_s", 1.0))
+        )
+        no_progress_min_delta_m = max(float(getattr(params, "no_progress_min_delta_m", 0.003)), 1.0e-6)
+        forward_restarted = v_forward > float(getattr(params, "recovery_success_forward_speed_mps", 0.08))
+        no_progress_cleared = recovery_active & ((recovery_forward_progress >= no_progress_min_delta_m) | forward_restarted)
+        recovery_total_progress = self._stage1_recovery_start_goal_distance - current_goal_distance
+        step_progress_ok = recovery_forward_progress >= float(getattr(params, "recovery_success_step_progress_m", 0.005))
+        total_progress_ok = recovery_total_progress >= float(getattr(params, "recovery_success_progress_m", 0.03))
         recovery_success = recovery_active & (
-            (self._stage1_recovery_start_goal_distance - current_goal_distance)
-            > float(getattr(params, "recovery_success_progress_m", 0.10))
+            had_reverse
+            & no_progress_cleared
+            & (step_progress_ok | total_progress_ok | forward_restarted)
         )
         stuck_tracking_now = stuck_now | (recovery_active & ~recovery_success)
         self._stage1_stuck_time.copy_(
@@ -1846,7 +2543,22 @@ class CompleteCarDirectEnv(DirectRLEnv):
             )
         )
         self._stage1_stuck_time[recovery_success] = 0.0
-        self._stage1_recovery_active.copy_(recovery_active & ~recovery_success)
+        next_recovery_active = recovery_active & ~recovery_success
+        self._stage1_recovery_active.copy_(next_recovery_active)
+        self._stage1_recovery_elapsed_time_s.copy_(
+            torch.where(next_recovery_active, recovery_elapsed_time_s, torch.zeros_like(recovery_elapsed_time_s))
+        )
+        self._stage1_recovery_reverse_time_s.copy_(
+            torch.where(next_recovery_active, recovery_reverse_time_s, torch.zeros_like(recovery_reverse_time_s))
+        )
+        self._last_stage1_recovery_active.copy_(recovery_active)
+        self._last_stage1_recovery_had_reverse.copy_(had_reverse)
+        self._last_stage1_recovery_reverse_reward_now.copy_(reverse_reward_now)
+        self._last_stage1_recovery_no_progress_cleared.copy_(no_progress_cleared)
+        self._last_stage1_recovery_forward_progress.copy_(recovery_forward_progress)
+        self._last_stage1_recovery_total_progress.copy_(recovery_total_progress)
+        self._last_stage1_recovery_reverse_time_s.copy_(recovery_reverse_time_s)
+        self._last_stage1_recovery_elapsed_time_s.copy_(recovery_elapsed_time_s)
         self._last_stage1_recovery_reverse_now.copy_(reverse_now)
         self._last_stage1_recovery_success.copy_(recovery_success)
         self._last_stage1_stuck_now.copy_(stuck_now)
@@ -1913,6 +2625,25 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._stage1_last_recycled_env_mask[env_ids] = False
         levels = self._terrain_runtime.terrain_levels[env_ids]
         terrain_types = self._terrain_runtime.terrain_types[env_ids]
+        replay_fixed_level = getattr(self, "_stage1_replay_fixed_terrain_level", None)
+        if replay_fixed_level is not None:
+            fixed_level = int(max(0, min(int(replay_fixed_level), int(self._terrain_runtime.max_terrain_level) - 1)))
+            row_progress = self._compute_active_goal_progress(env_ids)
+            self._terrain_runtime.terrain_levels[env_ids] = fixed_level
+            self._stage1_terrain_level_floor[env_ids] = fixed_level
+            self._terrain_runtime.sync_env_origins(self.scene, env_ids)
+            zeros = torch.zeros_like(row_progress)
+            return self._sanitize_scalar_metrics(
+                {
+                    "terrain/row_progress_at_reset": row_progress,
+                    "terrain/move_down_ratio": zeros,
+                    "terrain/move_down_suppressed_by_floor_ratio": zeros,
+                    "terrain/stuck_move_down_ratio": zeros,
+                    "terrain/replay_fixed_level_active_ratio": torch.ones_like(row_progress),
+                    "terrain/level_floor": self._stage1_terrain_level_floor[env_ids].float(),
+                    "terrain/level_after_reset": self._terrain_runtime.terrain_levels[env_ids].float(),
+                }
+            )
         min_row_offset = max(int(getattr(self.cfg.commands, "terrain_goal_min_row_offset", 1)), 1)
         max_target_level = max(int(self._terrain_runtime.max_terrain_level) - 1, 0)
         max_advance_source_level = max(max_target_level - min_row_offset, 0)
@@ -1928,6 +2659,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             self._terrain_runtime,
             self._terrain_runtime.terrain_types[env_ids],
         )
+        level_floors = torch.maximum(min_levels, self._stage1_terrain_level_floor[env_ids])
         row_failed = (
             (
                 self._last_done_terms["far_from_target"][env_ids]
@@ -1942,16 +2674,22 @@ class CompleteCarDirectEnv(DirectRLEnv):
         move_down_threshold = float(getattr(self.cfg.curriculum, "terrain_column_move_down_progress_ratio", 0.30))
         progress_move_down = row_failed & (row_progress < move_down_threshold)
         stuck_move_down = stuck_timeout & ~recycle_candidate & ~clamp_to_last_source
-        move_down = (progress_move_down | stuck_move_down) & (levels > min_levels)
+        move_down_attempt = progress_move_down | stuck_move_down
+        move_down = move_down_attempt & (levels > level_floors)
+        move_down_suppressed_by_floor = move_down_attempt & ~move_down
 
         if torch.any(clamp_to_last_source):
             clamp_env_ids = env_ids[clamp_to_last_source]
             self._terrain_runtime.terrain_levels[clamp_env_ids] = max_advance_source_level
+            self._stage1_terrain_level_floor[clamp_env_ids] = torch.clamp(
+                self._stage1_terrain_level_floor[clamp_env_ids],
+                max=max_advance_source_level,
+            )
         if torch.any(move_down):
             move_down_env_ids = env_ids[move_down]
             self._terrain_runtime.terrain_levels[move_down_env_ids] = torch.clamp(
                 self._terrain_runtime.terrain_levels[move_down_env_ids] - 1,
-                min=min_levels[move_down],
+                min=level_floors[move_down],
             )
 
         recycled_env_ids = self._recycle_stage1_completed_envs(env_ids[recycle_candidate])
@@ -1987,6 +2725,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             {
                 "terrain/row_progress_at_reset": row_progress,
                 "terrain/move_down_ratio": move_down.float(),
+                "terrain/move_down_suppressed_by_floor_ratio": move_down_suppressed_by_floor.float(),
                 "terrain/stuck_move_down_ratio": stuck_move_down.float(),
                 "terrain/terrain_column_completed_ratio": completed.float(),
                 "terrain/recycle_candidate_ratio": recycle_candidate.float(),
@@ -2003,6 +2742,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 "terrain/unfinished_column_count": unfinished_column_count,
                 "terrain/completed_column_active_env_count": completed_column_active_count,
                 "terrain/clamp_to_last_source_ratio": clamp_to_last_source.float(),
+                "terrain/level_floor": self._stage1_terrain_level_floor[env_ids].float(),
                 "terrain/level_after_reset": self._terrain_runtime.terrain_levels[env_ids].float(),
             }
         )
@@ -2073,7 +2813,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Reward/distance_to_target": float(torch.mean(self._last_reward_components["distance_to_target"]).item()),
             "Reward/progress_to_target": float(torch.mean(self._last_reward_components["progress_to_target"]).item()),
             "Reward/reached_target": float(torch.mean(self._last_reward_components["reached_target"]).item()),
-            "Reward/far_from_target": float(torch.mean(self._last_reward_components["far_from_target"]).item()),
             "Reward/angle_diff": float(torch.mean(self._last_reward_components["angle_diff"]).item()),
             "Reward/slip_penalty": float(torch.mean(self._last_reward_components["slip_penalty"]).item()),
             "Reward/action_rate_penalty": float(
@@ -2081,9 +2820,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
             ),
             "Reward/contact_support_penalty": float(
                 torch.mean(self._last_reward_components["contact_support_penalty"]).item()
-            ),
-            "Reward/edge_speed_penalty": float(
-                torch.mean(self._last_reward_components["edge_speed_penalty"]).item()
             ),
             "Reward/terrain_aware_edge_speed_penalty": float(
                 torch.mean(self._last_reward_components["terrain_aware_edge_speed_penalty"]).item()
@@ -2095,9 +2831,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
             ),
             "Reward/hard_terrain_spin_penalty": float(
                 torch.mean(self._last_reward_components["hard_terrain_spin_penalty"]).item()
-            ),
-            "Reward/action_soft_limit_penalty": float(
-                torch.mean(self._last_reward_components["action_soft_limit_penalty"]).item()
             ),
             "Reward/step_up_front_posture_penalty": float(
                 torch.mean(self._last_reward_components["step_up_front_posture_penalty"]).item()
@@ -2163,13 +2896,6 @@ class CompleteCarDirectEnv(DirectRLEnv):
             ),
             "EdgeSpeed/strength_raw": float(torch.mean(self._last_reward_diagnostics["edge_strength"]).item()),
             "EdgeSpeed/height_jump_m_raw": float(torch.mean(self._last_reward_diagnostics["edge_height_jump"]).item()),
-            "EdgeSpeed/safe_speed_mps_raw": float(torch.mean(self._last_reward_diagnostics["edge_safe_speed"]).item()),
-            "EdgeSpeed/forward_speed_mps_raw": float(
-                torch.mean(self._last_reward_diagnostics["edge_forward_speed"]).item()
-            ),
-            "EdgeSpeed/excess_speed_mps_raw": float(
-                torch.mean(self._last_reward_diagnostics["edge_speed_excess"]).item()
-            ),
             "EdgeSpeed/g_step_up": float(torch.mean(self._last_reward_diagnostics["terrain_gate_step_up"]).item()),
             "EdgeSpeed/g_step_down": float(torch.mean(self._last_reward_diagnostics["terrain_gate_step_down"]).item()),
             "EdgeSpeed/g_gap": float(torch.mean(self._last_reward_diagnostics["terrain_gate_gap"]).item()),
@@ -2201,8 +2927,19 @@ class CompleteCarDirectEnv(DirectRLEnv):
             "Stuck/no_progress_penalty_raw": float(
                 torch.mean(self._last_reward_diagnostics["no_progress_penalty_raw"]).item()
             ),
-            "Stuck/recovery_active_rate": float(torch.mean(self._stage1_recovery_active.float()).item()),
+            "Stuck/recovery_active_rate": float(torch.mean(self._last_stage1_recovery_active.float()).item()),
             "Stuck/recovery_reverse_rate": float(torch.mean(self._last_stage1_recovery_reverse_now.float()).item()),
+            "Stuck/recovery_reverse_reward_rate": float(
+                torch.mean(self._last_stage1_recovery_reverse_reward_now.float()).item()
+            ),
+            "Stuck/recovery_had_reverse_rate": float(
+                torch.mean(self._last_stage1_recovery_had_reverse.float()).item()
+            ),
+            "Stuck/recovery_no_progress_cleared_rate": float(
+                torch.mean(self._last_stage1_recovery_no_progress_cleared.float()).item()
+            ),
+            "Stuck/recovery_forward_progress_m": float(torch.mean(self._last_stage1_recovery_forward_progress).item()),
+            "Stuck/recovery_total_progress_m": float(torch.mean(self._last_stage1_recovery_total_progress).item()),
             "Stuck/recovery_success_rate": float(torch.mean(self._last_stage1_recovery_success.float()).item()),
             "HardTerrainSpin/gate": float(torch.mean(self._last_reward_diagnostics["hard_terrain_spin_gate"]).item()),
             "HardTerrainSpin/low_speed": float(
@@ -2382,7 +3119,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 torch.mean(
                     (
                         torch.abs(raw_obs_terms["ball_joint_vel"])
-                        >= 0.95 * abs(float(self.cfg.control.ball_joint_velocity_limit_sim))
+                        >= 0.95 * torch.clamp(self._ball_joint_velocity_limit_runtime, min=1.0e-6)
                     ).float()
                 ).item()
             ),
@@ -2564,6 +3301,44 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 if torch.any(unfinished_columns)
                 else 0.0
             )
+            column_count = int(self._stage1_column_completion_counts.numel())
+            for col_idx in range(column_count):
+                col_key = f"Stage1Eval/col{col_idx:02d}"
+                success_count = float(self._stage1_column_completion_counts[col_idx].item())
+                attempt_count = float(self._stage1_column_max_row_attempt_counts[col_idx].item())
+                recent_valid = self._stage1_recent_max_row_attempt_valid[col_idx]
+                recent_attempt_count = float(torch.sum(recent_valid).item())
+                recent_success_count = float(
+                    torch.sum(
+                        self._stage1_recent_max_row_attempt_successes[col_idx][recent_valid].float()
+                    ).item()
+                    if torch.any(recent_valid)
+                    else 0.0
+                )
+                completion_target = float(self._stage1_column_completion_targets[col_idx].item())
+                metrics[f"{col_key}/max_row_success_count"] = success_count
+                metrics[f"{col_key}/max_row_attempt_count"] = attempt_count
+                metrics[f"{col_key}/recent_max_row_attempt_count"] = recent_attempt_count
+                metrics[f"{col_key}/recent_max_row_success_rate"] = recent_success_count / max(
+                    recent_attempt_count,
+                    1.0,
+                )
+                metrics[f"{col_key}/success_per_attempt"] = success_count / max(attempt_count, 1.0)
+                metrics[f"{col_key}/recent_success_per_attempt"] = recent_success_count / max(
+                    recent_attempt_count,
+                    1.0,
+                )
+                metrics[f"{col_key}/consecutive_max_row_success"] = float(
+                    self._stage1_column_consecutive_max_row_successes[col_idx].item()
+                )
+                metrics[f"{col_key}/max_row_success_with_quality_count"] = float(
+                    self._stage1_column_max_row_success_with_quality_counts[col_idx].item()
+                )
+                metrics[f"{col_key}/completion_target"] = completion_target
+                metrics[f"{col_key}/completion_fraction"] = (
+                    success_count / max(completion_target, 1.0) if completion_target > 0.0 else 1.0
+                )
+                metrics[f"{col_key}/completed"] = float(self._stage1_completed_terrain_columns[col_idx].item())
         self._add_stage1_debug_metrics(metrics)
 
         per_wheel_metric_sources = {
@@ -2705,6 +3480,12 @@ class CompleteCarDirectEnv(DirectRLEnv):
         stage1_reset_metrics = self._apply_stage1_terrain_column_reset_curriculum(env_ids)
         if stage1_reset_metrics is not None:
             self.extras["log"].update(stage1_reset_metrics)
+        actuator_randomization_metrics = self._reset_actuator_randomization(env_ids)
+        if actuator_randomization_metrics:
+            self.extras["log"].update(actuator_randomization_metrics)
+        wheel_friction_randomization_metrics = self._reset_wheel_friction_randomization(env_ids)
+        if wheel_friction_randomization_metrics:
+            self.extras["log"].update(wheel_friction_randomization_metrics)
 
         if self._sensor_runtime is not None:
             self._sensor_runtime.reset(env_ids)
@@ -2799,8 +3580,17 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._prev_stage1_module_support_heights[env_ids] = 0.0
         self._reset_stage1_quality_advance_state(env_ids)
         self._stage1_recovery_active[env_ids] = False
+        self._last_stage1_recovery_active[env_ids] = False
+        self._stage1_recovery_elapsed_time_s[env_ids] = 0.0
         self._stage1_recovery_reverse_time_s[env_ids] = 0.0
         self._stage1_recovery_start_goal_distance[env_ids] = self._previous_goal_distance[env_ids]
+        self._last_stage1_recovery_had_reverse[env_ids] = False
+        self._last_stage1_recovery_reverse_reward_now[env_ids] = False
+        self._last_stage1_recovery_no_progress_cleared[env_ids] = False
+        self._last_stage1_recovery_forward_progress[env_ids] = 0.0
+        self._last_stage1_recovery_total_progress[env_ids] = 0.0
+        self._last_stage1_recovery_reverse_time_s[env_ids] = 0.0
+        self._last_stage1_recovery_elapsed_time_s[env_ids] = 0.0
         self._last_stage1_recovery_reverse_now[env_ids] = False
         self._last_stage1_recovery_success[env_ids] = False
         for key in self._last_done_terms:

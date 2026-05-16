@@ -1,0 +1,14 @@
+tag,last25_mean,final_value
+Debug/Stage1/Posture/quality_gate_score,0.4062563562393188,0.40625
+Debug/Stage1/Posture/motion_quality_score,0.6327637219429016,0.6342695355415344
+Debug/Stage1/Posture/rear_follow_success_rate,0.21270834028720856,0.2356770932674408
+Debug/Stage1/Reward/progress_to_target,0.028205757662653923,0.028773875907063484
+Debug/Stage1/Reward/drop_anti_dive_penalty,-0.0064303033612668516,-0.005958033725619316
+Debug/Stage1/Reward/rear_follow_reward,4.429224209161475e-06,0.0
+Debug/Stage1/Reward/rear_follow_penalty,-0.0012615015136543662,-0.0002839067601598799
+Stage1Eval/global/current_level_mean,7.90479190826416,7.7682294845581055
+Stage1Eval/global/rows_advanced_mean,1.8686979722976684,1.9388021230697632
+Stage1Eval/global/stagnation_rate,0.04177083402872086,0.0416666679084301
+Stage1Eval/global/actual_overspeed_near_edge_rate,0.5533333587646484,0.5651041865348816
+Stage1Eval/global/row_contact_support_min,0.42139034390449526,0.4212374985218048
+Stage1Eval/global/roll_abs_mean,1.8451248168945313,2.008347988128662

@@ -12,6 +12,11 @@ STAGE1_TERRAIN_CLASS_OTHER = 0
 STAGE1_TERRAIN_CLASS_STEP = 1
 STAGE1_TERRAIN_CLASS_GAP = 2
 
+STAIRS_MIN_STEP_HEIGHT_M = 0.05
+STAIRS_STEP_HEIGHT_RANGE_M = 0.13
+DISCRETE_OBSTACLE_MIN_HEIGHT_M = 0.05
+DISCRETE_OBSTACLE_HEIGHT_RANGE_M = 0.1159
+
 
 @dataclass
 class Stage1TerrainCfg:
@@ -123,6 +128,12 @@ def get_terrain_class_from_name(terrain_name: str) -> int:
     if terrain_name in {"gap", "pit"}:
         return STAGE1_TERRAIN_CLASS_GAP
     return STAGE1_TERRAIN_CLASS_OTHER
+
+
+def _normalize_stairs_difficulty(cfg: Stage1TerrainCfg, difficulty: float) -> float:
+    # The global curriculum passes row / num_rows. For stairs, normalize so the last row reaches max height.
+    max_difficulty = max((cfg.num_rows - 1) / cfg.num_rows, 1.0e-6)
+    return float(np.clip(difficulty / max_difficulty, 0.0, 1.0))
 
 
 def _random_uniform_terrain(
@@ -402,7 +413,7 @@ def _maybe_add_roughness(
 
 def make_slope_tile(cfg: Stage1TerrainCfg, difficulty: float, descending: bool = False) -> np.ndarray:
     terrain = _make_subterrain(cfg)
-    slope = difficulty * 0.4
+    slope = difficulty * 0.65
     if descending:
         slope *= -1
     _pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.0)
@@ -433,7 +444,8 @@ def make_stairs_tile(
     extra_step_height_m: float = 0.0,
 ) -> np.ndarray:
     terrain = _make_subterrain(cfg)
-    step_height = 0.05 + 0.18 * difficulty + extra_step_height_m
+    stairs_difficulty = _normalize_stairs_difficulty(cfg, difficulty)
+    step_height = STAIRS_MIN_STEP_HEIGHT_M + STAIRS_STEP_HEIGHT_RANGE_M * stairs_difficulty + extra_step_height_m
     if descending:
         step_height *= -1
     _pyramid_stairs_terrain(terrain, step_width=step_width_m, step_height=step_height, platform_size=3.0)
@@ -445,7 +457,7 @@ def make_discrete_obstacles_tile(cfg: Stage1TerrainCfg, difficulty: float, seed:
     rng = np.random.default_rng(seed)
     _discrete_obstacles_terrain(
         terrain,
-        max_height=0.05 + difficulty * 0.17,
+        max_height=DISCRETE_OBSTACLE_MIN_HEIGHT_M + difficulty * DISCRETE_OBSTACLE_HEIGHT_RANGE_M,
         min_size=1.0,
         max_size=2.5,
         num_rects=20,

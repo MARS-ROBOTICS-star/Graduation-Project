@@ -300,54 +300,7 @@ $$
 
 ## 6. Stage 1 Reward 结构图
 
-```mermaid
-flowchart TD
-    A["状态 s_t, 动作 a_t"] --> B["Reward 各分项"]
-
-    B --> B1["跟踪奖励"]
-    B --> B2["稳定性惩罚"]
-    B --> B3["代价 / 效率惩罚"]
-    B --> B4["步态 / 接触项"]
-    B --> B5["地形自适应调制"]
-
-    B1 --> C1["phi_trk-lin = exp(-||c_xy - v_xy_clipped||^2 / sigma)"]
-    B1 --> C2["phi_trk-yaw = exp(-(c_psi - omega_z)^2 / sigma)"]
-
-    B2 --> D1["phi_vz = v_z^2"]
-    B2 --> D2["phi_wxy = omega_x^2 + omega_y^2"]
-    B2 --> D3["phi_ori = ||g_proj||^2"]
-    B2 --> D4["phi_col = 碰撞计数"]
-    B2 --> D5["phi_stum = 绊碰指示量"]
-
-    B3 --> E1["phi_tau = sum(tau^2)"]
-    B3 --> E2["phi_qdd = sum(((qdot_t-1 - qdot_t)/dt)^2)"]
-    B3 --> E3["phi_da = sum((a_t-1 - a_t)^2)"]
-
-    B4 --> F1["phi_trot = 对角步态对称惩罚"]
-    B4 --> F2["phi_air = 首次落地时的腾空奖励"]
-    B4 --> F3["phi_stand = 零命令下的站立姿态惩罚"]
-
-    B5 --> G1["对 hurdle / gap 地形调整系数"]
-    G1 --> G2["放松姿态 / 垂向速度相关惩罚"]
-    G1 --> G3["压低部分步态规整项"]
-
-    C1 --> H["加权求和"]
-    C2 --> H
-    D1 --> H
-    D2 --> H
-    D3 --> H
-    D4 --> H
-    D5 --> H
-    E1 --> H
-    E2 --> H
-    E3 --> H
-    F1 --> H
-    F2 --> H
-    F3 --> H
-
-    H --> I["r_raw = dt * sum_k w_k alpha_k(m_t) phi_k"]
-    I --> J["r_t^(1) = max(0, r_raw)"]
-```
+![MGDP Stage 1 Reward 结构图](assets/mgdp_stage1_reward_structure.svg)
 
 ## 7. 历史源码映射说明
 

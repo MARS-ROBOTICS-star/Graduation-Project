@@ -1,0 +1,60 @@
+{
+  "rows": 5,
+  "joint_name": "spm1_platform_joint_y",
+  "kp": 600.0,
+  "kd": 30.0,
+  "effort_limit": 60.0,
+  "velocity_limit": 2.0,
+  "qddot_limit": 8.0,
+  "tau_ref": 0.05,
+  "control_dt": 0.03333333333333333,
+  "physics_dt": 0.008333333333333333,
+  "q_cmd_minus_actual": {
+    "mean_abs": 0.0013492717895834526,
+    "rmse": 0.0016613053320907395,
+    "p50_abs": 0.0016224668005420679,
+    "p95_abs": 0.002628338766316901,
+    "p99_abs": 0.002828156381943774,
+    "max_abs": 0.002878110785850492
+  },
+  "q_raw_minus_actual": {
+    "mean_abs": 0.11699656310956925,
+    "rmse": 0.1213197459435474,
+    "p50_abs": 0.11954834125936031,
+    "p95_abs": 0.1607087180018425,
+    "p99_abs": 0.16765976920723916,
+    "max_abs": 0.16939753200858831
+  },
+  "qdot_cmd_minus_actual": {
+    "mean_abs": 0.010094931662703565,
+    "rmse": 0.013702348010964404,
+    "p50_abs": 0.003484667045995593,
+    "p95_abs": 0.02164061546325684,
+    "p99_abs": 0.021769788424173996,
+    "max_abs": 0.021802081664403283
+  },
+  "qdot_cmd_abs": {
+    "mean_abs": 0.37333333333333335,
+    "rmse": 0.46188021535170065,
+    "p50_abs": 0.26666666666666666,
+    "p95_abs": 0.7466666666666667,
+    "p99_abs": 0.7893333333333333,
+    "max_abs": 0.8
+  },
+  "qdot_cmd_delta_abs_mean": 0.2666666666666667,
+  "qdot_cmd_delta_abs_p95": 0.2666666666666667,
+  "estimated_tau_abs": {
+    "mean_abs": 0.8004681363249645,
+    "rmse": 0.9520835446495854,
+    "p50_abs": 0.730754616599446,
+    "p95_abs": 1.5244761361315322,
+    "p99_abs": 1.613767345016817,
+    "max_abs": 1.6360901472381382
+  },
+  "estimated_tau_saturation_rate_ge_0p98": 0.0,
+  "trace": "/home/ubuntu/Graduation-Project/results/stage1_model725_allcols_30hz_fine_pd_2026-05-12/raw_traces/model725_allcols_30hz_col05_stairs_down.csv",
+  "usd": "/home/ubuntu/Graduation-Project/USD/complete_car.usd",
+  "env_id": 5,
+  "source_column": "q_desired_spm1_platform_joint_y",
+  "records_csv": "/home/ubuntu/Graduation-Project/results/front_pitch_trace_pd_usd/spm1_platform_joint_y_env5_kp600_kd30_20260512_222916/front_pitch_trace_pd_records.csv"
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import os
 import re
 import sys
@@ -46,6 +47,12 @@ parser.add_argument(
     help="Override recorded render resolution as WIDTHxHEIGHT, for example 3840x2160.",
 )
 parser.add_argument(
+    "--video_output_dir",
+    type=str,
+    default=None,
+    help="Override mp4 output directory. Defaults to <checkpoint_run>/videos/play.",
+)
+parser.add_argument(
     "--stream_video",
     action="store_true",
     default=False,
@@ -66,6 +73,7 @@ parser.add_argument(
     help="x264 encoding preset for --stream_video. Slower presets improve compression at the same CRF.",
 )
 parser.add_argument("--num_envs", type=int, default=None)
+parser.add_argument("--seed", type=int, default=None)
 parser.add_argument("--task", type=str, default="CompleteCar-Stage0", choices=TASK_CHOICES)
 parser.add_argument("--agent", type=str, default="rsl_rl_cfg_entry_point")
 parser.add_argument("--checkpoint", type=str, default=None)
@@ -162,6 +170,21 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
+    "--terrain_replay_level",
+    type=int,
+    default=None,
+    help=(
+        "Start Stage1 replay from this terrain row and use it as the minimum reset floor. "
+        "By default, row progression can continue after waypoint hits."
+    ),
+)
+parser.add_argument(
+    "--terrain_replay_lock_level",
+    action="store_true",
+    default=False,
+    help="Force every Stage1 replay reset back to --terrain_replay_level instead of allowing row progression.",
+)
+parser.add_argument(
     "--replay_episode_length_s",
     type=float,
     default=None,
@@ -169,6 +192,66 @@ parser.add_argument(
         "Override episode length only for playback. This is useful for inspecting whether a policy "
         "can eventually reach terrain-column targets after the training timeout."
     ),
+)
+parser.add_argument(
+    "--max_play_steps",
+    type=int,
+    default=0,
+    help="Stop playback after this many control steps. Use 0 to run until the GUI closes or the process is interrupted.",
+)
+parser.add_argument(
+    "--stop_after_continuous_terrain_completions",
+    type=int,
+    default=0,
+    help=(
+        "Stop Stage1 replay selection after this many envs continuously reach terrain_column_completed "
+        "from the initial reset without timeout/stuck/low-quality/far/joint/roll failures."
+    ),
+)
+parser.add_argument(
+    "--selection_max_pre_completion_resets",
+    type=int,
+    default=0,
+    help=(
+        "When --stop_after_continuous_terrain_completions is used, keep an env eligible until it has "
+        "more than this many pre-completion reset/failure events."
+    ),
+)
+parser.add_argument(
+    "--print_reset_causes",
+    action="store_true",
+    default=False,
+    help="Print aggregated reset causes whenever any replay env resets.",
+)
+parser.add_argument(
+    "--record_reward_trace",
+    action="store_true",
+    default=False,
+    help=(
+        "Record per-control-step reward components and reward diagnostics to CSV during replay. "
+        "The trace includes reward terms, terrain features, done terms, row/col context, commands, and actions."
+    ),
+)
+parser.add_argument(
+    "--reward_trace_output",
+    type=str,
+    default=None,
+    help=(
+        "CSV output path for --record_reward_trace. If omitted, a timestamped CSV is written under "
+        "<run>/reward_traces/."
+    ),
+)
+parser.add_argument(
+    "--reward_trace_envs",
+    type=str,
+    default="all",
+    help="Env ids to record for --record_reward_trace, such as '0', '0,3', or 'all'.",
+)
+parser.add_argument(
+    "--reward_trace_flush_interval",
+    type=int,
+    default=120,
+    help="Flush reward trace CSV after this many control steps.",
 )
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
@@ -200,7 +283,9 @@ from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
 
 import complete_car_lab  # noqa: F401
+from complete_car_lab.tasks.direct.complete_car.assets.robot_cfg import BALL_JOINT_NAMES
 from complete_car_lab.tasks.direct.complete_car.mdp import curriculum as mdp_curriculum
+from complete_car_lab.tasks.direct.complete_car.utils.math_utils import wrap_to_pi_tensor
 
 
 def _update_agent_cfg(agent_cfg):
@@ -485,14 +570,49 @@ def _format_stage1_replay_columns(columns: list[int], terrain_runtime) -> str:
     return ", ".join(f"{column}:{_terrain_column_name(terrain_runtime, column)}" for column in columns)
 
 
-def _reset_stage1_replay_curriculum_state(raw_env, terrain_runtime) -> None:
+def _format_replay_level_mode(level: int | None, lock_level: bool) -> str:
+    if level is None:
+        return ""
+    mode = "locked" if lock_level else "start"
+    return f" {mode} row {level}"
+
+
+def _clamp_stage1_replay_level(level: int, terrain_runtime) -> int:
+    max_level = max(int(terrain_runtime.max_terrain_level) - 1, 0)
+    return int(max(0, min(int(level), max_level)))
+
+
+def _set_stage1_replay_level(raw_env, terrain_runtime, level: int | None, *, lock_level: bool = False) -> int | None:
+    if level is None:
+        if hasattr(raw_env, "_stage1_replay_fixed_terrain_level"):
+            raw_env._stage1_replay_fixed_terrain_level = None
+        return None
+
+    replay_level = _clamp_stage1_replay_level(level, terrain_runtime)
+    raw_env._stage1_replay_fixed_terrain_level = replay_level if lock_level else None
+    terrain_runtime.terrain_levels[:] = replay_level
+    level_floor = getattr(raw_env, "_stage1_terrain_level_floor", None)
+    if level_floor is not None:
+        level_floor.fill_(replay_level)
+    return replay_level
+
+
+def _reset_stage1_replay_curriculum_state(
+    raw_env,
+    terrain_runtime,
+    replay_level: int | None = None,
+    *,
+    lock_level: bool = False,
+) -> int | None:
     """Keep Stage1 replay column selection from being overwritten by reset recycling."""
     num_cols = int(terrain_runtime._terrain_cfg.num_cols)
-    terrain_runtime.terrain_levels[:] = mdp_curriculum.sample_initial_terrain_levels(
-        raw_env.cfg.curriculum,
-        terrain_runtime,
-        terrain_runtime.terrain_types,
-    )
+    selected_level = _set_stage1_replay_level(raw_env, terrain_runtime, replay_level, lock_level=lock_level)
+    if selected_level is None:
+        terrain_runtime.terrain_levels[:] = mdp_curriculum.sample_initial_terrain_levels(
+            raw_env.cfg.curriculum,
+            terrain_runtime,
+            terrain_runtime.terrain_types,
+        )
     targets = mdp_curriculum.compute_terrain_column_counts(terrain_runtime.terrain_types, num_cols)
 
     completion_targets = getattr(raw_env, "_stage1_column_completion_targets", None)
@@ -515,8 +635,12 @@ def _reset_stage1_replay_curriculum_state(raw_env, terrain_runtime) -> None:
         recycled_ever.zero_()
     if last_recycled is not None:
         last_recycled.zero_()
+    level_floor = getattr(raw_env, "_stage1_terrain_level_floor", None)
+    if level_floor is not None:
+        level_floor.copy_(terrain_runtime.terrain_levels)
     if hasattr(raw_env, "_stage1_recycle_cursor"):
         raw_env._stage1_recycle_cursor = 0
+    return selected_level
 
 
 def _parse_env_indices(raw_selector: str, num_envs: int) -> tuple[int, ...]:
@@ -540,7 +664,310 @@ def _parse_env_indices(raw_selector: str, num_envs: int) -> tuple[int, ...]:
     return tuple(sorted(set(selected_env_ids)))
 
 
-def _configure_stage1_replay_terrain(raw_env, raw_selector: str) -> bool:
+def _scalar_log_value(value) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, torch.Tensor):
+        if value.numel() == 0:
+            return None
+        return float(torch.nan_to_num(value.detach().float().mean(), nan=0.0, posinf=0.0, neginf=0.0).item())
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_replay_joint_limit_details(raw_env, dones: torch.Tensor) -> str | None:
+    done_terms = getattr(raw_env, "_last_step_done_terms", None)
+    if done_terms is None:
+        done_terms = getattr(raw_env, "_last_done_terms", {})
+    ball_joint_limit_mask = done_terms.get("ball_joint_out_of_bounds") if isinstance(done_terms, dict) else None
+    if ball_joint_limit_mask is None or not torch.any(dones & ball_joint_limit_mask):
+        return None
+
+    env_ids = torch.nonzero(dones & ball_joint_limit_mask, as_tuple=False).flatten()
+    if env_ids.numel() == 0:
+        return None
+
+    ball_joint_ids = getattr(raw_env, "_ball_joint_ids", None)
+    if ball_joint_ids is None:
+        return None
+    saved_pos = getattr(raw_env, "_last_ball_joint_out_of_bounds_joint_pos", None)
+    saved_mask = getattr(raw_env, "_last_ball_joint_out_of_bounds_joint_mask", None)
+    if saved_pos is not None and saved_mask is not None:
+        joint_pos = saved_pos[env_ids]
+        violation = saved_mask[env_ids]
+    else:
+        joint_pos = wrap_to_pi_tensor(raw_env.robot.data.joint_pos[env_ids][:, ball_joint_ids])
+        lower = joint_pos.new_tensor(raw_env.cfg.terminations.ball_joint_pos_lower_limits).unsqueeze(0)
+        upper = joint_pos.new_tensor(raw_env.cfg.terminations.ball_joint_pos_upper_limits).unsqueeze(0)
+        violation = (joint_pos < lower) | (joint_pos > upper)
+    lower = joint_pos.new_tensor(raw_env.cfg.terminations.ball_joint_pos_lower_limits).unsqueeze(0)
+    upper = joint_pos.new_tensor(raw_env.cfg.terminations.ball_joint_pos_upper_limits).unsqueeze(0)
+    if not torch.any(violation):
+        return None
+
+    env_local, joint_index = torch.nonzero(violation, as_tuple=True)
+    details: list[str] = []
+    for env_offset, joint_offset in zip(env_local[:4], joint_index[:4], strict=False):
+        env_id = int(env_ids[env_offset].item())
+        joint_id = int(joint_offset.item())
+        value = float(joint_pos[env_offset, joint_offset].item())
+        low = float(lower[0, joint_offset].item())
+        high = float(upper[0, joint_offset].item())
+        side = "<" if value < low else ">"
+        limit = low if value < low else high
+        details.append(f"env{env_id}:{BALL_JOINT_NAMES[joint_id]}={value:.3f}{side}{limit:.3f}")
+    if violation.numel() > 4:
+        remaining = int(torch.count_nonzero(violation).item()) - len(details)
+        if remaining > 0:
+            details.append(f"+{remaining}_more")
+    return "joint_oob=" + ",".join(details)
+
+
+def _print_replay_reset_causes(timestep: int, dones: torch.Tensor, extras: dict, raw_env=None) -> None:
+    if dones is None or not torch.any(dones):
+        return
+    done_count = int(torch.count_nonzero(dones).item())
+    log = extras.get("log", {}) if isinstance(extras, dict) else {}
+
+    fields = (
+        ("terminated", "Termination/terminated_rate"),
+        ("timeout", "Termination/time_out_rate"),
+        ("stuck", "Termination/stuck_timeout_rate"),
+        ("completed", "Termination/terrain_column_completed_rate"),
+        ("low_quality", "Termination/low_quality_terrain_hit_rate"),
+        ("far", "Termination/far_from_target_rate"),
+        ("joint_limit", "Termination/ball_joint_limit_rate"),
+        ("roll_limit", "Termination/orientation_out_of_bounds_rate"),
+        ("waypoint_hit", "episode/waypoint_hit_rate"),
+        ("row_progress", "terrain/row_progress_at_reset"),
+        ("move_down", "terrain/move_down_ratio"),
+        ("stuck_move_down", "terrain/stuck_move_down_ratio"),
+        ("level_after", "terrain/level_after_reset"),
+    )
+
+    parts = [f"[RESET] step={timestep}", f"done_envs={done_count}"]
+    for label, key in fields:
+        value = _scalar_log_value(log.get(key))
+        if value is None:
+            continue
+        parts.append(f"{label}={value:.3f}")
+    if raw_env is not None:
+        joint_limit_details = _format_replay_joint_limit_details(raw_env, dones)
+        if joint_limit_details is not None:
+            parts.append(joint_limit_details)
+    print(" ".join(parts), flush=True)
+
+
+def _print_stage1_replay_level_summary(raw_env, label: str) -> None:
+    terrain_runtime = getattr(raw_env, "_terrain_runtime", None)
+    if (
+        terrain_runtime is None
+        or terrain_runtime.terrain_levels is None
+        or terrain_runtime.terrain_types is None
+        or terrain_runtime.terrain_levels.numel() == 0
+    ):
+        return
+    levels = terrain_runtime.terrain_levels.detach().to(torch.long)
+    types = terrain_runtime.terrain_types.detach().to(torch.long)
+    parts = [
+        f"[INFO] Stage1 replay levels {label}:",
+        f"min={int(torch.min(levels).item())}",
+        f"max={int(torch.max(levels).item())}",
+        f"mean={float(torch.mean(levels.float()).item()):.2f}",
+    ]
+    for terrain_type in torch.unique(types):
+        mask = types == terrain_type
+        column = int(terrain_type.item())
+        column_levels = levels[mask]
+        parts.append(
+            f"col{column:02d}:{_terrain_column_name(terrain_runtime, column).replace(' ', '_')}"
+            f"={int(torch.min(column_levels).item())}-{int(torch.max(column_levels).item())}"
+        )
+    print(" ".join(parts), flush=True)
+
+
+def _csv_cell_from_scalar(value) -> float | int | str:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value
+    return str(value)
+
+
+def _tensor_item_to_csv(value: torch.Tensor) -> float | int:
+    if value.dtype == torch.bool:
+        return int(bool(value.item()))
+    return float(torch.nan_to_num(value.detach().float(), nan=0.0, posinf=0.0, neginf=0.0).item())
+
+
+def _add_trace_tensor_value(row: dict[str, object], name: str, value, env_id: int, num_envs: int) -> None:
+    if value is None:
+        return
+    if isinstance(value, torch.Tensor):
+        tensor = value.detach()
+        if tensor.numel() == 0:
+            return
+        if tensor.ndim > 0 and tensor.shape[0] == num_envs:
+            tensor = tensor[env_id]
+        flat = tensor.reshape(-1)
+        if flat.numel() == 1:
+            row[name] = _tensor_item_to_csv(flat[0])
+        else:
+            for index, item in enumerate(flat):
+                row[f"{name}_{index}"] = _tensor_item_to_csv(item)
+        return
+    try:
+        row[name] = _csv_cell_from_scalar(value)
+    except (TypeError, ValueError):
+        row[name] = str(value)
+
+
+def _add_trace_mapping(
+    row: dict[str, object],
+    prefix: str,
+    mapping: dict | None,
+    env_id: int,
+    num_envs: int,
+) -> None:
+    if not isinstance(mapping, dict):
+        return
+    for key in sorted(mapping.keys()):
+        _add_trace_tensor_value(row, f"{prefix}{key}", mapping[key], env_id, num_envs)
+
+
+def _terrain_level_for_env(raw_env, env_id: int) -> int | None:
+    terrain_runtime = getattr(raw_env, "_terrain_runtime", None)
+    if terrain_runtime is None or terrain_runtime.terrain_levels is None:
+        return None
+    return int(terrain_runtime.terrain_levels[env_id].item())
+
+
+def _terrain_column_for_env(raw_env, env_id: int) -> int | None:
+    terrain_runtime = getattr(raw_env, "_terrain_runtime", None)
+    if terrain_runtime is None or terrain_runtime.terrain_types is None:
+        return None
+    return int(terrain_runtime.terrain_types[env_id].item())
+
+
+def _build_reward_trace_row(
+    raw_env,
+    timestep: int,
+    env_id: int,
+    rewards: torch.Tensor | None,
+    dones: torch.Tensor | None,
+    policy_actions: torch.Tensor | None,
+) -> dict[str, object]:
+    num_envs = int(raw_env.num_envs)
+    row: dict[str, object] = {
+        "step": int(timestep),
+        "time_s": float(timestep) * float(raw_env.step_dt),
+        "env_id": int(env_id),
+    }
+    terrain_runtime = getattr(raw_env, "_terrain_runtime", None)
+    terrain_column = _terrain_column_for_env(raw_env, env_id)
+    terrain_level = _terrain_level_for_env(raw_env, env_id)
+    if terrain_column is not None:
+        row["terrain_col"] = terrain_column
+        if terrain_runtime is not None:
+            row["terrain_name"] = _terrain_column_name(terrain_runtime, terrain_column)
+    if terrain_level is not None:
+        row["terrain_level_after_step"] = terrain_level
+    if rewards is not None:
+        _add_trace_tensor_value(row, "returned_reward", rewards, env_id, num_envs)
+    if dones is not None:
+        _add_trace_tensor_value(row, "done", dones, env_id, num_envs)
+    _add_trace_tensor_value(row, "episode_length_step", getattr(raw_env, "episode_length_buf", None), env_id, num_envs)
+    _add_trace_tensor_value(row, "total_reward", getattr(raw_env, "_last_total_reward", None), env_id, num_envs)
+
+    commands = getattr(raw_env, "commands", None)
+    if isinstance(commands, torch.Tensor) and commands.ndim == 2 and commands.shape[0] == num_envs:
+        row["command_x_m"] = _tensor_item_to_csv(commands[env_id, 0])
+        row["command_y_m"] = _tensor_item_to_csv(commands[env_id, 1])
+        row["command_goal_distance_m"] = float(
+            torch.linalg.vector_norm(commands[env_id, :2].detach().float(), dim=0).item()
+        )
+        if commands.shape[1] > 3:
+            row["command_heading_error_rad"] = _tensor_item_to_csv(commands[env_id, 3])
+
+    if policy_actions is not None:
+        _add_trace_tensor_value(row, "policy_action", policy_actions, env_id, num_envs)
+    _add_trace_tensor_value(row, "env_action", getattr(raw_env, "actions", None), env_id, num_envs)
+
+    _add_trace_mapping(row, "reward__", getattr(raw_env, "_last_reward_components", None), env_id, num_envs)
+    _add_trace_mapping(row, "diag__", getattr(raw_env, "_last_reward_diagnostics", None), env_id, num_envs)
+    _add_trace_mapping(row, "terrain__", getattr(raw_env, "_last_terrain_feature_diagnostics", None), env_id, num_envs)
+    done_terms = getattr(raw_env, "_last_step_done_terms", None)
+    if done_terms is None:
+        done_terms = getattr(raw_env, "_last_done_terms", None)
+    _add_trace_mapping(row, "done__", done_terms, env_id, num_envs)
+    return row
+
+
+class _RewardTraceRecorder:
+    def __init__(self, output_path: str, env_ids: tuple[int, ...], flush_interval_steps: int):
+        self.output_path = output_path
+        self.env_ids = env_ids
+        self.flush_interval_steps = max(int(flush_interval_steps), 1)
+        self._file = None
+        self._writer: csv.DictWriter | None = None
+        self._fieldnames: list[str] | None = None
+        self._last_flush_step = 0
+
+    def append(
+        self,
+        raw_env,
+        timestep: int,
+        rewards: torch.Tensor | None,
+        dones: torch.Tensor | None,
+        policy_actions: torch.Tensor | None,
+    ) -> None:
+        rows = [
+            _build_reward_trace_row(raw_env, timestep, env_id, rewards, dones, policy_actions)
+            for env_id in self.env_ids
+        ]
+        if not rows:
+            return
+        if self._writer is None:
+            output_path = Path(self.output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            self._fieldnames = sorted({key for row in rows for key in row.keys()})
+            self._file = output_path.open("w", newline="", encoding="utf-8")
+            self._writer = csv.DictWriter(self._file, fieldnames=self._fieldnames, extrasaction="ignore")
+            self._writer.writeheader()
+            print(f"[INFO] Recording reward trace to: {output_path}", flush=True)
+        self._writer.writerows(rows)
+        if timestep - self._last_flush_step >= self.flush_interval_steps:
+            self.flush()
+            self._last_flush_step = timestep
+
+    def flush(self) -> None:
+        if self._file is not None:
+            self._file.flush()
+
+    def close(self) -> None:
+        if self._file is not None:
+            self._file.close()
+            self._file = None
+        self._writer = None
+
+
+def _default_reward_trace_path(log_dir: str, resume_path: str) -> str:
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    checkpoint_stem = Path(resume_path).stem
+    return str(Path(log_dir) / "reward_traces" / f"{checkpoint_stem}_reward_trace_{timestamp}.csv")
+
+
+def _configure_stage1_replay_terrain(
+    raw_env,
+    raw_selector: str,
+    replay_level: int | None = None,
+    *,
+    lock_level: bool = False,
+) -> bool:
     terrain_runtime = getattr(raw_env, "_terrain_runtime", None)
     if terrain_runtime is None or not getattr(terrain_runtime, "generator_enabled", False):
         if _normalize_selector(raw_selector) in {"", "all", "*", "full", "full terrain", "all terrain"}:
@@ -559,25 +986,37 @@ def _configure_stage1_replay_terrain(raw_env, raw_selector: str) -> bool:
             raise ValueError(
                 f"Full-terrain replay needs at least {num_cols} envs, but got {num_envs}. "
                 "Increase --num_envs or choose a specific --terrain_replay_columns value."
-            )
+        )
         columns_tensor = torch.remainder(env_ids, num_cols)
         terrain_runtime.terrain_types[:] = columns_tensor
-        _reset_stage1_replay_curriculum_state(raw_env, terrain_runtime)
+        selected_level = _reset_stage1_replay_curriculum_state(
+            raw_env,
+            terrain_runtime,
+            replay_level,
+            lock_level=lock_level,
+        )
         terrain_runtime.sync_env_origins(raw_env.scene)
+        level_msg = _format_replay_level_mode(selected_level, lock_level)
         print(
             "[INFO] Stage1 replay terrain mode: all columns "
-            f"({_format_stage1_replay_columns(list(range(num_cols)), terrain_runtime)}).",
+            f"({_format_stage1_replay_columns(list(range(num_cols)), terrain_runtime)}){level_msg}.",
             flush=True,
         )
         return True
 
     selected_tensor = torch.tensor(selected_columns, device=raw_env.device, dtype=torch.long)
     terrain_runtime.terrain_types[:] = selected_tensor[torch.remainder(env_ids, selected_tensor.numel())]
-    _reset_stage1_replay_curriculum_state(raw_env, terrain_runtime)
+    selected_level = _reset_stage1_replay_curriculum_state(
+        raw_env,
+        terrain_runtime,
+        replay_level,
+        lock_level=lock_level,
+    )
     terrain_runtime.sync_env_origins(raw_env.scene)
+    level_msg = _format_replay_level_mode(selected_level, lock_level)
     print(
         "[INFO] Stage1 replay terrain columns: "
-        f"{_format_stage1_replay_columns(selected_columns, terrain_runtime)}.",
+        f"{_format_stage1_replay_columns(selected_columns, terrain_runtime)}{level_msg}.",
         flush=True,
     )
     return True
@@ -586,8 +1025,11 @@ def _configure_stage1_replay_terrain(raw_env, raw_selector: str) -> bool:
 @hydra_task_config(args_cli.task, args_cli.agent)
 def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     agent_cfg = _update_agent_cfg(agent_cfg)
+    if args_cli.seed is not None:
+        agent_cfg.seed = args_cli.seed
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+    env_cfg.seed = agent_cfg.seed
     if args_cli.replay_episode_length_s is not None:
         if args_cli.replay_episode_length_s <= 0.0:
             raise ValueError("--replay_episode_length_s must be positive.")
@@ -603,6 +1045,16 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         raise ValueError("--video_crf must be between 0 and 51.")
     if args_cli.video and not args_cli.stream_video and args_cli.video_length <= 0:
         raise ValueError("--video_length must be positive when using Gym RecordVideo. Use --stream_video for manual-stop recording.")
+    if args_cli.max_play_steps < 0:
+        raise ValueError("--max_play_steps must be non-negative.")
+    if args_cli.stop_after_continuous_terrain_completions < 0:
+        raise ValueError("--stop_after_continuous_terrain_completions must be non-negative.")
+    if args_cli.selection_max_pre_completion_resets < 0:
+        raise ValueError("--selection_max_pre_completion_resets must be non-negative.")
+    if args_cli.terrain_replay_lock_level and args_cli.terrain_replay_level is None:
+        raise ValueError("--terrain_replay_lock_level requires --terrain_replay_level.")
+    if args_cli.reward_trace_flush_interval <= 0:
+        raise ValueError("--reward_trace_flush_interval must be positive.")
     if args_cli.record_camera_views is not None and not args_cli.record_chase_view:
         raise ValueError("--record_camera_views requires --record_chase_view.")
     if args_cli.record_camera_views is not None and not args_cli.stream_video:
@@ -654,13 +1106,30 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     env_cfg.log_dir = log_dir
 
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
-    if _configure_stage1_replay_terrain(env.unwrapped, args_cli.terrain_replay_columns):
+    if _configure_stage1_replay_terrain(
+        env.unwrapped,
+        args_cli.terrain_replay_columns,
+        args_cli.terrain_replay_level,
+        lock_level=args_cli.terrain_replay_lock_level,
+    ):
         env.reset()
+        _print_stage1_replay_level_summary(env.unwrapped, "after reset")
+    reward_trace_recorder = None
+    if args_cli.record_reward_trace:
+        selected_reward_trace_envs = _parse_env_indices(args_cli.reward_trace_envs, env.unwrapped.num_envs)
+        if not selected_reward_trace_envs:
+            selected_reward_trace_envs = tuple(range(int(env.unwrapped.num_envs)))
+        reward_trace_output = args_cli.reward_trace_output or _default_reward_trace_path(log_dir, resume_path)
+        reward_trace_recorder = _RewardTraceRecorder(
+            reward_trace_output,
+            selected_reward_trace_envs,
+            args_cli.reward_trace_flush_interval,
+        )
     if args_cli.record_chase_view and hasattr(env.unwrapped, "_update_follow_views"):
         env.unwrapped._update_follow_views()
     stream_video_paths: dict[str, str] = {}
     if args_cli.video and args_cli.stream_video:
-        video_folder = os.path.join(log_dir, "videos", "play")
+        video_folder = args_cli.video_output_dir or os.path.join(log_dir, "videos", "play")
         os.makedirs(video_folder, exist_ok=True)
         if args_cli.record_chase_view:
             stream_video_paths = _build_stream_video_paths(
@@ -677,8 +1146,9 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
             }
             print(f"[INFO] Streaming video to: {stream_video_paths['viewport']}")
     elif args_cli.video:
+        video_folder = args_cli.video_output_dir or os.path.join(log_dir, "videos", "play")
         video_kwargs = {
-            "video_folder": os.path.join(log_dir, "videos", "play"),
+            "video_folder": video_folder,
             "step_trigger": lambda step: step == 0,
             "video_length": args_cli.video_length,
             "disable_logger": True,
@@ -723,6 +1193,14 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     obs = env.get_observations()
     timestep = 0
     empty_follow_frame_count = 0
+    selection_pending = None
+    selection_completed = None
+    selection_reset_counts = None
+    if args_cli.stop_after_continuous_terrain_completions > 0:
+        num_selection_envs = int(env.unwrapped.num_envs)
+        selection_pending = torch.ones(num_selection_envs, dtype=torch.bool, device=env.unwrapped.device)
+        selection_completed = torch.zeros(num_selection_envs, dtype=torch.bool, device=env.unwrapped.device)
+        selection_reset_counts = torch.zeros(num_selection_envs, dtype=torch.long, device=env.unwrapped.device)
     try:
         while simulation_app.is_running():
             start_time = time.time()
@@ -730,7 +1208,52 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
                 actions = policy(obs)
                 if args_cli.zero_actions:
                     actions = torch.zeros_like(actions)
-                obs, _, dones, _ = env.step(actions)
+                obs, rewards, dones, extras = env.step(actions)
+                if reward_trace_recorder is not None:
+                    reward_trace_recorder.append(env.unwrapped, timestep, rewards, dones, actions)
+                if args_cli.print_reset_causes:
+                    _print_replay_reset_causes(timestep, dones, extras, env.unwrapped)
+                if (
+                    selection_pending is not None
+                    and selection_completed is not None
+                    and selection_reset_counts is not None
+                ):
+                    done_terms = getattr(env.unwrapped, "_last_step_done_terms", None)
+                    if isinstance(done_terms, dict):
+                        zeros = torch.zeros_like(selection_pending)
+                        completed_mask = done_terms.get("terrain_column_completed", zeros).to(dtype=torch.bool)
+                        failure_mask = torch.zeros_like(selection_pending)
+                        for failure_key in (
+                            "time_out",
+                            "stuck_timeout",
+                            "low_quality_terrain_hit",
+                            "far_from_target",
+                            "ball_joint_out_of_bounds",
+                            "orientation_out_of_bounds",
+                        ):
+                            value = done_terms.get(failure_key)
+                            if value is not None:
+                                failure_mask |= value.to(dtype=torch.bool)
+                        active_failure = selection_pending & failure_mask & ~completed_mask
+                        selection_reset_counts[active_failure] += 1
+                        exceeded_reset_budget = (
+                            selection_reset_counts > int(args_cli.selection_max_pre_completion_resets)
+                        )
+                        newly_completed = selection_pending & completed_mask & ~failure_mask & ~exceeded_reset_budget
+                        selection_completed |= newly_completed
+                        selection_pending &= ~(newly_completed | exceeded_reset_budget)
+                        completed_count = int(torch.count_nonzero(selection_completed).item())
+                        pending_count = int(torch.count_nonzero(selection_pending).item())
+                        if (
+                            completed_count >= args_cli.stop_after_continuous_terrain_completions
+                            or pending_count == 0
+                        ):
+                            print(
+                                "[INFO] Continuous terrain-completion selection stop: "
+                                f"completed={completed_count} pending={pending_count} step={timestep}",
+                                flush=True,
+                            )
+                            break
                 if parsed_rsl_rl_version >= version.parse("4.0.0"):
                     policy.reset(dones)
                 elif policy_nn is not None:
@@ -770,6 +1293,10 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
                 timestep += 1
                 if args_cli.video_length > 0 and timestep == args_cli.video_length:
                     break
+            else:
+                timestep += 1
+            if args_cli.max_play_steps > 0 and timestep >= args_cli.max_play_steps:
+                break
             sleep_time = dt - (time.time() - start_time)
             if args_cli.real_time and sleep_time > 0:
                 time.sleep(sleep_time)
@@ -778,6 +1305,8 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
             _close_follow_view_stream_recorders(follow_view_recorders)
         if video_writer is not None:
             video_writer.close()
+        if reward_trace_recorder is not None:
+            reward_trace_recorder.close()
     env.close()
 
 

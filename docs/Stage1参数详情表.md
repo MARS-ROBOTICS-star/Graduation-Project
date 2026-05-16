@@ -4,7 +4,7 @@
 
 本文档不展开底层运动学模型公式，不重复说明轮速分配、low-slip 平面命令整形或车轮牵引力矩分配内部推导。2026-05-10 新修改：由于 Stage0 与 Stage1 必须使用同一套机器人底层运动学和驱动配置，本文保留当前 Stage1 与 Stage0 统一后的底层执行参数摘要；当前球铰控制链已取消旧的一阶位置规划器，policy 输出的 $q^d$ 直接进入 PhysX position drive，公式仍以 `docs/stage0_baseline参数详情表.md` 和 `docs/底层运动学轮速分配球铰规划与力矩分配.md` 为准。
 
-当前 Stage1 定义为：`best_baseline5/model_75.pt` 转换 warm-start terrain curriculum 阶段；2026-05-07 起，Stage1 actor 已从直接输入完整 height patch 改为输入 28 维确定性低维地形特征，critic 保留完整 height patch 作为 privileged information。
+当前 Stage1 定义为：history4 terrain curriculum fine-tune 阶段；2026-05-07 起，Stage1 actor 已从直接输入完整 height patch 改为输入 28 维确定性低维地形特征，critic 保留完整 height patch 作为 privileged information。2026-05-14 hardcols 实验后，当前 reward 权重已回退到上一轮 reward-retarget 口径，后续重点转为检查 reward 激活相位和物理定义；当前源码地图已按用户要求恢复为原 `model_50.pt` 对应的 10 列分布：`flat 10% / slope 20% / rough 20% / stairs 30% / obs 20%`。
 
 当前 `complete_car_stage1_cfg.py` 采用本阶段显式配置风格，但只保留 Stage1 直接相关或当前 active 的参数。terrain-column target 不再在 Stage1 配置中显式写入自由 waypoint 采样参数，例如 `commands.goal_distance` 和 `commands.goal_direction_max_deg`。
 
@@ -18,7 +18,7 @@
 
 该 run 使用 `32` env、headless、`700` iterations、`best_baseline_2` warm-start，并启用按地形选择最佳 env 后依次录制 `120 s` chase 视频。2026-04-28 的 GUI run `2026-04-28_18-17-55_stage1_warmstart_best_baseline_2_32env_view_700iter` 已按用户要求在 PPO iteration `18/700` 后停止，只作为历史启动验证记录；当前默认 warm-start 已在 2026-05-10 改为 `best_baseline5/model_75.pt` 的 Stage1 转换版。
 
-注意：上述 run 的 `env.yaml` 是启动时快照。2026-05-02 起，当前源码中的 Stage1 terrain column 映射已调整为第 `0` 列 `flat`，Stage1 源码默认动作映射也已调整为与 Stage0 相同的底盘物理速度输出范围；2026-05-13 起，当前源码中的 Stage1 观测结构已开启 4 帧历史堆叠，actor `328` 维、critic `906` 维。此前已经启动的 run 的 `params/env.yaml` 不会因源码修改自动改变，新启动的 Stage1 run 才会使用下文当前源码配置。
+注意：上述 run 的 `env.yaml` 是启动时快照。2026-05-02 起，当前源码中的 Stage1 terrain column 映射已调整为第 `0` 列 `flat`，Stage1 源码默认动作映射也已调整为与 Stage0 相同的底盘物理速度输出范围；2026-05-13 起，当前源码中的 Stage1 观测结构已开启 4 帧历史堆叠，actor `328` 维、critic `906` 维；2026-05-14 hardcols 实验后，当前源码的 Stage1 10 列映射恢复为 `0 flat`、`1 slope down`、`2 slope up`、`3-4 uneven rough`、`5-7 stairs down`、`8-9 discrete obstacles`。2026-05-16 起，当前源码将 `slope down / slope up` 的坡度系数从 `0.4` 提高到 `0.65`。此前已经启动的 run 的 `params/env.yaml` 不会因源码修改自动改变，新启动的 Stage1 run 才会使用下文当前源码配置。
 
 本文档中的“当前值”默认表示当前源码配置；若某个值来自训练命令覆盖或历史 run 快照，会在说明中单独标明。
 
@@ -77,8 +77,8 @@
 | `terrain.mode` | `generator` | 使用 Stage1 terrain generator |
 | `curriculum.enabled` | `True` | 启用地形课程 |
 | `terrain.measure_heights` | `True` | 生成完整 height patch；actor 使用由 patch 提取的低维地形特征，critic 额外保留完整 patch |
-| `observations.noise.enabled` | `False` | 当前不注入观测噪声 |
-| `randomization.enable_action_randomization` | `False` | 当前不注入 action 随机化 |
+| `observations.noise.enabled` | `False` | 当前默认关闭观测噪声 |
+| `randomization.enable_action_randomization` | `False` | 当前默认关闭 action noise / bias |
 | `sensors.imu.enabled` | `False` | IMU 不参与策略输入 |
 | `sensors.stereo_camera.enabled` | `False` | 双目相机不参与策略输入 |
 | `sensors.lidar.enabled` | `False` | 激光雷达不参与策略输入 |
@@ -102,7 +102,7 @@
 | runner | `OnPolicyRunner` | RSL-RL on-policy runner |
 | `experiment_name` | `complete_car_stage1` | 日志根目录名 |
 | `run_name` | `""` | Stage1 PPO cfg 默认 run 名；当前 headless 命令用 `--run_name` 覆盖 |
-| 当前命令 `run_name` 覆盖 | `stage1_warmstart_best_baseline5_model75_128env_700iter` | 推荐的新一轮 headless warm-start run 名 |
+| 当前命令 `run_name` 覆盖 | `stage1_h4_m50_stronger_rear_support_antidive_96env_200iter_20260513` | 当前 `model_50.pt` stronger rear-support / anti-dive fine-tune run 名 |
 | `load_run` | `warmstart_best_baseline5_model75_terrain_features` | Stage1 PPO cfg 默认 warm-start run 选择器 |
 | `load_checkpoint` | `model_0.pt` | Stage1 PPO cfg 默认 warm-start checkpoint |
 | `seed` | `1` | 随机种子 |
@@ -114,6 +114,8 @@
 | `obs_groups` | `actor: ["actor"], critic: ["critic"]` | actor / critic 分别读取同名观测组 |
 | `clip_actions` | `None` | wrapper 层不再额外 clip action |
 | `check_for_nan` | `True` | PPO 检查 NaN |
+
+当前 Stage1 PPO 默认配置已按最新训练口径改为 `learning_rate = 5.0e-5`；Stage0 仍继承 Base PPO 默认 `learning_rate = 1.0e-4`。
 
 ### 2.2 网络结构
 
@@ -137,7 +139,7 @@
 |---|---:|
 | `num_learning_epochs` | `5` |
 | `num_mini_batches` | `16` |
-| `learning_rate` | `1.0e-4` |
+| `learning_rate` | `5.0e-5` |
 | `adam_eps` | `1.0e-5` |
 | `schedule` | `adaptive` |
 | `gamma` | `0.99` |
@@ -175,10 +177,23 @@ Stage0 checkpoint 不能直接作为 Stage1 resume 使用，因为 actor / criti
 
 当前推荐使用 `warmstart_best_baseline5_model75_terrain_features/model_0.pt`。该 checkpoint 来源于当前 `preserve_order=True` 和 direct-target 球铰控制口径下选出的 `best_baseline5/model_75.pt`，因此转换时只扩展 Stage1 观测维度，不应用旧 `best_baseline_2` 的 ball joint / wheel joint 输入、输出和 obs normalizer 通道重排。旧 `warmstart_best_baseline_2/model_0.pt` 是 `632` 维结构，不能用于当前新观测结构；旧 `warmstart_best_baseline_2_terrain_features/model_0.pt` 未修正 joint 通道顺序，不建议继续作为当前 Stage1 默认 warm-start；`warmstart_best_baseline_2_terrain_features_orderfix_io/model_0.pt` 和 `warmstart_best_baseline4_model375_terrain_features/model_0.pt` 仅保留为历史稳定性对照。
 
+2026-05-13 当前 stronger rear-support / anti-dive fine-tune 采用上一轮 history4 同维 checkpoint warm-start：
+
+- 来源 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-13_16-16-08_stage1_h4_m625_reward_retarget_rear_finetune_96env_200iter_20260513`
+- 来源 checkpoint：`model_50.pt`
+- 加载方式：`--resume --warmstart --load_run 2026-05-13_16-16-08_stage1_h4_m625_reward_retarget_rear_finetune_96env_200iter_20260513 --checkpoint model_50.pt`
+- 语义：只加载 actor / critic，不加载 optimizer 和旧 iteration；用于保留上一轮 `model_50.pt` 中 stairs 与 obstacles 同时处于较高 row 的行为，再以较小学习率强化后车支撑、抗俯冲和边缘减速。
+
 当前 headless warm-start 训练命令口径：
 
 ```bash
 python scripts/train.py --task CompleteCar-Stage1 --headless --device cuda:0 --num_envs 128 --resume --warmstart --load_run warmstart_best_baseline5_model75_terrain_features --checkpoint model_0.pt --max_iterations 700 --run_name stage1_warmstart_best_baseline5_model75_128env_700iter
+```
+
+当前 `model_50.pt` stronger rear-support / anti-dive fine-tune 训练命令口径：
+
+```bash
+python scripts/train.py --task CompleteCar-Stage1 --headless --device cuda:0 --num_envs 96 --resume --warmstart --load_run 2026-05-13_16-16-08_stage1_h4_m625_reward_retarget_rear_finetune_96env_200iter_20260513 --checkpoint model_50.pt --max_iterations 200 --learning_rate 5e-5 --run_name stage1_h4_m50_stronger_rear_support_antidive_96env_200iter_20260513
 ```
 
 ### 2.5 Stage1 回放列选择
@@ -289,22 +304,22 @@ $$
 
 因此 $\omega_z^d \in [-2.0, 2.0]\ \mathrm{rad/s}$。
 
-球铰动作按默认零位、lower limit、upper limit 映射成目标姿态。当前受控球铰顺序为：
+球铰动作按默认零位、action lower limit、action upper limit 映射成目标姿态。当前受控球铰顺序为：
 
 | 序号 | 关节名 | lower | upper |
 |---:|---|---:|---:|
 | 1 | `spm1_platform_joint_z` | `-0.7` | `0.7` |
-| 2 | `spm1_platform_joint_y` | `-1.6` | `0.5` |
+| 2 | `spm1_platform_joint_y` | `-0.8` | `0.5` |
 | 3 | `spm1_platform_joint_x` | `-0.5` | `0.5` |
 | 4 | `spm2_platform_joint_z` | `-0.7` | `0.7` |
-| 5 | `spm2_platform_joint_y` | `-1.6` | `0.5` |
+| 5 | `spm2_platform_joint_y` | `-1.0` | `0.8` |
 | 6 | `spm2_platform_joint_x` | `-0.5` | `0.5` |
 
-本文档到这里为止只记录 policy 输出接口。动作进入底层执行链后的具体运动学和力矩分配公式不在本文档范围内。
+本文档到这里为止只记录 policy 输出接口。当前 `spm2_platform_joint_y` 的 action 映射上限为 `0.8 rad`，终止上限为 `0.9 rad`；二者仍保留独立配置字段。动作进入底层执行链后的具体运动学和力矩分配公式不在本文档范围内。
 
 ### 4.1 与 Stage0 统一的底层执行参数
 
-2026-05-12 恢复：Stage0 和 Stage1 的底层球铰、车轮控制参数仍保持统一。球铰执行链已按用户要求改回 direct target：`q_target = clamp(q_desired)`；轮速分配所需姿态变化率使用实际球铰角速度低通 `qdot_alloc`。
+2026-05-15 当前：Stage0 和 Stage1 的底层球铰、车轮控制参数重新统一为 `20.0 N*m` 车轮力矩上限。球铰执行链已按用户要求改回 direct target：`q_target = clamp(q_desired)`；轮速分配所需姿态变化率使用实际球铰角速度低通 `qdot_alloc`。
 
 | 参数 | 当前值 | 说明 |
 |---|---:|---|
@@ -445,15 +460,37 @@ origin 的 z 坐标取 tile 中心区域高度的非负最大值，用于 reset 
 | `8` | `discrete obstacles` | `step` |
 | `9` | `discrete obstacles` | `step` |
 
-当前 `terrain_dict` 只保留上述 6 个实际采样地形：`flat`、`slope down`、`slope up`、`uneven rough`、`stairs down`、`discrete obstacles`。旧的 `stairs up`、`hurdle`、`gap`、`ramp`、`beam`、`new stairs down`、`pit` 已从默认 `terrain_dict` 移除；对应 tile 生成函数仍保留为手动实验入口，但不会进入当前 Stage1 默认训练列。
+当前恢复后的 `terrain_dict` 保留实际采样地形：`flat`、`slope down`、`slope up`、`uneven rough`、`stairs down`、`discrete obstacles`，对应比例为 `10% / 10% / 10% / 20% / 30% / 20%`。`stairs up`、`hurdle`、`gap`、`ramp`、`beam`、`new stairs down`、`pit` 不进入当前 Stage1 默认训练列；对应 tile 生成函数仍保留为手动实验入口。
 
-当前 `discrete obstacles` 最大障碍高度公式为：
+当前 `slope down / slope up` 坡度公式为：
+
+$$
+s_{\mathrm{slope}} = 0.65 \cdot \frac{row}{num\_rows}
+$$
+
+其中 `slope down` 使用负号，`slope up` 使用正号。在 `num_rows = 20` 下，最高 `row 19` 的坡度约为 `0.6175`，对应坡角约 `31.7°`；旧源码系数为 `0.4`，最高 `row 19` 坡角约 `20.8°`。
+
+当前 `stairs down` 单级台阶高度公式为：
+
+$$
+h_{\mathrm{step}} = 0.05 + 0.13 \cdot \frac{row}{num\_rows - 1}
+$$
+
+在 `num_rows = 20`、`vertical_scale = 0.005 m` 口径下，最高 `row 19` 的实际单级台阶高度为 `0.18 m`。
+
+`discrete obstacles` 最大障碍高度公式历史上曾使用：
 
 $$
 h_{\mathrm{obs,max}} = 0.05 + 0.17 \cdot \mathrm{difficulty}
 $$
 
-在 `vertical_scale = 0.005 m` 量化后，最高 `row 19` 的实际最大障碍高度为 `0.21 m`。
+2026-05-15 为降低 obs 高 row 难度，当前源码已改为：
+
+$$
+h_{\mathrm{obs,max}} = 0.05 + 0.1159 \cdot \mathrm{difficulty}
+$$
+
+其中 `difficulty = row / 20`。在 `vertical_scale = 0.005 m` 量化后，最高 `row 19` 的实际最大障碍高度 / 坑深为 `0.16 m`。
 
 ## 7. Curriculum 与 reset
 
@@ -463,19 +500,22 @@ $$
 |---|---:|---|
 | `curriculum.enabled` | `True` | 启用课程 |
 | `curriculum.max_init_terrain_level` | `5` | 默认初始 row 从 `0-5` 随机 |
-| `curriculum.initial_min_terrain_level_by_name["stairs down"]` | `1` | `stairs down` 初始 row 不低于 `1` |
-| `curriculum.initial_min_terrain_level_by_name["discrete obstacles"]` | `1` | `discrete obstacles` 初始 row 不低于 `1` |
-| `curriculum.initial_max_terrain_level_by_name["stairs down"]` | `1` | `stairs down` 初始 row 限制为 `1` |
-| `curriculum.initial_max_terrain_level_by_name["discrete obstacles"]` | `2` | `discrete obstacles` 初始 row 限制为 `1-2` |
+| `curriculum.initial_min_terrain_level_by_name["stairs down"]` | `0` | `stairs down` 初始 row 不低于 `0` |
+| `curriculum.initial_min_terrain_level_by_name["discrete obstacles"]` | `0` | `discrete obstacles` 初始 row 不低于 `0` |
+| `curriculum.initial_max_terrain_level_by_name["stairs down"]` | `4` | `stairs down` 初始 row 不高于 `4` |
+| `curriculum.initial_max_terrain_level_by_name["discrete obstacles"]` | `4` | `discrete obstacles` 初始 row 限制为 `4` |
 | `curriculum.default_terrain_name` | `flat` | 默认地形名，仅用于初始化检查和默认类型索引 |
 | `curriculum.terrain_column_recycle_completed_envs` | `True` | 最高 row 完成后的 env 不永久闲置，而是回收到剩余未完成地形列 |
-| `curriculum.terrain_column_completed_retention_ratio` | `0.40` | 【本次新增】已完成 / retired 列保留采样目标比例；回收时优先让约 40% env 留在 completed 列低 row |
+| `curriculum.terrain_column_completed_retention_ratio` | `0.20` | 已完成 / retired 列保留采样目标比例；普通 completed 列按初始 row 采样，hard-window completed 列按 completed hard-window 起点采样 |
+| `curriculum.terrain_column_stop_when_all_completed` | `False` | 所有列达到 completed-column 判定后不自动停止训练 |
+| `curriculum.terrain_column_hard_completion_names` | `stairs down`, `discrete obstacles` | 需要重复 max-row success 才标记为 completed-column 的 hard 地形名 |
+| `curriculum.terrain_column_hard_completion_success_count` | `100` | hard column 累计 `100` 次 max-row success 后才标记为 completed-column |
 
 初始化时：
 
 - `flat`、`slope down`、`slope up`、`uneven rough` 仍按默认 `0-5` 均匀随机采样。
-- `stairs down` 固定从 row `1` 开始，不再采样 row `0`。
-- `discrete obstacles` 按 `1-2` 均匀随机采样，不再采样 row `0`。
+- `stairs down` 初始从 row `0-4` 均匀随机开始，保留从低 row 逐步爬到高 row 的学习阶段。
+- `discrete obstacles` 初始从 row `0-4` 均匀随机开始，之后由 hard-window recycle 继续集中训练从指定 obs 起点推进到高 row 的窗口。
 - `terrain_types` 按 env id 均匀分配到 `0-9` 全部地形列。
 - `scene.env_origins` 同步到每个 env 当前 row / column 对应 tile origin。
 
@@ -483,9 +523,19 @@ $$
 
 | 参数 | 当前值 | 含义 |
 |---|---:|---|
-| `curriculum.terrain_column_move_down_progress_ratio` | `0.30` | reset 时若当前目标段进度低于 30%，则当前 row 退一级 |
+| `curriculum.terrain_column_move_down_progress_ratio` | `0.30` | reset 时若当前目标段进度低于 30%，允许回退到本 env 的 row 地板，但不允许低于已命中过目标后的最高 row |
 | `curriculum.terrain_column_recycle_completed_envs` | `True` | 完成 env 动态回收到剩余未完成列 |
-| `curriculum.terrain_column_completed_retention_ratio` | `0.40` | 【本次新增】完成列不再完全退出训练；回收候选中优先补足约 40% env 到 completed / retired 列低 row |
+| `curriculum.terrain_column_completed_retention_ratio` | `0.20` | 完成列不再完全退出训练；回收候选中优先补足约 20% env 到 completed / retired 列低 row |
+| `curriculum.terrain_column_stop_when_all_completed` | `False` | 即使所有 column 都满足 completed-column 计数，也继续训练到 PPO 指定 iteration |
+| `curriculum.terrain_column_hard_completion_success_count` | `100` | `stairs down` / `discrete obstacles` 每列累计 `100` 次最高 row 通过后才进入 completed-column；该值只是课程暴露门槛，不等价于稳定习得 |
+| `curriculum.terrain_column_full_pass_completion_columns` | `(8, 9)` | 历史字段名；当前表示默认 hard-window repeat completion 列，对应 `discrete obstacles` 两列 |
+| `curriculum.terrain_column_full_pass_start_level` | `4` | 默认 hard-window recycle 起点 row，当前用于 `col08/col09` |
+| `curriculum.terrain_column_full_pass_success_count` | `100` | 默认 hard-window success 次数，当前用于 `col08/col09` |
+| `curriculum.terrain_column_full_pass_start_level_by_name["stairs down"]` | `14` | `stairs down` 第一次高 row success 后的 hard-window recycle 起点 row |
+| `curriculum.terrain_column_full_pass_success_count_by_name["stairs down"]` | `100` | `stairs down` hard-window success 次数覆盖值 |
+| `curriculum.terrain_column_completed_hard_window_start_level` | `4` | hard-window completed 列完成后继续训练时的默认起点 row，当前用于 obs completed 后保持 `row4+` |
+| `curriculum.terrain_column_completed_hard_window_start_level_by_name["stairs down"]` | `14` | `stairs down` completed 后继续保持 `row14+` 训练 |
+| `curriculum.terrain_column_completed_hard_window_start_level_by_name["discrete obstacles"]` | `4` | `discrete obstacles` completed 后从 `row4+` retention window 继续反复训练 |
 | `curriculum.move_up_distance_ratio` | `0.50` | 继承自共享配置；普通 waypoint curriculum 使用，Stage1 terrain-column 不使用该字段判断升级 |
 | `curriculum.move_up_uses_forward_x` | `False` | 继承自共享配置；Stage1 terrain-column 不使用该字段判断升级 |
 | `curriculum.move_down_command_ratio` | `0.50` | 继承自共享配置；普通 waypoint curriculum 使用，Stage1 terrain-column 不使用该字段判断降级 |
@@ -495,7 +545,8 @@ Stage1 terrain-column 目标的 row 推进发生在 episode 内，而不是 rese
 - 若当前目标点被命中，所有地形的 terrain level 加 `1`；`stairs_down` 和 `discrete obstacles` 不再由 quality gate 阻止 row 推进。
 - row 推进后，`scene.env_origins` 同步到新 row / 同 column 的 tile origin。
 - row 推进后立刻重采样下一目标点。
-- 若推进会进入没有合法下一目标的最高 row 区域，本段记为 `terrain_column_completed`，本 step 作为终止结束；reset 时不再重新采样低 row。
+- row 推进后同步更新该 env 的 `terrain_level_floor`。后续如果新 row 失败，reset 只能回到这个地板 row，不能退回命中目标前的旧 row。
+- 若推进会进入没有合法下一目标的最高 row 区域，本段记为 `terrain_column_completed`，本 step 作为终止结束；reset 时进入 completed-column recycle，而不是把一次连续 attempt 的成败作为额外判据。
 - 若 hard terrain 低质量命中目标，本步仍按普通命中逻辑触发 row 推进；`row_advance_without_quality_rate` 用于记录这种“低质量但已晋级”的比例。
 - 若 episode 因 far、球铰越界或 timeout 结束，本步不会触发 row 推进。
 
@@ -516,20 +567,28 @@ $$
 
 reset 时的 terrain level 更新逻辑为：
 
-- 若 `terrain_column_completed=True`，terrain level 保持在当前最高有效 source row，不再回到低 row 重新采样。
+- 若 `terrain_column_completed=True`，该 env 会作为回收候选进入 completed-column recycle；新的 row 由回收目标列决定，而不是固定保持在最高 row。
 - 若由于旧状态或手动设置导致当前 row 已超过最高有效 source row，则只夹紧到最高有效 source row，不进行低 row 重采样。
-- 若 episode 因 `far_from_target`、`ball_joint_out_of_bounds` 或 `time_out` 结束，且没有命中目标，同时 $p_{\mathrm{row}} < 0.30$，则 terrain level 减 `1`，但不会低于该地形的最小初始 row；因此 step 类地形不会退回 row `0`。
+- 若 episode 因 `far_from_target`、`ball_joint_out_of_bounds`、`time_out` 或 `stuck_timeout` 结束，且没有命中目标，同时 $p_{\mathrm{row}} < 0.30$，则 terrain level 只在高于 `terrain_level_floor` 时减 `1`。
+- `terrain_level_floor` 初始化为该地形的最小初始 row；每次命中目标并推进 row 后更新为新 row。也就是说，已经吃到目标点证明通过的 row 不再被 reset 逻辑撤销。
+- 若 reset 尝试降级但当前 row 已等于 `terrain_level_floor`，记录 `terrain/move_down_suppressed_by_floor_ratio`，terrain level 保持不变。
 - 若 episode 失败/超时但 $p_{\mathrm{row}} \ge 0.30$，保持当前 row 不变，让策略继续在当前难度练习。
 
 最高 row 完成后的训练样本处理：
 
 - 当 env 触发 `terrain_column_completed=True` 时，该完成 step 仍作为当前 episode 的 terminal transition 写入一次训练样本。
-- 每个 terrain column 维护完成计数，完成目标数等于训练初始化时该列分到的 env 数；某列累计完成次数达到该目标数后，该列才标记为已完成。
-- reset 时，完成 env 不再永久 retired；若仍存在未完成 terrain column，回收候选会先检查 completed / retired 列上的 active env 数是否达到 `ceil(num_envs * 0.40)`。
-- 若 completed / retired 列 active env 数低于 40% 目标，新的回收候选优先分配回已完成列，并用 `sample_initial_terrain_levels()` 返回低 row 继续采样；因此 `flat` / `slope` / `rough` 等早完成地形不会在训练后期完全消失。
-- 若 completed / retired 列 active env 数已经达到 40% 目标，其余回收候选继续按当前 active env 数均衡分配到剩余未完成列；若后期只剩 `5-7 stairs down` 和 `8-9 discrete obstacles`，未完成列内部仍按 5 个剩余列近似均分，对应地形大类比例约为 `3:2`。
-- 回收到未完成列的 env，新 row 仍从目标列当前 active env 的 row 分布中采样，使新增样本直接加入该列当前训练难度附近，而不是从低 row 重新开始。
-- 若已经没有任何未完成 terrain column，完成 env 才保持 inactive，后续 `train_mask=False`；runner 在当前 rollout/update 结束后停止训练并保存最终模型。
+- 每个 terrain column 维护完成计数。普通列的完成目标数仍等于训练初始化时该列分到的 env 数；`stairs down` 与 `col08/col09 discrete obstacles` 每个 hard column 统一需要 `100` 次最高 row success。某列累计完成次数达到该目标数后，该列才标记为已完成。
+- reset 时，完成 env 不再永久 retired；若仍存在未完成 terrain column，回收候选会先检查 completed / retired 列上的 active env 数是否达到 `ceil(num_envs * 0.20)`。
+- 若 completed / retired 列 active env 数低于 20% 目标，新的回收候选优先分配回已完成列。普通 completed 列用 `sample_initial_terrain_levels()` 继续采样；hard-window completed 列不再回低 row，而是从 completed hard-window 起点采样。
+- 若 completed / retired 列 active env 数已经达到 20% 目标，其余回收候选继续按当前 active env 数均衡分配到剩余未完成列；恢复原地图后，hard 地形列为 `5-7 stairs down` 和 `8-9 discrete obstacles`。
+- 回收到未完成列的 env，默认从目标列当前 active env 的 row 分布中采样，使新增样本加入该列当前训练难度附近；该 sampled row 同时成为该 env 的新 `terrain_level_floor`。
+- 对 hard-window completion 列有两个窗口：
+  - 未完成时的 hard-window 起点：如果该列已经有过至少 `1` 次最高 row success，后续回收到该列的 env 会固定回到窗口起点；`stairs down` 为 `row14`，`col08/col09 discrete obstacles` 为 `row4`。
+  - 完成后的 hard-window 起点：该列达到 completed-column 后，后续 retention / recycle 不再回普通低 row；`stairs down` 从 `row14` 继续采样，`discrete obstacles` 从 `row4` 继续采样。
+- 因此当前 `stairs down` 的语义是：先从 `row0-4` 随机低 row 学到第一次最高 row success；之后该列反复从 `row14` 训练到最高 row，累计 `100` 次后 completed；completed 后仍从 `row14` 继续保持训练。中途 reset 不会把一条连续 chain 判废，只会按 row floor / move-down / recycle 规则继续采样。
+- 当前 `discrete obstacles` 的语义是：初始从 `row0-4` 随机开始；hard-window repeat 和 completed 后 retention 都从 `row4` 起步，累计 `100` 次 max-row success 后 completed。
+- 2026-05-15 之后，日志额外记录 max-row 稳定性指标：`max_row_attempt_count`、`recent_max_row_attempt_count`、`recent_max_row_success_rate`、`success_per_attempt`、`recent_success_per_attempt`、`consecutive_max_row_success`、`max_row_success_with_quality_count`。其中 recent 窗口为最近 `100` 次 max-row attempt，用于区分“时间堆出的累计成功”和“近期稳定通过能力”。
+- 若已经没有任何未完成 terrain column，当前默认不再把 env park 成 inactive，也不再让 runner 自动停止；reset 出来的 env 会继续分配到 completed columns。普通列优先从同类 active env 的 row 分布采样，hard-window completed 列强制回到 completed hard-window 起点，从而保持 hard terrain 训练窗口。
 - `Stage1Eval/*` 默认只统计 `train_mask=True` 的 active env，并额外输出 `Stage1Eval/global/train_active_rate`、`train_retired_rate`、`train_sample_rate`、`completed_column_rate`、`unfinished_column_count`、`recycled_env_ever_rate`、`completed_column_retention_target_rate`、`completed_column_active_rate`、`completed_column_active_ratio_of_active`、`active_envs_per_completed_column_mean` 和 `active_envs_per_unfinished_column_mean`。
 
 ### 7.3 reset 初值
@@ -623,7 +682,7 @@ $$
 | `observations.use_history` | `True` | 使用 actor 观测历史堆叠 |
 | `observations.history_length` | `4` | 4 帧 actor 观测历史 |
 | `observations.terrain_feature_height_scale_m` | `0.25 m` | 地形高度类特征进入 actor 前的归一化尺度 |
-| `observations.noise.enabled` | `False` | 当前不注入观测噪声 |
+| `observations.noise.enabled` | `False` | 当前默认关闭观测噪声 |
 | `observations.wheel_slip_epsilon` | `0.1` | 纵滑 / 侧滑计算的低速分母保护 |
 | `observations.wheel_slip_angle_clip_rad` | `pi / 2` | 侧滑角 clip 范围 |
 
@@ -1060,28 +1119,24 @@ Stage1 当前 reward 计算仍复用共享 reward 主干。按照 `docs/优化�
 1. `distance_to_target`
 2. `progress_to_target`
 3. `reached_target`
-4. `far_from_target`
-5. `angle_diff`
-6. `slip_penalty`
-7. `action_rate_penalty`
-8. `contact_support_penalty`
-9. `terrain_aware_edge_speed_penalty`
-10. `stuck_penalty`
-11. `no_progress_penalty`
-12. `airborne_spin_penalty`
-13. `hard_terrain_spin_penalty`
-14. `step_up_front_posture_penalty`
-15. `step_up_module_progress_reward`
-16. `rear_follow_reward`
-17. `rear_follow_penalty`
-18. `quality_row_advance_reward`
-19. `recovery_reward`
-20. `drop_anti_dive_penalty`
+4. `angle_diff`
+5. `slip_penalty`
+6. `action_rate_penalty`
+7. `contact_support_penalty`
+8. `terrain_aware_edge_speed_penalty`
+9. `stuck_penalty`
+10. `no_progress_penalty`
+11. `airborne_spin_penalty`
+12. `hard_terrain_spin_penalty`
+13. `step_up_front_posture_penalty`
+14. `step_up_module_progress_reward`
+15. `rear_follow_reward`
+16. `rear_follow_penalty`
+17. `quality_row_advance_reward`
+18. `recovery_reward`
+19. `drop_anti_dive_penalty`
 
-当前权重为 `0.0`、只保留源码实现或日志诊断的项：
-
-- `edge_speed_penalty`
-- `action_soft_limit_penalty`
+2026-05-14 已删除三个不再提供有效训练信号的 reward 项：`far_from_target` 不再作为 reward，只保留终止保护；旧版 `edge_speed_penalty` 已由 `terrain_aware_edge_speed_penalty` 替代；`action_soft_limit_penalty` 在动作已有 hard clamp 后删除。
 
 `reached_target` 已启用，参数与 Stage0 相同。`action_rate_penalty` 已在 Stage1 启用，用 episode 最大步数归一化。`slip_penalty` 当前使用底层接触权重 mask。`contact_support_penalty` 使用 terrain gate 在平地 / 粗糙、上台阶、下台阶 / gap 之间切换支撑约束。`terrain_aware_edge_speed_penalty` 与执行链路中的 terrain-gated speed hard clamp 配套，用于惩罚台阶 / gap 前的原始命令超速和实际车速超速。
 
@@ -1097,12 +1152,15 @@ Stage1 当前 reward 计算仍复用共享 reward 主干。按照 `docs/优化�
 - 【新增】`quality_row_advance_reward`，只奖励有质量地推进到下一 row。
 - 【新增】`recovery_reward` 和 recovery 状态机，允许离散障碍卡住后短时倒车调整，成功重新推进时给正反馈。
 - 【修改】`quality_gated_terrain_advance` 当前默认关闭，hard terrain 命中目标后按普通逻辑 row advance / completed；质量相关指标只作为 reward / diagnostics，不再作为课程晋级硬门槛。
-- 【修改】`step_up_module_progress_reward` 从单步高度差改为“当前 row 内累计新增模块进展”，并将权重从 `1.0` 提高到 `10.0`。
-- 【修改】模块进展权重从偏中车的 `0.2 / 0.5 / 0.3` 改为 `front=0.15, middle=0.35, rear=0.50`，使后车跟随成为 stairs down 的主导约束之一。
-- 【修改】上台阶支撑缺失惩罚从偏中车改为 `mid=0.4, rear=0.6`。
+- 【修改】`step_up_module_progress_reward` 从单步高度差改为“当前 row 内累计新增模块进展”；2026-05-14 已将权重回退到上一轮 reward-retarget 口径 `40.0`，模块进展比例回退为 `front=0.15, middle=0.35, rear=0.50`。当前判断是问题主要在 reward 激活和设计，而不是继续加大该权重。
+- 【修改】上台阶支撑缺失惩罚回退到 `-20.0`，支撑缺失比例回退为 `mid=0.4, rear=0.6`。
 - 【修改】`step_up_front_posture_penalty_weight` 从 `-5.0` 提高到 `-12.0`。
-- 【修改】`terrain_aware_edge_speed_penalty` 中 actual overspeed 系数从固定 `0.5` 改为 `terrain_actual_overspeed_penalty_ratio = 2.0`。
-- 【修改】`drop_anti_dive_penalty` 增加下坑 latch，相位激活后直到前轮稳定接触并满足 pitch rate / 下落速度释放条件才退出；权重从 `-10.0` 提高到 `-40.0`。
+- 【修改】2026-05-14 根据 replay trace 诊断，`step_up_posture_weight` 去掉 `target_ahead` 强门槛，不再由 `commands[:,0] > 0.5 m` 决定前车是否需要抬升；当前前车姿态约束只由 `g_step_up` 和地形距离相位窗口决定。
+- 【修改】2026-05-14 根据 replay trace 诊断，`rear_follow_reward` 去掉 `target_ahead` 强门槛，并拆成“后车追赶高度进展奖励”和“后车已跟上且有后轮支撑的保持奖励”；追赶奖励不再要求 rear support，保持奖励仍要求后轮支撑；新增诊断 `rear_follow_progress_reward_raw`、`rear_follow_hold_reward_raw` 和 `rear_follow_hold_score`。
+- 【修改】2026-05-14 根据 replay trace 诊断，将 recovery 从“卡住后倒退轻罚 + 距离减少 `0.10 m` 才成功”改为三段式恢复动作链：检测卡住后进入 recovery；激活后 `1.0 s` 内的小幅倒退给正奖励；已经倒退过并且 no-progress 解除、重新产生前向进展或目标距离下降时给明显成功奖励。
+- 【修改】`terrain_aware_edge_speed_penalty` 中 actual overspeed 系数从固定 `0.5` 改为可配置项；2026-05-14 已回退到上一轮 reward-retarget 口径：`terrain_actual_overspeed_penalty_ratio = 3.0`，总权重为 `-80.0`。
+- 【修改】2026-05-13 reward fine-tune 将 `progress_to_target_relax_radius_m` 收紧为 `0.6 m`，并提高 `distance_to_target_weight = 10.0`、`angle_diff_weight = 14.0`，用于减少 obstacles 目标附近绕弯 / 倒退后再吃点的行为。
+- 【修改】`drop_anti_dive_penalty` 增加下坑 latch，相位激活后直到前轮稳定接触并满足 pitch rate / 下落速度释放条件才退出；2026-05-14 权重回退到 `-40.0`。
 - 【修改】quality 评价拆成严格的 `quality_gate_score` 和加权型 `motion_quality_score`；`quality_gated_terrain_advance` 仍保持关闭。
 
 ### 10.1 reward 参数
@@ -1111,16 +1169,15 @@ Stage1 当前 reward 计算仍复用共享 reward 主干。按照 `docs/优化�
 |---|---:|
 | `target_position_tolerance` | `0.5 m` |
 | `distance_to_target_denominator_scale` | `0.01` |
-| `distance_to_target_weight` | `6.0` |
+| `distance_to_target_weight` | `10.0` |
 | `nominal_goal_distance_m` | `8.0 m` |
 | `progress_to_target_clip_m` | `0.25 m` |
-| `progress_to_target_relax_radius_m` | `4.0 m` |
+| `progress_to_target_relax_radius_m` | `0.6 m` |
 | `progress_to_target_weight` | `8.0` |
 | `reached_target_base_reward` | `2.0` |
 | `reached_target_weight` | `6.0` |
 | `far_from_target_margin` | `3.0 m` |
-| `far_from_target_weight` | `-2.0` |
-| `angle_diff_weight` | `6.0` |
+| `angle_diff_weight` | `14.0` |
 | `slip_penalty_weight` | `-2.0` |
 | `slip_longitudinal_penalty_ratio` | `2.0` |
 | `slip_angle_penalty_ratio` | `1.0` |
@@ -1132,11 +1189,9 @@ Stage1 当前 reward 计算仍复用共享 reward 主干。按照 `docs/优化�
 | `contact_support_lr_balance_ratio` | `0.15` |
 | `step_up_support_mid_ratio` | `0.4` |
 | `step_up_support_rear_ratio` | `0.6` |
-| `edge_speed_penalty_weight` | `0.0` |
 | `edge_height_low_threshold_m` | `0.04 m` |
 | `edge_height_high_threshold_m` | `0.10 m` |
-| `edge_speed_limit_mps` | `0.5 m/s` |
-| `terrain_aware_edge_speed_penalty_weight` | `-20.0` |
+| `terrain_aware_edge_speed_penalty_weight` | `-80.0` |
 | `stuck_penalty_weight` | `-3.0` |
 | `stuck_gate_threshold` | `0.3` |
 | `stuck_speed_threshold_mps` | `0.10 m/s` |
@@ -1152,31 +1207,31 @@ Stage1 当前 reward 计算仍复用共享 reward 主干。按照 `docs/优化�
 | `hard_terrain_spin_speed_threshold_mps` | `0.40 m/s` |
 | `hard_terrain_spin_slip_threshold` | `3.0` |
 | `hard_terrain_spin_slip_scale` | `3.0` |
-| `action_soft_limit_penalty_weight` | `0.0` |
-| `action_soft_limit_threshold` | `0.8` |
 | `step_up_front_posture_penalty_weight` | `-12.0` |
-| `front_pitch_height_gain_rad_per_m` | `2.5` |
-| `front_pitch_max_ref_rad` | `0.25 rad` |
+| `front_pitch_height_gain_rad_per_m` | `3.0` |
+| `front_pitch_max_ref_rad` | `0.30 rad` |
 | `front_pitch_sigma_rad` | `0.20 rad` |
 | `step_up_approach_distance_min_m` | `0.20 m` |
 | `step_up_approach_distance_max_m` | `1.20 m` |
-| `step_up_posture_front_gap_start_m` | `0.60 m` |
-| `step_up_posture_front_gap_full_m` | `0.15 m` |
-| `step_up_goal_ahead_threshold_m` | `0.5 m` |
+| `step_up_posture_front_gap_start_m` | `0.90 m` |
+| `step_up_posture_front_gap_full_m` | `0.25 m` |
+| `step_up_goal_ahead_threshold_m` | `0.5 m`，当前不再控制 `step_up_posture_weight` / `rear_follow_reward` |
 | `step_up_progress_quality_min_multiplier` | `0.2` |
 | `progress_quality_slip_scale` | `4.0` |
 | `progress_quality_pitch_rate_sigma_radps` | `1.0 rad/s` |
 | `progress_quality_stuck_time_scale_s` | `2.0 s` |
-| `step_up_module_progress_reward_weight` | `10.0` |
+| `step_up_module_progress_reward_weight` | `40.0` |
 | `step_up_module_height_progress_scale_m` | `0.05 m` |
 | `step_up_module_progress_front_ratio` | `0.15` |
 | `step_up_module_progress_middle_ratio` | `0.35` |
 | `step_up_module_progress_rear_ratio` | `0.50` |
 | `rear_follow_reward_weight` | `8.0` |
-| `rear_follow_penalty_weight` | `-12.0` |
+| `rear_follow_penalty_weight` | `-36.0` |
 | `rear_follow_progress_scale_m` | `0.03 m` |
 | `rear_follow_deficit_scale_m` | `0.05 m` |
 | `rear_follow_front_middle_threshold_m` | `0.03 m` |
+| `rear_follow_hold_min_score` | `0.70` |
+| `rear_follow_hold_reward_ratio` | `0.25` |
 | `quality_row_advance_reward_weight` | `1.0` |
 | `quality_row_advance_min_score` | `0.3` |
 | `quality_gated_terrain_advance` | `False` |
@@ -1187,12 +1242,16 @@ Stage1 当前 reward 计算仍复用共享 reward 主干。按照 `docs/优化�
 | `quality_advance_front_progress_threshold_m` | `0.03 m` |
 | `quality_advance_middle_progress_threshold_m` | `0.03 m` |
 | `quality_advance_rear_progress_threshold_m` | `0.02 m` |
-| `terrain_actual_overspeed_penalty_ratio` | `2.0` |
+| `terrain_actual_overspeed_penalty_ratio` | `3.0` |
 | `recovery_stuck_time_threshold_s` | `0.5 s` |
 | `recovery_reverse_cmd_threshold_mps` | `0.05 m/s` |
-| `recovery_success_progress_m` | `0.10 m` |
-| `recovery_reverse_penalty_weight` | `-0.2` |
-| `recovery_success_reward_weight` | `0.5` |
+| `recovery_reverse_reward_window_s` | `1.0 s` |
+| `recovery_min_reverse_time_s` | `0.10 s` |
+| `recovery_success_step_progress_m` | `0.005 m` |
+| `recovery_success_progress_m` | `0.03 m` |
+| `recovery_success_forward_speed_mps` | `0.08 m/s` |
+| `recovery_reverse_reward_weight` | `0.2` |
+| `recovery_success_reward_weight` | `1.0` |
 | `drop_anti_dive_penalty_weight` | `-40.0` |
 | `drop_guard_gate_threshold` | `0.3` |
 | `drop_guard_release_front_support` | `0.7` |
@@ -1214,9 +1273,9 @@ Stage1 当前 reward 计算仍复用共享 reward 主干。按照 `docs/优化�
 | `low_slip_angle_threshold_rad` | `0.35 rad` |
 | `only_positive_rewards` | `False` |
 
-说明：`step_up_front_posture_penalty_weight = -12.0` 继续保留；本轮重点不再只加强前车抬头，而是把 stairs down 的后车跟随、下坑抗俯冲和低质量推进折减补成闭环。`drop_anti_dive_penalty_weight = -40.0` 必须结合 drop latch 理解，不是简单全程放大惩罚；只有检测到下坑 / gap 相位并进入 guard 后才持续约束，释放条件是前轮接触稳定、pitch rate 和下落速度回到安全范围。
+说明：`step_up_front_posture_penalty_weight = -12.0` 继续保留。2026-05-14 hard fine-tune 复盘后，reward 权重回退到上一轮 reward-retarget 口径；当前重点转为检查 `contact_support`、`rear_follow`、`drop_anti_dive`、`front_pitch_ref` 等项的激活相位、释放条件和物理定义是否正确。`drop_anti_dive_penalty_weight = -40.0` 必须结合 drop latch 理解；只有检测到下坑 / gap 相位并进入 guard 后才持续约束，释放条件是前轮接触稳定、pitch rate 和下落速度回到安全范围。
 
-2026-05-12 新修改说明：`front_pitch_ref` 的显式姿态惩罚不再使用裸 `step_up_approach_distance_min_m/max_m` 作为激活窗口，而是使用 `front_gap_m = step_up_distance_m - terrain.patch_front_extent`。其中 `terrain.patch_front_extent = 0.942209 m` 表示中车参考点到整车前端的真实覆盖长度。当前前车姿态权重在 `front_gap_m = 0.60 -> 0.15 m` 逐渐激活；达到满激活后，只要 `g_step_up` 仍存在且目标仍在前方，就不再因为车头已经接近或压上台阶而提前释放。原 `step_up_approach_distance_min_m/max_m` 仍用于已有相位速度限制和模块爬升 phase 逻辑，不再用于 `step_up_front_posture_penalty`。
+2026-05-13 新修改说明：`front_pitch_ref` 的显式姿态惩罚不再使用裸 `step_up_approach_distance_min_m/max_m` 作为激活窗口，而是使用 `front_gap_m = step_up_distance_m - terrain.patch_front_extent`。其中 `terrain.patch_front_extent = 0.942209 m` 表示中车参考点到整车前端的真实覆盖长度。当前前车姿态权重在 `front_gap_m = 0.90 -> 0.25 m` 逐渐激活；达到满激活后，只要 `g_step_up` 仍存在且目标仍在前方，就不再因为车头已经接近或压上台阶而提前释放。原 `step_up_approach_distance_min_m/max_m` 仍用于已有相位速度限制和模块爬升 phase 逻辑，不再用于 `step_up_front_posture_penalty`。
 
 2026-05-10 新修改说明：Stage1 显式保持 `progress_pitch_gate_k_rad = 0.0`，即不启用 Stage0 新增的中车 pitch-progress gate。`progress_pitch_gate_deadband_deg` 随 Stage0 参数表同步为 `1.0 deg` 只是配置一致性记录，在 `k = 0.0` 时不会参与实际 reward 计算。原因是 Stage1 的 stairs down / discrete obstacles 等复杂地形需要允许中车姿态随地形变化；若直接继承 Stage0 的平地中车水平 gate，会把必要的地形适应姿态误判为低质量推进。
 
@@ -1570,7 +1629,7 @@ w_{\mathrm{all}}P_{\mathrm{all}}
 }{N}
 $$
 
-当前旧版 `edge_speed_penalty` 的权重为 `0.0`，不进入总 reward。实际生效的是 `terrain_aware_edge_speed_penalty`。本轮修改后，它与执行链路共用同一个地形 + 相位速度函数，不再使用统一 `0.50 m/s` 作为所有 hard terrain 的唯一上限。
+旧版 `edge_speed_penalty` 已从 reward 链路删除。当前实际生效的是 `terrain_aware_edge_speed_penalty`，它与执行链路共用同一个地形 + 相位速度函数，不再使用统一 `0.50 m/s` 作为所有 hard terrain 的唯一上限。`edge_height_low_threshold_m` / `edge_height_high_threshold_m` 仍保留，用于构造边缘强度诊断和 terrain-aware 速度链。
 
 $$
 v_{\mathrm{fallback}}
@@ -1659,7 +1718,7 @@ g_{\mathrm{edge}}
 \frac{1}{N}
 $$
 
-上台阶前车姿态惩罚当前已启用，权重为 `-5.0`。该项只在上台阶 gate 明显、台阶边缘位于前方 approach 区间、且目标仍在前方时生效。前车实际 pitch 使用 `spm1_platform_joint_y` 对应的球铰 pitch 位置：
+上台阶前车姿态惩罚当前已启用，权重为 `-12.0`。该项只在上台阶 gate 明显、车头相对台阶边缘进入前车姿态窗口、且目标仍在前方时生效。前车实际 pitch 使用 `spm1_platform_joint_y` 对应的球铰 pitch 位置：
 
 $$
 \theta_{\mathrm{front}}
@@ -1675,20 +1734,22 @@ $$
 -
 \mathrm{clip}
 \left(
-2.5h_{\mathrm{step\_up}},
+3.0h_{\mathrm{step\_up}},
 0,
-0.25
+0.30
 \right)
 $$
 
-approach mask 为：
+前车姿态窗口权重为：
 
 $$
-M_{\mathrm{approach}}
+M_{\mathrm{posture}}
 =
-\mathbb I
+\mathrm{clip}
 \left(
-0.20 < d_{\mathrm{step\_up}} < 1.20
+\frac{0.90 - d_{\mathrm{front\_gap}}}{0.90 - 0.25},
+0,
+1
 \right)
 \cdot
 \mathbb I
@@ -1712,9 +1773,9 @@ $$
 $$
 r_{\mathrm{step\_posture}}
 =
--5.0
+-12.0
 \cdot
-M_{\mathrm{approach}}
+M_{\mathrm{posture}}
 \cdot
 g_{\mathrm{step\_up}}
 \cdot
@@ -1725,7 +1786,7 @@ g_{\mathrm{step\_up}}
 \frac{1}{N}
 $$
 
-该项的物理含义是：在上台阶前的预瞄区间内，如果当前 patch 越像上台阶，前车实际姿态越偏离“适度抬头”的参考角，惩罚越大。它不奖励原地抬头，只惩罚上台阶 approach 阶段的明显姿态偏差。
+该项的物理含义是：在上台阶前车姿态窗口内，如果当前 patch 越像上台阶，前车实际姿态越偏离“适度抬头”的参考角，惩罚越大。它不奖励原地抬头，只惩罚接近和爬升台阶相位的明显姿态偏差。
 
 【本轮新增】相位化模块爬升 reward 不再只看前车 pitch，而是看前 / 中 / 后三个模块支撑区域高度是否真的向上推进。环境会缓存上一 control step 的三个支撑高度：
 
@@ -2043,10 +2104,11 @@ $$
 
 1. 当 `stuck_time_s >= 0.5 s` 且 hard gate、目标仍在前方时，进入 recovery。
 2. recovery 中允许小幅倒车；`vx_cmd_limited < -0.05 m/s` 或实际 $v_x < -0.05\ \mathrm{m/s}$ 会记为 `recovery_reverse_now`。
-3. 如果 recovery 开始后的目标距离减少超过 `0.10 m`，记为 `recovery_success`。
-4. `recovery_success` 给 `+0.5` 奖励并清空 stuck 时间；持续倒车但没有成功推进则按 `-0.2 * Δt` 轻罚，最后仍会受 `stuck_timeout_s = 4.0 s` reset 约束。
+3. recovery 激活后的 `1.0 s` 内，短时倒退不再惩罚，而是按 `+0.2 * Δt` 给小奖励。
+4. 当已经有至少 `0.10 s` 倒退 / 姿态调整，并且 no-progress 解除，同时出现单步目标距离下降 `0.005 m`、累计目标距离下降 `0.03 m` 或前向速度恢复到 `0.08 m/s` 以上时，记为 `recovery_success`。
+5. `recovery_success` 给 `+1.0` 奖励并清空 stuck 时间；若没有恢复成功，最后仍会受 `stuck_timeout_s = 4.0 s` reset 约束。
 
-通俗理解：障碍前卡住后，策略可以学会“稍微退一下再重新上”，但不能长期倒车或横移刷时间。
+通俗理解：障碍前卡住后，策略不再因为“倒一点”被扣分，而是被鼓励先短时让出姿态空间，再重新向前出坑；长期倒退没有额外收益，仍会被 stuck timeout 约束。
 
 总 reward 为上述 active 项求和，不做正值裁剪。
 
@@ -2095,10 +2157,10 @@ $$
 | 关节名 | lower | upper |
 |---|---:|---:|
 | `spm1_platform_joint_z` | `-0.7` | `0.7` |
-| `spm1_platform_joint_y` | `-1.6` | `0.5` |
+| `spm1_platform_joint_y` | `-0.8` | `0.5` |
 | `spm1_platform_joint_x` | `-0.5` | `0.5` |
 | `spm2_platform_joint_z` | `-0.7` | `0.7` |
-| `spm2_platform_joint_y` | `-1.6` | `0.5` |
+| `spm2_platform_joint_y` | `-1.0` | `0.9` |
 | `spm2_platform_joint_x` | `-0.5` | `0.5` |
 
 ### 11.3 当前非 active termination 字段
@@ -2123,12 +2185,43 @@ Stage1 当前只启用 middle/root roll 的 `orientation_out_of_bounds`，阈值
 
 | 参数 | 当前值 |
 |---|---:|
-| `randomization.enable_action_randomization` | `False` |
+| `observations.noise.enabled` | `False` |
+| `observations.noise.level` | `0.0` |
+| `observations.noise.base_lin_vel` | `0.0` |
+| `observations.noise.base_ang_vel` | `0.0` |
+| `observations.noise.projected_gravity` | `0.0` |
+| `observations.noise.ball_joint_pos` | `0.0 rad` |
+| `observations.noise.ball_joint_vel` | `0.0 rad/s` |
+| `observations.noise.ball_joint_target_error` | `0.01 rad` |
+| `observations.noise.module_roll_pitch` | `0.02 rad` |
+| `observations.noise.wheel_joint_vel` | `0.0 rad/s` |
+| `observations.noise.wheel_longitudinal_slip` | `0.0` |
+| `observations.noise.wheel_slip_angle` | `0.0` |
+| `observations.noise.wheel_normal_contact_force` | `0.02` |
+| `observations.noise.commands` | `0.0` |
+| `resets.ball_joint_pos_range` | `(-0.02, 0.02) rad` |
+| `resets.ball_joint_vel_range` | `(-0.05, 0.05) rad/s` |
+| `resets.wheel_joint_pos_range` | `(0.0, 0.0) rad` |
+| `resets.wheel_joint_vel_range` | `(-0.5, 0.5) rad/s` |
+| `randomization.enable_action_randomization` | `True` |
 | `randomization.joint_position_noise_scale` | `0.0` |
-| `randomization.action_noise_std` | `0.0` |
-| `randomization.action_bias_std` | `0.0` |
+| `randomization.action_noise_std` | `0.015` |
+| `randomization.action_bias_std` | `0.005` |
+| `randomization.enable_actuator_scale_randomization` | `True` |
+| `randomization.ball_joint_stiffness_scale_range` | `(0.80, 1.20)` |
+| `randomization.ball_joint_damping_scale_range` | `(0.80, 1.20)` |
+| `randomization.ball_joint_effort_limit_scale_range` | `(0.85, 1.15)` |
+| `randomization.ball_joint_velocity_limit_scale_range` | `(0.90, 1.10)` |
+| `randomization.wheel_joint_effort_limit_scale_range` | `(0.85, 1.15)` |
+| `randomization.enable_wheel_friction_randomization` | `True` |
+| `randomization.wheel_static_friction_range` | `(0.80, 1.20)` |
+| `randomization.wheel_dynamic_friction_range` | `(0.70, 1.10)` |
 
-当前没有 action noise、action bias、joint position noise。
+当前默认开启全部已实现的 Stage1 域随机化：观测噪声、动作噪声 / bias、reset 小扰动、执行器 scale 随机化和车轮接触摩擦随机化均开启；仍不随机地形 mesh 材质、质量 / 质心。
+
+执行器 scale 随机化会在 reset 时改变 PhysX 中的球铰 stiffness、damping、effort limit、velocity limit 和车轮 effort limit；车轮接触摩擦随机化会在 reset 时改变每个 wheel shape 的静 / 动摩擦。
+
+车轮接触摩擦随机化代码路径仍保留，但当前 `enable_wheel_friction_randomization=False` 且静 / 动摩擦 range 均为 `(1.0, 1.0)`，不会按 env reset 改动车轮 collision shapes 的 material properties。
 
 ### 12.3 可视化
 
@@ -2172,7 +2265,7 @@ Stage1 当前只启用 middle/root roll 的 `orientation_out_of_bounds`，阈值
 
 其中 `Action/*`、`LowLevel/*`、`PerWheel/*` 中会出现底层执行摘要指标，但本文档不解释其底层运动学计算过程。
 
-说明：共享 curriculum 代码仍能在普通 waypoint 路径中输出小写 `terrain/*` reset 指标；当前 Stage1 terrain-column 目标路径额外输出 reset-time 的 `terrain/row_progress_at_reset`、`terrain/move_down_ratio`、`terrain/terrain_column_completed_ratio`、`terrain/recycle_candidate_ratio`、`terrain/recycled_env_ratio`、`terrain/recycled_to_retired_column_ratio`、`terrain/recycled_to_unfinished_column_ratio`、`terrain/retired_no_recycle_target_ratio`、`terrain/completed_column_rate`、`terrain/unfinished_column_count`、`terrain/completed_column_active_env_count`、`terrain/clamp_to_last_source_ratio` 和 `terrain/level_after_reset`，用于检查 row 退级、最高 row 完成、completed-env recycling 与 40% completed-column retention 逻辑。
+说明：共享 curriculum 代码仍能在普通 waypoint 路径中输出小写 `terrain/*` reset 指标；当前 Stage1 terrain-column 目标路径额外输出 reset-time 的 `terrain/row_progress_at_reset`、`terrain/move_down_ratio`、`terrain/terrain_column_completed_ratio`、`terrain/recycle_candidate_ratio`、`terrain/recycled_env_ratio`、`terrain/recycled_to_retired_column_ratio`、`terrain/recycled_to_unfinished_column_ratio`、`terrain/retired_no_recycle_target_ratio`、`terrain/completed_column_rate`、`terrain/unfinished_column_count`、`terrain/completed_column_active_env_count`、`terrain/clamp_to_last_source_ratio` 和 `terrain/level_after_reset`，用于检查 row 退级、最高 row 完成、completed-env recycling 与 20% completed-column retention 逻辑。
 
 本轮新增后，重点看这些列级日志：
 

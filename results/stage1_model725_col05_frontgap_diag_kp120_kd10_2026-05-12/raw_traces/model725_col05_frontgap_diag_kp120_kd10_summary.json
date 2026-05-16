@@ -1,0 +1,38 @@
+{
+  "checkpoint": "/home/ubuntu/Graduation-Project/RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-11_12-20-55_stage1_80env_resume_from_m100_1000iter_20260511_1220/model_725.pt",
+  "task": "CompleteCar-Stage1",
+  "num_envs": 6,
+  "warmup_steps": 120,
+  "export_steps": 1200,
+  "terrain_replay_columns": "5",
+  "selected_columns": [
+    5
+  ],
+  "terrain_level": null,
+  "terrain_level_by_name": "stairs_down=11",
+  "combined_csv": "/home/ubuntu/Graduation-Project/results/stage1_model725_col05_frontgap_diag_kp120_kd10_2026-05-12/raw_traces/model725_col05_frontgap_diag_kp120_kd10_combined.csv",
+  "split_csv": {
+    "col05_stairs_down": "/home/ubuntu/Graduation-Project/results/stage1_model725_col05_frontgap_diag_kp120_kd10_2026-05-12/raw_traces/model725_col05_frontgap_diag_kp120_kd10_col05_stairs_down.csv"
+  },
+  "height_patch_npz": null,
+  "height_patch_env_id": -1,
+  "height_patch_stride": 1,
+  "summary": {
+    "rows": 7192,
+    "done_rows": 0,
+    "terrain_counts": {
+      "stairs down": 7192
+    },
+    "column_counts": {
+      "col5_stairs_down": 7192
+    }
+  },
+  "ball_joint_names": [
+    "spm1_platform_joint_z",
+    "spm1_platform_joint_y",
+    "spm1_platform_joint_x",
+    "spm2_platform_joint_z",
+    "spm2_platform_joint_y",
+    "spm2_platform_joint_x"
+  ]
+}

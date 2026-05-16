@@ -1,0 +1,73 @@
+2026-05-13 00:42:29 [simulation_context.py:836] WARNING: The `enable_external_forces_every_iteration` parameter in the PhysxCfg is set to False. If you are experiencing noisy velocities, consider enabling this flag. You may need to slightly increase the number of velocity iterations (setting it to 1 or 2 rather than 0), together with this flag, to improve the accuracy of velocity updates.
+2026-05-13 00:42:30 [schemas.py:557] DEBUG: Adding contact report API to prim: '/World/envs/env_0/Robot/complete_car_alternative/body_car_chassis'
+2026-05-13 00:42:30 [schemas.py:560] DEBUG: Contact report API already exists on prim: '/World/envs/env_0/Robot/complete_car_alternative/body_car_wheel_left'
+2026-05-13 00:42:30 [schemas.py:560] DEBUG: Contact report API already exists on prim: '/World/envs/env_0/Robot/complete_car_alternative/body_car_wheel_right'
+2026-05-13 00:42:30 [schemas.py:557] DEBUG: Adding contact report API to prim: '/World/envs/env_0/Robot/complete_car_alternative/spm1_base'
+2026-05-13 00:42:30 [schemas.py:557] DEBUG: Adding contact report API to prim: '/World/envs/env_0/Robot/complete_car_alternative/spm1_spherical_virtual_z'
+2026-05-13 00:42:30 [schemas.py:557] DEBUG: Adding contact report API to prim: '/World/envs/env_0/Robot/complete_car_alternative/spm1_spherical_virtual_y'
+2026-05-13 00:42:30 [schemas.py:557] DEBUG: Adding contact report API to prim: '/World/envs/env_0/Robot/complete_car_alternative/spm1_platform'
+2026-05-13 00:42:30 [schemas.py:557] DEBUG: Adding contact report API to prim: '/World/envs/env_0/Robot/complete_car_alternative/head_car_chassis'
+2026-05-13 00:42:30 [schemas.py:560] DEBUG: Contact report API already exists on prim: '/World/envs/env_0/Robot/complete_car_alternative/head_car_wheel_left'
+2026-05-13 00:42:30 [schemas.py:560] DEBUG: Contact report API already exists on prim: '/World/envs/env_0/Robot/complete_car_alternative/head_car_wheel_right'
+2026-05-13 00:42:30 [schemas.py:557] DEBUG: Adding contact report API to prim: '/World/envs/env_0/Robot/complete_car_alternative/spm2_base'
+2026-05-13 00:42:30 [schemas.py:557] DEBUG: Adding contact report API to prim: '/World/envs/env_0/Robot/complete_car_alternative/spm2_spherical_virtual_z'
+2026-05-13 00:42:30 [schemas.py:557] DEBUG: Adding contact report API to prim: '/World/envs/env_0/Robot/complete_car_alternative/spm2_spherical_virtual_y'
+2026-05-13 00:42:30 [schemas.py:557] DEBUG: Adding contact report API to prim: '/World/envs/env_0/Robot/complete_car_alternative/spm2_platform'
+2026-05-13 00:42:30 [schemas.py:557] DEBUG: Adding contact report API to prim: '/World/envs/env_0/Robot/complete_car_alternative/tail_car_chassis'
+2026-05-13 00:42:30 [schemas.py:560] DEBUG: Contact report API already exists on prim: '/World/envs/env_0/Robot/complete_car_alternative/tail_car_wheel_left'
+2026-05-13 00:42:30 [schemas.py:560] DEBUG: Contact report API already exists on prim: '/World/envs/env_0/Robot/complete_car_alternative/tail_car_wheel_right'
+2026-05-13 00:42:31 [legacy.py:220] WARNING: Function 'is_prim_path_valid' is deprecated. Please use the USD APIs directly instead.
+
+    Example:
+        >>> import isaaclab.sim as sim_utils
+        >>>
+        >>> stage = sim_utils.get_current_stage()
+        >>> prim = stage.GetPrimAtPath("/World/Cube")
+        >>> prim.IsValid()
+        True
+    
+2026-05-13 00:42:31 [legacy.py:149] WARNING: Function 'get_prim_at_path' is deprecated. Please use the USD APIs directly instead.
+
+    Example:
+        >>> import isaaclab.sim as sim_utils
+        >>>
+        >>> stage = sim_utils.get_current_stage()
+        >>> stage.GetPrimAtPath("/World/Cube")
+        Usd.Prim(</World/Cube>)
+    
+2026-05-13 00:42:38 [articulation.py:1569] INFO: Articulation initialized at: /World/envs/env_.*/Robot with root '/World/envs/env_.*/Robot/complete_car_alternative/body_car_chassis'.
+2026-05-13 00:42:38 [articulation.py:1570] INFO: Is fixed root: False
+2026-05-13 00:42:38 [articulation.py:1571] INFO: Number of bodies: 17
+2026-05-13 00:42:38 [articulation.py:1572] INFO: Body names: ['body_car_chassis', 'body_car_wheel_left', 'body_car_wheel_right', 'spm1_base', 'spm2_base', 'spm1_spherical_virtual_z', 'spm2_spherical_virtual_z', 'spm1_spherical_virtual_y', 'spm2_spherical_virtual_y', 'spm1_platform', 'spm2_platform', 'head_car_chassis', 'tail_car_chassis', 'head_car_wheel_left', 'head_car_wheel_right', 'tail_car_wheel_left', 'tail_car_wheel_right']
+2026-05-13 00:42:38 [articulation.py:1573] INFO: Number of joints: 12
+2026-05-13 00:42:38 [articulation.py:1574] INFO: Joint names: ['body_car_wheel_left_joint', 'body_car_wheel_right_joint', 'spm1_platform_joint_z', 'spm2_platform_joint_z', 'spm1_platform_joint_y', 'spm2_platform_joint_y', 'spm1_platform_joint_x', 'spm2_platform_joint_x', 'head_car_wheel_left_joint', 'head_car_wheel_right_joint', 'tail_car_wheel_left_joint', 'tail_car_wheel_right_joint']
+2026-05-13 00:42:38 [articulation.py:1575] INFO: Number of fixed tendons: 0
+2026-05-13 00:42:38 [articulation.py:1753] INFO: Actuator collection: ball_joints with model 'ImplicitActuator' (type: implicit) and joint names: ['spm1_platform_joint_z', 'spm2_platform_joint_z', 'spm1_platform_joint_y', 'spm2_platform_joint_y', 'spm1_platform_joint_x', 'spm2_platform_joint_x'] [tensor([2, 3, 4, 5, 6, 7], device='cuda:0')].
+2026-05-13 00:42:38 [articulation.py:1753] INFO: Actuator collection: wheel_joints with model 'ImplicitActuator' (type: implicit) and joint names: ['body_car_wheel_left_joint', 'body_car_wheel_right_joint', 'head_car_wheel_left_joint', 'head_car_wheel_right_joint', 'tail_car_wheel_left_joint', 'tail_car_wheel_right_joint'] [tensor([ 0,  1,  8,  9, 10, 11], device='cuda:0')].
+2026-05-13 00:42:38 [articulation.py:2028] INFO: Simulation parameters for joints in /World/envs/env_.*/Robot:
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|                                                          Simulation Joint Information (Prim path: /World/envs/env_.*/Robot)                                                         |
++-------+----------------------------+-----------+---------+----------+-----------------+------------------+------------------+---------------------+-----------------+---------------+
+| Index | Name                       | Stiffness | Damping | Armature | Static Friction | Dynamic Friction | Viscous Friction |   Position Limits   | Velocity Limits | Effort Limits |
++-------+----------------------------+-----------+---------+----------+-----------------+------------------+------------------+---------------------+-----------------+---------------+
+|   0   | body_car_wheel_left_joint  |   0.000   |  0.000  |  0.000   |      0.000      |      0.000       |      0.000       | [-3.4e+38, 3.4e+38] |      20.000     |     20.000    |
+|   1   | body_car_wheel_right_joint |   0.000   |  0.000  |  0.000   |      0.000      |      0.000       |      0.000       | [-3.4e+38, 3.4e+38] |      20.000     |     20.000    |
+|   2   | spm1_platform_joint_z      |  120.000  |  10.000 |  0.000   |      0.000      |      0.000       |      0.000       | [-3.4e+38, 3.4e+38] |      2.000      |     60.000    |
+|   3   | spm2_platform_joint_z      |  120.000  |  10.000 |  0.000   |      0.000      |      0.000       |      0.000       | [-3.4e+38, 3.4e+38] |      2.000      |     60.000    |
+|   4   | spm1_platform_joint_y      |  120.000  |  10.000 |  0.000   |      0.000      |      0.000       |      0.000       | [-3.4e+38, 3.4e+38] |      2.000      |     60.000    |
+|   5   | spm2_platform_joint_y      |  120.000  |  10.000 |  0.000   |      0.000      |      0.000       |      0.000       | [-3.4e+38, 3.4e+38] |      2.000      |     60.000    |
+|   6   | spm1_platform_joint_x      |  120.000  |  10.000 |  0.000   |      0.000      |      0.000       |      0.000       | [-3.4e+38, 3.4e+38] |      2.000      |     60.000    |
+|   7   | spm2_platform_joint_x      |  120.000  |  10.000 |  0.000   |      0.000      |      0.000       |      0.000       | [-3.4e+38, 3.4e+38] |      2.000      |     60.000    |
+|   8   | head_car_wheel_left_joint  |   0.000   |  0.000  |  0.000   |      0.000      |      0.000       |      0.000       | [-3.4e+38, 3.4e+38] |      20.000     |     20.000    |
+|   9   | head_car_wheel_right_joint |   0.000   |  0.000  |  0.000   |      0.000      |      0.000       |      0.000       | [-3.4e+38, 3.4e+38] |      20.000     |     20.000    |
+|   10  | tail_car_wheel_left_joint  |   0.000   |  0.000  |  0.000   |      0.000      |      0.000       |      0.000       | [-3.4e+38, 3.4e+38] |      20.000     |     20.000    |
+|   11  | tail_car_wheel_right_joint |   0.000   |  0.000  |  0.000   |      0.000      |      0.000       |      0.000       | [-3.4e+38, 3.4e+38] |      20.000     |     20.000    |
++-------+----------------------------+-----------+---------+----------+-----------------+------------------+------------------+---------------------+-----------------+---------------+
+2026-05-13 00:42:38 [util.py:494] DEBUG: sys.platform='linux', git_executable='git'
+2026-05-13 00:42:38 [cmd.py:1270] DEBUG: Popen(['git', 'cat-file', '--batch-check'], cwd=/home/ubuntu/Graduation-Project, stdin=<valid stream>, shell=False, universal_newlines=False)
+2026-05-13 00:42:38 [cmd.py:1270] DEBUG: Popen(['git', 'cat-file', '--batch'], cwd=/home/ubuntu/Graduation-Project, stdin=<valid stream>, shell=False, universal_newlines=False)
+2026-05-13 00:42:38 [cmd.py:1270] DEBUG: Popen(['git', 'status'], cwd=/home/ubuntu/Graduation-Project, stdin=None, shell=False, universal_newlines=False)
+2026-05-13 00:42:38 [cmd.py:1270] DEBUG: Popen(['git', 'diff', '96cc7527f70af63e36099b065331103d1e664eaa'], cwd=/home/ubuntu/Graduation-Project, stdin=None, shell=False, universal_newlines=False)
+2026-05-13 00:42:38 [util.py:494] DEBUG: sys.platform='linux', git_executable='git'
+2026-05-13 00:42:38 [cmd.py:1270] DEBUG: Popen(['git', 'cat-file', '--batch-check'], cwd=/home/ubuntu/Graduation-Project, stdin=<valid stream>, shell=False, universal_newlines=False)
+2026-05-13 00:42:38 [cmd.py:1270] DEBUG: Popen(['git', 'cat-file', '--batch'], cwd=/home/ubuntu/Graduation-Project, stdin=<valid stream>, shell=False, universal_newlines=False)

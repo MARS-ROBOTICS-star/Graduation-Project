@@ -1,0 +1,28 @@
+{
+  "rows_all": 17980,
+  "rows_last100": 1497,
+  "max_step": 1199,
+  "last100_means": {
+    "reward_component_progress_to_target": 0.006053602019541624,
+    "reward_component_drop_anti_dive_penalty": -0.0035368304778796533,
+    "reward_component_rear_follow_reward": 0.00019113776201236694,
+    "reward_component_rear_follow_penalty": -0.009451911885959497,
+    "reward_component_step_up_module_progress_reward": 0.0006331558455836128,
+    "reward_component_step_up_front_posture_penalty": -0.0036238453396277527,
+    "reward_component_terrain_aware_edge_speed_penalty": -0.00035196759003402626,
+    "quality_gate_score": 0.0,
+    "motion_quality_score": 0.3729025770722824,
+    "drop_guard_active": 0.3680694722778891,
+    "rear_follow_score": 0.15790501540004565,
+    "rear_follow_deficit_score": 0.05094820817924981,
+    "front_middle_high_rear_low": 0.012821518387409076
+  },
+  "abs_ratio_to_progress_last100": {
+    "reward_component_drop_anti_dive_penalty": 0.584252229740643,
+    "reward_component_rear_follow_reward": 0.03157422000907152,
+    "reward_component_rear_follow_penalty": 1.5613698844832866,
+    "reward_component_step_up_module_progress_reward": 0.10459158754403136,
+    "reward_component_step_up_front_posture_penalty": 0.5986262935570628,
+    "reward_component_terrain_aware_edge_speed_penalty": 0.05814184495410173
+  }
+}

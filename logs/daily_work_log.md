@@ -1,5 +1,329 @@
 # 每日工作日志
 
+## 2026-05-15
+
+已完成：
+- 按用户要求开启 Stage1 当前所有已实现域随机化，并从刚停止 run 的 `model_100.pt` warm-start 启动新训练。
+- 修改 Stage1 配置：观测噪声、动作噪声 / bias、reset 球铰位置 / 球铰速度 / 轮速扰动、执行器 scale 随机化、车轮静 / 动摩擦随机化均开启。
+- 完成 `num_envs=4 / max_iterations=0` headless smoke，落盘确认 DR 配置生效。
+- 启动正式训练：`96 env / 200 iteration / learning_rate=5e-5 / --resume --warmstart`。
+
+产出或结论：
+- 新 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_21-54-23_stage1_m100_model100_obs016_dr_all_96env_200iter_20260515`。
+- runtime log：`RL_Training/logs/runtime/stage1_m100_model100_obs016_dr_all_96env_200iter_20260515.log`。
+- 源 checkpoint：`2026-05-15_20-49-04_stage1_m75_model75_obs018_stability_metrics_96env_200iter_20260515/model_100.pt`。
+- 正式训练已进入 PPO loop，已观察到 `Learning iteration 0/200`。
+- `--warmstart` 只继承 actor / critic 权重，不继承上一轮 curriculum/max-row success 计数；新 run 的 max-row success 从 `0` 开始累计。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py` 通过。
+- `CompleteCar-Stage1 / num_envs=4 / max_iterations=0 / headless` smoke 通过。
+- 正式 run 的 `params/agent.yaml` 确认 `load_run`、`load_checkpoint=model_100.pt`、`max_iterations=200`、`learning_rate=5e-5`。
+- 正式 run 的 `params/env.yaml` 确认 DR-all 配置生效。
+
+## 2026-05-15
+
+已完成：
+- 按用户要求将 Stage1 `discrete obstacles` 最高障碍高度 / 坑深从 `0.18 m` 改为 `0.16 m`。
+- 修改 `DISCRETE_OBSTACLE_HEIGHT_RANGE_M`：`0.1369 -> 0.1159`。
+- 同步更新 Stage1 参数表、台阶准静态参数整理、当前状态和跨会话结论。
+
+产出或结论：
+- 当前公式为 `h_obs,max = 0.05 + 0.1159 * row / 20`。
+- 在 `vertical_scale=0.005 m` 量化后，row19 公式高度约 `0.160105 m`，实际最大障碍高度 / 坑深为 `0.160 m`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `docs/Stage1参数详情表.md`
+- `docs/台阶爬升准静态模型参数整理.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py` 通过。
+- 复算 row0-row19 高度表，确认 row19 公式高度约 `0.160105 m`，量化实际最大高度 / 坑深为 `0.160 m`。
+- `git diff --check` 通过相关修改文件。
+
+## 2026-05-15
+
+已完成：
+- 按用户要求停止当前 Stage1 `obs018` 稳定性指标训练：`2026-05-15_20-49-04_stage1_m75_model75_obs018_stability_metrics_96env_200iter_20260515`。
+- 通过 `SIGINT` 结束训练进程，确认 GPU 训练占用释放。
+- 确认最新可用 checkpoint 为 `model_100.pt`，停止前最后完整日志为 iteration `102/200`。
+- 统计停止点 hard columns：stairs 三列已完成，obs 两列仍未完成。
+- 计算并列出 `discrete obstacles` row0-row19 的连续公式高度与 `vertical_scale=0.005 m` 量化后实际最大高度。
+
+产出或结论：
+- 停止点：`completed_column_rate=0.80`、`unfinished_column_count=2.00`、`global/current_level_mean≈12.79`。
+- `col05/06/07 stairs` 分别为 `104/100`、`102/100`、`101/100`，已达到课程计数完成。
+- `col08/09 obstacles` 分别为 `58.875/100`、`30.5/100`；recent max-row success rate 约 `0.131` / `0.206`，仍是瓶颈。
+- 当前 `discrete obstacles` 公式为 `h_obs,max = 0.05 + 0.1369 * row / 20`，row19 量化后为 `0.18 m`。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `nvidia-smi` 确认训练进程释放。
+- 读取 runtime log 确认最后完整 iteration 和 hard column 指标。
+
+## 2026-05-15
+
+已完成：
+- 按用户澄清，将 Stage1 `stairs down/up` 最大单级台阶高度设置为 `0.18 m`。
+- 只修改台阶高度范围：`STAIRS_STEP_HEIGHT_RANGE_M = 0.13`；`discrete obstacles` 高度公式保持 `0.05 + 0.15 * difficulty` 不变。
+- 同步更新 Stage1 参数表、台阶准静态参数整理、当前状态和跨会话结论。
+
+产出或结论：
+- 当前台阶公式为 `h_step = 0.05 + 0.13 * row / (num_rows - 1)`。
+- 在 `vertical_scale=0.005 m` 量化后，`row17=0.165 m`、`row18=0.170 m`、`row19=0.180 m`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `docs/Stage1参数详情表.md`
+- `docs/台阶爬升准静态模型参数整理.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `git diff --check -- RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py docs/Stage1参数详情表.md docs/台阶爬升准静态模型参数整理.md docs/current_status.md docs/conversation_history.md`
+
+已完成：
+- 按用户要求将 Stage1 `discrete obstacles` 最大障碍 / 坑深系数从 `0.17` 改为 `0.15`。
+- 课程逻辑未改变：obs 初始仍为 `row0-4`，hard-window repeat / completed retention 仍从 `row4+`。
+- 同步更新 Stage1 参数表、台阶准静态参数整理、当前状态和跨会话结论。
+
+产出或结论：
+- 当前公式为 `H = 0.05 + 0.15 * row / 20`。
+- 在 `vertical_scale=0.005 m` 量化后，`row13=0.145 m`、`row18=0.185 m`、`row19=0.190 m`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `docs/Stage1参数详情表.md`
+- `docs/台阶爬升准静态模型参数整理.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `git diff --check -- RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py docs/Stage1参数详情表.md docs/台阶爬升准静态模型参数整理.md`
+
+## 2026-05-15
+
+已完成：
+- 按用户要求停止当前 Stage1 hard100 训练：`2026-05-15_16-10-10_stage1_m75_hard100_init04_obsrow4_96env_300iter_20260515`。
+- 确认最新可用 checkpoint 为 `model_200.pt`，GPU 训练进程已释放。
+- 使用 `model_200.pt` 完成两组 headless replay reward trace：
+  - hard 五列固定 row18：`reward_traces/model200_hard_cols05-09_row18_reward_trace.csv`。
+  - obs 两列固定 row13：`reward_traces/model200_obs_cols08-09_row13_reward_trace.csv`。
+- 解析 trace 并生成按列诊断、奖励量级、done event 汇总 CSV。
+- 新增 Stage1Eval 每列完成计数指标：`Stage1Eval/colXX/max_row_success_count`、`completion_target`、`completion_fraction`、`completed`。
+- 修复 Stage1 训练日志可见性：hard 五列 row/质量指标进入 console；col05-col09 completion 计数进入 console 和 TensorBoard，并从 0 开始写入。
+
+结论：
+- `model_200.pt` 在 row18 hard replay 中只有 col08 出现 `1` 次 completed；stairs 主要失败为 stuck / timeout。
+- obs row13 replay 中 col08 主要触发 roll/orientation reset，col09 主要 timeout；当前 obs 问题集中在 overspeed、侧翻风险和目标段稳定完成不足。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `git diff --check -- RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+
+## 2026-05-15
+
+已完成：
+- 按用户要求修改 Stage1 hard curriculum：`stairs down` 和 `discrete obstacles` 初始采样均改为 `row0-4` 随机开始。
+- 将 hard column completed-column 目标统一改为每列累计 `100` 次 max-row success。
+- 将 obs completed 后的 retention / recycle 起点改为 `row4`，不再使用 `row14`；stairs completed 后仍保持 `row14+`。
+- 同步更新 Stage1 参数文档、当前状态和跨会话结论。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过相关 Python 文件。
+- `CompleteCar-Stage1 / num_envs=4 / max_iterations=0 / headless` smoke 通过。
+- smoke run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_16-04-34_stage1_cfg_smoke_hard100_obsrow4_20260515`。
+- 落盘 `params/env.yaml` 确认 stairs/obs 初始 `row0-4`、hard success count `100`、completed hard-window 默认 `row4`、`stairs down=14`、`discrete obstacles=4`。
+
+## 2026-05-13
+
+已完成：
+- 按用户要求将 Stage1 `stairs down/up` 最高单级台阶高度从 `0.21 m` 改为 `0.20 m`。
+- 修改地形生成器中台阶高度范围：`STAIRS_STEP_HEIGHT_RANGE_M = 0.15`，当前公式为 `h_step = 0.05 + 0.15 * row / (num_rows - 1)`。
+- 同步更新 Stage1 参数表、台阶准静态参数整理、三体二维准静态模型、奖励设计草案和项目记忆文件。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `docs/Stage1参数详情表.md`
+- `docs/台阶爬升准静态模型参数整理.md`
+- `docs/三体二维准静态台阶接触可行性模型.md`
+- `docs/Stage1奖励函数设计草案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py` 通过。
+- 直接计算 `row 0-19` 台阶高度：`row 19 formula=0.200000 actual=0.200`；`row 17 formula=0.184211 actual=0.180`。
+- `git diff --check` 通过。
+
+## 2026-05-13
+
+已完成：
+- 按用户要求结束当前 Stage1 history4 reward fine-tune 训练。
+- 向宿主训练进程 PID `526425` 发送 `SIGINT`，确认 GPU 上 IsaacLab compute 进程已释放。
+- 刷新最终 TensorBoard 导出并记录停止点指标。
+
+产出或结论：
+- 最后 checkpoint 为 `RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-13_16-16-08_stage1_h4_m625_reward_retarget_rear_finetune_96env_200iter_20260513/model_100.pt`，保存时间 `2026-05-13 17:11:44 +0800`。
+- TensorBoard 最终 step 为 `100`；停止时 `completed_column_rate=0.7`、`unfinished_column_count=3`。
+- 停止时 `col05-col07 stairs_down` row 为 `17.05/17.16/17.00`，但 `rows_advanced_mean=0`、`row_advance_rate=0`。
+- 停止时 `col08-col09 obstacles` row 为 `3.48/1.91`，低于中途 step `49-51` 的 row `16-18` 高点。
+- 当前已保存 checkpoint 中，若按 row 综合观察，`model_50.pt` 比最终 `model_100.pt` 更适合作为优先回放候选。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-15
+
+已完成：
+- 按用户要求停止当前 30Nm Stage1 训练：`2026-05-15_14-07-12_stage1_m249_frontpitch50_wheel30_lr1e4_dr_off_hard_window_repeat_96env_250iter_20260515_restart`。
+- 该 run 最后保存到 `model_25.pt`，GPU 训练进程已退出。
+- 将 Stage1 `control.wheel_joint_effort_limit_sim` 从 `30.0` 改回 `20.0`。
+- 给出训练路线判断：不建议接着当前 30Nm run 继续；若目标是复现 `m139_continue`，应从 `model_72.pt` 正常 resume 并使用当时配置和 `learning_rate=5e-5`；若要基于 `model_139.pt` 二次微调，学习率应降回 `5e-5` 或更保守的 `3e-5`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过 Stage1 配置文件。
+
+## 2026-05-15
+
+已完成：
+- 按用户要求将 Stage1 `spm2_platform_joint_y` 的终止上限改为 `0.9 rad`。
+- 保持 `spm2_platform_joint_y` action 映射上限为 `0.8 rad`，即 policy 目标不会主动打到终止边界。
+- 将 Stage1 PPO 默认学习率改为 `5.0e-5`；Stage0 仍继承 Base 默认 `1.0e-4`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/agents/rsl_rl_ppo_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `docs/Stage1参数详情表.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过 Stage1 配置和 PPO 配置文件。
+- `CompleteCar-Stage1 / num_envs=4 / max_iterations=0 / headless` smoke 通过；落盘 `params/env.yaml` 确认 action upper 第 5 项 `0.8`、termination upper 第 5 项 `0.9`、车轮力矩 `20.0`，`params/agent.yaml` 确认 `learning_rate=5.0e-05`。
+- `nvidia-smi` 确认无训练进程占用 GPU。
+
+## 2026-05-15
+
+已完成：
+- 按用户要求保留当前 hard-window repeat completion / recycle 逻辑不变。
+- 将其余关键配置尽量贴近 `m139_continue`：`front_pitch_max_ref_rad=0.30`、`spm2_platform_joint_y` 终止上限回到 `0.8`、车轮力矩保持 `20.0 N*m`。
+- 将观测噪声配置值恢复到 `m139_continue` 口径：`enabled=False`、`level=0.0`、`ball_joint_target_error=0.01`、`module_roll_pitch=0.02`。
+- 明确后续训练建议：从 `m139_continue/model_139.pt` warm-start，学习率优先 `5e-5`，保守微调可用 `3e-5`；不建议使用 `1e-4`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `docs/Stage1参数详情表.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过 Stage1 配置文件。
+
+## 2026-05-13
+
+已完成：
+- 查看当前 Stage1 history4 reward fine-tune 训练进程与 TensorBoard 标量，确认 active run 仍在运行，runtime log 到 PPO iteration `93/200`。
+- 刷新该 run 的 `tensorboard_export`，汇总当前 row 推进和运动质量。
+
+产出或结论：
+- 当前 `completed_column_rate=0.7`、`unfinished_column_count=3`；已保存 checkpoint 到 `model_75.pt`，下一重点 checkpoint 是 `model_100.pt`。
+- `col05-col07 stairs_down` 当前保持在平均 row `17.05/17.16/17.00`，但当前 `rows_advanced_mean=0`、`row_advance_rate=0`，属于高 row 保持而非继续推进。
+- `col08-col09 obstacles` 当前 row 约 `3.36/2.06`，仍有推进事件但高 row 保持失败；相对 step `49-51` 的 row `16-18` 高点已经回落。
+- 运动质量仍偏差：near-edge overspeed 约 `0.68`，rear follow 约 `0.076`，台阶列后车跟随与接触支撑仍是主要短板。
+
+修改文件：
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-13
+
+已完成：
+- 检查 Stage1 terrain-column 目标命中、课程晋级和 reset 链路，确认目标命中本身会在 episode 内推进 row；平均 row 回退主要来自 reset-time `move_down`。
+- 修正 reset 降级逻辑：新增 per-env `terrain_level_floor`，目标命中并推进 row 后将 floor 更新为新 row；后续 timeout / stuck / far 等失败 reset 不能低于该 floor。
+- 回收到未完成列的 env 会把 sampled row 设为新的 floor，避免动态回收把列平均 row 往低 row 拉回。
+- `play.py` 的 Stage1 replay curriculum reset 同步重置 floor，保证回放强制选列后状态一致。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/scripts/play.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py RL_Training/scripts/play.py` 通过。
+- `git diff --check` 通过。
+- 小样本张量逻辑验证：当 `level == terrain_level_floor` 时，即使 reset 触发 move-down attempt，new level 保持不变；只有 `level > floor` 时才允许回退到 floor。
+
+## 2026-05-13
+
+已完成：
+- 按用户要求将当前 Stage1 台阶高度改为最高 row 归一化口径，而不是直接把旧 `difficulty = row / num_rows` 的系数改小。
+- 当前 `stairs down/up` 公式为 `h_step = 0.05 + 0.16 * row / (num_rows - 1)`；在 `num_rows = 20`、`vertical_scale = 0.005 m` 下，`row 19` 实际单级台阶高度为 `0.21 m`。
+- 同步更新 Stage1 参数表、台阶准静态参数整理、三体二维准静态模型文档、奖励设计草案和项目记忆文件。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `docs/Stage1参数详情表.md`
+- `docs/台阶爬升准静态模型参数整理.md`
+- `docs/三体二维准静态台阶接触可行性模型.md`
+- `docs/Stage1奖励函数设计草案.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py` 通过。
+- 直接计算 `row 0-19` 台阶高度，确认 `row 19 formula=0.210000 actual=0.210`。
+
 ## 2026-05-13
 
 已完成：
@@ -17849,6 +18173,9 @@
 
 验证：
 - `python3 -m py_compile` 已通过受影响 Python 文件。
+- `git diff --check` 通过。
+- `CompleteCar-Stage1 / num_envs=4 / max_iterations=0 / headless` smoke 通过。
+- smoke run 的 `params/env.yaml` 确认 stairs 初始 row 为 `1`、obs 初始 row 为 `4`、stairs hard-window recycle 起点为 `14`、obs hard-window recycle 起点为 `4`，对应 success count 为 `10 / 15`。
 - 新扫参脚本已完成最终校准和 `19100` 组 Kp/Kd 排序。
 - 当前结论只作为下一轮 Isaac replay 候选筛选；不直接把高增益写入训练默认配置。
 
@@ -18069,6 +18396,23 @@
 ## 2026-05-13
 
 已完成：
+- 按用户要求从上一轮 `model_50.pt` 启动 Stage1 stronger rear-support / anti-dive fine-tune，`96 env / 200 iteration / learning_rate=5e-5`。
+- 训练已自然结束，最终 checkpoint 为 `model_199.pt`，GPU 训练进程已释放。
+- 导出本轮 stairs / obstacles row 全 step 过程 CSV。
+
+输出：
+- run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-13_18-15-36_stage1_h4_m50_stronger_rear_support_antidive_96env_200iter_20260513`
+- runtime log：`RL_Training/logs/runtime/stage1_h4_m50_stronger_rear_support_antidive_96env_200iter_20260513.log`
+- row 过程 CSV：`results/stage1_h4_m50_stronger_rear_support_antidive_stairs_obs_rows_2026-05-13.csv`
+
+结论：
+- `model_50.pt` 附近 hard terrain 平均 row 最高，stairs 平均约 `17.71`、obstacles 平均约 `17.88`，但质量仍差且推进率接近 `0`。
+- 最终 `model_199.pt` 保留 stairs 高 row `17.89/18.00/18.00`，但后车跟随和支撑为 `0`；obstacles 回落到 row `3.03/2.30`。
+- 本轮不建议把最终 checkpoint 当作最优策略；后续回放优先看 `model_50.pt`，最终 checkpoint 只作为后期坍塌状态对照。
+
+## 2026-05-13
+
+已完成：
 - 按用户要求持续监督 `stage1_history4_hard_quality_96env_1000iter_20260513` 的台阶 row 推进情况和推进速度。
 - 在 TensorBoard 写到 step `900` 后向训练进程发送 `SIGINT`，训练已停止，GPU compute 进程已释放。
 - 确认 `model_900.pt` 已保存，路径为 `RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-13_03-25-50_stage1_history4_hard_quality_96env_1000iter_20260513/model_900.pt`。
@@ -18123,3 +18467,983 @@
 
 结论：
 - history4 训练中台阶曾到 row `14-15` 后回退，不应只解释为 reward 标量不足；该高度已经接近当前轮半径和准静态越棱边边界，必须依赖稳定的前车抬轮、中车支撑、后车跟随和低冲击速度相位化动作。
+
+## 2026-05-13
+
+已完成：
+- 按用户确认方案修改 Stage1 reward 权重，并启动 `model_625.pt` warm-start fine-tune。
+- `scripts/train.py` 新增 `--learning_rate` 覆盖参数，避免将本次 fine-tune 的 `5e-5` 写成全局 PPO 默认值。
+- Stage1 reward 当前修改为：`progress_to_target_relax_radius_m=0.6`、`distance_to_target_weight=10.0`、`angle_diff_weight=14.0`、`terrain_aware_edge_speed_penalty_weight=-80.0`、`terrain_actual_overspeed_penalty_ratio=3.0`、`step_up_module_progress_reward_weight=40.0`、`rear_follow_penalty_weight=-36.0`。
+- 启动新训练：`96 env / 200 iteration / learning_rate=5e-5 / --resume --warmstart / model_625.pt`。
+
+输出：
+- 新 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-13_16-16-08_stage1_h4_m625_reward_retarget_rear_finetune_96env_200iter_20260513`
+- runtime log：`RL_Training/logs/runtime/stage1_h4_m625_reward_retarget_rear_finetune_96env_200iter_20260513.log`
+- IsaacLab log：`/tmp/isaaclab/logs/isaaclab_2026-05-13_16-16-08.log`
+
+验证：
+- `python3 -m py_compile` 通过 `scripts/train.py` 和 `complete_car_stage1_cfg.py`。
+- `git diff --check` 通过。
+- 新 run 的 `params/agent.yaml` 已确认 `max_iterations=200`、`learning_rate=5.0e-5`、`load_checkpoint=model_625.pt`。
+- runtime log 已确认加载 `model_625.pt`，并进入 PPO iteration `1/200`。
+
+下一步：
+- 持续监督本轮 fine-tune 的 stairs row 保持、obstacles 目标捕获、近边缘超速、后车跟随和各 checkpoint 行为质量，不默认取最终 checkpoint。
+
+## 2026-05-13
+
+已完成：
+- 排查 `model_199.pt` 回放第 `8` 列 `discrete obstacles` 时在较宽坑内反复 reset 的原因。
+- 确认该现象不是“最终策略稳定通关 row18 后偶发失败”，而是最终 col08 已回落到低 row；中途 row18 高点不代表最终恢复能力。
+- 在 `RL_Training/scripts/play.py` 新增 `--print_reset_causes` 回放诊断开关，用于打印 reset 原因、row 进度和 reset 后 level。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py` 通过。
+- `git diff --check -- RL_Training/scripts/play.py` 通过。
+
+结论：
+- col08 较宽坑内当前策略主要缺少“前中车入坑后的前车抬高 / 后车支撑 / 小幅倒退恢复”技能；训练中的 high-row 通过更可能来自部分 rollout 直接通过或避开局部坑，而不是稳定掌握坑内恢复。
+
+## 2026-05-13
+
+已完成：
+- 按用户要求修改当前 Stage1 前车抬升参考与台阶高度上限。
+- `front_pitch_height_gain_rad_per_m` 从 `2.5` 改为 `3.0`。
+- `front_pitch_max_ref_rad` 从 `0.25 rad` 改为 `0.30 rad`。
+- `step_up_posture_front_gap_start_m/full_m` 从 `0.60/0.15 m` 改为 `0.90/0.25 m`。
+- 将 `STAIRS_STEP_HEIGHT_RANGE_M` 从 `0.15` 改为 `0.14`，当前台阶公式为 `h_step = 0.05 + 0.14 * row / (num_rows - 1)`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `docs/Stage1参数详情表.md`
+- `docs/台阶爬升准静态模型参数整理.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+结论：
+- 当前 `row 19` 单级台阶公式高度和 heightfield 实际高度均为 `0.19 m`；`row 18` 公式高度约 `0.183 m`，实际量化约 `0.18 m`。
+- 后续重新训练或用当前源码回放旧 checkpoint 时，会使用新的 `0.19 m` 台阶口径；旧 run 的 TensorBoard 训练结果仍应按其当时地形口径解释。
+
+## 2026-05-13
+
+已完成：
+- 按用户要求开启 Stage1 DR_v1：观测噪声、动作噪声、reset 小扰动和执行器 scale 随机化。
+- Stage1 观测噪声当前为：base 线速度 `0.05`、base 角速度 `0.10`、projected gravity `0.01`、球铰位置 `0.01 rad`、球铰速度 `0.05 rad/s`、轮速 `0.05 rad/s`、轮法向接触力归一化值 `0.02`。
+- action 随机化当前为：`action_noise_std=0.015`、`action_bias_std=0.005`。
+- reset 小扰动当前为：`joint_position_noise_scale=0.005`、球铰位置范围 `(-0.02,0.02) rad`、球铰速度范围 `(-0.05,0.05) rad/s`、轮速范围 `(-0.5,0.5) rad/s`。
+- 新增 per-env 执行器 scale 随机化：球铰 stiffness/damping scale 为 `(0.80,1.20)`，球铰 effort limit scale 为 `(0.85,1.15)`，球铰 velocity limit scale 为 `(0.90,1.10)`，车轮 effort limit scale 为 `(0.85,1.15)`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+结论：
+- DR_v1 暂不随机地形高度、地面摩擦、质量或质心，避免把当前 high-row 台阶支撑和宽坑恢复问题与过强物理随机化混在一起。
+- 执行器随机化写入 PhysX 后，低层轮矩分配器和最终车轮 effort clamp 使用同一个 per-env 车轮 effort limit；TensorBoard 会记录 `DomainRand/*_scale_mean` 用于确认随机化生效。
+
+## 2026-05-13
+
+已完成：
+- 按用户要求手动结束 Stage1 DR_v1 短训，确认 GPU 训练进程已释放。
+- 有效 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-13_22-46-24_stage1_dr_v1_from_m50_96env_200iter_20260513_obsnoise_fix`。
+- 启动口径：从 stronger rear-support / anti-dive run 的 `model_50.pt` warm-start，`96 env / 200 iteration / learning_rate=5e-5`。
+- 停止点 TensorBoard step 为 `39`；已保存 `model_0.pt` 和 `model_25.pt`。
+- 按用户要求关闭 Stage1 默认域随机化：观测噪声、动作噪声、reset 小扰动和执行器 scale 随机化均关闭。
+- 保留执行器 scale 随机化代码路径，但默认 scale range 全部恢复为 `(1.0,1.0)`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+结论：
+- DR_v1 停止点 global：`current_level_mean≈13.30`、`rows_advanced_mean≈1.97`、`completed_column_rate=0.50`、`row_advance_rate≈0.36`。
+- stairs 三列达到 row `18.00/17.92/18.00`，但 `rows_advanced_mean=0`、`row_advance_rate=0`、`row_contact_support_min=0`，属于高 row 卡滞，不是高质量持续推进。
+- obstacles 两列达到 row `16.64/17.58`，但 col08 已无推进，col09 仅弱推进；当前不把 DR_v1 停止点作为优质策略。
+
+## 2026-05-13
+
+已完成：
+- 按用户要求从 stronger rear-support / anti-dive run 的 `model_50.pt` 继续启动非 DR 训练，计划 `200 iteration`。
+- 先尝试 `160 env`：启动日志为 `RL_Training/logs/runtime/stage1_h4_m50_dr_off_160env_200iter_20260513.log`，在 scene creation 阶段被系统 kill，未进入 PPO，未形成有效 run 目录。
+- 再尝试 `120 env`：启动日志为 `RL_Training/logs/runtime/stage1_h4_m50_dr_off_120env_200iter_20260513.log`，同样在 scene creation 阶段被系统 kill，未进入 PPO，未形成有效 run 目录。
+- 已按用户 fallback 要求启动 `96 env / 200 iteration`，有效 run 为 `RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-13_23-21-20_stage1_h4_m50_dr_off_96env_200iter_20260513_retry`。
+- runtime log：`RL_Training/logs/runtime/stage1_h4_m50_dr_off_96env_200iter_20260513_retry.log`。
+- 当前已成功进入 PPO，已打印到 iteration `1/200`。
+
+修改文件：
+- `docs/current_status.md`
+- `logs/daily_work_log.md`
+
+结论：
+- 本机当前 Stage1 仍不能稳定启动 `120+ env`；`96 env` 是本轮实际有效训练配置。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求在 headless 下回放 `model_50.pt`、col05 stairs_down、固定 row12，并记录 reset 原因。
+- 使用 `--terrain_replay_columns 5 --terrain_replay_level 12 --print_reset_causes`，有限运行 `1800` 帧。
+
+输出：
+- 视频：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-13_23-21-20_stage1_h4_m50_dr_off_96env_200iter_20260513_retry/videos/play/debug_col05_row12_reset_reasons_1800.mp4`
+- 回放日志确认 `Stage1 replay terrain columns: 5:stairs down fixed row 12`，reset 后 `level_after=12`。
+
+结论：
+- 共记录 `4` 次 reset，均由 `ball_joint_out_of_bounds` 触发。
+- 具体越界均为后球铰 pitch 轴 `spm2_platform_joint_y` 正向超过 `+0.5 rad`：step `66` 为 `0.516`，step `520` 为 `0.509`，step `1073` 为 `0.522`，step `1603` 为 `0.505`。
+- reset 不是 timeout、stuck、far、completed 或 row 固定失败；当前高 row 台阶和障碍回放中的 reset 都指向后段 pitch 姿态越界问题。
+
+## 2026-05-14
+
+已完成：
+- 排查 `model_50.pt`、col08、row12 GUI replay 中频繁 reset 的真实原因。
+- 修正 `play.py` GUI 非录制分支 timestep 不递增导致 reset 日志一直显示 `step=0` 的问题。
+- 增加 reset 前球铰越界诊断：固定 row replay 中若触发 `ball_joint_out_of_bounds`，打印具体越界关节名、当前角度和限位。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py` 通过。
+- `git diff --check` 通过。
+- headless replay 复现：`model_50.pt`、col08、`--terrain_replay_level 12`，首次 reset 在 step `596`，日志打印 `spm2_platform_joint_y=0.514>0.500`。
+
+结论：
+- row12 replay 频繁 reset 的直接原因是后球铰 pitch 轴 `spm2_platform_joint_y` 超过 `+0.5 rad` 终止上限；不是 row 固定失败，也不是 timeout / stuck / far / completed。
+
+## 2026-05-14
+
+已完成：
+- 修正 Stage1 `play.py` 回放固定 row 能力：新增 `--terrain_replay_level`，不再依赖 Hydra 覆盖 curriculum 参数来间接控制 replay 初始 row。
+- 在 Stage1 replay 模式中设置 `_stage1_replay_fixed_terrain_level`，使每次 reset 都强制回到指定 row，并同步更新 `terrain_level_floor`。
+- 增加 replay level summary 打印，便于确认 reset 后实际 row。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py` 通过。
+- `git diff --check` 通过。
+- headless smoke 已通过：`model_50.pt`、col08、`--terrain_replay_level 12`、目标 marker 和局部高度图开启；日志确认 `min=12 max=12 mean=12.00`。
+
+结论：
+- 后续固定 Stage1 回放 row 直接使用 `--terrain_replay_level <row>`；GUI 回放不要加 `--headless`。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求停止 `stage1_h4_m50_dr_off_96env_200iter_20260513_retry` 训练，并确认 GPU 训练进程已释放。
+- 导出本轮 TensorBoard 标量到 run 目录 `tensorboard_export/`。
+- 复核 checkpoint：本轮已保存 `model_0.pt`、`model_25.pt`、`model_50.pt`，停止前没有保存 `model_75.pt`。
+
+输出 / 观察：
+- 有效 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-13_23-21-20_stage1_h4_m50_dr_off_96env_200iter_20260513_retry`。
+- runtime log：`RL_Training/logs/runtime/stage1_h4_m50_dr_off_96env_200iter_20260513_retry.log`。
+- 最后完整 TensorBoard step 为 `71`，训练进度约 `36%`。
+- step `71` global：`current_level_mean≈13.06`、`rows_advanced_mean≈1.55`、`completed_column_rate=0.60`、`unfinished_column_count=4`、`row_advance_rate≈0.34`。
+- stairs 三列 row `17.93/17.64/18.00`，但 `rows_advanced_mean=0`、`row_advance_rate=0`、rear follow 和支撑均为 `0`；obs8 row `18.00` 同样无推进，obs9 recycle 到 row `2.37` 后仍有推进。
+
+结论：
+- 本轮停止点仍支持用户判断：高 row 下后段支撑和辅助推进不足，高 row 数值不能等同于稳定通关。
+- 当前若继续分析或回放，本轮最新可用 checkpoint 是 `model_50.pt`。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求将 Stage1 后球铰 pitch 轴 `spm2_platform_joint_y` 终止范围从 `[-1.6, 0.5] rad` 改为 `[-1.0, 0.8] rad`。
+- 前球铰 pitch `spm1_platform_joint_y` 当时仍保持 `[-1.6, 0.5] rad`；其余球铰 yaw / roll 范围不变。
+- 同步更新 Stage1 参数表和两个台阶准静态模型文档中的球铰 pitch 范围。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/台阶爬升准静态模型参数整理.md`
+- `docs/三体二维准静态台阶接触可行性模型.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+结论：
+- 旧 replay 中 `spm2_platform_joint_y=0.505-0.522 rad` 这类轻微超过 `+0.5 rad` 的状态，在当前源码下不再触发球铰越界 reset。
+- 终止条件本身是硬边界，不等同于连续训练惩罚；若后续策略继续贴近新上限，需要再评估是否加入软限位惩罚或姿态质量约束。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求将 Stage1 前球铰 pitch 轴 `spm1_platform_joint_y` 从 `[-1.6, 0.5] rad` 改为 `[-0.8, 0.5] rad`。
+- 因当前 Stage1 球铰 action 映射与 `ball_joint_out_of_bounds` 终止检查共用同一组 `terminations.ball_joint_pos_lower_limits / upper_limits`，该改动同时影响 action 映射目标范围和终止范围。
+- 同步更新 Stage1 参数表、台阶准静态模型文档和项目记忆。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/台阶爬升准静态模型参数整理.md`
+- `docs/三体二维准静态台阶接触可行性模型.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+结论：
+- 当前 Stage1 pitch 范围为：`spm1_platform_joint_y [-0.8, 0.5] rad`，`spm2_platform_joint_y [-1.0, 0.8] rad`。
+
+## 2026-05-14
+
+已完成：
+- 按用户确认方案将 Stage1 hard fine-tune 地形比例改为 `flat 10% / rough 10% / stairs 40% / obs 40%`。
+- 新增 hard-column completion 配置：`terrain_column_hard_completion_names` 和 `terrain_column_hard_completion_success_count`。
+- 当前 Stage1 将 `stairs down` / `discrete obstacles` 每个 hard column 的 completed-column 判定改为累计 `10` 次 max-row success。
+- 将 completed-column retention 从 `0.40` 降到 `0.20`，减少已完成列保留样本，把更多 env 容量留给未完成 hard columns。
+- 同步更新 Stage1 参数表、当前状态和 durable memory。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+结论：
+- 新训练将以 hard-stability fine-tune 为主：10 列映射为 `0 flat`、`1 rough`、`2-5 stairs`、`6-9 obs`。
+- 单个 env 到最高 row 仍会结束 episode；但 hard column 需要累计 `10` 次最高 row 通过后才整体 retired，避免偶然通关导致 hard 列过早退出训练。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求为 `play.py` 增加指定 row/col replay 的逐步 reward trace CSV 导出能力。
+- 新增参数：`--record_reward_trace`、`--reward_trace_output`、`--reward_trace_envs`、`--reward_trace_flush_interval`、`--max_play_steps`。
+- 导出内容包括所有 `_last_reward_components` 加权奖励分项、所有 `_last_reward_diagnostics` 奖励中间值、所有 `_last_terrain_feature_diagnostics` 地形特征中间值、所有 `_last_done_terms` reset/termination mask，以及 terrain row/col、command、policy/env action、total reward 等上下文。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py` 通过。
+- `git diff --check` 通过。
+
+结论：
+- 后续回放旧 `model_50.pt` 的指定 row/col 时，可以直接导出逐 step、逐 env 的 reward 诊断 CSV，用于定位前车抬升、drop guard、rear follow、支撑、stuck/recovery、quality-row 和 near-edge overspeed 等链条断点。
+
+## 2026-05-14
+
+已完成：
+- 继续排查 VSCode 中仍看到 Mermaid 代码块的问题：确认新文档 `docs/Stage1奖励函数逻辑链图解.md` 已无 Mermaid 残留，剩余 Mermaid 位于旧文档 `docs/MGDP_stage1_reward.md`。
+- 已将 `docs/MGDP_stage1_reward.md` 的 Mermaid 结构图替换为本地 SVG 图片。
+
+修改文件：
+- `docs/MGDP_stage1_reward.md`
+- `docs/assets/mgdp_stage1_reward_structure.svg`
+- `logs/daily_work_log.md`
+
+输出：
+- `docs/assets/mgdp_stage1_reward_structure.svg`
+
+## 2026-05-14
+
+已完成：
+- 按用户反馈将 `docs/Stage1奖励函数逻辑链图解.md` 中的 Mermaid 流程图重新渲染为本地 SVG 图片，便于在 VSCode 原生 Markdown preview 中直接查看。
+- 新增 `10` 张 SVG 图，覆盖总逻辑链、地形识别链、目标推进链、基础运动质量链、台阶动作链、drop guard、recovery、质量分与 row 推进、curriculum recycle 和 high-row 不稳定根因图。
+- 文档中已移除 Mermaid 代码块，改为普通 Markdown 图片链接。
+
+修改文件：
+- `docs/Stage1奖励函数逻辑链图解.md`
+- `docs/assets/stage1_reward_logic_chain/01_overview.svg`
+- `docs/assets/stage1_reward_logic_chain/02_terrain_features.svg`
+- `docs/assets/stage1_reward_logic_chain/03_target_progress.svg`
+- `docs/assets/stage1_reward_logic_chain/04_motion_quality.svg`
+- `docs/assets/stage1_reward_logic_chain/05_step_up_chain.svg`
+- `docs/assets/stage1_reward_logic_chain/06_drop_guard.svg`
+- `docs/assets/stage1_reward_logic_chain/07_recovery_chain.svg`
+- `docs/assets/stage1_reward_logic_chain/08_quality_row_relation.svg`
+- `docs/assets/stage1_reward_logic_chain/09_curriculum_recycle.svg`
+- `docs/assets/stage1_reward_logic_chain/10_root_cause.svg`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+输出：
+- `docs/Stage1奖励函数逻辑链图解.md`
+- `docs/assets/stage1_reward_logic_chain/*.svg`
+
+## 2026-05-14
+
+已完成：
+- 按用户要求输出 Stage1 奖励函数整条逻辑链图解文档。
+- 新文档用 Mermaid 图和表格串联局部高度图 / 地形 gate、目标推进、运动质量、台阶动作、坑 / drop 抗栽头、stuck / recovery、quality score 与 row 推进、hard fine-tune recycle 机制。
+- 文档强调当前根因判断：high-row 不等于稳定技能，问题优先在 reward 激活相位、质量与 row 推进绑定、宽坑出坑动作链和后车支撑正反馈，而不是继续单纯放大奖励权重。
+
+修改文件：
+- `docs/Stage1奖励函数逻辑链图解.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+输出：
+- `docs/Stage1奖励函数逻辑链图解.md`
+
+## 2026-05-14
+
+已完成：
+- 按用户要求停止 `stage1_hardcols_m50_96env_200iter_20260514` 训练，并确认 GPU 训练进程已释放。
+- 导出该 run 的 TensorBoard 标量到 `tensorboard_export/`。
+- 将 Stage1 reward 权重回退到上一轮 `stage1_h4_m625_reward_retarget_rear_finetune` 口径。
+- 同步更新 Stage1 参数表、当前状态和 durable memory。
+
+输出 / 观察：
+- run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-14_02-05-08_stage1_hardcols_m50_96env_200iter_20260514`。
+- runtime log：`RL_Training/logs/runtime/stage1_hardcols_m50_96env_200iter_20260514.log`。
+- 最后完整 TensorBoard step 为 `33`；保存 checkpoint 为 `model_0.pt`、`model_25.pt`。
+- 停止点 global：`current_level_mean≈13.89`、`rows_advanced_mean≈0.87`、`completed_column_rate=0.20`、`stagnation_rate≈0.22`、`rear_follow_success_rate≈0.20`、`actual_overspeed_near_edge_rate≈0.76`。
+
+结论：
+- hard terrain 高占比采样确实让策略更快进入 high-row hard terrain，但没有自然学出高质量支撑 / 恢复动作。
+- 当前问题不应继续归因为 reward 权重不够大；下一步应检查 reward 激活窗口、释放条件和物理设计。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求将 Stage1 地图配置从 hardcols 采样口径恢复为原 `model_50.pt` 对应的 10 列分布。
+- 当前分布为：`1` 列 flat、`2` 列 slope、`2` 列 rough、`3` 列 stairs、`2` 列 obs。
+- 具体列映射恢复为：`col0 flat`、`col1 slope down`、`col2 slope up`、`col3-col4 uneven rough`、`col5-col7 stairs down`、`col8-col9 discrete obstacles`。
+- 同步更新 Stage1 参数表、奖励逻辑链文档、当前状态和 durable memory。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/Stage1参数详情表.md`
+- `docs/Stage1奖励函数逻辑链图解.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+结论：
+- 新启动的 Stage1 训练 / replay 会使用恢复后的原地图；已保存历史 run 的 `params/env.yaml` 不会被 retroactively 修改。
+- completed-column retention 仍为 `0.20`，`stairs down` / `discrete obstacles` hard column 仍需累计 `10` 次 max-row success。
+
+## 2026-05-14
+
+已完成：
+- 分析用户刚导出的三组 `model_50.pt` reward trace：`model50_col05_row16_reward_trace.csv`、`model50_col08_row5_reward_trace.csv`、`model50_col09_row5_reward_trace.csv`。
+- 按地形识别、front pitch、drop guard、rear follow、支撑、stuck/recovery、quality-row 和 near-edge overspeed 链条逐项统计全程、reset 前窗口和 waypoint hit 事件。
+- 将诊断结论同步写入当前状态和 durable memory。
+
+输出 / 观察：
+- 三组 trace 中所有 hard waypoint hit 都是 `row_advance_without_quality=1` 且 `quality_row_advance_mask=0`。
+- `terrain_gate_step_up` / `terrain__g_step_up` 经常激活，说明主要不是完全识别不到台阶上沿 / 坑出口。
+- `front_pitch_ref` 常达到约 `-0.30 rad`，但实际前车 pitch 跟踪不足，且多个命中事件时 `step_up_posture_weight=0`。
+- `rear_follow_reward_raw` 基本为 `0`，后车正反馈没有真正成为可学习收益。
+- near-edge overspeed 几乎全程高发；`col09 row5 obs` reset 前 stuck/recovery 链最明显，`recovery_active=1` 但 `recovery_success=0`。
+
+结论：
+- replay 失败的主断点不是地形识别，而是正确动作链没有和 row 推进持续绑定；下一轮应优先处理 quality-row 绑定、front pitch 激活相位、rear follow 正奖励、recovery 成功定义和速度约束。
+
+## 2026-05-14
+
+已完成：
+- 按用户确认修改 Stage1 两个 reward 激活点：`step_up_posture_weight` 去掉 `target_ahead` 强门槛，当前只由 `g_step_up` 和距离姿态窗口决定。
+- `rear_follow_reward` 去掉 `target_ahead` 强门槛，并拆为后车追赶高度进展奖励与后车已跟上后的支撑保持奖励；其中追赶奖励不再要求 rear support，保持奖励仍要求后轮支撑。
+- 新增 `rear_follow_hold_min_score=0.70`、`rear_follow_hold_reward_ratio=0.25`，并新增 trace 诊断 `rear_follow_progress_reward_raw`、`rear_follow_hold_reward_raw`、`rear_follow_hold_score`。
+- 同步更新 Stage1 参数表、奖励逻辑链文档、当前状态和 durable memory。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/Stage1参数详情表.md`
+- `docs/Stage1奖励函数逻辑链图解.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+结论：
+- 本次只处理 reward 激活和后车正反馈可达性；未改变 quality-row 绑定、recovery、速度约束和课程 recycle 机制。
+- 下一次固定 row/col replay 应重点看 hit 附近 `step_up_posture_weight` 是否仍异常归零，以及 `rear_follow_progress_reward_raw` / `rear_follow_hold_reward_raw` 是否真正产生正反馈。
+
+## 2026-05-14
+
+已完成：
+- 按用户确认将 Stage1 recovery 从“卡住后倒退轻罚 + 目标距离减少 `0.10 m` 成功”改为三段式恢复动作链。
+- 保留 `recovery_active` 卡住检测；recovery 激活后 `1.0 s` 内短时倒退给小正奖励，不再惩罚倒退。
+- recovery 成功条件改为：已经倒退 / 调姿至少 `0.10 s`，no-progress 解除，并重新产生前向进展或目标距离下降。
+- 新增 recovery trace 诊断字段：`recovery_reverse_reward_now`、`recovery_had_reverse`、`recovery_no_progress_cleared`、`recovery_forward_progress_m`、`recovery_total_progress_m`、`recovery_reverse_time_s`、`recovery_elapsed_time_s`、`recovery_reverse_reward_raw`、`recovery_success_reward_raw`。
+- 同步更新 Stage1 参数表、奖励逻辑链文档、当前状态和 durable memory。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `docs/Stage1参数详情表.md`
+- `docs/Stage1奖励函数逻辑链图解.md`
+- `docs/assets/stage1_reward_logic_chain/07_recovery_chain.svg`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+结论：
+- 下一次 replay 应重点看 `recovery_reverse_reward_now` 是否先出现、`recovery_had_reverse` 是否成立、`recovery_no_progress_cleared` 是否从 `0` 变为 `1`，再看 `recovery_success_rate` 是否上升。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求审计 `--record_reward_trace` 的检测项覆盖范围。
+- 确认 `play.py` 会导出全部 `reward__*` 加权奖励、`diag__*` 中间值、`terrain__*` 地形特征和 `done__*` 终止项。
+- 补齐基础 reward 的未加权 raw 诊断字段：`distance_to_target_raw`、`progress_to_target_raw`、`reached_target_raw`、`far_from_target_raw`、`angle_diff_raw`、`slip_penalty_raw`、`action_rate_penalty_raw`、`contact_support_penalty_raw`、`edge_speed_penalty_raw`、`terrain_aware_edge_speed_penalty_raw`、`stuck_penalty_raw`。
+- 补齐关键中间量：`current_goal_distance_m`、`previous_goal_distance_m`、`progress_delta_m`、`hard_gate`、`target_ahead`、`step_up_height_m`、`drop_guard_weight`、`rear_follow_phase`、`front_middle_high`、`front_middle_progress_min` 等。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过。
+- `git diff --check` 通过。
+
+结论：
+- 后续训练结束回放时，CSV 中可以直接用 `reward__*` 看加权量级，用 `diag__*_raw` 和其它 `diag__*` 看奖励逻辑链中间值，不需要再从加权奖励反推。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求从原 `model_50.pt` 启动 Stage1 fine-tune：`96 env / 200 iteration / learning_rate=5e-5`。
+- 训练 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-14_17-34-46_stage1_m50_reward_activation_recovery_trace_96env_200iter_20260514`。
+- runtime log：`RL_Training/logs/runtime/stage1_m50_reward_activation_recovery_trace_96env_200iter_20260514.log`。
+- 持续轮询并汇报 flat / slope / rough / stairs / obstacles 的 row 推进、后车跟随、支撑、超速、stagnation 和 recovery 状态。
+- 训练在 `72/200` iteration 提前自然结束，日志显示 `All Stage1 terrain-column environments retired; stopping training.`。
+
+输出 / 观察：
+- 已保存 checkpoint：`model_0.pt`、`model_25.pt`、`model_50.pt`、`model_72.pt`。
+- 课程推进顺序：简单列快速完成；stairs 三列约在 step `53` 前后被 completion 机制判定完成 / 回收；obs 中 `col09` 先完成，`col08` 最后 retired。
+- 最后完整 step `72`：global `current_level_mean≈14.77`、`row_advance_rate≈0.24`、`completed_column_rate≈0.971`、`quality_advance_score≈0.141`、`row_contact_support_min≈0.159`、`actual_overspeed_near_edge_rate≈0.851`、`stagnation_rate≈0.437`、`recovery_active_rate≈0.212`。
+- 最后主卡点 `col08_obstacles`：row 约 `17.31`，但推进率约 `0.050`，支撑约 `0.013`，near-edge overspeed 约 `0.991`，stagnation 约 `0.557`，recovery_active 约 `0.270`。
+
+结论：
+- 本轮 curriculum 已全列 retired，但运动质量指标仍提示高 row 支撑、速度和恢复动作链不足。
+- `model_72.pt` 不能只凭 retired 结果直接当作稳定最优策略；下一步需要固定 row/col 回放并用 reward trace 检查 `col06/07 row18 stairs` 与 `col08 row17/18 obs`。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求保持当前配置，从上一轮 `model_72.pt` 继续 Stage1 训练；启动口径为 `96 env / 200 iteration / learning_rate=5e-5 / --resume`，未使用 `--warmstart`。
+- run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-14_21-01-08_stage1_continue_m72_same_cfg_96env_200iter_20260514`。
+- runtime log：`RL_Training/logs/runtime/stage1_continue_m72_same_cfg_96env_200iter_20260514.log`。
+- 训练在 step `139` 左右提前自然结束，日志显示 `All Stage1 terrain-column environments retired; stopping training.`。
+- 导出本轮 row 推进表到 `results/stage1_continue_m72_same_cfg_rows_2026-05-14/`。
+
+输出 / 观察：
+- 已保存 checkpoint：`model_75.pt`、`model_100.pt`、`model_125.pt`、`model_139.pt`。
+- `col08_obstacles` 在 step `132` 达到约 row `17.96`，随后被 completed-column recycle 回收；最终 step `139` 的低 row 显示不代表退化。
+- `col09_obstacles` 成为后半段主要训练压力，step `139` 约 row `16.38`，但仍伴随高 overspeed、高 stagnation 和低支撑。
+- final global step `139`：`current_level_mean≈14.58`、`completed_column_rate≈0.99`、`unfinished_column_count≈0.10`、`rear_follow_success_rate≈0.761`、`row_contact_support_min≈0.134`、`actual_overspeed_near_edge_rate≈0.899`、`stagnation_rate≈0.428`。
+
+结论：
+- 全列已 retired，但 replay 稳定性仍需要单独验证。
+- 后续应固定 `model_139.pt` 与 `model_72.pt` 做 high-row replay，对比 `col08/col09 obstacles` 和 high-row stairs 的 reward trace 与真实动作链。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求修正 Stage1 completed-column 后的停训 / recycle 机制。
+- 新增 `curriculum.terrain_column_stop_when_all_completed`，当前 Stage1 设置为 `False`。
+- 修改 `CompleteCarDirectEnv.step()`：所有 terrain column 达到 completed-column 计数后，不再向 runner 上报 `all_train_envs_retired=True` 来触发自动停训。
+- 修改 `_recycle_stage1_completed_envs()`：当已经没有 unfinished column 且 stop 开关关闭时，reset 出来的 env 继续分配到 completed columns，并保持 active，避免全体 env parked 后没有训练信号。
+- 同步更新 Stage1 参数表、奖励逻辑链文档、当前状态和 durable memory。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/Stage1参数详情表.md`
+- `docs/Stage1奖励函数逻辑链图解.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过受影响的配置和环境文件。
+
+结论：
+- 后续 Stage1 训练不会再因为 `completed_column_rate=1.0` 自动停止；训练结束应由 `--max_iterations` 或用户手动停止控制。
+- `completed_column_rate` 仍只代表课程计数达标，不能作为 replay 稳定通关结论。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求将 Stage1 `spm2_platform_joint_y` 终止上限从 `0.8 rad` 改为 `0.9 rad`，只修改该上限。
+- 修正 `scripts/play.py --terrain_replay_level` 的固定 row 语义：默认改为“从指定 row 起步并作为 floor”，不再每次 reset 强制锁回该 row。
+- 新增 `--terrain_replay_lock_level`，需要反复锁定同一 row 复现失败点时可显式开启旧语义。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/scripts/play.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过。
+- `git diff --check` 通过。
+
+结论：
+- 后续 replay 如果要检查从 row15 向 row16 / row17 的连续推进，只用 `--terrain_replay_level 15`，不要加 lock。
+- 若要每次 reset 都回 row15 复现同一失败点，再加 `--terrain_replay_lock_level`。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求回放 `model_139.pt` 并记录 hard terrain 逐 step 奖励函数。
+- 回放口径：`col05/06/07 stairs_down`、`col08/09 discrete_obstacles`，`num_envs=5`，`--terrain_replay_level 15`，`--max_play_steps 2400`，headless。
+- 修正 `--record_reward_trace` 的 reset-cause 记录缺口：新增 `_last_step_done_terms` 记录 reset 前本 step 终止项，避免 `_reset_idx()` 清零后 CSV 中 stuck / joint_limit / timeout 变成 0。
+- 重新生成带 done cause 的 trace，并导出分列 summary / reward component / key diagnostics / reset events / waypoint hits 表。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/scripts/play.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+输出：
+- `RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-14_21-01-08_stage1_continue_m72_same_cfg_96env_200iter_20260514/reward_traces/model139_hardcols_row15_steps2400_reward_trace_with_done_causes.csv`
+- `RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-14_21-01-08_stage1_continue_m72_same_cfg_96env_200iter_20260514/reward_traces/model139_hardcols_row15_steps2400_trace_summary.md`
+- 同目录 `*_progress_reset_summary.csv`、`*_reward_component_summary.csv`、`*_key_diagnostics_summary.csv`、`*_reset_events.csv`、`*_waypoint_hits.csv`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py` 通过。
+- headless replay 完成并正常退出。
+
+结论：
+- hard replay 从 row15 起步后推进到：`col05 row17`、`col06 row18`、`col07 row17`、`col08 row17`、`col09 row17`，但没有 completed-column。
+- `11` 次 waypoint hit 全部为 `row_advance_without_quality=1` 且 `quality_row_advance_mask=0`，说明 row 推进仍未被质量门约束。
+- reset 共 `14` 次：stuck `5`、joint_oob `4`、timeout `5`；`spm2_platform_joint_y` 仍会越过 `0.9 rad` 上限。
+- 台阶列后车正奖励基本为 `0`，near-edge overspeed 仍高发，后续应优先查 quality-row 绑定、rear follow 正反馈和速度约束。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求清理 Stage1 三个无效 reward 项：删除 `edge_speed_penalty`、`action_soft_limit_penalty`、`far_from_target` 的 reward 计算、reward component、diagnostics、TensorBoard reward 标量和 logger 展示项。
+- 保留 `far_from_target` 作为终止保护，不再作为 reward 项参与训练。
+- 重新开启 Stage1 域随机化：观测噪声、动作噪声 / bias、reset 小扰动、执行器 scale 随机化均开启；地形高度、摩擦、质量 / 质心仍不随机。
+- 同步更新 Stage1 参数表、奖励逻辑链文档、当前状态和 durable memory。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/mdp/rewards.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage0_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/Stage1参数详情表.md`
+- `docs/Stage1奖励函数逻辑链图解.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 已通过受影响 Python 文件。
+- 普通 env python 直接实例化 Stage1 cfg 时因当前环境缺少 `pxr` 模块失败，该问题属于 Isaac runtime 依赖环境，不是本次语法错误。
+
+结论：
+- 后续 reward trace 不再关注这三个已删除 reward；`far_from_target` 只看 done cause。
+- 下一轮训练应重点看 `terrain_aware_edge_speed_penalty`、`front_pitch_ref` 链、`rear_follow_*`、`recovery_*`、支撑质量和 quality-row 绑定是否真正改善动作链。
+
+## 2026-05-14
+
+已完成：
+- 按用户要求将 Stage1 `front_pitch_max_ref_rad` 从 `0.30 rad` 改为 `0.50 rad`。
+- 按用户要求实现车轮接触摩擦随机化：每次 env reset 时只随机 6 个车轮 body 对应 collision shapes 的 PhysX material properties。
+- 新增配置项：`enable_wheel_friction_randomization`、`wheel_static_friction_range`、`wheel_dynamic_friction_range`。
+- 当前范围：静摩擦 `(0.80, 1.20)`，动摩擦 `(0.70, 1.10)`，并保证动摩擦不大于静摩擦。
+- 同步更新 Stage1 参数表、奖励逻辑链文档、当前状态和 durable memory。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/Stage1参数详情表.md`
+- `docs/Stage1奖励函数逻辑链图解.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 已通过受影响 Python 文件。
+- `CompleteCar-Stage1 / num_envs=1 / max_iterations=0` headless smoke 已通过，环境能创建、actor/critic 能加载并正常退出。
+
+结论：
+- 当前摩擦随机化应理解为车轮侧接触材质随机化，不是逐 tile 地形材质随机化。
+- 下一轮训练 / replay 应重点查看 `front_pitch_actual` 是否能跟上新的 `front_pitch_ref≈-0.50 rad`，以及摩擦扰动下 `wheel_slip`、`contact_support`、`stuck/recovery` 是否变差。
+
+## 2026-05-15
+
+已完成：
+- 按用户要求从 `model_139.pt` warm-start，开启当前 Stage1 域随机化与车轮接触摩擦随机化，运行 `96 env / 250 iteration / learning_rate=5e-5`。
+- 训练已跑满指定 iteration，最终 checkpoint 为 `model_249.pt`。
+- 导出本轮完整 per-step row 推进表和 hard columns 精简表。
+
+输出：
+- `RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_00-14-23_stage1_m139_frontpitch50_wheel_friction_dr_96env_250iter_20260515/model_249.pt`
+- `RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_00-14-23_stage1_m139_frontpitch50_wheel_friction_dr_96env_250iter_20260515/row_progress_by_step.csv`
+- `RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_00-14-23_stage1_m139_frontpitch50_wheel_friction_dr_96env_250iter_20260515/hard_row_progress_by_step.csv`
+
+结论：
+- 本轮 `completed_column_rate` 从 `0.00` 推进到 `0.70`，仍有 `3` 个 unfinished columns。
+- `col08/col09 obstacles` 在中前段完成 hard-column 计数后回收到低 row，最终低 row 均值属于 completed-column retention / recycle 现象。
+- 三列 `stairs_down` 最终均停在 `row18`，但 row18 到 row19 的 clean max-row success 仍不足，是下一步 replay 和奖励诊断重点。
+
+## 2026-05-15
+
+已完成：
+- 按用户要求单独修改 `col08/col09 obstacles` 的 completed-column 判定逻辑。
+- 新逻辑：`col08/col09` 必须从 `row4` 起步，连续推进到最高目标，才记一次 full-column success；每列累计 `15` 次后才算 completed。
+- 中途 reset 会让本次 attempt 作废，并重新回到 `row4`；unfinished recycle 也会将 `col08/col09` 重新分配到 `row4`。
+- `stairs_down` 仍保持最高 row 合格完成累计 `10` 次的原逻辑。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过受影响 Python 文件。
+- `CompleteCar-Stage1 / num_envs=4 / max_iterations=0 / headless` smoke 通过。
+- smoke run 的 `params/env.yaml` 确认：`terrain_column_full_pass_completion_columns=(8,9)`、`terrain_column_full_pass_start_level=4`、`terrain_column_full_pass_success_count=15`。
+
+## 2026-05-15
+
+已完成：
+- 按用户要求只微调 Stage1 指定 front-pitch / rear-follow 参数：`front_pitch_height_gain_rad_per_m=2.7`、`front_pitch_max_ref_rad=0.35`、`step_up_posture_front_gap_start_m=0.75`、`step_up_posture_front_gap_full_m=0.20`、`rear_follow_reward_weight=10.0`、`rear_follow_hold_reward_ratio=0.35`、`rear_follow_penalty_weight=-36.0`。
+- 将 full-pass completed-column 机制扩展到 `stairs down`：stairs 初始采样固定 `row14`，必须从 row14 连续推进到最高目标才记一次 full-pass success，每列累计 `10` 次后 completed。
+- 保持 `col08/col09 discrete obstacles` 既有 full-pass 口径：row4 起步，累计 `15` 次；本次不改变 obs 起点和次数。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过受影响 Python 文件。
+- `git diff --check` 通过。
+- `CompleteCar-Stage1 / num_envs=4 / max_iterations=0 / headless` smoke 通过；落盘 `env.yaml` 确认 reward 参数、stairs row14、obs row4、obs 15 次和 stairs 10 次配置生效。
+
+## 2026-05-15
+
+已完成：
+- 按用户要求将 Stage1 `spm2_platform_joint_y` 的 action 映射上限改为 `0.8 rad`。
+- 拆分 action 映射范围与终止范围：action 映射使用 `control.ball_joint_action_position_*_limits`，终止仍使用 `terminations.ball_joint_pos_*_limits`。
+- 当前 `spm2_platform_joint_y` action 映射范围为 `[-1.0, 0.8] rad`，终止范围为 `[-1.0, 0.9] rad`。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过受影响 Python 文件。
+- `CompleteCar-Stage1 / num_envs=4 / max_iterations=0 / headless` smoke 通过。
+- smoke run 的 `params/env.yaml` 确认 action upper 第 5 项为 `0.8`，termination upper 第 5 项为 `0.9`。
+
+## 2026-05-15
+
+已完成：
+- 按用户最新澄清，将 Stage1 hard terrain 完成逻辑从“严格连续 full-pass / 中途终止样本作废”修正为 hard-window repeat completion。
+- 删除不再使用的 full-pass attempt active 状态，最高 row success 直接计入对应 column 的 success count。
+- 修改 recycle 逻辑：回收到未完成 hard-window column 时，只有该列已有至少 `1` 次最高 row success，或窗口起点本来就是该地形初始 row，才强制回窗口起点。
+- 当前 stairs 初始从 `row1` 训练；第一次到达最高目标 row 后，该列后续回收到 `row14`，累计 `10` 次 success 后 completed。
+- 当前 `col08/col09 discrete obstacles` 初始和窗口起点均为 `row4`，累计 `15` 次最高 row success 后 completed。
+- 同步更新 `docs/current_status.md`、`docs/conversation_history.md` 和 `docs/Stage1参数详情表.md`，避免后续继续按严格 full-pass 解释。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `docs/Stage1参数详情表.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 已通过受影响 Python 文件。
+
+## 2026-05-15
+
+已完成：
+- 按用户要求停止当前 `model_249.pt` warm-start 的 Stage1 DR-off hard-window 训练。
+- 停止 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_13-04-14_stage1_m249_lr1e4_dr_off_hard_window_repeat_96env_250iter_20260515`；停止时约 iteration `102/250`，已保存到 `model_100.pt`。
+- 将 Stage1 参数改为：`front_pitch_height_gain_rad_per_m=3.0`、`front_pitch_max_ref_rad=0.50`、`step_up_posture_front_gap_start_m=0.90`、`step_up_posture_front_gap_full_m=0.25`、`rear_follow_reward_weight=8.0`、`rear_follow_hold_reward_ratio=0.25`。
+- 将 Stage1 车轮力矩上限改为 `control.wheel_joint_effort_limit_sim=30.0 N*m`；Stage0 与 Base 默认仍为 `20.0 N*m`。
+- 确认域随机化仍保持关闭。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `docs/Stage1参数详情表.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过 Stage1 配置及相关 Base 文件。
+- `git diff --check` 通过。
+- `CompleteCar-Stage1 / num_envs=4 / max_iterations=0 / headless` smoke 通过；落盘 `env.yaml` 确认 front pitch、rear follow、车轮力矩与 DR off 参数生效。
+
+## 2026-05-15
+
+已完成：
+- 按用户要求从原 `model_249.pt` 重新 warm-start 启动一轮 Stage1 训练。
+- 新 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_14-07-12_stage1_m249_frontpitch50_wheel30_lr1e4_dr_off_hard_window_repeat_96env_250iter_20260515_restart`。
+- 启动口径：`CompleteCar-Stage1`、headless、`cuda:0`、`96 env`、`250 iteration`、`learning_rate=1e-4`、`--resume --warmstart`。
+- 源 checkpoint：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_00-14-23_stage1_m139_frontpitch50_wheel_friction_dr_96env_250iter_20260515/model_249.pt`。
+- runtime log：`RL_Training/logs/runtime/stage1_m249_frontpitch50_wheel30_lr1e4_dr_off_hard_window_repeat_96env_250iter_20260515_restart.log`。
+
+验证：
+- 训练已进入 PPO loop，已看到 `Learning iteration 1/250`。
+- `params/env.yaml` 确认 `wheel_joint_effort_limit_sim=30.0`、`front_pitch_max_ref_rad=0.5`、`rear_follow_reward_weight=8.0`，域随机化保持关闭。
+- `params/agent.yaml` 确认 `learning_rate=0.0001`、`max_iterations=250`、`load_checkpoint=model_249.pt`。
+
+## 2026-05-15
+
+已完成：
+- 对 `2026-05-14_21-01-08_stage1_continue_m72_same_cfg_96env_200iter_20260514` 的 checkpoint 做横向对比。
+- 结论：按整体课程完成和 obs 推进，`model_139.pt` 是该 run 的最强候选；按 stairs 高 row 回放，`model_100.pt` 更适合，因为三列 stairs 在 step `100` 仍处于 `row18`。
+- 对比当前 wheel30 run 配置差异：当前 run 使用 `model_249.pt` warm-start、`learning_rate=1e-4`、车轮力矩 `30 N*m`、`front_pitch_max_ref_rad=0.50`、obs row4 / hard-window repeat completion；`m139_continue` 使用 `model_72.pt` 正常 resume、`learning_rate=5e-5`、车轮力矩 `20 N*m`、`front_pitch_max_ref_rad=0.30`、旧 hard completion / all-completed 自动结束逻辑。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-15
+
+## 2026-05-16
+
+已完成：
+- 按用户要求将 Stage1 `slope down / slope up` 地形坡度系数从 `0.4` 改为 `0.65`。
+- 当前最高 `row19` 的 slope grade 约为 `0.6175`，坡角约 `31.7°`；旧系数 `0.4` 时约 `20.8°`。
+- 仅修改默认 slope tile 入口 `make_slope_tile()`；历史 / 手动入口 `make_pyramid_tile()` 未同步修改，其余地形分布和课程配置保持不变。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py` 通过。
+- 计算确认 `row19` slope grade 约 `0.6175`、坡角约 `31.7°`。
+
+已完成：
+- 按用户要求将回放 `right_side_camera` 从原右侧 `3.5 m` 改为右侧 `3.0 m`。
+- `follow_view_right_side_distance_m` 最终设置为 `3.0`，高度仍为 `1.0 m`，相机仍看向中车体 root / 质心附近。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py` 通过。
+
+## 2026-05-15
+
+已完成：
+- 按用户要求监控 `stage1_m100_model100_obs016_dr_all_96env_200iter_20260515` 到 `Learning iteration 150/200`。
+- 确认第 150 轮 `completed_column_rate=1.0000`、`unfinished_column_count=0.0000`，五个 hard columns 均达到 `completed=1.0`。
+- 确认 `model_150.pt` 已落盘，随后向训练进程 PID `830196` 发送 `SIGINT`，训练进程已退出。
+- 第 150 轮 max-row 记录：`col05=103/459`、`col06=102/509`、`col07=103/505`、`col08=100/392`、`col09=104/194`。
+- 停止后 `nvidia-smi` 曾在 Isaac 退出清理窗口短暂返回驱动通信错误，随后已恢复；最终确认 GPU 上没有训练 Python 进程。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+结论：
+- 本轮按课程计数口径已全列完成并保存到 `model_150.pt`；但 `max_row_success_with_quality_count` 仍为 `0`，后续仍需固定 row/col replay 判断策略稳定性。
+
+## 2026-05-15
+
+已完成：
+- 按用户要求停止当前 `stage1_m75_stairs018_hard100_96env_200iter_20260515` 训练；停止前日志显示三列 stairs 已完成 `101/100`，obs 仍未完成，约 `col08=56.875/100`、`col09=65.625/100`。
+- 将 `discrete obstacles` 最高障碍高度 / 坑深调整为 `0.18 m`：源码公式改为 `0.05 + 0.1369 * difficulty`，`difficulty=row/20`。
+- 新增 Stage1Eval 每列稳定性日志：`max_row_attempt_count`、`recent_max_row_attempt_count`、`recent_max_row_success_rate`、`success_per_attempt`、`recent_success_per_attempt`、`consecutive_max_row_success`、`max_row_success_with_quality_count`。
+- recent 窗口定义为最近 `100` 次 max-row attempt，用于判断 max-row 成功是否稳定，而不是只看累计次数。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/terrain/terrain_builder.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/rsl_rl/utils/logger.py`
+- `docs/Stage1参数详情表.md`
+- `docs/台阶爬升准静态模型参数整理.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+结论：
+- `max_row_success_count=100` 只作为课程暴露门槛；后续训练汇报必须结合 recent success / attempt / consecutive / quality success 判断是否稳定习得。
+
+## 2026-05-15
+
+已完成：
+- 按用户要求从 `m139_continue/model_139.pt` warm-start 启动新一轮 Stage1 训练。
+- 新 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_14-52-23_stage1_m139_warmstart_lr5e5_hard_window_keep_96env_250iter_20260515`。
+- runtime log：`RL_Training/logs/runtime/stage1_m139_warmstart_lr5e5_hard_window_keep_96env_250iter_20260515.log`。
+- 启动口径：`CompleteCar-Stage1`、headless、`cuda:0`、`96 env`、`250 iteration`、`--resume --warmstart`、Stage1 默认学习率 `5e-5`。
+- 源 checkpoint：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-14_21-01-08_stage1_continue_m72_same_cfg_96env_200iter_20260514/model_139.pt`。
+- 保持当前 hard-window repeat completion 逻辑不变，车轮力矩 `20.0 N*m`，域随机化关闭。
+
+验证：
+- 训练已进入 PPO loop，已观察到 `Learning iteration 3/250`。
+- 落盘 `params/agent.yaml` 确认 `learning_rate=5.0e-05`、`load_checkpoint=model_139.pt`、`max_iterations=250`。
+- 落盘 `params/env.yaml` 确认车轮力矩 `20.0`、`front_pitch_max_ref_rad=0.3`、hard-window completion 和 spm2 action / termination 拆分配置生效。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-15
+
+已完成：
+- 按用户要求停止 `model_139.pt` warm-start 的 Stage1 训练，GPU 训练进程已释放。
+- 训练 run：`RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_14-52-23_stage1_m139_warmstart_lr5e5_hard_window_keep_96env_250iter_20260515`。
+- runtime log：`RL_Training/logs/runtime/stage1_m139_warmstart_lr5e5_hard_window_keep_96env_250iter_20260515.log`。
+- TensorBoard 最后完整 step 为 `87/250`；最后 `completed_column_rate=1.00`、`unfinished_column_count=0`。
+- 最后 hard row：`col05/06/07 stairs≈15.56/15.88/15.44`，`col08/09 obs≈11.20/11.96`。
+- 最新实际 checkpoint 为 `model_75.pt`；本次中断没有额外落出 `model_87.pt`。
+- 更新 hard terrain row 导出表到 step87：`hard_terrain_row_progress_all_steps.csv`。
+
+结论：
+- 当前完成率已达 `1.0`，但该完成率仍只代表现有计数逻辑达标。
+- 用户新目标已明确：stairs completed 后保持 `row14+`，obs completed 后保持指定 hard window 反复训练；后续需要修改 completed-column recycle/retention 采样策略。
+
+修改文件：
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+## 2026-05-15
+
+已完成：
+- 按用户要求修改 Stage1 completed 后 hard-window 采样策略：`stairs` 保持 `row14+`，`obs` 完成后从指定 hard window 继续反复训练。
+- 新增配置字段：`terrain_column_completed_hard_window_start_level`、`terrain_column_completed_hard_window_start_level_by_name`。
+- 当前 Stage1 设置：completed hard-window 默认起点 `row14`，并显式覆盖 `stairs down=14`、`discrete obstacles=14`。
+- 保持原 completion 计数逻辑不变：stairs 仍是 `row14 -> max row` 累计 `10` 次；obs 仍是 `row4 -> max row` 累计 `15` 次；只改变 completed 后的 retention / recycle 起点。
+
+修改文件：
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/complete_car_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/baseline/complete_car_stage1_cfg.py`
+- `RL_Training/source/complete_car_lab/complete_car_lab/tasks/direct/complete_car/base/env.py`
+- `docs/Stage1参数详情表.md`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile` 通过相关 Python 文件。
+- `CompleteCar-Stage1 / num_envs=4 / max_iterations=0 / headless` smoke 通过。
+- smoke run 的 `params/env.yaml` 确认 `terrain_column_completed_hard_window_start_level=14`，`stairs down=14`，`discrete obstacles=14`。
+
+## 2026-05-16
+
+已完成：
+- 新增 Stage1 多地形 best-env 录像编排脚本：`RL_Training/scripts/record_best_terrain_views.py`。
+- 脚本默认基于当前 `model_150.pt`，从 curriculum 初始 reset 开始对各地形组导出 reward trace，不指定 / 不锁定 row。
+- best env 筛选前提是从初始 reset 连续走到 `done__terrain_column_completed`；完成前若发生 timeout / stuck / low_quality / far / joint limit / roll limit 等 reset，则不作为合格 best env。
+- 合格 env 内按平均 reward、row progress、失败风险和完成用时综合评分，而不是只选最快完成；正式录像长度默认等于该实际完成 step，不再固定 15min / 5min。
+- hard 组：`col5-7 stairs down` 和 `col8-9 discrete obstacles` 各分配 `96 env` 筛选，各选一个 best env，录制 2K、无局部高度图 `chase/right_side`，以及有局部高度图 `chase`。
+- 其余地形组：`flat col0`、`slope down col1`、`slope up col2`、`rough col3-4` 各分配 `48 env` 筛选，各选一个 best env，录制 2K、无局部高度图 `chase`。
+- `scripts/play.py` 新增 `--seed`，用于让同一 best env 的不同视角录制尽量复用同一回放随机条件。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `RL_Training/scripts/record_best_terrain_views.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py RL_Training/scripts/record_best_terrain_views.py` 通过。
+- `record_best_terrain_views.py` dry-run 已确认 selection 命令和录制计划生成正常。
+
+## 2026-05-16
+
+已完成：
+- 按用户确认，将 best-env 录像流程从多 env 筛选改为单 env 多 seed 筛选。
+- 每个候选回放只启动 `num_envs=1`，指定单一 terrain column 和 seed；正式录制也只启动 `num_envs=1`，避免画面混入其他 env。
+- hard 组默认每列 `20` 个 seed；其余地形组默认 `5` 个 seed。
+- 候选允许最高 row 完成前 reset 不超过 `5` 次，合格候选内按平均 reward、row progress、失败风险和完成用时综合评分。
+- 查明外部大容量挂载：`/media/ubuntu/4AF2C275F2C26533`，约 `1.2T` 可用；已创建默认输出目录 `/media/ubuntu/4AF2C275F2C26533/complete_car_stage1_best_env_videos`。
+- `scripts/play.py` 新增 `--video_output_dir`，使正式 mp4 可直接写入外部挂载。
+
+修改文件：
+- `RL_Training/scripts/play.py`
+- `RL_Training/scripts/record_best_terrain_views.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+验证：
+- `python3 -m py_compile RL_Training/scripts/play.py RL_Training/scripts/record_best_terrain_views.py` 通过。
+- `record_best_terrain_views.py` dry-run 已确认会生成 `num_envs=1`、单列、单 seed 的筛选命令，并默认输出到外部挂载。
+- `git diff --check -- RL_Training/scripts/play.py RL_Training/scripts/record_best_terrain_views.py` 通过。
+
+## 2026-05-16
+
+已完成：
+- 按用户要求启动 best-env 正式录制前的第一步筛选，输出根目录为 `/media/ubuntu/4AF2C275F2C26533/complete_car_stage1_best_env_videos/manual_20260516_single_env`。
+- 执行 `stairs_cols05_07` 原始单 env 多 seed 筛选：`seed42-101`，共 `60` 个候选。
+- 原始筛选未找到合格 best：`qualified_count=0`，未生成 `selected_envs.json`。
+- 为避免重复旧 seed，给 `record_best_terrain_views.py` 增加 `--groups` 分组续跑能力，可只对指定组追加 seed，并在已有 summary 存在时保留已有组结果。
+- 继续执行 `stairs_cols05_07` 追加筛选：`seed102-161`，共 `60` 个候选。
+- 追加筛选仍未找到合格 best：`qualified_count=0`；合计 stairs 已筛选 `120` 个单 env 候选。
+
+修改文件：
+- `RL_Training/scripts/record_best_terrain_views.py`
+- `docs/current_status.md`
+- `docs/conversation_history.md`
+- `logs/daily_work_log.md`
+
+结论：
+- 当前 `model_150.pt` 在 stairs 最高 row 下多次达到 `row17-row18`，但在“完成最高 row 前 reset <= 5”的严格录制前提下没有合格候选。
+- 因没有 `selected_envs.json`，正式录制阶段未启动，最终 10 个视频未生成。

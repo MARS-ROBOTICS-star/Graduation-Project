@@ -83,31 +83,33 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.observations.scales.wheel_normal_contact_force = 1.0
         self.observations.scales.commands = 1.0
         self.observations.scales.last_action = 1.0
-        self.observations.noise.enabled = False
+        self.observations.noise.enabled = True
         self.observations.noise.level = 1.0
-        self.observations.noise.base_lin_vel = 0.1
-        self.observations.noise.base_ang_vel = 0.2
+        self.observations.noise.base_lin_vel = 0.05
+        self.observations.noise.base_ang_vel = 0.10
+        self.observations.noise.projected_gravity = 0.01
         self.observations.noise.ball_joint_pos = 0.01
         self.observations.noise.ball_joint_vel = 0.05
+        self.observations.noise.ball_joint_target_error = 0.01
+        self.observations.noise.module_roll_pitch = 0.02
         self.observations.noise.wheel_joint_vel = 0.05
         self.observations.noise.wheel_longitudinal_slip = 0.0
         self.observations.noise.wheel_slip_angle = 0.0
-        self.observations.noise.wheel_normal_contact_force = 0.0
+        self.observations.noise.wheel_normal_contact_force = 0.02
         self.observations.noise.commands = 0.0
 
         self.rewards.only_positive_rewards = False
         self.rewards.params.target_position_tolerance = 0.5
         self.rewards.params.distance_to_target_denominator_scale = 0.01
-        self.rewards.params.distance_to_target_weight = 6.0
+        self.rewards.params.distance_to_target_weight = 10.0
         self.rewards.params.nominal_goal_distance_m = 8.0
         self.rewards.params.progress_to_target_clip_m = 0.25
-        self.rewards.params.progress_to_target_relax_radius_m = 2.0
+        self.rewards.params.progress_to_target_relax_radius_m = 0.6
         self.rewards.params.progress_to_target_weight = 8.0
         self.rewards.params.reached_target_base_reward = 2.0
         self.rewards.params.reached_target_weight = 6.0
         self.rewards.params.far_from_target_margin = 3.0
-        self.rewards.params.far_from_target_weight = -2.0
-        self.rewards.params.angle_diff_weight = 6.0
+        self.rewards.params.angle_diff_weight = 14.0
         self.rewards.params.slip_penalty_weight = -2.0
         self.rewards.params.slip_longitudinal_penalty_ratio = 2.0
         self.rewards.params.slip_angle_penalty_ratio = 1.0
@@ -119,11 +121,9 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.rewards.params.contact_support_lr_balance_ratio = 0.15
         self.rewards.params.step_up_support_mid_ratio = 0.4
         self.rewards.params.step_up_support_rear_ratio = 0.6
-        self.rewards.params.edge_speed_penalty_weight = 0.0
         self.rewards.params.edge_height_low_threshold_m = 0.04
         self.rewards.params.edge_height_high_threshold_m = 0.10
-        self.rewards.params.edge_speed_limit_mps = 0.5
-        self.rewards.params.terrain_aware_edge_speed_penalty_weight = -20.0
+        self.rewards.params.terrain_aware_edge_speed_penalty_weight = -80.0
         self.rewards.params.stuck_penalty_weight = -3.0
         self.rewards.params.stuck_gate_threshold = 0.3
         self.rewards.params.stuck_speed_threshold_mps = 0.10
@@ -139,31 +139,31 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.rewards.params.hard_terrain_spin_speed_threshold_mps = 0.40
         self.rewards.params.hard_terrain_spin_slip_threshold = 3.0
         self.rewards.params.hard_terrain_spin_slip_scale = 3.0
-        self.rewards.params.action_soft_limit_penalty_weight = 0.0
-        self.rewards.params.action_soft_limit_threshold = 0.8
         self.rewards.params.step_up_front_posture_penalty_weight = -12.0
-        self.rewards.params.front_pitch_height_gain_rad_per_m = 2.5
-        self.rewards.params.front_pitch_max_ref_rad = 0.25
+        self.rewards.params.front_pitch_height_gain_rad_per_m = 3.0
+        self.rewards.params.front_pitch_max_ref_rad = 0.30
         self.rewards.params.front_pitch_sigma_rad = 0.20
         self.rewards.params.step_up_approach_distance_min_m = 0.20
         self.rewards.params.step_up_approach_distance_max_m = 1.20
-        self.rewards.params.step_up_posture_front_gap_start_m = 0.60
-        self.rewards.params.step_up_posture_front_gap_full_m = 0.15
+        self.rewards.params.step_up_posture_front_gap_start_m = 0.90
+        self.rewards.params.step_up_posture_front_gap_full_m = 0.25
         self.rewards.params.step_up_goal_ahead_threshold_m = 0.5
         self.rewards.params.step_up_progress_quality_min_multiplier = 0.2
         self.rewards.params.progress_quality_slip_scale = 4.0
         self.rewards.params.progress_quality_pitch_rate_sigma_radps = 1.0
         self.rewards.params.progress_quality_stuck_time_scale_s = 2.0
-        self.rewards.params.step_up_module_progress_reward_weight = 10.0
+        self.rewards.params.step_up_module_progress_reward_weight = 40.0
         self.rewards.params.step_up_module_height_progress_scale_m = 0.05
         self.rewards.params.step_up_module_progress_front_ratio = 0.15
         self.rewards.params.step_up_module_progress_middle_ratio = 0.35
         self.rewards.params.step_up_module_progress_rear_ratio = 0.50
         self.rewards.params.rear_follow_reward_weight = 8.0
-        self.rewards.params.rear_follow_penalty_weight = -12.0
+        self.rewards.params.rear_follow_penalty_weight = -36.0
         self.rewards.params.rear_follow_progress_scale_m = 0.03
         self.rewards.params.rear_follow_deficit_scale_m = 0.05
         self.rewards.params.rear_follow_front_middle_threshold_m = 0.03
+        self.rewards.params.rear_follow_hold_min_score = 0.70
+        self.rewards.params.rear_follow_hold_reward_ratio = 0.25
         self.rewards.params.quality_row_advance_reward_weight = 1.0
         self.rewards.params.quality_row_advance_min_score = 0.3
         self.rewards.params.quality_gated_terrain_advance = False
@@ -174,12 +174,16 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.rewards.params.quality_advance_front_progress_threshold_m = 0.03
         self.rewards.params.quality_advance_middle_progress_threshold_m = 0.03
         self.rewards.params.quality_advance_rear_progress_threshold_m = 0.02
-        self.rewards.params.terrain_actual_overspeed_penalty_ratio = 2.0
+        self.rewards.params.terrain_actual_overspeed_penalty_ratio = 3.0
         self.rewards.params.recovery_stuck_time_threshold_s = 0.5
         self.rewards.params.recovery_reverse_cmd_threshold_mps = 0.05
-        self.rewards.params.recovery_success_progress_m = 0.10
-        self.rewards.params.recovery_reverse_penalty_weight = -0.2
-        self.rewards.params.recovery_success_reward_weight = 0.5
+        self.rewards.params.recovery_reverse_reward_window_s = 1.0
+        self.rewards.params.recovery_min_reverse_time_s = 0.10
+        self.rewards.params.recovery_success_step_progress_m = 0.005
+        self.rewards.params.recovery_success_progress_m = 0.03
+        self.rewards.params.recovery_success_forward_speed_mps = 0.08
+        self.rewards.params.recovery_reverse_reward_weight = 0.2
+        self.rewards.params.recovery_success_reward_weight = 1.0
         self.rewards.params.drop_anti_dive_penalty_weight = -40.0
         self.rewards.params.drop_guard_gate_threshold = 0.3
         self.rewards.params.drop_guard_release_front_support = 0.7
@@ -201,8 +205,10 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.rewards.params.low_slip_angle_threshold_rad = 0.35
 
         self.terminations.orientation_limit_deg = 35.0
-        self.terminations.ball_joint_pos_lower_limits = (-0.7, -1.6, -0.5, -0.7, -1.6, -0.5)
-        self.terminations.ball_joint_pos_upper_limits = (0.7, 0.5, 0.5, 0.7, 0.5, 0.5)
+        self.terminations.ball_joint_pos_lower_limits = (-0.7, -0.8, -0.5, -0.7, -1.0, -0.5)
+        self.terminations.ball_joint_pos_upper_limits = (0.7, 0.5, 0.5, 0.7, 0.9, 0.5)
+        self.control.ball_joint_action_position_lower_limits = (-0.7, -0.8, -0.5, -0.7, -1.0, -0.5)
+        self.control.ball_joint_action_position_upper_limits = (0.7, 0.5, 0.5, 0.7, 0.8, 0.5)
 
         self.resets.root_pos = (0.0, 0.0, 0.30)
         self.resets.root_lin_vel = (0.0, 0.0, 0.0)
@@ -210,15 +216,24 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.resets.root_x_range = (-1.0, 1.0)
         self.resets.root_y_range = (-1.0, 1.0)
         self.resets.root_yaw_range = (0.0, 0.0)
-        self.resets.ball_joint_pos_range = (0.0, 0.0)
-        self.resets.ball_joint_vel_range = (0.0, 0.0)
+        self.resets.ball_joint_pos_range = (-0.02, 0.02)
+        self.resets.ball_joint_vel_range = (-0.05, 0.05)
         self.resets.wheel_joint_pos_range = (0.0, 0.0)
-        self.resets.wheel_joint_vel_range = (0.0, 0.0)
+        self.resets.wheel_joint_vel_range = (-0.5, 0.5)
 
-        self.randomization.enable_action_randomization = False
+        self.randomization.enable_action_randomization = True
         self.randomization.joint_position_noise_scale = 0.0
-        self.randomization.action_noise_std = 0.0
-        self.randomization.action_bias_std = 0.0
+        self.randomization.action_noise_std = 0.015
+        self.randomization.action_bias_std = 0.005
+        self.randomization.enable_actuator_scale_randomization = True
+        self.randomization.ball_joint_stiffness_scale_range = (0.80, 1.20)
+        self.randomization.ball_joint_damping_scale_range = (0.80, 1.20)
+        self.randomization.ball_joint_effort_limit_scale_range = (0.85, 1.15)
+        self.randomization.ball_joint_velocity_limit_scale_range = (0.90, 1.10)
+        self.randomization.wheel_joint_effort_limit_scale_range = (0.85, 1.15)
+        self.randomization.enable_wheel_friction_randomization = True
+        self.randomization.wheel_static_friction_range = (0.80, 1.20)
+        self.randomization.wheel_dynamic_friction_range = (0.70, 1.10)
 
         self.terrain.enabled = True
         self.terrain.mode = "generator"
@@ -269,17 +284,33 @@ class CompleteCarStage1EnvCfg(CompleteCarEnvCfg):
         self.curriculum.enabled = True
         self.curriculum.max_init_terrain_level = 5
         self.curriculum.initial_min_terrain_level_by_name = {
-            "stairs down": 1,
-            "discrete obstacles": 1,
+            "stairs down": 0,
+            "discrete obstacles": 0,
         }
         self.curriculum.initial_max_terrain_level_by_name = {
-            "stairs down": 1,
-            "discrete obstacles": 2,
+            "stairs down": 4,
+            "discrete obstacles": 4,
         }
         self.curriculum.default_terrain_name = "flat"
         self.curriculum.terrain_column_move_down_progress_ratio = 0.30
         self.curriculum.terrain_column_recycle_completed_envs = True
-        self.curriculum.terrain_column_completed_retention_ratio = 0.40
+        self.curriculum.terrain_column_completed_retention_ratio = 0.20
+        self.curriculum.terrain_column_stop_when_all_completed = False
+        self.curriculum.terrain_column_hard_completion_success_count = 100
+        self.curriculum.terrain_column_full_pass_completion_columns = (8, 9)
+        self.curriculum.terrain_column_full_pass_start_level = 4
+        self.curriculum.terrain_column_full_pass_success_count = 100
+        self.curriculum.terrain_column_full_pass_start_level_by_name = {
+            "stairs down": 14,
+        }
+        self.curriculum.terrain_column_full_pass_success_count_by_name = {
+            "stairs down": 100,
+        }
+        self.curriculum.terrain_column_completed_hard_window_start_level = 4
+        self.curriculum.terrain_column_completed_hard_window_start_level_by_name = {
+            "stairs down": 14,
+            "discrete obstacles": 4,
+        }
 
         self.sensors.imu.enabled = False
         self.sensors.stereo_camera.enabled = False

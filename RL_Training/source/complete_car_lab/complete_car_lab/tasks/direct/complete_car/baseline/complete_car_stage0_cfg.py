@@ -101,7 +101,6 @@ class CompleteCarStage0EnvCfg(CompleteCarEnvCfg):
         self.rewards.params.reached_target_base_reward = 2.0
         self.rewards.params.reached_target_weight = 6.0
         self.rewards.params.far_from_target_margin = 6.0
-        self.rewards.params.far_from_target_weight = -2.0
         self.rewards.params.angle_diff_weight = 6.0
         self.rewards.params.slip_penalty_weight = -2.0
         self.rewards.params.slip_longitudinal_penalty_ratio = 2.0

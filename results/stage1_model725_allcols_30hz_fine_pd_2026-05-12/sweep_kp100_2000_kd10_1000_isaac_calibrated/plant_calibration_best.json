@@ -1,0 +1,12 @@
+{
+  "J_axis":0.07,
+  "B_axis":6.0,
+  "tau_load":0.0,
+  "calibration_score":0.0858756251,
+  "calibration_error_mean":0.0625782098,
+  "calibration_rmse":0.0836676697,
+  "calibration_relative_error_mean":0.5624508593,
+  "calibration_sat_ratio":0.0009181459,
+  "calibration_qdot_limit_rate":0.0432409623,
+  "calibration_max_norm":1.0
+}

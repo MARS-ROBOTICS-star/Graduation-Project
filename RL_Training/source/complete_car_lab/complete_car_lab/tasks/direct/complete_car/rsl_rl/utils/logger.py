@@ -44,7 +44,6 @@ TENSORBOARD_TAG_ALIASES = {
     "Reward/distance_to_target": "00_Behavior/10_distance_to_target",
     "Reward/angle_diff": "00_Behavior/11_angle_diff",
     "Reward/progress_to_target": "00_Behavior/13_progress_to_target",
-    "Reward/far_from_target": "00_Behavior/14_far_from_target",
     "Termination/time_out_rate": "00_Behavior/15_time_out_rate",
     "Termination/far_from_target_rate": "00_Behavior/16_far_from_target_rate",
     "Termination/ball_joint_limit_rate": "00_Behavior/17_ball_joint_limit_rate",
@@ -115,7 +114,6 @@ CONSOLE_PRIORITY_TAGS = (
     "Reward/progress_to_target",
     "Reward/angle_diff",
     "Reward/slip_penalty",
-    "Reward/far_from_target",
     "Observation/wheel_longitudinal_slip_abs_mean_raw",
     "Observation/wheel_slip_angle_abs_mean_raw",
     "LowSlip/combined_pass_rate",
@@ -185,7 +183,6 @@ TENSORBOARD_EXTRA_TAGS = {
     "Reward/progress_to_target",
     "Reward/angle_diff",
     "Reward/slip_penalty",
-    "Reward/far_from_target",
     "Termination/time_out_rate",
     "Termination/far_from_target_rate",
     "Termination/ball_joint_limit_rate",
@@ -469,6 +466,47 @@ STAGE1_PER_COLUMN_EVAL_FIELDS = (
     "difficulty_score",
 )
 
+STAGE1_COMPLETION_COLUMNS = tuple(f"col{idx:02d}" for idx in range(len(STAGE1_TERRAIN_COLUMNS)))
+STAGE1_COLUMN_COMPLETION_FIELDS = (
+    "max_row_success_count",
+    "max_row_attempt_count",
+    "recent_max_row_attempt_count",
+    "recent_max_row_success_rate",
+    "success_per_attempt",
+    "recent_success_per_attempt",
+    "consecutive_max_row_success",
+    "max_row_success_with_quality_count",
+    "completion_target",
+    "completion_fraction",
+    "completed",
+)
+STAGE1_HARD_CONSOLE_COLUMNS = (
+    "col05_stairs_down",
+    "col06_stairs_down",
+    "col07_stairs_down",
+    "col08_obstacles",
+    "col09_obstacles",
+)
+STAGE1_HARD_CONSOLE_COLUMN_FIELDS = (
+    "current_level_mean",
+    "row_advance_rate",
+    "max_row_reached_rate",
+    "valid_target_masked",
+    "rear_follow_success_rate",
+    "row_contact_support_min",
+    "actual_overspeed_near_edge_rate",
+    "stagnation_rate",
+    "stuck_timeout_rate",
+    "difficulty_score",
+)
+STAGE1_HARD_CONSOLE_COMPLETION_COLUMNS = (
+    "col05",
+    "col06",
+    "col07",
+    "col08",
+    "col09",
+)
+
 STAGE1_TENSORBOARD_EXTRA_TAGS = (
     {f"Stage1Eval/global/{field}" for field in STAGE1_GLOBAL_EVAL_FIELDS}
     | {f"Stage1Eval/flat/{field}" for field in STAGE1_FLAT_EVAL_FIELDS}
@@ -476,6 +514,25 @@ STAGE1_TENSORBOARD_EXTRA_TAGS = (
         f"Stage1Eval/{column}/{field}"
         for column in STAGE1_TERRAIN_COLUMNS
         for field in STAGE1_PER_COLUMN_EVAL_FIELDS
+    }
+    | {
+        f"Stage1Eval/{column}/{field}"
+        for column in STAGE1_COMPLETION_COLUMNS
+        for field in STAGE1_COLUMN_COMPLETION_FIELDS
+    }
+)
+STAGE1_DENSE_ZERO_TAGS = {
+    f"Stage1Eval/{column}/{field}"
+    for column in STAGE1_COMPLETION_COLUMNS
+    for field in STAGE1_COLUMN_COMPLETION_FIELDS
+}
+STAGE1_DENSE_ZERO_TAGS.update(
+    {
+        "Stage1Eval/global/max_row_reached_rate",
+        "Stage1Eval/global/raw_hard_hit_rate",
+        "Stage1Eval/global/hard_quality_advance_rate",
+        "Stage1Eval/global/low_quality_hit_rate",
+        "Stage1Eval/global/row_advance_without_quality_rate",
     }
 )
 
@@ -541,6 +598,14 @@ STAGE1_CONSOLE_PRIORITY_TAGS = (
     "Stage1Eval/col07_stairs_down/difficulty_score",
     "Stage1Eval/col08_obstacles/difficulty_score",
     "Stage1Eval/col09_obstacles/difficulty_score",
+) + tuple(
+    f"Stage1Eval/{column}/{field}"
+    for column in STAGE1_HARD_CONSOLE_COLUMNS
+    for field in STAGE1_HARD_CONSOLE_COLUMN_FIELDS
+) + tuple(
+    f"Stage1Eval/{column}/{field}"
+    for column in STAGE1_HARD_CONSOLE_COMPLETION_COLUMNS
+    for field in STAGE1_COLUMN_COMPLETION_FIELDS
 )
 
 STAGE1_CONSOLE_VISIBLE_TAGS = set(STAGE1_CONSOLE_PRIORITY_TAGS)
@@ -970,6 +1035,9 @@ class Logger:
             value = float(torch.nan_to_num(torch.mean(tensor_value), nan=0.0, posinf=0.0, neginf=0.0).item())
 
         tensorboard_tag = self._tensorboard_tag(tag)
+        if self.stage_name == "stage1" and tag in STAGE1_DENSE_ZERO_TAGS:
+            self.writer.add_scalar(tensorboard_tag, value, step)  # type: ignore
+            return
         if tag not in self._activated_sparse_zero_scalars:
             if abs(float(value)) <= 1.0e-12:
                 self._pending_sparse_zero_scalars.setdefault(tag, []).append((step, float(value)))

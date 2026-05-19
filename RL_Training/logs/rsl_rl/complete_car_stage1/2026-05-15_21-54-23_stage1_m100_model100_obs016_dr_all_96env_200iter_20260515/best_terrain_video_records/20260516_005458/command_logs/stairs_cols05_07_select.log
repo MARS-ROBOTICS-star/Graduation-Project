@@ -1,0 +1,78 @@
+$ /home/ubuntu/miniconda3/envs/env_isaacLab/bin/python scripts/play.py --task CompleteCar-Stage1 --device cuda:0 --num_envs 96 --seed 42 --checkpoint /home/ubuntu/Graduation-Project/RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_21-54-23_stage1_m100_model100_obs016_dr_all_96env_200iter_20260515/model_150.pt --terrain_replay_columns 5,6,7 --headless --record_reward_trace --reward_trace_output /home/ubuntu/Graduation-Project/RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_21-54-23_stage1_m100_model100_obs016_dr_all_96env_200iter_20260515/best_terrain_video_records/20260516_005458/reward_traces/stairs_cols05_07_trace.csv --reward_trace_envs all --max_play_steps 72000 --stop_after_continuous_terrain_completions 12 --selection_max_pre_completion_resets 5
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: /home/ubuntu/IsaacLab/apps/isaaclab.python.headless.kit
+[INFO]: Parsing configuration from: complete_car_lab.tasks.direct.complete_car.baseline.complete_car_stage1_cfg:CompleteCarStage1EnvCfg
+[INFO]: Parsing configuration from: complete_car_lab.tasks.direct.complete_car.agents.rsl_rl_ppo_cfg:CompleteCarStage1PPORunnerCfg
+[INFO] Loading checkpoint: /home/ubuntu/Graduation-Project/RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_21-54-23_stage1_m100_model100_obs016_dr_all_96env_200iter_20260515/model_150.pt
+
+[36m======================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: /tmp/isaaclab/logs/isaaclab_2026-05-16_00-55-03.log[0m
+[36m======================================================================================[0m
+
+[33m00:55:03 [simulation_context.py] WARNING: The `enable_external_forces_every_iteration` parameter in the PhysxCfg is set to False. If you are experiencing noisy velocities, consider enabling this flag. You may need to slightly increase the number of velocity iterations (setting it to 1 or 2 rather than 0), together with this flag, to improve the accuracy of velocity updates.[0m
+[INFO]: Base environment:
+	Environment device    : cuda:0
+	Environment seed      : 42
+	Physics step-size     : 0.008333333333333333
+	Rendering step-size   : 0.03333333333333333
+	Environment step-size : 0.03333333333333333
+[33m00:55:05 [legacy.py] WARNING: Function 'is_prim_path_valid' is deprecated. Please use the USD APIs directly instead.
+
+    Example:
+        >>> import isaaclab.sim as sim_utils
+        >>>
+        >>> stage = sim_utils.get_current_stage()
+        >>> prim = stage.GetPrimAtPath("/World/Cube")
+        >>> prim.IsValid()
+        True
+    [0m
+[33m00:55:05 [legacy.py] WARNING: Function 'get_prim_at_path' is deprecated. Please use the USD APIs directly instead.
+
+    Example:
+        >>> import isaaclab.sim as sim_utils
+        >>>
+        >>> stage = sim_utils.get_current_stage()
+        >>> stage.GetPrimAtPath("/World/Cube")
+        Usd.Prim(</World/Cube>)
+    [0m
+[INFO]: Time taken for scene creation : 6.324558 seconds
+[INFO]: Scene manager:  <class InteractiveScene>
+	Number of environments: 96
+	Environment spacing   : 2.0
+	Source prim name      : /World/envs/env_0
+	Global prim paths     : []
+	Replicate physics     : True
+[INFO]: Starting the simulation. This may take a few seconds. Please wait...
+[INFO]: Time taken for simulation start : 2.005606 seconds
+[INFO]: Completed setting up the environment...
+[INFO] Stage1 replay terrain columns: 5:stairs down, 6:stairs down, 7:stairs down.
+[INFO] Stage1 replay levels after reset: min=0 max=4 mean=2.19 col05:stairs_down=0-4 col06:stairs_down=0-4 col07:stairs_down=0-4
+/home/ubuntu/miniconda3/envs/env_isaacLab/lib/python3.11/copyreg.py:105: FutureWarning: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+  return cls.__new__(cls, *args)
+--------------------------------------------------------------------------------
+Resolved observation sets: 
+	 actor :  ['actor']
+	 critic :  ['critic']
+--------------------------------------------------------------------------------
+Actor Model: MLPModel(
+  (obs_normalizer): EmpiricalNormalization()
+  (distribution): SquashedGaussianDistribution()
+  (mlp): MLP(
+    (0): Linear(in_features=328, out_features=256, bias=True)
+    (1): ReLU()
+    (2): Linear(in_features=256, out_features=256, bias=True)
+    (3): ReLU()
+    (4): Linear(in_features=256, out_features=8, bias=True)
+  )
+)
+Critic Model: MLPModel(
+  (obs_normalizer): EmpiricalNormalization()
+  (mlp): MLP(
+    (0): Linear(in_features=906, out_features=256, bias=True)
+    (1): ReLU()
+    (2): Linear(in_features=256, out_features=256, bias=True)
+    (3): ReLU()
+    (4): Linear(in_features=256, out_features=1, bias=True)
+  )
+)
+[INFO] Recording reward trace to: /home/ubuntu/Graduation-Project/RL_Training/logs/rsl_rl/complete_car_stage1/2026-05-15_21-54-23_stage1_m100_model100_obs016_dr_all_96env_200iter_20260515/best_terrain_video_records/20260516_005458/reward_traces/stairs_cols05_07_trace.csv

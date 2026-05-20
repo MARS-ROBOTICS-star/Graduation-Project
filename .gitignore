@@ -1,27 +1,71 @@
-.venv-mineru/
-*.SAT
+# Local environments and editor state
+.venv/
+.venv-*/
+.env
 .cache/
-outputs/
-# Training outputs stay local by default; upload a specific run only when explicitly requested.
-RL_Training/logs/
-RL_Training/outputs/
-RL_Training/logs/rsl_rl/complete_car_stage1/
-__pycache__/
-*.py[cod]
-slprj/
-*.slxc
-*.bak
-.obsidian/
+.agents/
 .codex
-results/training_stage_num_envs10.usda
+.vscode/
+.obsidian/
+*.py[cod]
+__pycache__/
 .~lock*
-docs/literature/
+
+# Project memory, notes, papers, thesis drafts, and intermediate documents
+AGENTS.md
+docs/
+logs/
+refs/
+backups/
+literature_note_skill.md
+*.pdf
+*.doc
+*.docx
+*.png
+*.jpg
+*.jpeg
+*.mp4
 毕业论文/
 
-# Generated analysis archives and replay videos stay local unless explicitly requested.
-results/Videos/
-results/*.zip
-results/*.tar.gz
-results/stage1_*_analysis*/
-results/stage1_tensorboard_*/
-results/stage1_reward_experiments/
+# Generated training, replay, analysis, and package outputs
+outputs/
+results/
+scripts/
+RL_Training/logs/
+RL_Training/outputs/
+RL_Training/tests/
+RL_Training/README.md
+RL_Training/.codex
+
+# Keep the public script surface minimal
+RL_Training/scripts/*.py
+!RL_Training/scripts/train.py
+!RL_Training/scripts/play.py
+
+# Exclude local reference notebooks / legacy derivation files from the runtime package
+RL_Training/source/**/*.md
+RL_Training/source/**/*.m
+RL_Training/source/**/*.mlx
+RL_Training/source/**/*.asv
+RL_Training/source/**/legacy_*/
+
+# Robot asset intermediate files
+URDF/**/*.xlsx
+URDF/**/*.csv
+URDF/**/export.log
+URDF/complete_car_final/
+
+# Inactive or backup USD assets
+USD/*.bak
+USD/*backup*
+USD/complete_car_equivlent.usd
+USD/Spherical_Parallel_test.usd
+USD/default_scene.usd
+USD/configuration/default_scene_*.usd
+
+# MATLAB and Simulink generated files
+slprj/
+*.slxc
+
+# Generic backups
+*.bak

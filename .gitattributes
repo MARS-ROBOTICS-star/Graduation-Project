@@ -1,1 +1,5 @@
-results/Videos/*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.pt binary
+*.usd binary
+*.STL binary
+*.onnx binary
+*.mp4 binary

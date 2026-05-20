@@ -503,6 +503,22 @@ def _resolve_checkpoint_lookup_args(agent_cfg) -> tuple[str, str]:
     return run_pattern, checkpoint_pattern
 
 
+def _validate_checkpoint_file(path: str) -> str:
+    """Ensure a direct checkpoint selector points to a real file."""
+    resolved_path = os.path.abspath(os.path.expanduser(path))
+    if os.path.isdir(resolved_path):
+        raise IsADirectoryError(f"Checkpoint must be a .pt file, but got directory: {resolved_path}.")
+    if not os.path.isfile(resolved_path):
+        raise FileNotFoundError(f"Checkpoint file does not exist: {resolved_path}")
+    return resolved_path
+
+
+def _checkpoint_selector_is_explicit_path(checkpoint: str) -> bool:
+    """Return True when checkpoint should be treated as a direct file path."""
+    local_path = Path(checkpoint).expanduser()
+    return local_path.is_file() or local_path.is_absolute() or local_path.parent != Path(".")
+
+
 @hydra_task_config(args_cli.task, args_cli.agent)
 def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     agent_cfg = _update_agent_cfg(agent_cfg)
@@ -548,8 +564,11 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
     needs_checkpoint = agent_cfg.resume or args_cli.record_only
     if needs_checkpoint:
-        run_pattern, checkpoint_pattern = _resolve_checkpoint_lookup_args(agent_cfg)
-        resume_path = get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
+        if isinstance(agent_cfg.load_checkpoint, str) and _checkpoint_selector_is_explicit_path(agent_cfg.load_checkpoint):
+            resume_path = _validate_checkpoint_file(agent_cfg.load_checkpoint)
+        else:
+            run_pattern, checkpoint_pattern = _resolve_checkpoint_lookup_args(agent_cfg)
+            resume_path = get_checkpoint_path(log_root_path, run_pattern, checkpoint_pattern)
     else:
         resume_path = None
 

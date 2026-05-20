@@ -384,6 +384,8 @@ class DebugCfg:
     follow_view_forward_distance_m: float = 4.0
     follow_view_right_side_distance_m: float = 3.0
     follow_view_right_side_height_m: float = 1.0
+    delay_terrain_completion_reset: bool = False
+    delayed_terrain_completion_env_indices: tuple[int, ...] = ()
     log_sensor_outputs: bool = True
 
 

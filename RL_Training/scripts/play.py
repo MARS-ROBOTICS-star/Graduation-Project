@@ -31,6 +31,8 @@ FOLLOW_CAMERA_NAMES = {
     "right_side": "right_side_camera",
     "top_down": "top_down_camera",
 }
+GLOBAL_DOLLY_VIEW_NAME = "global_dolly"
+GLOBAL_DOLLY_CAMERA_PATH = "/view/global/obs_to_flat_dolly_camera"
 
 parser = argparse.ArgumentParser(description="Play complete-car checkpoint with RSL-RL.")
 parser.add_argument("--video", action="store_true", default=False)
@@ -158,6 +160,89 @@ parser.add_argument(
         "--stream_video are enabled, such as 'chase,right_side'."
     ),
 )
+parser.add_argument(
+    "--record_global_dolly_view",
+    action="store_true",
+    default=False,
+    help=(
+        "Create a moving global camera for Stage1 replay. The default path starts near obs row 1 "
+        "and moves toward flat row 19 with a low oblique view."
+    ),
+)
+parser.add_argument("--global_dolly_camera_path", type=str, default=GLOBAL_DOLLY_CAMERA_PATH)
+parser.add_argument("--global_dolly_duration_steps", type=int, default=2000)
+parser.add_argument("--global_dolly_start_row", type=int, default=1)
+parser.add_argument("--global_dolly_start_columns", type=str, default="obs")
+parser.add_argument("--global_dolly_end_row", type=int, default=19)
+parser.add_argument("--global_dolly_end_columns", type=str, default="flat")
+parser.add_argument(
+    "--global_dolly_start_eye_offset",
+    type=str,
+    default="-10,8,4.8",
+    help="Comma-separated xyz offset from the start terrain focus.",
+)
+parser.add_argument(
+    "--global_dolly_start_target_offset",
+    type=str,
+    default="3,-2,0.35",
+    help="Comma-separated xyz offset from the start terrain focus.",
+)
+parser.add_argument(
+    "--global_dolly_end_eye_offset",
+    type=str,
+    default="-10,8,3.8",
+    help="Comma-separated xyz offset from the final terrain focus.",
+)
+parser.add_argument(
+    "--global_dolly_end_target_offset",
+    type=str,
+    default="3,-1,0.35",
+    help="Comma-separated xyz offset from the final terrain focus.",
+)
+parser.add_argument("--global_dolly_start_focal_length", type=float, default=24.0)
+parser.add_argument("--global_dolly_end_focal_length", type=float, default=28.0)
+parser.add_argument(
+    "--capture_terrain_row_stills",
+    action="store_true",
+    default=False,
+    help=(
+        "Capture one still image for each unique terrain name present in the replay envs, "
+        "using the current replay row/column assignment."
+    ),
+)
+parser.add_argument(
+    "--capture_terrain_only_stills",
+    action="store_true",
+    default=False,
+    help=(
+        "Capture one terrain-only still image for each unique terrain type at --still_terrain_row. "
+        "The camera targets terrain tile origins directly instead of env/robot origins."
+    ),
+)
+parser.add_argument("--still_terrain_row", type=int, default=19)
+parser.add_argument(
+    "--still_resolution",
+    type=str,
+    default="3840x2160",
+    help="Still image resolution as WIDTHxHEIGHT, for example 3840x2160.",
+)
+parser.add_argument("--still_output_dir", type=str, default=None)
+parser.add_argument("--still_camera_eye_offset", type=str, default="-7,-6,4.5")
+parser.add_argument("--still_camera_target_offset", type=str, default="2,0,0.45")
+parser.add_argument("--still_camera_focal_length", type=float, default=32.0)
+parser.add_argument(
+    "--terrain_only_camera_height",
+    type=float,
+    default=2.8,
+    help="Top-down terrain-only still camera height above the row tile origin, in meters.",
+)
+parser.add_argument(
+    "--terrain_only_camera_focal_length",
+    type=float,
+    default=8.0,
+    help="Focal length for top-down terrain-only stills.",
+)
+parser.add_argument("--still_settle_steps", type=int, default=8)
 parser.add_argument("--follow_view_top_height", type=float, default=3.5)
 parser.add_argument("--follow_view_chase_env", type=int, default=0)
 parser.add_argument(
@@ -176,6 +261,16 @@ parser.add_argument(
     help=(
         "Start Stage1 replay from this terrain row and use it as the minimum reset floor. "
         "By default, row progression can continue after waypoint hits."
+    ),
+)
+parser.add_argument(
+    "--terrain_replay_level_range",
+    type=str,
+    default=None,
+    help=(
+        "Randomize initial Stage1 replay rows within an inclusive range, such as '0:4' or '0,4'. "
+        "Rows are spread independently inside each selected terrain column to avoid all envs clustering "
+        "on one row. Mutually exclusive with --terrain_replay_level."
     ),
 )
 parser.add_argument(
@@ -224,6 +319,36 @@ parser.add_argument(
     help="Print aggregated reset causes whenever any replay env resets.",
 )
 parser.add_argument(
+    "--record_until_terrain_completion",
+    action="store_true",
+    default=False,
+    help=(
+        "For Stage1 recording, keep recording until the selected env reaches terrain_column_completed, "
+        "then continue for --record_completion_padding_steps frames."
+    ),
+)
+parser.add_argument(
+    "--record_completion_env",
+    type=int,
+    default=-1,
+    help="Env id whose terrain-column completion controls --record_until_terrain_completion. Defaults to follow env.",
+)
+parser.add_argument(
+    "--record_completion_padding_steps",
+    type=int,
+    default=0,
+    help="Extra control frames to record after the selected env reaches terrain_column_completed.",
+)
+parser.add_argument(
+    "--record_completion_max_pre_completion_resets",
+    type=int,
+    default=-1,
+    help=(
+        "When --record_until_terrain_completion is used, fail recording if the selected env has more "
+        "than this many pre-completion reset events. Use -1 to disable this guard."
+    ),
+)
+parser.add_argument(
     "--record_reward_trace",
     action="store_true",
     default=False,
@@ -256,7 +381,12 @@ parser.add_argument(
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
 
-if args_cli.video:
+if (
+    args_cli.video
+    or args_cli.record_global_dolly_view
+    or args_cli.capture_terrain_row_stills
+    or args_cli.capture_terrain_only_stills
+):
     args_cli.enable_cameras = True
 
 sys.argv = [sys.argv[0]] + hydra_args
@@ -273,6 +403,7 @@ import rsl_rl
 from rsl_rl.runners import OnPolicyRunner
 
 from isaaclab.envs import DirectRLEnvCfg
+import isaaclab.sim as sim_utils
 from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.dict import print_dict
 
@@ -469,6 +600,33 @@ def _open_follow_view_stream_recorders(
     return recorders
 
 
+def _open_global_dolly_stream_recorder(
+    raw_env,
+    stream_video_paths: dict[str, str],
+    fps: int,
+) -> list[dict[str, object]]:
+    import omni.replicator.core as rep
+
+    output_path = stream_video_paths[GLOBAL_DOLLY_VIEW_NAME]
+    camera_prim_path = args_cli.global_dolly_camera_path
+    render_product = rep.create.render_product(camera_prim_path, resolution=raw_env.cfg.viewer.resolution)
+    render_product_path = render_product if isinstance(render_product, str) else render_product.path
+    annotator = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
+    annotator.attach([render_product_path])
+    writer = _open_stream_writer(output_path, fps)
+    print(f"[INFO] Streaming global dolly camera video to: {output_path}", flush=True)
+    return [
+        {
+            "view": GLOBAL_DOLLY_VIEW_NAME,
+            "path": output_path,
+            "render_product": render_product,
+            "render_product_path": render_product_path,
+            "annotator": annotator,
+            "writer": writer,
+        }
+    ]
+
+
 def _append_follow_view_frames(raw_env, recorders: list[dict[str, object]]) -> int:
     import numpy as np
 
@@ -537,6 +695,11 @@ def _parse_stage1_replay_columns(raw_selector: str, terrain_runtime) -> list[int
         columns_by_name.setdefault(_normalize_selector(terrain_name), []).append(column)
     if "uneven rough" in columns_by_name:
         columns_by_name.setdefault("rough", list(columns_by_name["uneven rough"]))
+    if "discrete obstacles" in columns_by_name:
+        obstacle_columns = list(columns_by_name["discrete obstacles"])
+        columns_by_name.setdefault("obstacle", obstacle_columns)
+        columns_by_name.setdefault("obstacles", obstacle_columns)
+        columns_by_name.setdefault("obs", obstacle_columns)
 
     selected_columns: list[int] = []
     for token in selector.split(","):
@@ -577,6 +740,28 @@ def _format_replay_level_mode(level: int | None, lock_level: bool) -> str:
     return f" {mode} row {level}"
 
 
+def _parse_stage1_replay_level_range(raw_range: str | None) -> tuple[int, int] | None:
+    if raw_range is None:
+        return None
+    normalized = raw_range.strip().replace("-", ":").replace(",", ":")
+    parts = [part.strip() for part in normalized.split(":") if part.strip()]
+    if len(parts) != 2:
+        raise ValueError("--terrain_replay_level_range must use MIN:MAX format, for example 0:4.")
+    try:
+        low, high = int(parts[0]), int(parts[1])
+    except ValueError as exc:
+        raise ValueError("--terrain_replay_level_range must contain integer row indices.") from exc
+    if low > high:
+        low, high = high, low
+    return low, high
+
+
+def _format_replay_level_range_mode(level_range: tuple[int, int] | None) -> str:
+    if level_range is None:
+        return ""
+    return f" random rows {level_range[0]}-{level_range[1]}"
+
+
 def _clamp_stage1_replay_level(level: int, terrain_runtime) -> int:
     max_level = max(int(terrain_runtime.max_terrain_level) - 1, 0)
     return int(max(0, min(int(level), max_level)))
@@ -597,17 +782,58 @@ def _set_stage1_replay_level(raw_env, terrain_runtime, level: int | None, *, loc
     return replay_level
 
 
+def _set_stage1_replay_level_range(
+    raw_env,
+    terrain_runtime,
+    level_range: tuple[int, int] | None,
+) -> tuple[int, int] | None:
+    if level_range is None:
+        return None
+    if terrain_runtime.terrain_levels is None or terrain_runtime.terrain_types is None:
+        raise RuntimeError("Stage1 terrain runtime has not initialized terrain levels/types.")
+
+    low = _clamp_stage1_replay_level(level_range[0], terrain_runtime)
+    high = _clamp_stage1_replay_level(level_range[1], terrain_runtime)
+    if low > high:
+        low, high = high, low
+    if hasattr(raw_env, "_stage1_replay_fixed_terrain_level"):
+        raw_env._stage1_replay_fixed_terrain_level = None
+
+    span = high - low + 1
+    levels = torch.empty_like(terrain_runtime.terrain_levels)
+    terrain_types = terrain_runtime.terrain_types
+    for terrain_type in torch.unique(terrain_types):
+        env_ids = torch.nonzero(terrain_types == terrain_type, as_tuple=False).flatten()
+        if env_ids.numel() == 0:
+            continue
+        offset = int(torch.randint(0, span, (1,), device=terrain_runtime.device).item())
+        permutation = torch.randperm(int(env_ids.numel()), device=terrain_runtime.device)
+        assigned = low + torch.remainder(permutation + offset, span)
+        levels[env_ids] = assigned.to(dtype=levels.dtype)
+    terrain_runtime.terrain_levels[:] = levels
+
+    level_floor = getattr(raw_env, "_stage1_terrain_level_floor", None)
+    if level_floor is not None:
+        level_floor.copy_(terrain_runtime.terrain_levels)
+    return low, high
+
+
 def _reset_stage1_replay_curriculum_state(
     raw_env,
     terrain_runtime,
     replay_level: int | None = None,
     *,
     lock_level: bool = False,
+    replay_level_range: tuple[int, int] | None = None,
 ) -> int | None:
     """Keep Stage1 replay column selection from being overwritten by reset recycling."""
     num_cols = int(terrain_runtime._terrain_cfg.num_cols)
-    selected_level = _set_stage1_replay_level(raw_env, terrain_runtime, replay_level, lock_level=lock_level)
-    if selected_level is None:
+    if replay_level_range is not None:
+        selected_level = None
+        _set_stage1_replay_level_range(raw_env, terrain_runtime, replay_level_range)
+    else:
+        selected_level = _set_stage1_replay_level(raw_env, terrain_runtime, replay_level, lock_level=lock_level)
+    if selected_level is None and replay_level_range is None:
         terrain_runtime.terrain_levels[:] = mdp_curriculum.sample_initial_terrain_levels(
             raw_env.cfg.curriculum,
             terrain_runtime,
@@ -786,6 +1012,288 @@ def _print_stage1_replay_level_summary(raw_env, label: str) -> None:
             f"={int(torch.min(column_levels).item())}-{int(torch.max(column_levels).item())}"
         )
     print(" ".join(parts), flush=True)
+
+
+def _parse_float_triplet(raw_value: str, arg_name: str) -> tuple[float, float, float]:
+    parts = [part.strip() for part in raw_value.split(",")]
+    if len(parts) != 3:
+        raise ValueError(f"{arg_name} must contain three comma-separated numbers, got '{raw_value}'.")
+    try:
+        return tuple(float(part) for part in parts)  # type: ignore[return-value]
+    except ValueError as exc:
+        raise ValueError(f"{arg_name} must contain valid numbers, got '{raw_value}'.") from exc
+
+
+def _smoothstep(value: float) -> float:
+    clamped = max(0.0, min(1.0, float(value)))
+    return clamped * clamped * (3.0 - 2.0 * clamped)
+
+
+def _lerp_triplet(
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+    ratio: float,
+) -> tuple[float, float, float]:
+    return tuple(start[index] + (end[index] - start[index]) * ratio for index in range(3))
+
+
+def _add_triplet(
+    lhs: tuple[float, float, float],
+    rhs: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    return tuple(lhs[index] + rhs[index] for index in range(3))
+
+
+def _ensure_camera_prim(camera_prim_path: str, focal_length: float) -> None:
+    if not camera_prim_path.startswith("/"):
+        raise ValueError("--global_dolly_camera_path must be an absolute prim path.")
+    stage = sim_utils.get_current_stage()
+    path_parts = [part for part in camera_prim_path.strip("/").split("/") if part]
+    if not path_parts:
+        raise ValueError("--global_dolly_camera_path must be an absolute prim path.")
+    parent_path = ""
+    for part in path_parts[:-1]:
+        parent_path = f"{parent_path}/{part}"
+        if not stage.GetPrimAtPath(parent_path).IsValid():
+            sim_utils.create_prim(parent_path, "Xform")
+    if not stage.GetPrimAtPath(camera_prim_path).IsValid():
+        sim_utils.create_prim(
+            camera_prim_path,
+            "Camera",
+            attributes={
+                "focalLength": float(focal_length),
+                "horizontalAperture": 20.955,
+                "clippingRange": (0.01, 1000.0),
+            },
+        )
+
+
+def _set_camera_focal_length(camera_prim_path: str, focal_length: float) -> None:
+    stage = sim_utils.get_current_stage()
+    prim = stage.GetPrimAtPath(camera_prim_path)
+    if not prim.IsValid():
+        return
+    focal_attr = prim.GetAttribute("focalLength")
+    if focal_attr.IsValid():
+        focal_attr.Set(float(focal_length))
+
+
+def _dolly_focus_for_tiles(
+    terrain_runtime,
+    row: int,
+    columns_selector: str,
+) -> tuple[float, float, float]:
+    selected_columns = _parse_stage1_replay_columns(columns_selector, terrain_runtime)
+    num_cols = int(terrain_runtime._terrain_cfg.num_cols)
+    if selected_columns is None:
+        selected_columns = list(range(num_cols))
+    if not selected_columns:
+        raise ValueError(f"No terrain columns selected for global dolly selector '{columns_selector}'.")
+    selected_row = _clamp_stage1_replay_level(row, terrain_runtime)
+    levels = torch.full(
+        (len(selected_columns),),
+        int(selected_row),
+        dtype=torch.long,
+        device=terrain_runtime.device,
+    )
+    columns = torch.tensor(selected_columns, dtype=torch.long, device=terrain_runtime.device)
+    origins = terrain_runtime.get_tile_origins(levels, columns)
+    focus = torch.mean(origins, dim=0).detach().cpu()
+    return (float(focus[0].item()), float(focus[1].item()), float(focus[2].item()))
+
+
+def _update_global_dolly_camera(raw_env, timestep: int) -> None:
+    terrain_runtime = getattr(raw_env, "_terrain_runtime", None)
+    if terrain_runtime is None or not getattr(terrain_runtime, "generator_enabled", False):
+        raise RuntimeError("--record_global_dolly_view requires generated Stage1 terrain.")
+    if terrain_runtime.terrain_levels is None or terrain_runtime.terrain_types is None:
+        raise RuntimeError("Stage1 terrain runtime has not initialized terrain levels/types.")
+
+    start_focus = _dolly_focus_for_tiles(
+        terrain_runtime,
+        args_cli.global_dolly_start_row,
+        args_cli.global_dolly_start_columns,
+    )
+    end_focus = _dolly_focus_for_tiles(
+        terrain_runtime,
+        args_cli.global_dolly_end_row,
+        args_cli.global_dolly_end_columns,
+    )
+    start_eye = _add_triplet(start_focus, _parse_float_triplet(args_cli.global_dolly_start_eye_offset, "--global_dolly_start_eye_offset"))
+    start_target = _add_triplet(
+        start_focus,
+        _parse_float_triplet(args_cli.global_dolly_start_target_offset, "--global_dolly_start_target_offset"),
+    )
+    end_eye = _add_triplet(end_focus, _parse_float_triplet(args_cli.global_dolly_end_eye_offset, "--global_dolly_end_eye_offset"))
+    end_target = _add_triplet(
+        end_focus,
+        _parse_float_triplet(args_cli.global_dolly_end_target_offset, "--global_dolly_end_target_offset"),
+    )
+    duration_steps = max(int(args_cli.global_dolly_duration_steps), 1)
+    ratio = _smoothstep(float(timestep) / float(duration_steps))
+    eye = _lerp_triplet(start_eye, end_eye, ratio)
+    target = _lerp_triplet(start_target, end_target, ratio)
+    focal_length = args_cli.global_dolly_start_focal_length + (
+        args_cli.global_dolly_end_focal_length - args_cli.global_dolly_start_focal_length
+    ) * ratio
+    camera_prim_path = args_cli.global_dolly_camera_path
+    _ensure_camera_prim(camera_prim_path, focal_length)
+    _set_camera_focal_length(camera_prim_path, focal_length)
+    raw_env.sim.set_camera_view(eye=eye, target=target, camera_prim_path=camera_prim_path)
+
+
+def _slugify_filename(value: str) -> str:
+    slug = _normalize_selector(value).replace(" ", "_")
+    slug = re.sub(r"[^a-z0-9_]+", "_", slug)
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return slug or "terrain"
+
+
+def _collect_unique_terrain_still_envs(raw_env) -> list[int]:
+    terrain_runtime = getattr(raw_env, "_terrain_runtime", None)
+    if terrain_runtime is None or terrain_runtime.terrain_types is None:
+        return list(range(int(raw_env.num_envs)))
+    selected_env_ids: list[int] = []
+    seen_names: set[str] = set()
+    for env_id in range(int(raw_env.num_envs)):
+        column = int(terrain_runtime.terrain_types[env_id].item())
+        terrain_name = _terrain_column_name(terrain_runtime, column)
+        key = _normalize_selector(terrain_name)
+        if key in seen_names:
+            continue
+        seen_names.add(key)
+        selected_env_ids.append(env_id)
+    return selected_env_ids
+
+
+def _capture_terrain_row_stills(raw_env, output_dir: str, resolution: tuple[int, int]) -> list[str]:
+    import imageio.v2 as imageio
+    import numpy as np
+    import omni.replicator.core as rep
+
+    terrain_runtime = getattr(raw_env, "_terrain_runtime", None)
+    if terrain_runtime is None or terrain_runtime.terrain_levels is None or terrain_runtime.terrain_types is None:
+        raise RuntimeError("--capture_terrain_row_stills requires initialized Stage1 terrain replay.")
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    eye_offset = _parse_float_triplet(args_cli.still_camera_eye_offset, "--still_camera_eye_offset")
+    target_offset = _parse_float_triplet(args_cli.still_camera_target_offset, "--still_camera_target_offset")
+    focal_length = float(args_cli.still_camera_focal_length)
+    if focal_length <= 0.0:
+        raise ValueError("--still_camera_focal_length must be positive.")
+
+    for _ in range(max(int(args_cli.still_settle_steps), 0)):
+        raw_env.sim.render()
+
+    saved_paths: list[str] = []
+    for env_id in _collect_unique_terrain_still_envs(raw_env):
+        column = int(terrain_runtime.terrain_types[env_id].item())
+        row = int(terrain_runtime.terrain_levels[env_id].item())
+        terrain_name = _terrain_column_name(terrain_runtime, column)
+        origin = raw_env.scene.env_origins[env_id].detach().cpu()
+        focus = (float(origin[0].item()), float(origin[1].item()), float(origin[2].item()))
+        eye = _add_triplet(focus, eye_offset)
+        target = _add_triplet(focus, target_offset)
+        terrain_slug = _slugify_filename(terrain_name)
+        camera_path = f"/view/stills/{terrain_slug}_row{row:02d}_env{env_id:02d}_camera"
+        _ensure_camera_prim(camera_path, focal_length)
+        _set_camera_focal_length(camera_path, focal_length)
+        raw_env.sim.set_camera_view(eye=eye, target=target, camera_prim_path=camera_path)
+
+        render_product = rep.create.render_product(camera_path, resolution=resolution)
+        render_product_path = render_product if isinstance(render_product, str) else render_product.path
+        annotator = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
+        annotator.attach([render_product_path])
+        try:
+            for _ in range(4):
+                raw_env.sim.render()
+            rgb_data = annotator.get_data()
+            rgb_array = np.frombuffer(rgb_data, dtype=np.uint8).reshape(*rgb_data.shape)
+            if rgb_array.size == 0:
+                raise RuntimeError(f"Still camera did not return RGB data for env {env_id}.")
+            file_path = output_path / f"row{row:02d}_col{column:02d}_{terrain_slug}_env{env_id:02d}_4k.png"
+            imageio.imwrite(file_path, rgb_array[:, :, :3])
+            saved_paths.append(str(file_path))
+            print(f"[INFO] Saved terrain still: {file_path}", flush=True)
+        finally:
+            annotator.detach([render_product_path])
+    return saved_paths
+
+
+def _unique_terrain_columns(terrain_runtime) -> list[int]:
+    num_cols = int(terrain_runtime._terrain_cfg.num_cols)
+    selected_columns: list[int] = []
+    seen_names: set[str] = set()
+    for column in range(num_cols):
+        terrain_name = _terrain_column_name(terrain_runtime, column)
+        key = _normalize_selector(terrain_name)
+        if key in seen_names:
+            continue
+        seen_names.add(key)
+        selected_columns.append(column)
+    return selected_columns
+
+
+def _capture_terrain_only_stills(raw_env, output_dir: str, resolution: tuple[int, int]) -> list[str]:
+    import imageio.v2 as imageio
+    import numpy as np
+    import omni.replicator.core as rep
+
+    terrain_runtime = getattr(raw_env, "_terrain_runtime", None)
+    if terrain_runtime is None or not getattr(terrain_runtime, "generator_enabled", False):
+        raise RuntimeError("--capture_terrain_only_stills requires generated Stage1 terrain.")
+    if terrain_runtime.terrain_levels is None or terrain_runtime.terrain_types is None:
+        raise RuntimeError("Stage1 terrain runtime has not initialized terrain levels/types.")
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    terrain_row = _clamp_stage1_replay_level(args_cli.still_terrain_row, terrain_runtime)
+    camera_height = float(args_cli.terrain_only_camera_height)
+    focal_length = float(args_cli.terrain_only_camera_focal_length)
+    if camera_height <= 0.0:
+        raise ValueError("--terrain_only_camera_height must be positive.")
+    if focal_length <= 0.0:
+        raise ValueError("--terrain_only_camera_focal_length must be positive.")
+
+    for _ in range(max(int(args_cli.still_settle_steps), 0)):
+        raw_env.sim.render()
+
+    saved_paths: list[str] = []
+    selected_columns = _unique_terrain_columns(terrain_runtime)
+    levels = torch.full((len(selected_columns),), terrain_row, dtype=torch.long, device=terrain_runtime.device)
+    columns = torch.tensor(selected_columns, dtype=torch.long, device=terrain_runtime.device)
+    origins = terrain_runtime.get_tile_origins(levels, columns).detach().cpu()
+
+    for origin, column in zip(origins, selected_columns, strict=False):
+        terrain_name = _terrain_column_name(terrain_runtime, column)
+        focus = (float(origin[0].item()), float(origin[1].item()), float(origin[2].item()))
+        eye = (focus[0], focus[1], focus[2] + camera_height)
+        target = focus
+        terrain_slug = _slugify_filename(terrain_name)
+        camera_path = f"/view/terrain_stills/{terrain_slug}_row{terrain_row:02d}_camera"
+        _ensure_camera_prim(camera_path, focal_length)
+        _set_camera_focal_length(camera_path, focal_length)
+        raw_env.sim.set_camera_view(eye=eye, target=target, camera_prim_path=camera_path)
+
+        render_product = rep.create.render_product(camera_path, resolution=resolution)
+        render_product_path = render_product if isinstance(render_product, str) else render_product.path
+        annotator = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
+        annotator.attach([render_product_path])
+        try:
+            for _ in range(4):
+                raw_env.sim.render()
+            rgb_data = annotator.get_data()
+            rgb_array = np.frombuffer(rgb_data, dtype=np.uint8).reshape(*rgb_data.shape)
+            if rgb_array.size == 0:
+                raise RuntimeError(f"Terrain still camera did not return RGB data for column {column}.")
+            file_path = output_path / f"row{terrain_row:02d}_col{column:02d}_{terrain_slug}_terrain_only_4k.png"
+            imageio.imwrite(file_path, rgb_array[:, :, :3])
+            saved_paths.append(str(file_path))
+            print(f"[INFO] Saved terrain-only still: {file_path}", flush=True)
+        finally:
+            annotator.detach([render_product_path])
+    return saved_paths
 
 
 def _csv_cell_from_scalar(value) -> float | int | str:
@@ -967,6 +1475,7 @@ def _configure_stage1_replay_terrain(
     replay_level: int | None = None,
     *,
     lock_level: bool = False,
+    replay_level_range: tuple[int, int] | None = None,
 ) -> bool:
     terrain_runtime = getattr(raw_env, "_terrain_runtime", None)
     if terrain_runtime is None or not getattr(terrain_runtime, "generator_enabled", False):
@@ -994,9 +1503,12 @@ def _configure_stage1_replay_terrain(
             terrain_runtime,
             replay_level,
             lock_level=lock_level,
+            replay_level_range=replay_level_range,
         )
         terrain_runtime.sync_env_origins(raw_env.scene)
         level_msg = _format_replay_level_mode(selected_level, lock_level)
+        if replay_level_range is not None:
+            level_msg = _format_replay_level_range_mode(replay_level_range)
         print(
             "[INFO] Stage1 replay terrain mode: all columns "
             f"({_format_stage1_replay_columns(list(range(num_cols)), terrain_runtime)}){level_msg}.",
@@ -1011,9 +1523,12 @@ def _configure_stage1_replay_terrain(
         terrain_runtime,
         replay_level,
         lock_level=lock_level,
+        replay_level_range=replay_level_range,
     )
     terrain_runtime.sync_env_origins(raw_env.scene)
     level_msg = _format_replay_level_mode(selected_level, lock_level)
+    if replay_level_range is not None:
+        level_msg = _format_replay_level_range_mode(replay_level_range)
     print(
         "[INFO] Stage1 replay terrain columns: "
         f"{_format_stage1_replay_columns(selected_columns, terrain_runtime)}{level_msg}.",
@@ -1047,21 +1562,45 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         raise ValueError("--video_length must be positive when using Gym RecordVideo. Use --stream_video for manual-stop recording.")
     if args_cli.max_play_steps < 0:
         raise ValueError("--max_play_steps must be non-negative.")
+    if args_cli.record_completion_max_pre_completion_resets < -1:
+        raise ValueError("--record_completion_max_pre_completion_resets must be -1 or non-negative.")
+    if args_cli.record_completion_padding_steps < 0:
+        raise ValueError("--record_completion_padding_steps must be non-negative.")
     if args_cli.stop_after_continuous_terrain_completions < 0:
         raise ValueError("--stop_after_continuous_terrain_completions must be non-negative.")
     if args_cli.selection_max_pre_completion_resets < 0:
         raise ValueError("--selection_max_pre_completion_resets must be non-negative.")
     if args_cli.terrain_replay_lock_level and args_cli.terrain_replay_level is None:
         raise ValueError("--terrain_replay_lock_level requires --terrain_replay_level.")
+    replay_level_range = _parse_stage1_replay_level_range(args_cli.terrain_replay_level_range)
+    if replay_level_range is not None and args_cli.terrain_replay_level is not None:
+        raise ValueError("--terrain_replay_level_range is mutually exclusive with --terrain_replay_level.")
+    if replay_level_range is not None and args_cli.terrain_replay_lock_level:
+        raise ValueError("--terrain_replay_level_range cannot be combined with --terrain_replay_lock_level.")
     if args_cli.reward_trace_flush_interval <= 0:
         raise ValueError("--reward_trace_flush_interval must be positive.")
     if args_cli.record_camera_views is not None and not args_cli.record_chase_view:
         raise ValueError("--record_camera_views requires --record_chase_view.")
     if args_cli.record_camera_views is not None and not args_cli.stream_video:
         raise ValueError("--record_camera_views requires --stream_video.")
+    if args_cli.record_global_dolly_view and args_cli.record_chase_view:
+        raise ValueError("--record_global_dolly_view and --record_chase_view are separate recording modes.")
+    if args_cli.record_global_dolly_view and args_cli.video and not args_cli.stream_video:
+        raise ValueError("--record_global_dolly_view video recording requires --stream_video.")
+    if args_cli.record_global_dolly_view and args_cli.global_dolly_duration_steps <= 0:
+        raise ValueError("--global_dolly_duration_steps must be positive.")
+    if args_cli.record_global_dolly_view and args_cli.global_dolly_start_focal_length <= 0.0:
+        raise ValueError("--global_dolly_start_focal_length must be positive.")
+    if args_cli.record_global_dolly_view and args_cli.global_dolly_end_focal_length <= 0.0:
+        raise ValueError("--global_dolly_end_focal_length must be positive.")
+    if args_cli.capture_terrain_row_stills and args_cli.still_settle_steps < 0:
+        raise ValueError("--still_settle_steps must be non-negative.")
+    if args_cli.capture_terrain_only_stills and args_cli.still_settle_steps < 0:
+        raise ValueError("--still_settle_steps must be non-negative.")
     record_camera_views = _parse_record_camera_views(args_cli.record_camera_views, args_cli.record_camera_view)
     if args_cli.video_resolution is not None:
         env_cfg.viewer.resolution = _parse_video_resolution(args_cli.video_resolution)
+    still_resolution = _parse_video_resolution(args_cli.still_resolution)
 
     env_cfg.debug.enable_debug_draw = (
         args_cli.show_goal_vis
@@ -1085,10 +1624,29 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     env_cfg.debug.create_follow_views = args_cli.create_follow_views
     env_cfg.debug.follow_view_top_height = args_cli.follow_view_top_height
     env_cfg.debug.follow_view_chase_env_index = args_cli.follow_view_chase_env
+    record_completion_env = (
+        args_cli.follow_view_chase_env
+        if args_cli.record_completion_env < 0
+        else args_cli.record_completion_env
+    )
+    if args_cli.record_until_terrain_completion:
+        if record_completion_env < 0 or record_completion_env >= env_cfg.scene.num_envs:
+            raise ValueError(
+                f"--record_completion_env must be in [0, {env_cfg.scene.num_envs - 1}], got {record_completion_env}."
+            )
+        env_cfg.debug.delay_terrain_completion_reset = True
+        env_cfg.debug.delayed_terrain_completion_env_indices = (int(record_completion_env),)
     if args_cli.record_chase_view:
         env_cfg.debug.create_follow_views = True
         follow_camera_name = FOLLOW_CAMERA_NAMES[record_camera_views[0]]
         env_cfg.viewer.cam_prim_path = f"/view/env_{args_cli.follow_view_chase_env}/{follow_camera_name}"
+    if args_cli.record_global_dolly_view:
+        env_cfg.viewer.cam_prim_path = args_cli.global_dolly_camera_path
+        env_cfg.viewer.origin_type = "world"
+    if args_cli.capture_terrain_row_stills:
+        env_cfg.viewer.origin_type = "world"
+    if args_cli.capture_terrain_only_stills:
+        env_cfg.viewer.origin_type = "world"
     if args_cli.slip_vis_close_view:
         env_cfg.viewer.eye = (6.0, -8.0, 5.0)
         env_cfg.viewer.lookat = (6.0, 0.0, 0.4)
@@ -1106,14 +1664,27 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     env_cfg.log_dir = log_dir
 
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
-    if _configure_stage1_replay_terrain(
+    if (not args_cli.capture_terrain_only_stills) and _configure_stage1_replay_terrain(
         env.unwrapped,
         args_cli.terrain_replay_columns,
         args_cli.terrain_replay_level,
         lock_level=args_cli.terrain_replay_lock_level,
+        replay_level_range=replay_level_range,
     ):
         env.reset()
         _print_stage1_replay_level_summary(env.unwrapped, "after reset")
+    if args_cli.record_global_dolly_view:
+        _update_global_dolly_camera(env.unwrapped, 0)
+    if args_cli.capture_terrain_row_stills:
+        still_output_dir = args_cli.still_output_dir or str(Path(log_dir) / "stills" / "terrain_row19_4k")
+        _capture_terrain_row_stills(env.unwrapped, still_output_dir, still_resolution)
+        env.close()
+        return
+    if args_cli.capture_terrain_only_stills:
+        still_output_dir = args_cli.still_output_dir or str(Path(log_dir) / "stills" / "terrain_only_row19_4k")
+        _capture_terrain_only_stills(env.unwrapped, still_output_dir, still_resolution)
+        env.close()
+        return
     reward_trace_recorder = None
     if args_cli.record_reward_trace:
         selected_reward_trace_envs = _parse_env_indices(args_cli.reward_trace_envs, env.unwrapped.num_envs)
@@ -1131,7 +1702,14 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     if args_cli.video and args_cli.stream_video:
         video_folder = args_cli.video_output_dir or os.path.join(log_dir, "videos", "play")
         os.makedirs(video_folder, exist_ok=True)
-        if args_cli.record_chase_view:
+        if args_cli.record_global_dolly_view:
+            stream_video_paths = _build_stream_video_paths(
+                video_folder,
+                resume_path,
+                args_cli.video_output_name,
+                (GLOBAL_DOLLY_VIEW_NAME,),
+            )
+        elif args_cli.record_chase_view:
             stream_video_paths = _build_stream_video_paths(
                 video_folder,
                 resume_path,
@@ -1182,7 +1760,13 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     dt = env.unwrapped.step_dt
     video_writer = None
     follow_view_recorders: list[dict[str, object]] = []
-    if stream_video_paths and args_cli.record_chase_view:
+    if stream_video_paths and args_cli.record_global_dolly_view:
+        follow_view_recorders = _open_global_dolly_stream_recorder(
+            env.unwrapped,
+            stream_video_paths,
+            fps=round(1.0 / dt),
+        )
+    elif stream_video_paths and args_cli.record_chase_view:
         follow_view_recorders = _open_follow_view_stream_recorders(
             env.unwrapped,
             stream_video_paths,
@@ -1193,6 +1777,9 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
     obs = env.get_observations()
     timestep = 0
     empty_follow_frame_count = 0
+    dynamic_video_stop_step: int | None = None
+    terrain_completion_recorded = False
+    record_pre_completion_reset_count = 0
     selection_pending = None
     selection_completed = None
     selection_reset_counts = None
@@ -1213,6 +1800,56 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
                     reward_trace_recorder.append(env.unwrapped, timestep, rewards, dones, actions)
                 if args_cli.print_reset_causes:
                     _print_replay_reset_causes(timestep, dones, extras, env.unwrapped)
+                if args_cli.record_until_terrain_completion and not terrain_completion_recorded:
+                    done_terms = getattr(env.unwrapped, "_last_step_done_terms", None)
+                    delayed_completion = getattr(
+                        env.unwrapped,
+                        "_debug_delayed_terrain_completion_event",
+                        None,
+                    )
+                    selected_completed = delayed_completion is not None and bool(
+                        delayed_completion[record_completion_env].item()
+                    )
+                    selected_done = bool(dones[record_completion_env].item()) if dones is not None else False
+                    if selected_done and not selected_completed:
+                        record_pre_completion_reset_count += 1
+                        reset_reasons: list[str] = []
+                        if isinstance(done_terms, dict):
+                            for reason_key, reason_value in done_terms.items():
+                                if reason_value is None:
+                                    continue
+                                try:
+                                    if bool(reason_value[record_completion_env].item()):
+                                        reset_reasons.append(reason_key)
+                                except (IndexError, RuntimeError, TypeError):
+                                    continue
+                        reason_text = ",".join(reset_reasons) if reset_reasons else "unknown"
+                        print(
+                            "[RECORD_RESET] "
+                            f"env={record_completion_env} step={timestep} "
+                            f"pre_completion_resets={record_pre_completion_reset_count} "
+                            f"reasons={reason_text}",
+                            flush=True,
+                        )
+                        reset_limit = int(args_cli.record_completion_max_pre_completion_resets)
+                        if reset_limit >= 0 and record_pre_completion_reset_count > reset_limit:
+                            raise RuntimeError(
+                                "Selected env exceeded the recording reset budget before max-row completion: "
+                                f"env={record_completion_env}, "
+                                f"pre_completion_resets={record_pre_completion_reset_count}, "
+                                f"limit={reset_limit}, step={timestep}, reasons={reason_text}."
+                            )
+                    if selected_completed:
+                        terrain_completion_recorded = True
+                        dynamic_video_stop_step = timestep + 1 + int(args_cli.record_completion_padding_steps)
+                        print(
+                            "[RECORD_COMPLETE] "
+                            f"env={record_completion_env} step={timestep} "
+                            f"stop_step={dynamic_video_stop_step} "
+                            f"padding_steps={args_cli.record_completion_padding_steps} "
+                            f"pre_completion_resets={record_pre_completion_reset_count}",
+                            flush=True,
+                        )
                 if (
                     selection_pending is not None
                     and selection_completed is not None
@@ -1258,6 +1895,8 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
                     policy.reset(dones)
                 elif policy_nn is not None:
                     policy_nn.reset(dones)
+            if args_cli.record_global_dolly_view:
+                _update_global_dolly_camera(env.unwrapped, timestep)
             if follow_view_recorders:
                 written_count = _append_follow_view_frames(env.unwrapped, follow_view_recorders)
                 if written_count != len(follow_view_recorders):
@@ -1277,6 +1916,8 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
                         print(f"[INFO] Streamed {timestep} video frames", flush=True)
                 if args_cli.video_length > 0 and timestep >= args_cli.video_length:
                     break
+                if dynamic_video_stop_step is not None and timestep >= dynamic_video_stop_step:
+                    break
             elif video_writer is not None:
                 frame = env.unwrapped.render(recompute=False)
                 if frame is not None:
@@ -1289,12 +1930,18 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
                         print(f"[INFO] Streamed {timestep} video frames", flush=True)
                 if args_cli.video_length > 0 and timestep >= args_cli.video_length:
                     break
+                if dynamic_video_stop_step is not None and timestep >= dynamic_video_stop_step:
+                    break
             elif args_cli.video:
                 timestep += 1
                 if args_cli.video_length > 0 and timestep == args_cli.video_length:
                     break
+                if dynamic_video_stop_step is not None and timestep >= dynamic_video_stop_step:
+                    break
             else:
                 timestep += 1
+                if dynamic_video_stop_step is not None and timestep >= dynamic_video_stop_step:
+                    break
             if args_cli.max_play_steps > 0 and timestep >= args_cli.max_play_steps:
                 break
             sleep_time = dt - (time.time() - start_time)
@@ -1308,6 +1955,12 @@ def main(env_cfg: DirectRLEnvCfg, agent_cfg):
         if reward_trace_recorder is not None:
             reward_trace_recorder.close()
     env.close()
+    if args_cli.record_until_terrain_completion and not terrain_completion_recorded:
+        raise RuntimeError(
+            "Selected env did not reach terrain_column_completed before playback stopped: "
+            f"env={record_completion_env}, steps={timestep}, max_play_steps={args_cli.max_play_steps}, "
+            f"video_length={args_cli.video_length}."
+        )
 
 
 if __name__ == "__main__":

@@ -1,2 +1,0 @@
-trace,env_id,rows,terrain_col,terrain_name,terrain_level,step_start,step_end
-/home/ubuntu/Graduation-Project/results/stage1_model725_allcols_30hz_fine_pd_2026-05-12/raw_traces/model725_allcols_30hz_col05_stairs_down.csv,5,1198,5,stairs down,11,0,1199

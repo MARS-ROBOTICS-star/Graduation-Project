@@ -1,1 +1,0 @@
-controller_joint_names: ['', 'body_car_wheel_left_joint', 'body_car_wheel_right_joint', 'spm1_platform_joint_x', 'head_car_wheel_left_joint', 'head_car_wheel_right_joint', 'spm1_platform_joint_y', 'spm1_platform_joint_z', 'spm2_platform_joint_x', 'tail_car_wheel_left_joint', 'tail_car_wheel_right_joint', 'spm2_platform_y', 'spm2_platform_joint_z', ]

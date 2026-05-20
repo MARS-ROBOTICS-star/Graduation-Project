@@ -183,6 +183,14 @@ class CompleteCarDirectEnv(DirectRLEnv):
         self._last_stage1_progress_hit_mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._last_stage1_advance_mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._last_stage1_max_row_reached_mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._debug_delayed_terrain_completion_event = torch.zeros(
+            self.num_envs,
+            dtype=torch.bool,
+            device=self.device,
+        )
+        self._debug_delayed_terrain_completion_latched = torch.zeros_like(
+            self._debug_delayed_terrain_completion_event
+        )
         self._previous_goal_distance = torch.zeros(self.num_envs, device=self.device)
         self._active_goal_start_distance = torch.ones(self.num_envs, device=self.device)
 
@@ -1539,6 +1547,7 @@ class CompleteCarDirectEnv(DirectRLEnv):
             if self._uses_stage1_train_retirement()
             else torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         )
+        self._debug_delayed_terrain_completion_event.zero_()
         self._last_stage1_max_row_reached.zero_()
         self._last_stage1_valid_target_masked.zero_()
         if (
@@ -1568,6 +1577,25 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 self._last_stage1_max_row_reached.copy_(column_completion_mask)
                 self._record_stage1_column_completions(column_completion_mask)
                 self._stage1_training_active[column_completion_mask] = False
+                if self.cfg.debug.delay_terrain_completion_reset:
+                    configured_envs = tuple(
+                        int(env_id) for env_id in self.cfg.debug.delayed_terrain_completion_env_indices
+                    )
+                    if configured_envs:
+                        valid_envs = [
+                            env_id for env_id in configured_envs if 0 <= env_id < self.num_envs
+                        ]
+                        delay_mask = torch.zeros_like(column_completion_mask)
+                        if valid_envs:
+                            delay_env_ids = torch.as_tensor(valid_envs, device=self.device, dtype=torch.long)
+                            delay_mask[delay_env_ids] = True
+                    else:
+                        delay_mask = torch.ones_like(column_completion_mask)
+                    delay_mask &= column_completion_mask
+                    if torch.any(delay_mask):
+                        self._debug_delayed_terrain_completion_event[delay_mask] = True
+                        self._debug_delayed_terrain_completion_latched[delay_mask] = True
+                        done_terms["terrain_column_completed"] = done_terms["terrain_column_completed"] & ~delay_mask
             done_now_mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
             for value in done_terms.values():
                 done_now_mask |= value
@@ -1577,6 +1605,12 @@ class CompleteCarDirectEnv(DirectRLEnv):
                 self._last_stage1_max_row_reached & max_row_attempt_mask,
                 self._last_stage1_quality_advance_mask & max_row_attempt_mask,
             )
+        if self.cfg.debug.delay_terrain_completion_reset and torch.any(
+            self._debug_delayed_terrain_completion_latched
+        ):
+            delayed_latched_mask = self._debug_delayed_terrain_completion_latched
+            for value in done_terms.values():
+                value[delayed_latched_mask] = False
         if self._uses_stage1_train_retirement():
             if torch.any(already_retired_mask):
                 for value in done_terms.values():

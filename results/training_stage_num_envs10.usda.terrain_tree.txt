@@ -1,6 +1,0 @@
-/World/terrain :: PseudoRoot
-  /World/terrain/stage1 :: Xform
-    /World/terrain/stage1/mesh :: Mesh
-    /World/terrain/stage1/visualMaterial :: Material
-      /World/terrain/stage1/visualMaterial/Shader :: Shader
-    /World/terrain/stage1/physicsMaterial :: Material

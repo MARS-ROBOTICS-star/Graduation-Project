@@ -61,7 +61,6 @@ USD/*backup*
 USD/complete_car_equivlent.usd
 USD/Spherical_Parallel_test.usd
 USD/default_scene.usd
-USD/configuration/default_scene_*.usd
 
 # MATLAB and Simulink generated files
 slprj/

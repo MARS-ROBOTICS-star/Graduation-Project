@@ -1,8 +1,7 @@
-# Complete Car Isaac Lab RL
+# Environment-Adaptive Morphological Control for Specialized Robots Based on Reinforcement Learning
 
-Isaac Lab reinforcement-learning project for a three-body articulated ground vehicle with a spherical-parallel-joint-inspired morphology. The repository is organized as a minimal replay package: runtime code, robot assets, and the released Stage1 checkpoint are kept; intermediate logs, analysis notes, documents, and experiment scratch files are intentionally excluded.
+Isaac Lab reinforcement-learning project for a three-body articulated ground vehicle with a spherical-parallel-joint-inspired morphology. 
 
-The README structure follows the simple installation and usage flow of [MGDP](https://github.com/MARS-ROBOTICS-star/MGDP): install dependencies first, then run training or playback scripts directly.
 
 ## Released Contents
 

@@ -58,7 +58,7 @@ COMPLETE_CAR_ARTICULATION_ROOT_PRIM_PATH = "/complete_car_alternative/body_car_c
 
 def _find_repo_root(start: Path) -> Path:
     for parent in (start, *start.parents):
-        if (parent / "AGENTS.md").exists():
+        if (parent / "RL_Training").is_dir() and (parent / "USD" / "complete_car.usd").is_file():
             return parent
     raise RuntimeError(f"Failed to locate repository root from {start}.")
 

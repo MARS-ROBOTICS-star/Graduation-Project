@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="720" viewBox="0 0 1500 720">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#475569"/></marker>
+    <marker id="redArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#dc2626"/></marker>
+    <style>
+      .title{font:700 30px "Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;fill:#0f172a}
+      .box{rx:15;ry:15;stroke-width:2}
+      .input{fill:#e0f2fe;stroke:#0284c7}
+      .reward{fill:#fef3c7;stroke:#d97706}
+      .gate{fill:#fee2e2;stroke:#dc2626}
+      .out{fill:#dcfce7;stroke:#16a34a}
+      .text{font:500 21px "Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;fill:#0f172a}
+      .small{font:500 18px "Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;fill:#334155}
+      .line{stroke:#475569;stroke-width:2.5;fill:none;marker-end:url(#arrow)}
+      .dash{stroke:#dc2626;stroke-width:2.5;fill:none;stroke-dasharray:8 7;marker-end:url(#redArrow)}
+    </style>
+  </defs>
+  <rect width="1500" height="720" fill="#fff"/>
+  <text x="750" y="48" text-anchor="middle" class="title">目标推进链：row 上升的直接入口</text>
+
+  <rect x="60" y="120" width="220" height="80" class="box input"/>
+  <text x="170" y="153" text-anchor="middle" class="text">上一帧目标距离</text>
+  <text x="170" y="179" text-anchor="middle" class="small">previous distance</text>
+
+  <rect x="60" y="270" width="220" height="80" class="box input"/>
+  <text x="170" y="303" text-anchor="middle" class="text">当前目标距离</text>
+  <text x="170" y="329" text-anchor="middle" class="small">current distance</text>
+
+  <rect x="60" y="440" width="220" height="80" class="box input"/>
+  <text x="170" y="473" text-anchor="middle" class="text">目标朝向误差</text>
+  <text x="170" y="499" text-anchor="middle" class="small">heading error</text>
+
+  <rect x="385" y="185" width="230" height="95" class="box reward"/>
+  <text x="500" y="220" text-anchor="middle" class="text">progress_delta</text>
+  <text x="500" y="251" text-anchor="middle" class="small">距离是否变小</text>
+
+  <rect x="705" y="105" width="230" height="80" class="box reward"/>
+  <text x="820" y="138" text-anchor="middle" class="text">progress_to_target</text>
+  <text x="820" y="164" text-anchor="middle" class="small">靠近目标奖励</text>
+
+  <rect x="705" y="235" width="230" height="80" class="box reward"/>
+  <text x="820" y="268" text-anchor="middle" class="text">distance_to_target</text>
+  <text x="820" y="294" text-anchor="middle" class="small">离目标近的小奖励</text>
+
+  <rect x="705" y="365" width="230" height="80" class="box reward"/>
+  <text x="820" y="398" text-anchor="middle" class="text">angle_diff</text>
+  <text x="820" y="424" text-anchor="middle" class="small">朝向目标</text>
+
+  <rect x="705" y="495" width="230" height="80" class="box reward"/>
+  <text x="820" y="528" text-anchor="middle" class="text">reached_target</text>
+  <text x="820" y="554" text-anchor="middle" class="small">命中目标点</text>
+
+  <rect x="1040" y="210" width="210" height="100" class="box out"/>
+  <text x="1145" y="248" text-anchor="middle" class="text">PPO 正反馈</text>
+  <text x="1145" y="280" text-anchor="middle" class="small">策略更倾向这些动作</text>
+
+  <rect x="1040" y="495" width="210" height="80" class="box out"/>
+  <text x="1145" y="528" text-anchor="middle" class="text">row advance</text>
+  <text x="1145" y="554" text-anchor="middle" class="small">课程推进</text>
+
+  <rect x="1040" y="70" width="260" height="90" class="box gate"/>
+  <text x="1170" y="105" text-anchor="middle" class="text">质量分只折减正进展</text>
+  <text x="1170" y="135" text-anchor="middle" class="small">最低仍保留 0.2 倍</text>
+
+  <rect x="1265" y="430" width="185" height="115" class="box gate"/>
+  <text x="1358" y="466" text-anchor="middle" class="text">当前不阻断</text>
+  <text x="1358" y="497" text-anchor="middle" class="small">低质量命中</text>
+  <text x="1358" y="524" text-anchor="middle" class="small">仍可能升 row</text>
+
+  <path d="M280 160 C325 170 350 205 385 225" class="line"/>
+  <path d="M280 310 C325 300 350 255 385 235" class="line"/>
+  <path d="M615 225 C650 195 675 160 705 145" class="line"/>
+  <path d="M280 310 H705" class="line"/>
+  <path d="M280 480 C390 455 590 425 705 405" class="line"/>
+  <path d="M935 145 C980 160 1010 210 1040 245" class="line"/>
+  <path d="M935 275 H1040" class="line"/>
+  <path d="M935 405 C980 380 1010 310 1040 275" class="line"/>
+  <path d="M935 535 H1040" class="line"/>
+  <path d="M1145 310 V495" class="line"/>
+  <path d="M1040 115 C995 120 970 130 935 145" class="dash"/>
+  <path d="M1250 535 H1265" class="dash"/>
+</svg>

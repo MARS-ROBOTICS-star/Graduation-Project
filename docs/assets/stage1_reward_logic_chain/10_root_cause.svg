@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="760" viewBox="0 0 1500 760">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#475569"/></marker>
+    <style>
+      .title{font:700 30px "Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;fill:#0f172a}
+      .box{rx:15;ry:15;stroke-width:2}
+      .good{fill:#dcfce7;stroke:#16a34a}
+      .state{fill:#e0f2fe;stroke:#0284c7}
+      .warn{fill:#fee2e2;stroke:#dc2626}
+      .action{fill:#fef3c7;stroke:#d97706}
+      .text{font:500 21px "Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;fill:#0f172a}
+      .small{font:500 18px "Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;fill:#334155}
+      .line{stroke:#475569;stroke-width:2.5;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1500" height="760" fill="#fff"/>
+  <text x="750" y="48" text-anchor="middle" class="title">为什么 high-row 但 replay 不稳定：事件通过与稳定技能脱节</text>
+
+  <rect x="70" y="110" width="300" height="100" class="box good"/>
+  <text x="220" y="148" text-anchor="middle" class="text">目标推进奖励有效</text>
+  <text x="220" y="180" text-anchor="middle" class="small">可以带来 row 上升事件</text>
+
+  <rect x="465" y="110" width="300" height="100" class="box state"/>
+  <text x="615" y="148" text-anchor="middle" class="text">训练中偶然命中</text>
+  <text x="615" y="180" text-anchor="middle" class="small">采样、状态、动作噪声影响</text>
+
+  <rect x="860" y="110" width="300" height="100" class="box warn"/>
+  <text x="1010" y="148" text-anchor="middle" class="text">质量不硬阻断 row</text>
+  <text x="1010" y="180" text-anchor="middle" class="small">quality_gated = False</text>
+
+  <rect x="1205" y="110" width="220" height="100" class="box state"/>
+  <text x="1315" y="148" text-anchor="middle" class="text">指标看似推进</text>
+  <text x="1315" y="180" text-anchor="middle" class="small">row / column 变高</text>
+
+  <rect x="70" y="365" width="300" height="120" class="box warn"/>
+  <text x="220" y="403" text-anchor="middle" class="text">正奖励依赖支撑</text>
+  <text x="220" y="435" text-anchor="middle" class="small">支撑差时 module / rear</text>
+  <text x="220" y="464" text-anchor="middle" class="small">正反馈反而吃不到</text>
+
+  <rect x="465" y="365" width="300" height="120" class="box warn"/>
+  <text x="615" y="403" text-anchor="middle" class="text">抗栽头不是出坑</text>
+  <text x="615" y="435" text-anchor="middle" class="small">drop anti-dive 学到僵直</text>
+  <text x="615" y="464" text-anchor="middle" class="small">但没有完整抬车脱困链</text>
+
+  <rect x="860" y="365" width="300" height="120" class="box action"/>
+  <text x="1010" y="403" text-anchor="middle" class="text">动作序列不稳定</text>
+  <text x="1010" y="435" text-anchor="middle" class="small">宽坑 / 高台阶</text>
+  <text x="1010" y="464" text-anchor="middle" class="small">不能重复高质量通过</text>
+
+  <rect x="1205" y="345" width="220" height="160" class="box warn"/>
+  <text x="1315" y="391" text-anchor="middle" class="text">回放暴露</text>
+  <text x="1315" y="428" text-anchor="middle" class="small">固定 col / row 后</text>
+  <text x="1315" y="458" text-anchor="middle" class="small">在坑或障碍处</text>
+  <text x="1315" y="488" text-anchor="middle" class="small">反复 reset</text>
+
+  <rect x="320" y="610" width="860" height="85" class="box action"/>
+  <text x="750" y="644" text-anchor="middle" class="text">结论：下一步优先查 reward 激活相位、出坑动作目标、后车支撑正反馈、质量与 row 绑定</text>
+  <text x="750" y="675" text-anchor="middle" class="small">不要先把问题简化成“继续加大奖励权重”</text>
+
+  <path d="M370 160 H465" class="line"/>
+  <path d="M765 160 H860" class="line"/>
+  <path d="M1160 160 H1205" class="line"/>
+  <path d="M370 425 H465" class="line"/>
+  <path d="M765 425 H860" class="line"/>
+  <path d="M1160 425 H1205" class="line"/>
+  <path d="M1315 210 V345" class="line"/>
+  <path d="M220 485 C310 560 480 605 620 610" class="line"/>
+  <path d="M615 485 C660 550 700 590 735 610" class="line"/>
+  <path d="M1010 485 C955 555 890 595 835 610" class="line"/>
+</svg>

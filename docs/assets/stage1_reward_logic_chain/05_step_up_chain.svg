@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="820" viewBox="0 0 1600 820">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#475569"/></marker>
+    <style>
+      .title{font:700 30px "Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;fill:#0f172a}
+      .box{rx:15;ry:15;stroke-width:2}
+      .gate{fill:#dcfce7;stroke:#16a34a}
+      .calc{fill:#e0f2fe;stroke:#0284c7}
+      .penalty{fill:#fee2e2;stroke:#dc2626}
+      .reward{fill:#fef3c7;stroke:#d97706}
+      .warn{fill:#fff7ed;stroke:#ea580c}
+      .text{font:500 21px "Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;fill:#0f172a}
+      .small{font:500 18px "Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;fill:#334155}
+      .line{stroke:#475569;stroke-width:2.5;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1600" height="820" fill="#fff"/>
+  <text x="800" y="48" text-anchor="middle" class="title">台阶 / 上沿动作链：前车抬、模块上、后车跟</text>
+
+  <rect x="60" y="145" width="220" height="90" class="box gate"/>
+  <text x="170" y="180" text-anchor="middle" class="text">g_step_up 激活</text>
+  <text x="170" y="209" text-anchor="middle" class="small">看到前方升高</text>
+
+  <rect x="375" y="95" width="240" height="90" class="box calc"/>
+  <text x="495" y="130" text-anchor="middle" class="text">step_up_distance_m</text>
+  <text x="495" y="159" text-anchor="middle" class="small">上沿离车多远</text>
+
+  <rect x="690" y="95" width="250" height="90" class="box calc"/>
+  <text x="815" y="130" text-anchor="middle" class="text">front_pitch_ref</text>
+  <text x="815" y="159" text-anchor="middle" class="small">高度越大，前车越应抬</text>
+
+  <rect x="1030" y="95" width="260" height="90" class="box penalty"/>
+  <text x="1160" y="130" text-anchor="middle" class="text">front_posture_penalty</text>
+  <text x="1160" y="159" text-anchor="middle" class="small">前车抬不够就扣分</text>
+
+  <rect x="375" y="285" width="240" height="100" class="box calc"/>
+  <text x="495" y="322" text-anchor="middle" class="text">前 / 中 / 后支撑高度</text>
+  <text x="495" y="353" text-anchor="middle" class="small">相对 row baseline 的新增</text>
+
+  <rect x="690" y="285" width="250" height="100" class="box reward"/>
+  <text x="815" y="322" text-anchor="middle" class="text">module_progress_reward</text>
+  <text x="815" y="353" text-anchor="middle" class="small">模块逐段抬高奖励</text>
+
+  <rect x="1030" y="285" width="260" height="100" class="box calc"/>
+  <text x="1160" y="322" text-anchor="middle" class="text">前 / 中模块已变高</text>
+  <text x="1160" y="353" text-anchor="middle" class="small">rear_follow_phase 激活</text>
+
+  <rect x="1370" y="235" width="190" height="90" class="box reward"/>
+  <text x="1465" y="270" text-anchor="middle" class="text">rear_follow_reward</text>
+  <text x="1465" y="299" text-anchor="middle" class="small">后车跟上奖励</text>
+
+  <rect x="1370" y="365" width="190" height="90" class="box penalty"/>
+  <text x="1465" y="400" text-anchor="middle" class="text">rear_follow_penalty</text>
+  <text x="1465" y="429" text-anchor="middle" class="small">后车掉队扣分</text>
+
+  <rect x="170" y="545" width="360" height="125" class="box warn"/>
+  <text x="350" y="584" text-anchor="middle" class="text">断点 1：坑出口可能没对上</text>
+  <text x="350" y="618" text-anchor="middle" class="small">前车抬升依赖 g_step_up 与距离窗口</text>
+  <text x="350" y="648" text-anchor="middle" class="small">宽坑中间不一定稳定激活</text>
+
+  <rect x="620" y="545" width="360" height="125" class="box warn"/>
+  <text x="800" y="584" text-anchor="middle" class="text">断点 2：正奖励被支撑卡住</text>
+  <text x="800" y="618" text-anchor="middle" class="small">module reward 乘中 / 后支撑</text>
+  <text x="800" y="648" text-anchor="middle" class="small">越悬空，越吃不到正反馈</text>
+
+  <rect x="1070" y="545" width="360" height="125" class="box warn"/>
+  <text x="1250" y="584" text-anchor="middle" class="text">断点 3：后车奖励偏晚</text>
+  <text x="1250" y="618" text-anchor="middle" class="small">前 / 中模块高起来后才激活</text>
+  <text x="1250" y="648" text-anchor="middle" class="small">更像事后约束，不是提前支撑</text>
+
+  <path d="M280 180 C320 160 345 145 375 140" class="line"/>
+  <path d="M615 140 H690" class="line"/>
+  <path d="M940 140 H1030" class="line"/>
+  <path d="M280 200 C320 260 345 315 375 335" class="line"/>
+  <path d="M615 335 H690" class="line"/>
+  <path d="M940 335 H1030" class="line"/>
+  <path d="M1290 335 C1325 310 1340 285 1370 280" class="line"/>
+  <path d="M1290 350 C1325 370 1340 405 1370 410" class="line"/>
+  <path d="M495 185 C445 310 410 470 350 545" class="line"/>
+  <path d="M815 385 V545" class="line"/>
+  <path d="M1160 385 C1195 455 1220 505 1250 545" class="line"/>
+</svg>

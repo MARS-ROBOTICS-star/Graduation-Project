@@ -1,4 +1,4 @@
-# Local environments and editor state
+# Local environments, editor state, caches, and credentials
 .venv/
 .venv-*/
 .env
@@ -7,64 +7,41 @@
 .codex
 .vscode/
 .obsidian/
-*.py[cod]
 __pycache__/
+*.py[cod]
 .~lock*
 
-# Project memory, notes, papers, thesis drafts, and intermediate documents
-AGENTS.md
-docs/
-logs/
-refs/
+# Backups and generated MATLAB / Simulink artifacts
 backups/
-literature_note_skill.md
+*.bak
+*backup*
+slprj/
+*.slxc
+*.asv
+
+# Training logs, outputs, results, and replay artifacts
+logs/
+outputs/
+results/
+*.log
+
+# Third-party reference material (local Isaac KB) and binary documents
+refs/
 *.pdf
 *.doc
 *.docx
+docs/book_environment_design_fulltext_2026-04-19.md
+docs/book_reward_design_fulltext_2026-04-19.md
+docs/zhihu_reward_design_filtered_2026-04-16.md
+
+# Media exports; docs/assets SVG files are tracked
 *.png
 *.jpg
 *.jpeg
 *.mp4
+
+# Thesis drafts
 毕业论文/
 
-# Generated training, replay, analysis, and package outputs
-outputs/
-results/
-scripts/
-RL_Training/logs/
-RL_Training/outputs/
-RL_Training/tests/
-RL_Training/README.md
-RL_Training/.codex
-
-# Keep the public script surface minimal
-RL_Training/scripts/*.py
-!RL_Training/scripts/train.py
-!RL_Training/scripts/play.py
-
-# Exclude local reference notebooks / legacy derivation files from the runtime package
-RL_Training/source/**/*.md
-RL_Training/source/**/*.m
-RL_Training/source/**/*.mlx
-RL_Training/source/**/*.asv
-RL_Training/source/**/legacy_*/
-
-# Robot asset intermediate files
-URDF/**/*.xlsx
-URDF/**/*.csv
+# URDF export logs only (xlsx/csv and URDF packages are research assets)
 URDF/**/export.log
-URDF/complete_car_final/
-
-# Inactive or backup USD assets
-USD/*.bak
-USD/*backup*
-USD/complete_car_equivlent.usd
-USD/Spherical_Parallel_test.usd
-USD/default_scene.usd
-
-# MATLAB and Simulink generated files
-slprj/
-*.slxc
-
-# Generic backups
-*.bak

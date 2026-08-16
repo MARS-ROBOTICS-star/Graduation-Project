@@ -45,3 +45,14 @@ docs/zhihu_reward_design_filtered_2026-04-16.md
 
 # URDF export logs only (xlsx/csv and URDF packages are research assets)
 URDF/**/export.log
+
+# Explicitly released SingleBlock comparison video
+!RL_Training/logs/
+RL_Training/logs/*
+!RL_Training/logs/rsl_rl/
+RL_Training/logs/rsl_rl/*
+!RL_Training/logs/rsl_rl/complete_car_stage1_single_block/
+RL_Training/logs/rsl_rl/complete_car_stage1_single_block/*
+!RL_Training/logs/rsl_rl/complete_car_stage1_single_block/final_videos_720p_model150_20260816/
+RL_Training/logs/rsl_rl/complete_car_stage1_single_block/final_videos_720p_model150_20260816/*
+!RL_Training/logs/rsl_rl/complete_car_stage1_single_block/final_videos_720p_model150_20260816/singleblock_best_env02_chase_right_side_side_by_side_720p.mp4
